@@ -1,0 +1,33 @@
+id: spec-tui-spec-creation-flow
+spec_ref: spec-tui.spec-creation-flow
+title: |
+    Spec file created when Claude gathers enough context.
+status: pending
+prompt: |-
+    ## TASK
+
+    Spec file created when Claude gathers enough context.
+
+
+    Acceptance criteria:
+    - Spec file does not exist at session start
+    - Claude creates file via Write tool when ready (after explore/define stages)
+    - Right pane transitions from "No spec yet..." to showing content
+    - File persists after session ends
+
+    ## CONSTRAINTS
+
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+order: 3
+estimated_complexity: medium

@@ -1,0 +1,4 @@
+strategies:
+    spec: guided
+    chunk: ralph-sequential
+    execute: sequential

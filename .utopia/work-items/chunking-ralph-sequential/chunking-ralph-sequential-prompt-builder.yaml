@@ -1,0 +1,36 @@
+id: chunking-ralph-sequential-prompt-builder
+spec_ref: chunking-ralph-sequential.prompt-builder
+title: |
+    Build prompts from WorkItem data.
+    Support first iteration (no failures) and retry iterations (with failures).
+status: pending
+prompt: |-
+    ## TASK
+
+    Build prompts from WorkItem data.
+    Support first iteration (no failures) and retry iterations (with failures).
+
+
+    Acceptance criteria:
+    - Builder produces prompt without PREVIOUS FAILURES for first iteration
+    - Builder injects extracted failure output for subsequent iterations
+    - Built prompt is stored/updated on WorkItem
+    - Builder escapes any template syntax in user content
+
+    ## CONSTRAINTS
+
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Only failure output from previous iteration is fed forward (not passing tests)
+order: 3
+estimated_complexity: medium

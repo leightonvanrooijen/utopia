@@ -1,0 +1,62 @@
+id: spec-tui
+title: Spec TUI - Split-Pane Specification Builder
+status: draft
+description: |
+  A split-pane terminal UI that wraps Claude Code for the spec creation process.
+  Left pane shows the Claude conversation, right pane shows a live read-only
+  view of the spec file as it evolves. Claude updates the spec directly via
+  the Write tool, and the TUI auto-refreshes to show changes in real-time.
+
+domain_knowledge:
+  - Extends existing utopia spec command and guided strategy
+  - Claude uses Write tool to update spec file directly
+  - Spec file created in .utopia/specs/_drafts/ once enough context gathered
+  - TUI watches spec file for changes and re-renders automatically
+  - Built with Bubble Tea framework (Go)
+  - Wraps Claude CLI process, forwarding stdin/stdout
+
+features:
+  - id: split-pane-layout
+    description: |
+      Two-pane terminal layout with Claude chat on left, spec view on right.
+    acceptance_criteria:
+      - Terminal splits into two vertical panes on startup
+      - Left pane receives user input and displays Claude responses
+      - Right pane displays spec file contents (read-only)
+      - Panes resize appropriately when terminal size changes
+
+  - id: claude-cli-wrapper
+    description: |
+      Wrap Claude CLI process, forwarding input/output while observing the stream.
+    acceptance_criteria:
+      - Spawns Claude CLI with spec system prompt
+      - User input forwarded to Claude process stdin
+      - Claude output displayed in left pane
+      - Process exit cleanly terminates TUI
+
+  - id: spec-file-watcher
+    description: |
+      Watch the spec file for changes and update the right pane.
+    acceptance_criteria:
+      - Monitors .utopia/specs/_drafts/<spec-id>.yaml for changes
+      - Re-renders right pane within 100ms of file change
+      - Handles file not existing yet (shows placeholder until created)
+      - YAML content displayed with line numbers
+
+  - id: spec-creation-flow
+    description: |
+      Spec file created when Claude gathers enough context.
+    acceptance_criteria:
+      - Spec file does not exist at session start
+      - Claude creates file via Write tool when ready (after explore/define stages)
+      - Right pane transitions from "No spec yet..." to showing content
+      - File persists after session ends
+
+  - id: session-lifecycle
+    description: |
+      Start and end the TUI session cleanly.
+    acceptance_criteria:
+      - ./utopia spec launches the split-pane TUI
+      - Ctrl+C or /exit ends session gracefully
+      - Partial specs remain in _drafts/ for later continuation
+      - Clean terminal restore on exit (no artifacts)

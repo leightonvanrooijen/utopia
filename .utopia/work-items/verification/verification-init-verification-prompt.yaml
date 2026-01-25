@@ -1,0 +1,33 @@
+id: verification-init-verification-prompt
+spec_ref: verification.init-verification-prompt
+title: |
+    Prompt user for verification command during "utopia init".
+status: pending
+prompt: |-
+    ## TASK
+
+    Prompt user for verification command during "utopia init".
+
+
+    Acceptance criteria:
+    - Init asks "What command verifies your code? (e.g., npm test)"
+    - User input saved to config.verification.command
+    - Init asks "Max iterations per work item? (leave blank for unlimited)"
+    - User input saved to config.max_iterations (optional)
+
+    ## CONSTRAINTS
+
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+order: 2
+estimated_complexity: medium

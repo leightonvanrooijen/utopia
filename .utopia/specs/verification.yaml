@@ -1,0 +1,43 @@
+id: verification
+title: Verification System
+status: draft
+description: |
+  The verification system runs user-provided commands to check if work is correct.
+
+  It captures output for feedback to the execution loop on failure.
+  User is responsible for configuring commands that output failures only.
+
+domain_knowledge:
+  - Verification command should output failures only (user's responsibility)
+  - Output is captured and fed back to execution loop on failure
+  - Pass/fail determined by exit code (0 = pass, non-zero = fail)
+  - Output truncation preserves tail (most recent failures most relevant)
+
+features:
+  - id: verification-config
+    description: |
+      Store verification command in project config.
+    acceptance_criteria:
+      - Config has verification.command field (e.g., "npm test --onlyFailures")
+      - Command is provided manually by user during "utopia init"
+      - User is responsible for configuring command to output failures only
+      - Config has optional max_iterations field (no limit if not set)
+
+  - id: verification-runner
+    description: |
+      Run verification command and capture output.
+    acceptance_criteria:
+      - Runs verification command from config
+      - Captures stdout and stderr
+      - Returns pass/fail based on exit code
+      - Output is available for injection into next iteration prompt
+      - Output truncated to 2000 chars if needed (preserve tail)
+
+  - id: init-verification-prompt
+    description: |
+      Prompt user for verification command during "utopia init".
+    acceptance_criteria:
+      - Init asks "What command verifies your code? (e.g., npm test)"
+      - User input saved to config.verification.command
+      - Init asks "Max iterations per work item? (leave blank for unlimited)"
+      - User input saved to config.max_iterations (optional)

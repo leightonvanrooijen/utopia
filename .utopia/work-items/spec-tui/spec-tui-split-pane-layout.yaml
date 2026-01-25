@@ -1,0 +1,34 @@
+id: spec-tui-split-pane-layout
+spec_ref: spec-tui.split-pane-layout
+title: |
+    Two-pane terminal layout with Claude chat on left, spec view on right.
+status: in_progress
+prompt: |-
+    ## TASK
+
+    Two-pane terminal layout with Claude chat on left, spec view on right.
+
+
+    Acceptance criteria:
+    - Terminal splits into two vertical panes on startup
+    - Left pane receives user input and displays Claude responses
+    - Right pane displays spec file contents (read-only)
+    - Panes resize appropriately when terminal size changes
+
+    ## CONSTRAINTS
+
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+order: 0
+estimated_complexity: medium
+iteration_count: 1

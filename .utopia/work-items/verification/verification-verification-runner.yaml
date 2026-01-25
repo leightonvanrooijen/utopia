@@ -1,0 +1,34 @@
+id: verification-verification-runner
+spec_ref: verification.verification-runner
+title: |
+    Run verification command and capture output.
+status: pending
+prompt: |-
+    ## TASK
+
+    Run verification command and capture output.
+
+
+    Acceptance criteria:
+    - Runs verification command from config
+    - Captures stdout and stderr
+    - Returns pass/fail based on exit code
+    - Output is available for injection into next iteration prompt
+    - Output truncated to 2000 chars if needed (preserve tail)
+
+    ## CONSTRAINTS
+
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+order: 1
+estimated_complexity: medium

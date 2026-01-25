@@ -1,0 +1,35 @@
+id: chunking-ralph-sequential-default-constraints
+spec_ref: chunking-ralph-sequential.default-constraints
+title: |
+    Define default constraints applied to all WorkItems.
+status: pending
+prompt: |-
+    ## TASK
+
+    Define default constraints applied to all WorkItems.
+
+
+    Acceptance criteria:
+    - Default constraints include "Do not introduce new abstractions, interfaces, or packages"
+    - Default constraints include "Do not refactor unrelated code"
+    - Default constraints include "Architecture is already correct"
+    - Constraints can be extended per-spec via spec.constraints field
+    - Constraints are deduplicated if spec repeats a default
+
+    ## CONSTRAINTS
+
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Only failure output from previous iteration is fed forward (not passing tests)
+order: 5
+estimated_complexity: medium

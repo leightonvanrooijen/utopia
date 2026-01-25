@@ -1,0 +1,74 @@
+id: execution-ralph
+title: Ralph Execution Loop
+status: draft
+description: |
+  The Ralph execution loop runs WorkItems produced by the chunker.
+
+  Key characteristics:
+  - Utopia controls the loop (not Claude stop hooks)
+  - Fresh context each iteration
+  - Retries until success or human intervention (Ctrl+C)
+  - Optional max iterations as safety net
+  - Sequential execution, resumes from where it left off
+
+  Depends on: verification (for running verification commands)
+
+domain_knowledge:
+  - Each iteration is a fresh Claude context; state is rebuilt from git/files
+  - The <COMPLETE> token distinguishes intentional completion from step-limit exits
+  - Only inject failures from previous iteration (not accumulated history)
+  - Human oversight assumed; user can Ctrl+C if loop is stuck
+  - Backpressure via verification replaces explicit direction
+
+features:
+  - id: ralph-loop
+    description: |
+      Core loop that runs a single WorkItem until completion.
+    acceptance_criteria:
+      - Loop invokes Claude Code via CLI (claude --print --prompt "...")
+      - Loop checks Claude output for <COMPLETE> token
+      - If no token, retry immediately (step limit or stuck)
+      - If token present, run verification (via verification system)
+      - If verification passes, mark WorkItem completed
+      - If verification fails, capture output, rebuild prompt with failures, retry
+      - Loop continues until success or max iterations (if configured)
+      - Loop logs each iteration (attempt N, token found, verification result)
+
+  - id: failure-injection
+    description: |
+      Inject failure output into prompt for retry iterations.
+    acceptance_criteria:
+      - First iteration has no PREVIOUS FAILURES section
+      - Subsequent iterations include PREVIOUS FAILURES with verification output
+      - Only failures from immediately previous iteration (not accumulated)
+      - Failures are injected as raw text in code block
+
+  - id: work-item-status
+    description: |
+      Track WorkItem status through execution.
+    acceptance_criteria:
+      - Status values are pending, in_progress, completed
+      - Status persisted to .utopia/work-items/<spec-id>/<item-id>.yaml
+      - Completed status includes iteration count
+      - In-progress status includes current iteration count
+
+  - id: sequential-executor
+    description: |
+      Execute WorkItems in order, one at a time.
+    acceptance_criteria:
+      - Loads WorkItems for a spec, sorted by Order
+      - Skips items with status "completed"
+      - Executes items sequentially (waits for completion before next)
+      - Stops if max iterations reached on any item
+      - Continues from first non-completed item on resume
+
+  - id: execute-command
+    description: |
+      CLI command to execute WorkItems for a spec.
+    acceptance_criteria:
+      - Command is "utopia execute <spec-id>"
+      - Command loads WorkItems from .utopia/work-items/<spec-id>/
+      - Command prints progress (executing item N of M, iteration K)
+      - Command prints when item completes
+      - Command handles Ctrl+C gracefully (saves current state)
+      - On max iterations, prints message and exits

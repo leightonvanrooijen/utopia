@@ -1,0 +1,36 @@
+id: chunking-ralph-sequential-validation-verifiable-criteria
+spec_ref: chunking-ralph-sequential.validation-verifiable-criteria
+title: |
+    Validate that all acceptance criteria in a spec are verifiable.
+    Reject specs with vague or non-testable criteria.
+status: pending
+prompt: |-
+    ## TASK
+
+    Validate that all acceptance criteria in a spec are verifiable.
+    Reject specs with vague or non-testable criteria.
+
+
+    Acceptance criteria:
+    - Chunker rejects specs where any feature has zero acceptance criteria
+    - Chunker warns on criteria containing vague terms (e.g., "should be good", "works well")
+    - Validation errors include feature ID and problematic criterion
+    - Validation runs before any WorkItems are generated
+
+    ## CONSTRAINTS
+
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Only failure output from previous iteration is fed forward (not passing tests)
+order: 6
+estimated_complexity: medium
