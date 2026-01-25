@@ -50,7 +50,7 @@ changes:
           new: Updated text for the criterion
 
   - operation: modify
-    domain_knowledge:
+    domain_knowledge_mod:
       add:
         - New domain knowledge to add
       remove:

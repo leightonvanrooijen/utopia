@@ -82,14 +82,37 @@ type ChangeRequest struct {
 	Changes    []Change            `yaml:"changes"`
 }
 
+// EditPair represents an old/new pair for edit operations
+type EditPair struct {
+	Old string `yaml:"old"`
+	New string `yaml:"new"`
+}
+
+// CriteriaModify represents modifications to acceptance criteria
+type CriteriaModify struct {
+	Add    []string   `yaml:"add,omitempty"`
+	Remove []string   `yaml:"remove,omitempty"`
+	Edit   []EditPair `yaml:"edit,omitempty"`
+}
+
+// DomainKnowledgeModify represents modifications to domain knowledge
+type DomainKnowledgeModify struct {
+	Add    []string   `yaml:"add,omitempty"`
+	Remove []string   `yaml:"remove,omitempty"`
+	Edit   []EditPair `yaml:"edit,omitempty"`
+}
+
 // Change represents a single operation in a change request
 type Change struct {
 	Operation       string   `yaml:"operation"` // "add", "modify", "remove"
 	Feature         *Feature `yaml:"feature,omitempty"`
 	DomainKnowledge []string `yaml:"domain_knowledge,omitempty"`
-	// For modify/remove operations (to be implemented later)
-	FeatureID string `yaml:"feature_id,omitempty"`
-	Reason    string `yaml:"reason,omitempty"`
+	// For modify/remove operations
+	FeatureID             string                 `yaml:"feature_id,omitempty"`
+	Description           string                 `yaml:"description,omitempty"`
+	Criteria              *CriteriaModify        `yaml:"criteria,omitempty"`
+	DomainKnowledgeMod    *DomainKnowledgeModify `yaml:"domain_knowledge_mod,omitempty"`
+	Reason                string                 `yaml:"reason,omitempty"`
 }
 
 // ApplyAddChange applies an "add" operation to the spec
@@ -159,4 +182,151 @@ func (s *Spec) HasDomainKnowledge(knowledge string) bool {
 		}
 	}
 	return false
+}
+
+// ApplyModifyChange applies a "modify" operation to the spec
+// Returns an error if:
+// - The operation is not "modify"
+// - For feature modifications: feature_id doesn't exist
+// - For criteria.remove: criterion doesn't match exactly
+// - For criteria.edit: old value doesn't match exactly
+// - For domain_knowledge.remove: item doesn't match exactly
+// - For domain_knowledge.edit: old value doesn't match exactly
+func (s *Spec) ApplyModifyChange(change Change) error {
+	if change.Operation != "modify" {
+		return fmt.Errorf("expected 'modify' operation, got '%s'", change.Operation)
+	}
+
+	// Handle feature modifications
+	if change.FeatureID != "" {
+		if err := s.modifyFeature(change); err != nil {
+			return err
+		}
+	}
+
+	// Handle domain knowledge modifications
+	if change.DomainKnowledgeMod != nil {
+		if err := s.modifyDomainKnowledge(*change.DomainKnowledgeMod); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// modifyFeature applies modifications to an existing feature
+func (s *Spec) modifyFeature(change Change) error {
+	// Find the feature index
+	featureIdx := -1
+	for i, f := range s.Features {
+		if f.ID == change.FeatureID {
+			featureIdx = i
+			break
+		}
+	}
+
+	if featureIdx == -1 {
+		return fmt.Errorf("feature with ID '%s' not found in spec", change.FeatureID)
+	}
+
+	// Update description if provided
+	if change.Description != "" {
+		s.Features[featureIdx].Description = change.Description
+	}
+
+	// Apply criteria modifications if provided
+	if change.Criteria != nil {
+		if err := s.modifyCriteria(featureIdx, *change.Criteria); err != nil {
+			return err
+		}
+	}
+
+	s.Updated = time.Now()
+	return nil
+}
+
+// modifyCriteria applies add/remove/edit operations to feature acceptance criteria
+func (s *Spec) modifyCriteria(featureIdx int, criteria CriteriaModify) error {
+	// Process removals first (before adds to avoid removing newly added items)
+	for _, toRemove := range criteria.Remove {
+		found := false
+		for i, existing := range s.Features[featureIdx].AcceptanceCriteria {
+			if existing == toRemove {
+				s.Features[featureIdx].AcceptanceCriteria = append(
+					s.Features[featureIdx].AcceptanceCriteria[:i],
+					s.Features[featureIdx].AcceptanceCriteria[i+1:]...,
+				)
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("criterion not found for removal: %s", toRemove)
+		}
+	}
+
+	// Process edits
+	for _, edit := range criteria.Edit {
+		found := false
+		for i, existing := range s.Features[featureIdx].AcceptanceCriteria {
+			if existing == edit.Old {
+				s.Features[featureIdx].AcceptanceCriteria[i] = edit.New
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("criterion not found for edit: %s", edit.Old)
+		}
+	}
+
+	// Process additions last
+	s.Features[featureIdx].AcceptanceCriteria = append(
+		s.Features[featureIdx].AcceptanceCriteria,
+		criteria.Add...,
+	)
+
+	return nil
+}
+
+// modifyDomainKnowledge applies add/remove/edit operations to domain knowledge
+func (s *Spec) modifyDomainKnowledge(mod DomainKnowledgeModify) error {
+	// Process removals first
+	for _, toRemove := range mod.Remove {
+		found := false
+		for i, existing := range s.DomainKnowledge {
+			if existing == toRemove {
+				s.DomainKnowledge = append(
+					s.DomainKnowledge[:i],
+					s.DomainKnowledge[i+1:]...,
+				)
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("domain knowledge not found for removal: %s", toRemove)
+		}
+	}
+
+	// Process edits
+	for _, edit := range mod.Edit {
+		found := false
+		for i, existing := range s.DomainKnowledge {
+			if existing == edit.Old {
+				s.DomainKnowledge[i] = edit.New
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("domain knowledge not found for edit: %s", edit.Old)
+		}
+	}
+
+	// Process additions last
+	s.DomainKnowledge = append(s.DomainKnowledge, mod.Add...)
+
+	s.Updated = time.Now()
+	return nil
 }

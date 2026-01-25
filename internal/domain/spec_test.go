@@ -170,6 +170,392 @@ func TestHasDomainKnowledge(t *testing.T) {
 	}
 }
 
+// Tests for ApplyModifyChange
+
+func TestApplyModifyChange_WrongOperation(t *testing.T) {
+	spec := NewSpec("test-spec", "Test Spec")
+
+	change := Change{
+		Operation: "add",
+		FeatureID: "some-feature",
+	}
+
+	err := spec.ApplyModifyChange(change)
+	if err == nil {
+		t.Fatal("expected error for wrong operation, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "expected 'modify' operation") {
+		t.Errorf("error should mention expected operation, got: %v", err)
+	}
+}
+
+func TestApplyModifyChange_FeatureNotFound(t *testing.T) {
+	spec := NewSpec("test-spec", "Test Spec")
+
+	change := Change{
+		Operation: "modify",
+		FeatureID: "nonexistent-feature",
+	}
+
+	err := spec.ApplyModifyChange(change)
+	if err == nil {
+		t.Fatal("expected error for nonexistent feature, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error should mention 'not found', got: %v", err)
+	}
+}
+
+func TestApplyModifyChange_UpdateDescription(t *testing.T) {
+	spec := NewSpec("test-spec", "Test Spec")
+	spec.AddFeature(Feature{
+		ID:          "my-feature",
+		Description: "Original description",
+	})
+
+	change := Change{
+		Operation:   "modify",
+		FeatureID:   "my-feature",
+		Description: "Updated description",
+	}
+
+	err := spec.ApplyModifyChange(change)
+	if err != nil {
+		t.Fatalf("ApplyModifyChange failed: %v", err)
+	}
+
+	if spec.Features[0].Description != "Updated description" {
+		t.Errorf("expected description 'Updated description', got %q", spec.Features[0].Description)
+	}
+}
+
+func TestApplyModifyChange_AddCriteria(t *testing.T) {
+	spec := NewSpec("test-spec", "Test Spec")
+	spec.AddFeature(Feature{
+		ID:                 "my-feature",
+		Description:        "Test feature",
+		AcceptanceCriteria: []string{"Existing criterion"},
+	})
+
+	change := Change{
+		Operation: "modify",
+		FeatureID: "my-feature",
+		Criteria: &CriteriaModify{
+			Add: []string{"New criterion 1", "New criterion 2"},
+		},
+	}
+
+	err := spec.ApplyModifyChange(change)
+	if err != nil {
+		t.Fatalf("ApplyModifyChange failed: %v", err)
+	}
+
+	if len(spec.Features[0].AcceptanceCriteria) != 3 {
+		t.Errorf("expected 3 criteria, got %d", len(spec.Features[0].AcceptanceCriteria))
+	}
+
+	if spec.Features[0].AcceptanceCriteria[1] != "New criterion 1" {
+		t.Errorf("expected 'New criterion 1', got %q", spec.Features[0].AcceptanceCriteria[1])
+	}
+}
+
+func TestApplyModifyChange_RemoveCriteria(t *testing.T) {
+	spec := NewSpec("test-spec", "Test Spec")
+	spec.AddFeature(Feature{
+		ID:                 "my-feature",
+		Description:        "Test feature",
+		AcceptanceCriteria: []string{"Keep this", "Remove this", "Also keep"},
+	})
+
+	change := Change{
+		Operation: "modify",
+		FeatureID: "my-feature",
+		Criteria: &CriteriaModify{
+			Remove: []string{"Remove this"},
+		},
+	}
+
+	err := spec.ApplyModifyChange(change)
+	if err != nil {
+		t.Fatalf("ApplyModifyChange failed: %v", err)
+	}
+
+	if len(spec.Features[0].AcceptanceCriteria) != 2 {
+		t.Errorf("expected 2 criteria, got %d", len(spec.Features[0].AcceptanceCriteria))
+	}
+
+	for _, c := range spec.Features[0].AcceptanceCriteria {
+		if c == "Remove this" {
+			t.Error("criterion 'Remove this' should have been removed")
+		}
+	}
+}
+
+func TestApplyModifyChange_RemoveCriteriaNotFound(t *testing.T) {
+	spec := NewSpec("test-spec", "Test Spec")
+	spec.AddFeature(Feature{
+		ID:                 "my-feature",
+		Description:        "Test feature",
+		AcceptanceCriteria: []string{"Existing criterion"},
+	})
+
+	change := Change{
+		Operation: "modify",
+		FeatureID: "my-feature",
+		Criteria: &CriteriaModify{
+			Remove: []string{"Nonexistent criterion"},
+		},
+	}
+
+	err := spec.ApplyModifyChange(change)
+	if err == nil {
+		t.Fatal("expected error for nonexistent criterion, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "not found for removal") {
+		t.Errorf("error should mention 'not found for removal', got: %v", err)
+	}
+}
+
+func TestApplyModifyChange_EditCriteria(t *testing.T) {
+	spec := NewSpec("test-spec", "Test Spec")
+	spec.AddFeature(Feature{
+		ID:                 "my-feature",
+		Description:        "Test feature",
+		AcceptanceCriteria: []string{"Old criterion text"},
+	})
+
+	change := Change{
+		Operation: "modify",
+		FeatureID: "my-feature",
+		Criteria: &CriteriaModify{
+			Edit: []EditPair{
+				{Old: "Old criterion text", New: "New criterion text"},
+			},
+		},
+	}
+
+	err := spec.ApplyModifyChange(change)
+	if err != nil {
+		t.Fatalf("ApplyModifyChange failed: %v", err)
+	}
+
+	if spec.Features[0].AcceptanceCriteria[0] != "New criterion text" {
+		t.Errorf("expected 'New criterion text', got %q", spec.Features[0].AcceptanceCriteria[0])
+	}
+}
+
+func TestApplyModifyChange_EditCriteriaNotFound(t *testing.T) {
+	spec := NewSpec("test-spec", "Test Spec")
+	spec.AddFeature(Feature{
+		ID:                 "my-feature",
+		Description:        "Test feature",
+		AcceptanceCriteria: []string{"Existing criterion"},
+	})
+
+	change := Change{
+		Operation: "modify",
+		FeatureID: "my-feature",
+		Criteria: &CriteriaModify{
+			Edit: []EditPair{
+				{Old: "Nonexistent criterion", New: "New text"},
+			},
+		},
+	}
+
+	err := spec.ApplyModifyChange(change)
+	if err == nil {
+		t.Fatal("expected error for nonexistent criterion, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "not found for edit") {
+		t.Errorf("error should mention 'not found for edit', got: %v", err)
+	}
+}
+
+func TestApplyModifyChange_CombinedCriteriaOperations(t *testing.T) {
+	spec := NewSpec("test-spec", "Test Spec")
+	spec.AddFeature(Feature{
+		ID:                 "my-feature",
+		Description:        "Test feature",
+		AcceptanceCriteria: []string{"Keep", "Remove me", "Edit me"},
+	})
+
+	change := Change{
+		Operation: "modify",
+		FeatureID: "my-feature",
+		Criteria: &CriteriaModify{
+			Remove: []string{"Remove me"},
+			Edit:   []EditPair{{Old: "Edit me", New: "Edited"}},
+			Add:    []string{"New one"},
+		},
+	}
+
+	err := spec.ApplyModifyChange(change)
+	if err != nil {
+		t.Fatalf("ApplyModifyChange failed: %v", err)
+	}
+
+	expected := []string{"Keep", "Edited", "New one"}
+	if len(spec.Features[0].AcceptanceCriteria) != len(expected) {
+		t.Fatalf("expected %d criteria, got %d", len(expected), len(spec.Features[0].AcceptanceCriteria))
+	}
+
+	for i, exp := range expected {
+		if spec.Features[0].AcceptanceCriteria[i] != exp {
+			t.Errorf("criterion[%d]: expected %q, got %q", i, exp, spec.Features[0].AcceptanceCriteria[i])
+		}
+	}
+}
+
+func TestApplyModifyChange_DomainKnowledgeAdd(t *testing.T) {
+	spec := NewSpec("test-spec", "Test Spec")
+	spec.AddDomainKnowledge("Existing knowledge")
+
+	change := Change{
+		Operation: "modify",
+		DomainKnowledgeMod: &DomainKnowledgeModify{
+			Add: []string{"New knowledge 1", "New knowledge 2"},
+		},
+	}
+
+	err := spec.ApplyModifyChange(change)
+	if err != nil {
+		t.Fatalf("ApplyModifyChange failed: %v", err)
+	}
+
+	if len(spec.DomainKnowledge) != 3 {
+		t.Errorf("expected 3 domain knowledge items, got %d", len(spec.DomainKnowledge))
+	}
+}
+
+func TestApplyModifyChange_DomainKnowledgeRemove(t *testing.T) {
+	spec := NewSpec("test-spec", "Test Spec")
+	spec.AddDomainKnowledge("Keep this")
+	spec.AddDomainKnowledge("Remove this")
+
+	change := Change{
+		Operation: "modify",
+		DomainKnowledgeMod: &DomainKnowledgeModify{
+			Remove: []string{"Remove this"},
+		},
+	}
+
+	err := spec.ApplyModifyChange(change)
+	if err != nil {
+		t.Fatalf("ApplyModifyChange failed: %v", err)
+	}
+
+	if len(spec.DomainKnowledge) != 1 {
+		t.Errorf("expected 1 domain knowledge item, got %d", len(spec.DomainKnowledge))
+	}
+
+	if spec.DomainKnowledge[0] != "Keep this" {
+		t.Errorf("expected 'Keep this', got %q", spec.DomainKnowledge[0])
+	}
+}
+
+func TestApplyModifyChange_DomainKnowledgeRemoveNotFound(t *testing.T) {
+	spec := NewSpec("test-spec", "Test Spec")
+	spec.AddDomainKnowledge("Existing knowledge")
+
+	change := Change{
+		Operation: "modify",
+		DomainKnowledgeMod: &DomainKnowledgeModify{
+			Remove: []string{"Nonexistent knowledge"},
+		},
+	}
+
+	err := spec.ApplyModifyChange(change)
+	if err == nil {
+		t.Fatal("expected error for nonexistent domain knowledge, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "not found for removal") {
+		t.Errorf("error should mention 'not found for removal', got: %v", err)
+	}
+}
+
+func TestApplyModifyChange_DomainKnowledgeEdit(t *testing.T) {
+	spec := NewSpec("test-spec", "Test Spec")
+	spec.AddDomainKnowledge("Old knowledge text")
+
+	change := Change{
+		Operation: "modify",
+		DomainKnowledgeMod: &DomainKnowledgeModify{
+			Edit: []EditPair{
+				{Old: "Old knowledge text", New: "New knowledge text"},
+			},
+		},
+	}
+
+	err := spec.ApplyModifyChange(change)
+	if err != nil {
+		t.Fatalf("ApplyModifyChange failed: %v", err)
+	}
+
+	if spec.DomainKnowledge[0] != "New knowledge text" {
+		t.Errorf("expected 'New knowledge text', got %q", spec.DomainKnowledge[0])
+	}
+}
+
+func TestApplyModifyChange_DomainKnowledgeEditNotFound(t *testing.T) {
+	spec := NewSpec("test-spec", "Test Spec")
+	spec.AddDomainKnowledge("Existing knowledge")
+
+	change := Change{
+		Operation: "modify",
+		DomainKnowledgeMod: &DomainKnowledgeModify{
+			Edit: []EditPair{
+				{Old: "Nonexistent knowledge", New: "New text"},
+			},
+		},
+	}
+
+	err := spec.ApplyModifyChange(change)
+	if err == nil {
+		t.Fatal("expected error for nonexistent domain knowledge, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "not found for edit") {
+		t.Errorf("error should mention 'not found for edit', got: %v", err)
+	}
+}
+
+func TestApplyModifyChange_CombinedDomainKnowledgeOperations(t *testing.T) {
+	spec := NewSpec("test-spec", "Test Spec")
+	spec.AddDomainKnowledge("Keep")
+	spec.AddDomainKnowledge("Remove me")
+	spec.AddDomainKnowledge("Edit me")
+
+	change := Change{
+		Operation: "modify",
+		DomainKnowledgeMod: &DomainKnowledgeModify{
+			Remove: []string{"Remove me"},
+			Edit:   []EditPair{{Old: "Edit me", New: "Edited"}},
+			Add:    []string{"New one"},
+		},
+	}
+
+	err := spec.ApplyModifyChange(change)
+	if err != nil {
+		t.Fatalf("ApplyModifyChange failed: %v", err)
+	}
+
+	expected := []string{"Keep", "Edited", "New one"}
+	if len(spec.DomainKnowledge) != len(expected) {
+		t.Fatalf("expected %d domain knowledge items, got %d", len(expected), len(spec.DomainKnowledge))
+	}
+
+	for i, exp := range expected {
+		if spec.DomainKnowledge[i] != exp {
+			t.Errorf("domain_knowledge[%d]: expected %q, got %q", i, exp, spec.DomainKnowledge[i])
+		}
+	}
+}
+
 func TestChangeRequestStatus_Constants(t *testing.T) {
 	tests := []struct {
 		status   ChangeRequestStatus
