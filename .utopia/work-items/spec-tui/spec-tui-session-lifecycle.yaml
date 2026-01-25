@@ -2,7 +2,7 @@ id: spec-tui-session-lifecycle
 spec_ref: spec-tui.session-lifecycle
 title: |
     Start and end the TUI session cleanly.
-status: pending
+status: completed
 prompt: |-
     ## TASK
 
@@ -31,3 +31,4 @@ constraints:
     - Architecture is already correct
 order: 4
 estimated_complexity: medium
+iteration_count: 1

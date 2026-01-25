@@ -229,18 +229,38 @@ func (m *tuiModel) readSpecFile() tea.Cmd {
 	}
 }
 
+// gracefulShutdown cleanly terminates the Claude process and exits the TUI
+func (m *tuiModel) gracefulShutdown() tea.Cmd {
+	return func() tea.Msg {
+		m.quitting = true
+
+		// Close stdin first to signal EOF to Claude
+		if m.claudeStdin != nil {
+			m.claudeStdin.Close()
+		}
+
+		// Kill the process if still running
+		if m.claudeCmd != nil && m.claudeCmd.Process != nil {
+			m.claudeCmd.Process.Kill()
+			m.claudeCmd.Wait() // Wait for process to fully terminate
+		}
+
+		return tea.Quit()
+	}
+}
+
 func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.Type {
 		case tea.KeyCtrlC:
-			m.quitting = true
-			if m.claudeCmd != nil && m.claudeCmd.Process != nil {
-				m.claudeCmd.Process.Kill()
-			}
-			return m, tea.Quit
+			return m, m.gracefulShutdown()
 
 		case tea.KeyEnter:
+			if m.inputLine == "/exit" {
+				// Graceful exit via command
+				return m, m.gracefulShutdown()
+			}
 			if m.claudeStdin != nil && m.inputLine != "" {
 				m.chatLines = append(m.chatLines, "> "+m.inputLine)
 				io.WriteString(m.claudeStdin, m.inputLine+"\n")
