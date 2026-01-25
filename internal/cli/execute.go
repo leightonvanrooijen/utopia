@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/leightonvanrooijen/utopia/internal/infra/storage"
 	executeStrategy "github.com/leightonvanrooijen/utopia/internal/strategies/execute"
@@ -15,6 +16,7 @@ import (
 
 var (
 	executeStrategyFlag string
+	executeTimeoutFlag  int
 	executeRegistry     *executeStrategy.Registry
 )
 
@@ -39,6 +41,8 @@ func init() {
 
 	executeCmd.Flags().StringVarP(&executeStrategyFlag, "strategy", "s", "",
 		"execution strategy (sequential)")
+	executeCmd.Flags().IntVarP(&executeTimeoutFlag, "timeout", "t", 0,
+		"timeout in minutes (0 means no timeout)")
 
 	// Initialize registry - strategies will be registered at startup
 	executeRegistry = executeStrategy.NewRegistry()
@@ -52,6 +56,11 @@ func RegisterExecuteStrategy(s executeStrategy.Strategy) {
 func runExecute(cmd *cobra.Command, args []string) error {
 	specID := args[0]
 	projectDir := GetProjectDir(cmd)
+
+	// Validate timeout flag
+	if executeTimeoutFlag < 0 {
+		return fmt.Errorf("invalid timeout value: %d (must be a positive integer)", executeTimeoutFlag)
+	}
 
 	absPath, err := filepath.Abs(projectDir)
 	if err != nil {
@@ -97,10 +106,20 @@ func runExecute(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("Using '%s' strategy: %s\n", strategy.Name(), strategy.Description())
-	fmt.Printf("Executing spec: %s (%d work items)\n\n", specID, len(items))
+	fmt.Printf("Executing spec: %s (%d work items)\n", specID, len(items))
+	if executeTimeoutFlag > 0 {
+		fmt.Printf("Timeout: %d minute(s)\n", executeTimeoutFlag)
+	}
+	fmt.Println()
 
-	// Set up context with cancellation for Ctrl+C handling
-	ctx, cancel := context.WithCancel(context.Background())
+	// Set up context with optional timeout and cancellation for Ctrl+C handling
+	var ctx context.Context
+	var cancel context.CancelFunc
+	if executeTimeoutFlag > 0 {
+		ctx, cancel = context.WithTimeout(context.Background(), time.Duration(executeTimeoutFlag)*time.Minute)
+	} else {
+		ctx, cancel = context.WithCancel(context.Background())
+	}
 	defer cancel()
 
 	// Handle interrupt signals gracefully
@@ -115,7 +134,17 @@ func runExecute(cmd *cobra.Command, args []string) error {
 	// Run the strategy
 	result, err := strategy.Execute(ctx, specID, store, config, absPath)
 	if err != nil {
-		if ctx.Err() != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			// Timeout reached
+			fmt.Printf("\nExecution timed out after %d minute(s).\n", executeTimeoutFlag)
+			fmt.Printf("Completed: %d/%d work items\n", result.Completed, result.Total)
+			if result.StoppedAt != "" {
+				fmt.Printf("Stopped at: %s\n", result.StoppedAt)
+			}
+			fmt.Println("\nRun 'utopia execute " + specID + "' to resume from where you left off.")
+			return fmt.Errorf("execution timed out after %d minute(s)", executeTimeoutFlag)
+		}
+		if ctx.Err() == context.Canceled {
 			// Interrupted by user
 			fmt.Printf("\nExecution stopped by user.\n")
 			fmt.Printf("Completed: %d/%d work items\n", result.Completed, result.Total)
