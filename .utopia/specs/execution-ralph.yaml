@@ -72,3 +72,13 @@ features:
       - Command prints when item completes
       - Command handles Ctrl+C gracefully (saves current state)
       - On max iterations, prints message and exits
+
+  - id: streaming-output
+    description: |
+      Stream Claude output in real-time during execution using --verbose flag.
+    acceptance_criteria:
+      - Claude CLI invoked with --verbose flag to show real-time output
+      - Output streams to terminal as Claude works (user sees progress)
+      - Output is still captured for completion token detection
+      - Works with both stdout and stderr streams
+      - Streaming does not interfere with Ctrl+C handling

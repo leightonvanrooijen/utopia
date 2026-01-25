@@ -1,4 +1,8 @@
 strategies:
-    spec: guided
-    chunk: ralph-sequential
-    execute: sequential
+  spec: guided
+  chunk: ralph-sequential
+  execute: sequential
+
+verification:
+  command: "go test ./..."
+  max_iterations: 6

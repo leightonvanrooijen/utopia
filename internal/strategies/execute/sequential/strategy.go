@@ -61,8 +61,8 @@ func (s *Strategy) Execute(ctx context.Context, specID string, store *storage.YA
 		Total: len(items),
 	}
 
-	// Create Claude CLI wrapper
-	cli := claude.NewCLI()
+	// Create Claude CLI wrapper with verbose streaming
+	cli := claude.NewCLI().WithVerbose(true)
 
 	// Create verification runner
 	verifier := verification.NewRunner(projectDir)

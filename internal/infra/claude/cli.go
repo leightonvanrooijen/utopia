@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 )
 
 // PermissionMode controls how Claude handles permission prompts
@@ -29,6 +30,7 @@ type CLI struct {
 	binaryPath     string
 	permissionMode PermissionMode
 	allowedTools   []string
+	verbose        bool
 }
 
 // NewCLI creates a new Claude CLI wrapper with sensible defaults for Utopia
@@ -54,6 +56,12 @@ func (c *CLI) WithPermissionMode(mode PermissionMode) *CLI {
 // WithAllowedTools sets a whitelist of allowed tools
 func (c *CLI) WithAllowedTools(tools []string) *CLI {
 	c.allowedTools = tools
+	return c
+}
+
+// WithVerbose enables verbose output streaming
+func (c *CLI) WithVerbose(verbose bool) *CLI {
+	c.verbose = verbose
 	return c
 }
 
@@ -104,9 +112,15 @@ func (c *CLI) Session(ctx context.Context, systemPrompt string) (*SessionResult,
 
 // Prompt sends a one-shot prompt to Claude and returns the response.
 // Uses --print flag for non-interactive output.
+// If verbose mode is enabled, streams output in real-time while capturing.
 func (c *CLI) Prompt(ctx context.Context, prompt string) (string, error) {
 	args := c.baseArgs()
 	args = append(args, "--print", prompt)
+
+	// If verbose, use streaming approach
+	if c.verbose {
+		return c.streamingPrompt(ctx, args)
+	}
 
 	cmd := exec.CommandContext(ctx, c.binaryPath, args...)
 
@@ -116,6 +130,80 @@ func (c *CLI) Prompt(ctx context.Context, prompt string) (string, error) {
 	}
 
 	return string(output), nil
+}
+
+// streamingPrompt runs Claude with --verbose and streams output while capturing it.
+func (c *CLI) streamingPrompt(ctx context.Context, args []string) (string, error) {
+	// Add verbose flag for real-time output
+	args = append(args, "--verbose")
+
+	cmd := exec.CommandContext(ctx, c.binaryPath, args...)
+
+	// Create pipes for stdout and stderr
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", fmt.Errorf("failed to create stdout pipe: %w", err)
+	}
+
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return "", fmt.Errorf("failed to create stderr pipe: %w", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		return "", fmt.Errorf("failed to start claude: %w", err)
+	}
+
+	// Capture output while streaming to terminal
+	var outputBuilder strings.Builder
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
+	wg.Add(2)
+
+	// Stream stdout
+	go func() {
+		defer wg.Done()
+		reader := bufio.NewReader(stdout)
+		for {
+			line, err := reader.ReadString('\n')
+			if len(line) > 0 {
+				fmt.Print(line) // Stream to terminal
+				mu.Lock()
+				outputBuilder.WriteString(line)
+				mu.Unlock()
+			}
+			if err != nil {
+				break
+			}
+		}
+	}()
+
+	// Stream stderr (verbose output goes here)
+	go func() {
+		defer wg.Done()
+		reader := bufio.NewReader(stderr)
+		for {
+			line, err := reader.ReadString('\n')
+			if len(line) > 0 {
+				fmt.Fprint(os.Stderr, line) // Stream to terminal stderr
+			}
+			if err != nil {
+				break
+			}
+		}
+	}()
+
+	// Wait for readers to finish
+	wg.Wait()
+
+	// Wait for command to complete
+	err = cmd.Wait()
+	if err != nil {
+		return outputBuilder.String(), fmt.Errorf("claude prompt failed: %w", err)
+	}
+
+	return outputBuilder.String(), nil
 }
 
 // PromptWithSystemPrompt sends a prompt with a custom system prompt

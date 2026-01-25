@@ -1,0 +1,33 @@
+id: change-request-system-add-operation
+spec_ref: change-request-system.add-operation
+title: Add new features or domain knowledge to a spec
+status: completed
+prompt: |-
+    ## TASK
+
+    Add new features or domain knowledge to a spec
+
+    Acceptance criteria:
+    - operation field is 'add'
+    - Can add a feature with full feature definition (id, description, acceptance_criteria)
+    - Can add domain_knowledge as a list of new knowledge strings
+    - Added features must have unique IDs not present in parent spec
+    - Added domain knowledge must not duplicate existing entries
+
+    ## CONSTRAINTS
+
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+order: 1
+estimated_complexity: medium
+iteration_count: 1
