@@ -206,6 +206,62 @@ func (s *YAMLStore) LoadConfig() (*domain.Config, error) {
 	return &config, nil
 }
 
+// SaveChangeRequest writes a change request to .utopia/specs/_changerequests/{id}.yaml
+func (s *YAMLStore) SaveChangeRequest(cr *domain.ChangeRequest) error {
+	dir := filepath.Join(s.baseDir, "specs", "_changerequests")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create change requests directory: %w", err)
+	}
+
+	path := filepath.Join(dir, cr.ID+".yaml")
+	return s.writeYAML(path, cr)
+}
+
+// LoadChangeRequest reads a change request from .utopia/specs/_changerequests/{id}.yaml
+func (s *YAMLStore) LoadChangeRequest(id string) (*domain.ChangeRequest, error) {
+	path := filepath.Join(s.baseDir, "specs", "_changerequests", id+".yaml")
+
+	var cr domain.ChangeRequest
+	if err := s.readYAML(path, &cr); err != nil {
+		return nil, err
+	}
+
+	return &cr, nil
+}
+
+// ListChangeRequests returns all change requests in the _changerequests directory
+func (s *YAMLStore) ListChangeRequests() ([]*domain.ChangeRequest, error) {
+	dir := filepath.Join(s.baseDir, "specs", "_changerequests")
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []*domain.ChangeRequest{}, nil
+		}
+		return nil, fmt.Errorf("failed to read change requests directory: %w", err)
+	}
+
+	var crs []*domain.ChangeRequest
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
+			continue
+		}
+		// Skip template file
+		if entry.Name() == "_template.yaml" {
+			continue
+		}
+
+		id := strings.TrimSuffix(entry.Name(), ".yaml")
+		cr, err := s.LoadChangeRequest(id)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load change request %s: %w", id, err)
+		}
+		crs = append(crs, cr)
+	}
+
+	return crs, nil
+}
+
 // writeYAML marshals and writes data to a file
 func (s *YAMLStore) writeYAML(path string, data interface{}) error {
 	bytes, err := yaml.Marshal(data)
