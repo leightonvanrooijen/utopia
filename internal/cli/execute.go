@@ -112,6 +112,9 @@ func runExecute(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Println()
 
+	// Track session start time for duration reporting
+	sessionStart := time.Now()
+
 	// Set up context with optional timeout and cancellation for Ctrl+C handling
 	var ctx context.Context
 	var cancel context.CancelFunc
@@ -135,13 +138,15 @@ func runExecute(cmd *cobra.Command, args []string) error {
 	result, err := strategy.Execute(ctx, specID, store, config, absPath)
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			// Timeout reached
-			fmt.Printf("\nExecution timed out after %d minute(s).\n", executeTimeoutFlag)
+			// Timeout reached - clearly differentiate from success
+			sessionDuration := time.Since(sessionStart).Round(time.Second)
+			fmt.Printf("\n⏱  TIMEOUT REACHED\n")
+			fmt.Printf("Session duration: %s\n", sessionDuration)
 			fmt.Printf("Completed: %d/%d work items\n", result.Completed, result.Total)
 			if result.StoppedAt != "" {
 				fmt.Printf("Stopped at: %s\n", result.StoppedAt)
 			}
-			fmt.Println("\nRun 'utopia execute " + specID + "' to resume from where you left off.")
+			fmt.Printf("\nProgress has been saved. Run 'utopia execute %s' to resume from where you left off.\n", specID)
 			return fmt.Errorf("execution timed out after %d minute(s)", executeTimeoutFlag)
 		}
 		if ctx.Err() == context.Canceled {
