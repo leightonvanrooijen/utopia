@@ -229,6 +229,15 @@ func (s *YAMLStore) LoadChangeRequest(id string) (*domain.ChangeRequest, error) 
 	return &cr, nil
 }
 
+// DeleteChangeRequest removes a change request file from .utopia/specs/_changerequests/{id}.yaml
+func (s *YAMLStore) DeleteChangeRequest(id string) error {
+	path := filepath.Join(s.baseDir, "specs", "_changerequests", id+".yaml")
+	if err := os.Remove(path); err != nil {
+		return fmt.Errorf("failed to delete change request %s: %w", id, err)
+	}
+	return nil
+}
+
 // ListChangeRequests returns all change requests in the _changerequests directory
 func (s *YAMLStore) ListChangeRequests() ([]*domain.ChangeRequest, error) {
 	dir := filepath.Join(s.baseDir, "specs", "_changerequests")

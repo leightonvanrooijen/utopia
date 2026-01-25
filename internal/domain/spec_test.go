@@ -801,3 +801,316 @@ func TestApplyRemoveChange_FeatureAndDomainKnowledge(t *testing.T) {
 		t.Errorf("wrong knowledge remained")
 	}
 }
+
+// Tests for ChangeRequest.ApplyChanges
+
+func TestApplyChanges_SingleAddOperation(t *testing.T) {
+	spec := NewSpec("test-spec", "Test Spec")
+	spec.Status = StatusApproved
+
+	cr := &ChangeRequest{
+		ID:         "cr-1",
+		ParentSpec: "test-spec",
+		Changes: []Change{
+			{
+				Operation: "add",
+				Feature: &Feature{
+					ID:                 "new-feature",
+					Description:        "A new feature",
+					AcceptanceCriteria: []string{"It works"},
+				},
+			},
+		},
+	}
+
+	err := cr.ApplyChanges(spec)
+	if err != nil {
+		t.Fatalf("ApplyChanges failed: %v", err)
+	}
+
+	if len(spec.Features) != 1 {
+		t.Errorf("expected 1 feature, got %d", len(spec.Features))
+	}
+
+	if spec.Features[0].ID != "new-feature" {
+		t.Errorf("expected feature ID 'new-feature', got %q", spec.Features[0].ID)
+	}
+
+	// Status should be preserved
+	if spec.Status != StatusApproved {
+		t.Errorf("expected status 'approved', got %q", spec.Status)
+	}
+}
+
+func TestApplyChanges_MultipleOperations(t *testing.T) {
+	spec := NewSpec("test-spec", "Test Spec")
+	spec.Status = StatusReview
+	spec.AddFeature(Feature{
+		ID:                 "existing-feature",
+		Description:        "Original description",
+		AcceptanceCriteria: []string{"Original criterion"},
+	})
+	spec.AddDomainKnowledge("Existing knowledge")
+
+	cr := &ChangeRequest{
+		ID:         "cr-1",
+		ParentSpec: "test-spec",
+		Changes: []Change{
+			{
+				Operation: "add",
+				Feature: &Feature{
+					ID:          "new-feature",
+					Description: "Brand new",
+				},
+				DomainKnowledge: []string{"New knowledge"},
+			},
+			{
+				Operation:   "modify",
+				FeatureID:   "existing-feature",
+				Description: "Updated description",
+				Criteria: &CriteriaModify{
+					Add: []string{"New criterion"},
+				},
+			},
+		},
+	}
+
+	err := cr.ApplyChanges(spec)
+	if err != nil {
+		t.Fatalf("ApplyChanges failed: %v", err)
+	}
+
+	// Verify add
+	if len(spec.Features) != 2 {
+		t.Errorf("expected 2 features, got %d", len(spec.Features))
+	}
+
+	if len(spec.DomainKnowledge) != 2 {
+		t.Errorf("expected 2 domain knowledge items, got %d", len(spec.DomainKnowledge))
+	}
+
+	// Verify modify
+	var existingFeature *Feature
+	for i := range spec.Features {
+		if spec.Features[i].ID == "existing-feature" {
+			existingFeature = &spec.Features[i]
+			break
+		}
+	}
+
+	if existingFeature == nil {
+		t.Fatal("existing-feature not found")
+	}
+
+	if existingFeature.Description != "Updated description" {
+		t.Errorf("expected 'Updated description', got %q", existingFeature.Description)
+	}
+
+	if len(existingFeature.AcceptanceCriteria) != 2 {
+		t.Errorf("expected 2 criteria, got %d", len(existingFeature.AcceptanceCriteria))
+	}
+
+	// Status should be preserved
+	if spec.Status != StatusReview {
+		t.Errorf("expected status 'review', got %q", spec.Status)
+	}
+}
+
+func TestApplyChanges_AllOperationTypes(t *testing.T) {
+	spec := NewSpec("test-spec", "Test Spec")
+	spec.Status = StatusDraft
+	spec.AddFeature(Feature{
+		ID:          "feature-to-modify",
+		Description: "Original",
+	})
+	spec.AddFeature(Feature{
+		ID:          "feature-to-remove",
+		Description: "Will be gone",
+	})
+	spec.AddDomainKnowledge("Knowledge to remove")
+
+	cr := &ChangeRequest{
+		ID:         "cr-1",
+		ParentSpec: "test-spec",
+		Changes: []Change{
+			{
+				Operation: "add",
+				Feature: &Feature{
+					ID:          "added-feature",
+					Description: "New feature",
+				},
+			},
+			{
+				Operation:   "modify",
+				FeatureID:   "feature-to-modify",
+				Description: "Modified",
+			},
+			{
+				Operation: "remove",
+				FeatureID: "feature-to-remove",
+			},
+			{
+				Operation:       "remove",
+				DomainKnowledge: []string{"Knowledge to remove"},
+			},
+		},
+	}
+
+	err := cr.ApplyChanges(spec)
+	if err != nil {
+		t.Fatalf("ApplyChanges failed: %v", err)
+	}
+
+	// Should have 2 features: added-feature and feature-to-modify
+	if len(spec.Features) != 2 {
+		t.Errorf("expected 2 features, got %d", len(spec.Features))
+	}
+
+	// Verify the right features exist
+	if !spec.HasFeature("added-feature") {
+		t.Error("added-feature should exist")
+	}
+	if !spec.HasFeature("feature-to-modify") {
+		t.Error("feature-to-modify should exist")
+	}
+	if spec.HasFeature("feature-to-remove") {
+		t.Error("feature-to-remove should not exist")
+	}
+
+	// Domain knowledge should be empty
+	if len(spec.DomainKnowledge) != 0 {
+		t.Errorf("expected 0 domain knowledge items, got %d", len(spec.DomainKnowledge))
+	}
+
+	// Verify modification
+	for _, f := range spec.Features {
+		if f.ID == "feature-to-modify" && f.Description != "Modified" {
+			t.Errorf("expected description 'Modified', got %q", f.Description)
+		}
+	}
+
+	// Status preserved
+	if spec.Status != StatusDraft {
+		t.Errorf("expected status 'draft', got %q", spec.Status)
+	}
+}
+
+func TestApplyChanges_FailsOnInvalidOperation(t *testing.T) {
+	spec := NewSpec("test-spec", "Test Spec")
+
+	cr := &ChangeRequest{
+		ID:         "cr-1",
+		ParentSpec: "test-spec",
+		Changes: []Change{
+			{
+				Operation: "invalid",
+			},
+		},
+	}
+
+	err := cr.ApplyChanges(spec)
+	if err == nil {
+		t.Fatal("expected error for invalid operation, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "unknown operation") {
+		t.Errorf("error should mention 'unknown operation', got: %v", err)
+	}
+}
+
+func TestApplyChanges_FailsOnSecondChange(t *testing.T) {
+	spec := NewSpec("test-spec", "Test Spec")
+
+	cr := &ChangeRequest{
+		ID:         "cr-1",
+		ParentSpec: "test-spec",
+		Changes: []Change{
+			{
+				Operation: "add",
+				Feature: &Feature{
+					ID:          "good-feature",
+					Description: "This works",
+				},
+			},
+			{
+				Operation: "remove",
+				FeatureID: "nonexistent-feature",
+			},
+		},
+	}
+
+	err := cr.ApplyChanges(spec)
+	if err == nil {
+		t.Fatal("expected error for nonexistent feature, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "failed to apply change 1") {
+		t.Errorf("error should mention change index, got: %v", err)
+	}
+
+	// First change should have been applied (partial state)
+	if len(spec.Features) != 1 {
+		t.Errorf("first change should have been applied, got %d features", len(spec.Features))
+	}
+}
+
+func TestApplyChanges_EmptyChanges(t *testing.T) {
+	spec := NewSpec("test-spec", "Test Spec")
+	spec.Status = StatusApproved
+
+	cr := &ChangeRequest{
+		ID:         "cr-1",
+		ParentSpec: "test-spec",
+		Changes:    []Change{},
+	}
+
+	err := cr.ApplyChanges(spec)
+	if err != nil {
+		t.Fatalf("ApplyChanges with empty changes failed: %v", err)
+	}
+
+	// Status should still be preserved
+	if spec.Status != StatusApproved {
+		t.Errorf("expected status 'approved', got %q", spec.Status)
+	}
+}
+
+func TestApplyChanges_PreservesStatusThroughMultipleUpdates(t *testing.T) {
+	spec := NewSpec("test-spec", "Test Spec")
+	spec.Status = StatusApproved
+
+	cr := &ChangeRequest{
+		ID:         "cr-1",
+		ParentSpec: "test-spec",
+		Changes: []Change{
+			{
+				Operation: "add",
+				Feature: &Feature{
+					ID:          "feature-1",
+					Description: "First",
+				},
+			},
+			{
+				Operation: "add",
+				Feature: &Feature{
+					ID:          "feature-2",
+					Description: "Second",
+				},
+			},
+			{
+				Operation: "add",
+				DomainKnowledge: []string{"Knowledge 1", "Knowledge 2"},
+			},
+		},
+	}
+
+	err := cr.ApplyChanges(spec)
+	if err != nil {
+		t.Fatalf("ApplyChanges failed: %v", err)
+	}
+
+	// Status must be preserved despite multiple updates
+	if spec.Status != StatusApproved {
+		t.Errorf("expected status 'approved', got %q", spec.Status)
+	}
+}

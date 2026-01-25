@@ -381,3 +381,30 @@ func (s *Spec) removeDomainKnowledge(knowledge string) error {
 	}
 	return fmt.Errorf("domain knowledge not found: %s", knowledge)
 }
+
+// ApplyChanges applies all changes from the change request to the given spec.
+// Changes are applied in order. If any change fails, the error is returned
+// and the spec may be in a partially modified state.
+// Note: The spec's Status is preserved (not modified by this operation).
+func (cr *ChangeRequest) ApplyChanges(spec *Spec) error {
+	originalStatus := spec.Status
+	for i, change := range cr.Changes {
+		var err error
+		switch change.Operation {
+		case "add":
+			err = spec.ApplyAddChange(change)
+		case "modify":
+			err = spec.ApplyModifyChange(change)
+		case "remove":
+			err = spec.ApplyRemoveChange(change)
+		default:
+			err = fmt.Errorf("unknown operation: %s", change.Operation)
+		}
+		if err != nil {
+			return fmt.Errorf("failed to apply change %d: %w", i, err)
+		}
+	}
+	// Restore original status - merge should not change spec status
+	spec.Status = originalStatus
+	return nil
+}

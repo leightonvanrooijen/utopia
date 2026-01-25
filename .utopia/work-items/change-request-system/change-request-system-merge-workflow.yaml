@@ -1,0 +1,34 @@
+id: change-request-system-merge-workflow
+spec_ref: change-request-system.merge-workflow
+title: Process for merging change requests into parent specs
+status: completed
+prompt: |-
+    ## TASK
+
+    Process for merging change requests into parent specs
+
+    Acceptance criteria:
+    - After implementation, parent spec is updated to reflect all changes
+    - Add operations append new features/domain_knowledge to parent
+    - Modify operations update existing features/domain_knowledge in parent
+    - Remove operations delete features/domain_knowledge from parent
+    - Change request is deleted or moved to archive after successful merge
+    - Parent spec status remains unchanged by merge
+
+    ## CONSTRAINTS
+
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+order: 5
+estimated_complexity: medium
+iteration_count: 1
