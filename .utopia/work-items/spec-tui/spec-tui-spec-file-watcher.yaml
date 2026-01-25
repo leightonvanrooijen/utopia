@@ -2,7 +2,7 @@ id: spec-tui-spec-file-watcher
 spec_ref: spec-tui.spec-file-watcher
 title: |
     Watch the spec file for changes and update the right pane.
-status: pending
+status: completed
 prompt: |-
     ## TASK
 
@@ -31,3 +31,4 @@ constraints:
     - Architecture is already correct
 order: 2
 estimated_complexity: medium
+iteration_count: 1
