@@ -330,3 +330,54 @@ func (s *Spec) modifyDomainKnowledge(mod DomainKnowledgeModify) error {
 	s.Updated = time.Now()
 	return nil
 }
+
+// ApplyRemoveChange applies a "remove" operation to the spec
+// Returns an error if:
+// - The operation is not "remove"
+// - For features: feature_id doesn't exist in the spec
+// - For domain_knowledge: any item doesn't match exactly
+func (s *Spec) ApplyRemoveChange(change Change) error {
+	if change.Operation != "remove" {
+		return fmt.Errorf("expected 'remove' operation, got '%s'", change.Operation)
+	}
+
+	// Remove feature if feature_id is specified
+	if change.FeatureID != "" {
+		if err := s.removeFeature(change.FeatureID); err != nil {
+			return err
+		}
+	}
+
+	// Remove domain knowledge items if specified
+	for _, dk := range change.DomainKnowledge {
+		if err := s.removeDomainKnowledge(dk); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// removeFeature removes a feature by ID from the spec
+func (s *Spec) removeFeature(featureID string) error {
+	for i, f := range s.Features {
+		if f.ID == featureID {
+			s.Features = append(s.Features[:i], s.Features[i+1:]...)
+			s.Updated = time.Now()
+			return nil
+		}
+	}
+	return fmt.Errorf("feature with ID '%s' not found in spec", featureID)
+}
+
+// removeDomainKnowledge removes an exact domain knowledge string from the spec
+func (s *Spec) removeDomainKnowledge(knowledge string) error {
+	for i, dk := range s.DomainKnowledge {
+		if dk == knowledge {
+			s.DomainKnowledge = append(s.DomainKnowledge[:i], s.DomainKnowledge[i+1:]...)
+			s.Updated = time.Now()
+			return nil
+		}
+	}
+	return fmt.Errorf("domain knowledge not found: %s", knowledge)
+}

@@ -575,3 +575,229 @@ func TestChangeRequestStatus_Constants(t *testing.T) {
 		})
 	}
 }
+
+// Tests for ApplyRemoveChange
+
+func TestApplyRemoveChange_WrongOperation(t *testing.T) {
+	spec := NewSpec("test-spec", "Test Spec")
+
+	change := Change{
+		Operation: "add",
+		FeatureID: "some-feature",
+	}
+
+	err := spec.ApplyRemoveChange(change)
+	if err == nil {
+		t.Fatal("expected error for wrong operation, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "expected 'remove' operation") {
+		t.Errorf("error should mention expected operation, got: %v", err)
+	}
+}
+
+func TestApplyRemoveChange_Feature(t *testing.T) {
+	spec := NewSpec("test-spec", "Test Spec")
+	spec.AddFeature(Feature{
+		ID:                 "feature-to-remove",
+		Description:        "This will be removed",
+		AcceptanceCriteria: []string{"Criterion 1"},
+	})
+	spec.AddFeature(Feature{
+		ID:          "feature-to-keep",
+		Description: "This stays",
+	})
+
+	change := Change{
+		Operation: "remove",
+		FeatureID: "feature-to-remove",
+	}
+
+	err := spec.ApplyRemoveChange(change)
+	if err != nil {
+		t.Fatalf("ApplyRemoveChange failed: %v", err)
+	}
+
+	if len(spec.Features) != 1 {
+		t.Errorf("expected 1 feature, got %d", len(spec.Features))
+	}
+
+	if spec.Features[0].ID != "feature-to-keep" {
+		t.Errorf("wrong feature remained, got %q", spec.Features[0].ID)
+	}
+}
+
+func TestApplyRemoveChange_FeatureNotFound(t *testing.T) {
+	spec := NewSpec("test-spec", "Test Spec")
+	spec.AddFeature(Feature{
+		ID:          "existing-feature",
+		Description: "This exists",
+	})
+
+	change := Change{
+		Operation: "remove",
+		FeatureID: "nonexistent-feature",
+	}
+
+	err := spec.ApplyRemoveChange(change)
+	if err == nil {
+		t.Fatal("expected error for nonexistent feature, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error should mention 'not found', got: %v", err)
+	}
+}
+
+func TestApplyRemoveChange_FeatureWithReason(t *testing.T) {
+	spec := NewSpec("test-spec", "Test Spec")
+	spec.AddFeature(Feature{
+		ID:          "deprecated-feature",
+		Description: "Old feature",
+	})
+
+	change := Change{
+		Operation: "remove",
+		FeatureID: "deprecated-feature",
+		Reason:    "Feature deprecated in favor of new-feature",
+	}
+
+	err := spec.ApplyRemoveChange(change)
+	if err != nil {
+		t.Fatalf("ApplyRemoveChange failed: %v", err)
+	}
+
+	if len(spec.Features) != 0 {
+		t.Errorf("expected 0 features, got %d", len(spec.Features))
+	}
+}
+
+func TestApplyRemoveChange_DomainKnowledge(t *testing.T) {
+	spec := NewSpec("test-spec", "Test Spec")
+	spec.AddDomainKnowledge("Knowledge to remove")
+	spec.AddDomainKnowledge("Knowledge to keep")
+
+	change := Change{
+		Operation:       "remove",
+		DomainKnowledge: []string{"Knowledge to remove"},
+	}
+
+	err := spec.ApplyRemoveChange(change)
+	if err != nil {
+		t.Fatalf("ApplyRemoveChange failed: %v", err)
+	}
+
+	if len(spec.DomainKnowledge) != 1 {
+		t.Errorf("expected 1 domain knowledge item, got %d", len(spec.DomainKnowledge))
+	}
+
+	if spec.DomainKnowledge[0] != "Knowledge to keep" {
+		t.Errorf("wrong knowledge remained, got %q", spec.DomainKnowledge[0])
+	}
+}
+
+func TestApplyRemoveChange_DomainKnowledgeMultiple(t *testing.T) {
+	spec := NewSpec("test-spec", "Test Spec")
+	spec.AddDomainKnowledge("Remove first")
+	spec.AddDomainKnowledge("Keep this")
+	spec.AddDomainKnowledge("Remove second")
+
+	change := Change{
+		Operation:       "remove",
+		DomainKnowledge: []string{"Remove first", "Remove second"},
+	}
+
+	err := spec.ApplyRemoveChange(change)
+	if err != nil {
+		t.Fatalf("ApplyRemoveChange failed: %v", err)
+	}
+
+	if len(spec.DomainKnowledge) != 1 {
+		t.Errorf("expected 1 domain knowledge item, got %d", len(spec.DomainKnowledge))
+	}
+
+	if spec.DomainKnowledge[0] != "Keep this" {
+		t.Errorf("wrong knowledge remained, got %q", spec.DomainKnowledge[0])
+	}
+}
+
+func TestApplyRemoveChange_DomainKnowledgeNotFound(t *testing.T) {
+	spec := NewSpec("test-spec", "Test Spec")
+	spec.AddDomainKnowledge("Existing knowledge")
+
+	change := Change{
+		Operation:       "remove",
+		DomainKnowledge: []string{"Nonexistent knowledge"},
+	}
+
+	err := spec.ApplyRemoveChange(change)
+	if err == nil {
+		t.Fatal("expected error for nonexistent domain knowledge, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error should mention 'not found', got: %v", err)
+	}
+}
+
+func TestApplyRemoveChange_DomainKnowledgeExactMatch(t *testing.T) {
+	spec := NewSpec("test-spec", "Test Spec")
+	spec.AddDomainKnowledge("Exact string to match")
+
+	// Try with slightly different string (extra space)
+	change := Change{
+		Operation:       "remove",
+		DomainKnowledge: []string{"Exact string to match "},
+	}
+
+	err := spec.ApplyRemoveChange(change)
+	if err == nil {
+		t.Fatal("expected error for non-exact match, got nil")
+	}
+
+	// Verify original still exists
+	if len(spec.DomainKnowledge) != 1 {
+		t.Errorf("original knowledge should still exist, got %d items", len(spec.DomainKnowledge))
+	}
+}
+
+func TestApplyRemoveChange_FeatureAndDomainKnowledge(t *testing.T) {
+	spec := NewSpec("test-spec", "Test Spec")
+	spec.AddFeature(Feature{
+		ID:          "feature-to-remove",
+		Description: "Will be removed",
+	})
+	spec.AddFeature(Feature{
+		ID:          "feature-to-keep",
+		Description: "Will stay",
+	})
+	spec.AddDomainKnowledge("Knowledge to remove")
+	spec.AddDomainKnowledge("Knowledge to keep")
+
+	change := Change{
+		Operation:       "remove",
+		FeatureID:       "feature-to-remove",
+		DomainKnowledge: []string{"Knowledge to remove"},
+	}
+
+	err := spec.ApplyRemoveChange(change)
+	if err != nil {
+		t.Fatalf("ApplyRemoveChange failed: %v", err)
+	}
+
+	if len(spec.Features) != 1 {
+		t.Errorf("expected 1 feature, got %d", len(spec.Features))
+	}
+
+	if len(spec.DomainKnowledge) != 1 {
+		t.Errorf("expected 1 domain knowledge item, got %d", len(spec.DomainKnowledge))
+	}
+
+	if spec.Features[0].ID != "feature-to-keep" {
+		t.Errorf("wrong feature remained")
+	}
+
+	if spec.DomainKnowledge[0] != "Knowledge to keep" {
+		t.Errorf("wrong knowledge remained")
+	}
+}
