@@ -1,0 +1,29 @@
+# Example change request demonstrating the YAML structure
+id: execution-ralph-add-timeout
+type: change-request
+parent_spec: execution-ralph
+title: Add configurable timeout for Claude CLI invocations
+status: draft
+
+changes:
+  - operation: add
+    feature:
+      id: cli-timeout
+      description: |
+        Configurable timeout for Claude CLI invocations to prevent
+        indefinite hangs on unresponsive requests.
+      acceptance_criteria:
+        - Default timeout is 5 minutes per CLI invocation
+        - Timeout is configurable via --timeout flag on execute command
+        - Timed-out invocations are treated as failures and retried
+        - Timeout errors are clearly distinguished in logs
+
+  - operation: add
+    domain_knowledge:
+      - Claude CLI invocations can hang indefinitely without timeout configuration
+
+  - operation: modify
+    feature_id: execute-command
+    criteria:
+      add:
+        - Command accepts optional --timeout flag (default 5m)

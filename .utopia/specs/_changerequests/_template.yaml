@@ -1,0 +1,70 @@
+# Change Request YAML Structure Template
+#
+# This file documents the required structure for change request specs.
+# Copy this template and modify for your actual change request.
+#
+# Required fields:
+#   - id: Unique identifier for this change request
+#   - type: Must be 'change-request'
+#   - parent_spec: ID of the spec being changed (must exist)
+#   - title: Human-readable title describing the change
+#   - status: One of: draft, approved, in-progress, complete
+#   - changes: List of operations to apply to the parent spec
+#
+# Location: .utopia/specs/_changerequests/{parent-spec-id}-{change-description}.yaml
+
+id: example-spec-add-feature
+type: change-request
+parent_spec: example-spec
+title: Add new authentication feature
+status: draft
+
+changes:
+  # Add operation - adds new features or domain knowledge
+  - operation: add
+    feature:
+      id: new-feature-id
+      description: |
+        Description of the new feature being added.
+      acceptance_criteria:
+        - First acceptance criterion
+        - Second acceptance criterion
+
+  - operation: add
+    domain_knowledge:
+      - New domain knowledge item to add
+      - Another domain knowledge item
+
+  # Modify operation - updates existing features or domain knowledge
+  - operation: modify
+    feature_id: existing-feature-id
+    description: |  # Optional - update feature description
+      Updated description for the feature.
+    criteria:
+      add:  # Add new acceptance criteria
+        - New criterion to add
+      remove:  # Remove existing criteria (must match exactly)
+        - Exact text of criterion to remove
+      edit:  # Edit existing criteria
+        - old: Exact text of existing criterion
+          new: Updated text for the criterion
+
+  - operation: modify
+    domain_knowledge:
+      add:
+        - New domain knowledge to add
+      remove:
+        - Exact domain knowledge text to remove
+      edit:
+        - old: Exact existing domain knowledge text
+          new: Updated domain knowledge text
+
+  # Remove operation - removes features or domain knowledge
+  - operation: remove
+    feature_id: feature-to-remove
+    reason: Optional explanation for why this feature is being removed
+
+  - operation: remove
+    domain_knowledge:
+      - Exact domain knowledge text to remove
+      - Another domain knowledge item to remove
