@@ -50,8 +50,9 @@ var (
 			BorderForeground(lipgloss.Color("240"))
 )
 
-// specSystemPrompt guides Claude through the spec creation workflow
-const specSystemPrompt = `You are a Specification Claude - an AI assistant that helps users transform ideas into structured specifications.
+// specSystemPromptTemplate guides Claude through the spec creation workflow
+// Use fmt.Sprintf to inject the specPath before passing to Claude
+const specSystemPromptTemplate = `You are a Specification Claude - an AI assistant that helps users transform ideas into structured specifications.
 
 ## Your Role
 Guide users through a natural conversation to create a complete specification. You ask questions, gather requirements, and ultimately produce a structured spec document.
@@ -87,7 +88,7 @@ Capture detailed requirements:
 - When you have enough information, offer to generate the spec
 
 ## Output Format
-When the user is ready, generate the spec in this YAML format and save it using the Write tool:
+When the user is ready, generate the spec in this YAML format and save it using the Write tool to this exact path: %s
 
 ` + "```yaml" + `
 id: kebab-case-identifier
@@ -114,6 +115,7 @@ features:
 - Acceptance criteria must be testable (not vague)
 - Ask clarifying questions when requirements are ambiguous
 - Encourage the user to think through edge cases
+- ALWAYS use the Write tool with the exact path specified above when saving the spec
 
 Start by warmly greeting the user and asking what they'd like to build.`
 
@@ -151,9 +153,12 @@ func (m *tuiModel) Init() tea.Cmd {
 
 func (m *tuiModel) startClaude() tea.Cmd {
 	return func() tea.Msg {
+		// Inject the spec path into the system prompt so Claude knows where to write
+		systemPrompt := fmt.Sprintf(specSystemPromptTemplate, m.specPath)
+
 		args := []string{
 			"--permission-mode", "bypassPermissions",
-			"--system-prompt", specSystemPrompt,
+			"--system-prompt", systemPrompt,
 		}
 
 		m.claudeCmd = exec.Command("claude", args...)

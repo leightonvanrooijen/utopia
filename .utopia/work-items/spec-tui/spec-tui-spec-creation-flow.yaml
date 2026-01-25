@@ -2,7 +2,7 @@ id: spec-tui-spec-creation-flow
 spec_ref: spec-tui.spec-creation-flow
 title: |
     Spec file created when Claude gathers enough context.
-status: pending
+status: completed
 prompt: |-
     ## TASK
 
@@ -31,3 +31,4 @@ constraints:
     - Architecture is already correct
 order: 3
 estimated_complexity: medium
+iteration_count: 1
