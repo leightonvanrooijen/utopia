@@ -63,3 +63,8 @@ func (p *Project) WorkItemsDir() string {
 func (p *Project) ConfigPath() string {
 	return filepath.Join(p.UtopiaDir(), "config.yaml")
 }
+
+// RefactorsDir returns the refactors directory path
+func (p *Project) RefactorsDir() string {
+	return filepath.Join(p.UtopiaDir(), "refactors")
+}

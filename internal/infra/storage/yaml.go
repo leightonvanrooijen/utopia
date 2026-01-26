@@ -298,6 +298,67 @@ func (s *YAMLStore) ListChangeRequests() ([]*domain.ChangeRequest, error) {
 	return crs, nil
 }
 
+// SaveRefactor writes a refactor to .utopia/refactors/{id}.yaml
+func (s *YAMLStore) SaveRefactor(r *domain.Refactor) error {
+	dir := filepath.Join(s.baseDir, "refactors")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create refactors directory: %w", err)
+	}
+
+	path := filepath.Join(dir, r.ID+".yaml")
+	return s.writeYAML(path, r)
+}
+
+// LoadRefactor reads a refactor from .utopia/refactors/{id}.yaml
+func (s *YAMLStore) LoadRefactor(id string) (*domain.Refactor, error) {
+	path := filepath.Join(s.baseDir, "refactors", id+".yaml")
+
+	var r domain.Refactor
+	if err := s.readYAML(path, &r); err != nil {
+		return nil, err
+	}
+
+	return &r, nil
+}
+
+// DeleteRefactor removes a refactor file from .utopia/refactors/{id}.yaml
+func (s *YAMLStore) DeleteRefactor(id string) error {
+	path := filepath.Join(s.baseDir, "refactors", id+".yaml")
+	if err := os.Remove(path); err != nil {
+		return fmt.Errorf("failed to delete refactor %s: %w", id, err)
+	}
+	return nil
+}
+
+// ListRefactors returns all refactors in the refactors directory
+func (s *YAMLStore) ListRefactors() ([]*domain.Refactor, error) {
+	dir := filepath.Join(s.baseDir, "refactors")
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []*domain.Refactor{}, nil
+		}
+		return nil, fmt.Errorf("failed to read refactors directory: %w", err)
+	}
+
+	var refactors []*domain.Refactor
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
+			continue
+		}
+
+		id := strings.TrimSuffix(entry.Name(), ".yaml")
+		r, err := s.LoadRefactor(id)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load refactor %s: %w", id, err)
+		}
+		refactors = append(refactors, r)
+	}
+
+	return refactors, nil
+}
+
 // writeYAML marshals and writes data to a file
 func (s *YAMLStore) writeYAML(path string, data interface{}) error {
 	bytes, err := yaml.Marshal(data)
