@@ -41,3 +41,53 @@ func NewRefactor(id, title string) *Refactor {
 func (r *Refactor) AddTask(t RefactorTask) {
 	r.Tasks = append(r.Tasks, t)
 }
+
+// MarkReady transitions a draft refactor to ready status.
+// Returns an error if the refactor is not in draft status.
+func (r *Refactor) MarkReady() error {
+	if r.Status != RefactorStatusDraft {
+		return &InvalidStatusTransitionError{
+			From: r.Status,
+			To:   RefactorStatusReady,
+		}
+	}
+	r.Status = RefactorStatusReady
+	return nil
+}
+
+// MarkInProgress transitions a ready refactor to in-progress status.
+// Returns an error if the refactor is not in ready status.
+func (r *Refactor) MarkInProgress() error {
+	if r.Status != RefactorStatusReady {
+		return &InvalidStatusTransitionError{
+			From: r.Status,
+			To:   RefactorStatusInProgress,
+		}
+	}
+	r.Status = RefactorStatusInProgress
+	return nil
+}
+
+// MarkComplete transitions an in-progress refactor to complete status.
+// Returns an error if the refactor is not in in-progress status.
+// Note: Completed refactors should be deleted after successful verification.
+func (r *Refactor) MarkComplete() error {
+	if r.Status != RefactorStatusInProgress {
+		return &InvalidStatusTransitionError{
+			From: r.Status,
+			To:   RefactorStatusComplete,
+		}
+	}
+	r.Status = RefactorStatusComplete
+	return nil
+}
+
+// InvalidStatusTransitionError represents an invalid status transition attempt
+type InvalidStatusTransitionError struct {
+	From RefactorStatus
+	To   RefactorStatus
+}
+
+func (e *InvalidStatusTransitionError) Error() string {
+	return "invalid status transition from " + string(e.From) + " to " + string(e.To)
+}
