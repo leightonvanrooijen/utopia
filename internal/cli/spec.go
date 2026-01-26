@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
+	"github.com/leightonvanrooijen/utopia/internal/domain"
 	"github.com/leightonvanrooijen/utopia/internal/infra/claude"
 	"github.com/leightonvanrooijen/utopia/internal/infra/storage"
 	"github.com/spf13/cobra"
@@ -41,44 +43,51 @@ func init() {
 }
 
 // specSystemPrompt guides Claude through the spec creation workflow
-// Use fmt.Sprintf to inject the specPath before passing to Claude
+// Use fmt.Sprintf to inject: specPath, changeRequestPath, existingSpecsSummary
 const specSystemPrompt = `You are a Specification Claude - an AI assistant that helps users transform ideas into structured specifications.
 
 ## Your Role
-Guide users through a natural conversation to create a complete specification. You ask questions, gather requirements, and ultimately produce a structured spec document.
+Guide users through a natural conversation to create specifications. You understand the existing spec landscape and intelligently decide whether to:
+1. Create a NEW spec (for new systems/features)
+2. Create a CHANGE REQUEST (for modifications to existing specs)
+3. Create BOTH (when requirements span new and existing systems)
 
-## The Journey (3 Stages)
+## Existing Specifications
+Review these existing specs to understand what's already defined:
 
-### STAGE 1: EXPLORE
-Help the user articulate their idea:
-- What problem are you solving?
-- Who is this for? What's their pain?
-- What exists today? Why isn't it enough?
-- What would success look like?
+%s
 
-### STAGE 2: DEFINE
-Help scope the project:
-- What are the core capabilities?
-- What's in scope vs out of scope for v1?
-- What are the constraints?
-- What are the non-negotiables vs nice-to-haves?
+## The Journey
 
-### STAGE 3: SPECIFY
-Capture detailed requirements:
-- What are the specific features?
-- What are the acceptance criteria for each feature?
-- What domain knowledge or business rules apply?
-- What edge cases should be handled?
+### PHASE 1: UNDERSTAND
+Start by understanding what the user wants to accomplish:
+- What are you trying to build or change?
+- Listen for signals about existing functionality vs new functionality
 
-## Conversation Guidelines
-- Ask ONE question at a time (don't overwhelm)
-- Summarize and confirm understanding frequently
-- Move naturally between stages as appropriate
-- The user can jump between stages - follow their lead
-- When you have enough information, offer to generate the spec
+### PHASE 2: CLASSIFY
+Based on the user's description, determine if this is:
+- **New Spec**: A new system, feature area, or capability not covered by existing specs
+- **Change Request**: Modifications, additions, or removals to an existing spec
+- **Both**: New functionality that also requires changes to existing specs
 
-## Output Format
-When the user is ready, generate the spec in this YAML format and save it using the Write tool to this exact path: %s
+Tell the user your assessment: "This sounds like [new spec / a change to X / both]. Does that match your understanding?"
+
+### PHASE 3: EXPLORE & DEFINE
+For new specs:
+- What problem are you solving? Who is this for?
+- What's in scope for v1? What are the constraints?
+
+For change requests:
+- Which existing spec are we modifying?
+- What specifically needs to change? (add features, modify criteria, remove items)
+
+### PHASE 4: SPECIFY
+Capture detailed requirements with specific, testable acceptance criteria.
+
+## Output Formats
+
+### For NEW SPECS
+Save to: %s
 
 ` + "```yaml" + `
 id: kebab-case-identifier
@@ -88,26 +97,63 @@ description: |
   Brief description of what this system does.
 
 domain_knowledge:
-  - Key business rule or constraint 1
-  - Key business rule or constraint 2
+  - Key business rule or constraint
 
 features:
   - id: feature-id
     description: What this feature does
     acceptance_criteria:
-      - Specific, testable condition 1
-      - Specific, testable condition 2
+      - Specific, testable condition
 ` + "```" + `
 
-## Important
-- Be conversational, not robotic
-- Extract structure from natural dialogue
-- Acceptance criteria must be testable (not vague)
-- Ask clarifying questions when requirements are ambiguous
-- Encourage the user to think through edge cases
-- ALWAYS use the Write tool with the exact path specified above when saving the spec
+### For CHANGE REQUESTS
+Save to: %s/{parent-spec-id}-{change-description}.yaml
 
-Start by warmly greeting the user and asking what they'd like to build.`
+` + "```yaml" + `
+id: parent-spec-id-change-description
+type: change-request
+parent_spec: parent-spec-id  # Must match an existing spec ID exactly
+title: Description of the change
+status: draft
+
+changes:
+  # ADD new features or domain knowledge
+  - operation: add
+    feature:
+      id: new-feature-id
+      description: What this feature does
+      acceptance_criteria:
+        - Specific condition
+    # OR add domain knowledge:
+    # domain_knowledge:
+    #   - New knowledge item
+
+  # MODIFY existing features
+  - operation: modify
+    feature_id: existing-feature-id  # Must exist in parent spec
+    description: Updated description  # Optional
+    criteria:
+      add: ["New criterion"]
+      remove: ["Exact text to remove"]  # Must match exactly
+      edit:
+        - old: "Exact old text"
+          new: "Replacement text"
+
+  # REMOVE features or domain knowledge
+  - operation: remove
+    feature_id: feature-to-remove
+    reason: Why this is being removed
+` + "```" + `
+
+## Guidelines
+- Ask ONE question at a time
+- Summarize and confirm understanding frequently
+- For change requests, verify the parent_spec ID matches exactly
+- For modify/remove operations, text must match EXACTLY (no fuzzy matching)
+- Acceptance criteria must be testable (not vague)
+- ALWAYS use the Write tool with the appropriate path
+
+Start by warmly greeting the user and asking what they'd like to work on today.`
 
 func runSpec(cmd *cobra.Command, args []string) error {
 	projectDir := GetProjectDir(cmd)
@@ -137,17 +183,36 @@ func runSpec(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to create drafts directory: %w", err)
 	}
 
-	// Generate a spec path for Claude to write to
+	// Create change requests directory if it doesn't exist
+	changeRequestsDir := filepath.Join(utopiaDir, "specs", "_changerequests")
+	if err := os.MkdirAll(changeRequestsDir, 0755); err != nil {
+		return fmt.Errorf("failed to create change requests directory: %w", err)
+	}
+
+	// Load existing specs for context
+	existingSpecs, err := store.ListSpecs()
+	if err != nil {
+		// Non-fatal - continue with empty spec list
+		existingSpecs = []*domain.Spec{}
+	}
+
+	// Build spec summary for Claude
+	specsSummary := buildSpecsSummary(existingSpecs)
+
+	// Generate paths for Claude to write to
 	specPath := filepath.Join(draftsDir, "current-spec.yaml")
 
-	// Inject the spec path into the system prompt
-	systemPrompt := fmt.Sprintf(specSystemPrompt, specPath)
+	// Inject paths and spec summary into the system prompt
+	systemPrompt := fmt.Sprintf(specSystemPrompt, specsSummary, specPath, changeRequestsDir)
 
 	fmt.Println("Starting spec creation session...")
-	fmt.Printf("Spec will be saved to: %s\n", specPath)
+	fmt.Printf("Found %d existing specs\n", len(existingSpecs))
 	fmt.Println()
-	fmt.Println("Tip: In another terminal, watch the spec file with:")
-	fmt.Printf("  watch -n 1 cat %s\n", specPath)
+	fmt.Println("New specs will be saved to:", specPath)
+	fmt.Println("Change requests will be saved to:", changeRequestsDir)
+	fmt.Println()
+	fmt.Println("Tip: In another terminal, watch for changes with:")
+	fmt.Printf("  watch -n 1 'ls -la %s'\n", filepath.Join(utopiaDir, "specs"))
 	fmt.Println()
 
 	// Run interactive Claude session directly (no TUI wrapper)
@@ -189,6 +254,41 @@ func runSpec(cmd *cobra.Command, args []string) error {
 func validateSpecs(store *storage.YAMLStore) error {
 	_, err := store.ListSpecs()
 	return err
+}
+
+// buildSpecsSummary creates a readable summary of existing specs for Claude
+func buildSpecsSummary(specs []*domain.Spec) string {
+	if len(specs) == 0 {
+		return "(No existing specs found)"
+	}
+
+	var sb strings.Builder
+	for _, spec := range specs {
+		sb.WriteString(fmt.Sprintf("### %s\n", spec.ID))
+		sb.WriteString(fmt.Sprintf("**Title:** %s\n", spec.Title))
+		sb.WriteString(fmt.Sprintf("**Status:** %s\n", spec.Status))
+
+		// Truncate description if too long
+		desc := strings.TrimSpace(spec.Description)
+		if len(desc) > 200 {
+			desc = desc[:200] + "..."
+		}
+		sb.WriteString(fmt.Sprintf("**Description:** %s\n", desc))
+
+		// List feature IDs
+		if len(spec.Features) > 0 {
+			sb.WriteString("**Features:** ")
+			featureIDs := make([]string, len(spec.Features))
+			for i, f := range spec.Features {
+				featureIDs[i] = f.ID
+			}
+			sb.WriteString(strings.Join(featureIDs, ", "))
+			sb.WriteString("\n")
+		}
+		sb.WriteString("\n")
+	}
+
+	return sb.String()
 }
 
 // specFixSystemPrompt is used when specs fail validation

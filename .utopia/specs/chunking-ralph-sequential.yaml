@@ -1,107 +1,131 @@
 id: chunking-ralph-sequential
 title: Ralph Sequential Chunking Strategy
 status: draft
+created: 0001-01-01T00:00:00Z
+updated: 2026-01-26T13:19:31.290605+11:00
 description: |
-  The "ralph-sequential" chunking strategy transforms a structured specification into
-  discrete WorkItems optimized for Ralph Wiggum loop execution.
+    The "ralph-sequential" chunking strategy transforms a structured specification into
+    discrete WorkItems optimized for Ralph Wiggum loop execution.
 
-  This is one of potentially many chunking strategies. This strategy:
-  - Creates one WorkItem per feature (simple 1:1 mapping)
-  - Executes sequentially (spec order = execution order)
-  - Uses fresh context per iteration with failure feedback
-  - Relies on external verification (Utopia loop, not Claude stop hooks)
-
+    This is one of potentially many chunking strategies. This strategy:
+    - Creates one WorkItem per feature (simple 1:1 mapping)
+    - Executes sequentially (spec order = execution order)
+    - Uses fresh context per iteration with failure feedback
+    - Relies on external verification (Utopia loop, not Claude stop hooks)
 domain_knowledge:
-  - Ralph Wiggum loops work best with small, focused tasks that fit in one context window
-  - Each iteration runs with fresh context; Claude rebuilds state from git/files
-  - Verification happens externally via Utopia loop, not Claude stop hooks
-  - Acceptance criteria must be machine-verifiable (tests pass, build succeeds)
-  - Backpressure (hooks, tests) beats direction - engineer conditions for success
-  - Only failure output from previous iteration is fed forward (not passing tests)
-  - The completion token <COMPLETE> distinguishes intentional completion from step-limit exits
-
+    - Ralph Wiggum loops work best with small, focused tasks that fit in one context window
+    - Each iteration runs with fresh context; Claude rebuilds state from git/files
+    - Verification happens externally via Utopia loop, not Claude stop hooks
+    - Acceptance criteria must be machine-verifiable (tests pass, build succeeds)
+    - Backpressure (hooks, tests) beats direction - engineer conditions for success
+    - Only failure output from previous iteration is fed forward (not passing tests)
+    - The completion token <COMPLETE> distinguishes intentional completion from step-limit exits
+    - Change requests can be chunked directly using the same command as specs
+    - All operation types (add, modify, remove) are converted to WorkItems
+    - The chunk command falls back to _changerequests directory if spec not found in main specs
 features:
-  - id: ralph-sequential-strategy
-    description: |
-      Implement the "ralph-sequential" chunking strategy.
-      One WorkItem per feature, executed in spec order.
-    acceptance_criteria:
-      - Strategy implements chunk.Strategy interface
-      - Strategy Name() returns "ralph-sequential"
-      - Strategy creates one WorkItem per feature in spec
-      - Strategy is registered in the chunk registry
-      - WorkItems are assigned sequential Order based on feature position
+    - id: ralph-sequential-strategy
+      description: |
+        Implement the "ralph-sequential" chunking strategy.
+        One WorkItem per feature, executed in spec order.
+      acceptance_criteria:
+        - Strategy implements chunk.Strategy interface
+        - Strategy Name() returns "ralph-sequential"
+        - Strategy creates one WorkItem per feature in spec
+        - Strategy is registered in the chunk registry
+        - WorkItems are assigned sequential Order based on feature position
 
-  - id: work-item-model
-    description: |
-      Extend the WorkItem domain model to support the Ralph execution loop.
-    acceptance_criteria:
-      - WorkItem has ID, SpecRef, Title, Status fields
-      - WorkItem has Prompt field containing the rendered prompt
-      - WorkItem has Constraints field (slice of strings)
-      - WorkItem has Order field for sequential execution
-      - WorkItem does NOT have separate AcceptanceCriteria (baked into prompt)
-      - WorkItem does NOT have CompletionPromise field (token is in prompt template)
+    - id: work-item-model
+      description: |
+        Extend the WorkItem domain model to support the Ralph execution loop.
+      acceptance_criteria:
+        - WorkItem has ID, SpecRef, Title, Status fields
+        - WorkItem has Prompt field containing the rendered prompt
+        - WorkItem has Constraints field (slice of strings)
+        - WorkItem has Order field for sequential execution
+        - WorkItem does NOT have separate AcceptanceCriteria (baked into prompt)
+        - WorkItem does NOT have CompletionPromise field (token is in prompt template)
 
-  - id: prompt-template
-    description: |
-      Create a minimal prompt template for Ralph execution.
-      Template renders task with criteria baked in, constraints, and completion instruction.
-    acceptance_criteria:
-      - Template has TASK section with feature description and acceptance criteria merged
-      - Template has CONSTRAINTS section populated from spec and defaults
-      - 'Template ends with "When complete, commit your changes and output: <COMPLETE>"'
-      - Template has no orientation instructions (Ralph discovers context naturally)
-      - Template has optional PREVIOUS FAILURES section for retry iterations
-      - "Template uses {{handlebars}} syntax for variable injection"
+    - id: prompt-template
+      description: |
+        Create a minimal prompt template for Ralph execution.
+        Template renders task with criteria baked in, constraints, and completion instruction.
+      acceptance_criteria:
+        - Template has TASK section with feature description and acceptance criteria merged
+        - Template has CONSTRAINTS section populated from spec and defaults
+        - 'Template ends with "When complete, commit your changes and output: <COMPLETE>"'
+        - Template has no orientation instructions (Ralph discovers context naturally)
+        - Template has optional PREVIOUS FAILURES section for retry iterations
+        - Template uses {{handlebars}} syntax for variable injection
 
-  - id: prompt-builder
-    description: |
-      Build prompts from WorkItem data.
-      Support first iteration (no failures) and retry iterations (with failures).
-    acceptance_criteria:
-      - Builder produces prompt without PREVIOUS FAILURES for first iteration
-      - Builder injects extracted failure output for subsequent iterations
-      - Built prompt is stored/updated on WorkItem
-      - Builder escapes any template syntax in user content
+    - id: prompt-builder
+      description: |
+        Build prompts from WorkItem data.
+        Support first iteration (no failures) and retry iterations (with failures).
+      acceptance_criteria:
+        - Builder produces prompt without PREVIOUS FAILURES for first iteration
+        - Builder injects extracted failure output for subsequent iterations
+        - Built prompt is stored/updated on WorkItem
+        - Builder escapes any template syntax in user content
 
-  - id: task-with-criteria
-    description: |
-      Implement logic to merge feature description with acceptance criteria into a single TASK block.
-    acceptance_criteria:
-      - Feature description becomes the task headline
-      - Acceptance criteria are listed as bullet points under the description
-      - Output is plain text, not YAML
-      - Format is concise and scannable
+    - id: task-with-criteria
+      description: |
+        Implement logic to merge feature description with acceptance criteria into a single TASK block.
+      acceptance_criteria:
+        - Feature description becomes the task headline
+        - Acceptance criteria are listed as bullet points under the description
+        - Output is plain text, not YAML
+        - Format is concise and scannable
 
-  - id: default-constraints
-    description: |
-      Define default constraints applied to all WorkItems.
-    acceptance_criteria:
-      - Default constraints include "Do not introduce new abstractions, interfaces, or packages"
-      - Default constraints include "Do not refactor unrelated code"
-      - Default constraints include "Architecture is already correct"
-      - Constraints can be extended per-spec via spec.constraints field
-      - Constraints are deduplicated if spec repeats a default
+    - id: default-constraints
+      description: |
+        Define default constraints applied to all WorkItems.
+      acceptance_criteria:
+        - Default constraints include "Do not introduce new abstractions, interfaces, or packages"
+        - Default constraints include "Do not refactor unrelated code"
+        - Default constraints include "Architecture is already correct"
+        - Constraints can be extended per-spec via spec.constraints field
+        - Constraints are deduplicated if spec repeats a default
 
-  - id: validation-verifiable-criteria
-    description: |
-      Validate that all acceptance criteria in a spec are verifiable.
-      Reject specs with vague or non-testable criteria.
-    acceptance_criteria:
-      - Chunker rejects specs where any feature has zero acceptance criteria
-      - Chunker warns on criteria containing vague terms (e.g., "should be good", "works well")
-      - Validation errors include feature ID and problematic criterion
-      - Validation runs before any WorkItems are generated
+    - id: validation-verifiable-criteria
+      description: |
+        Validate that all acceptance criteria in a spec are verifiable.
+        Reject specs with vague or non-testable criteria.
+      acceptance_criteria:
+        - Chunker rejects specs where any feature has zero acceptance criteria
+        - Chunker warns on criteria containing vague terms (e.g., "should be good", "works well")
+        - Validation errors include feature ID and problematic criterion
+        - Validation runs before any WorkItems are generated
 
-  - id: chunk-command
-    description: |
-      Add CLI command to chunk a spec into WorkItems.
-    acceptance_criteria:
-      - Command is "utopia chunk <spec-id>"
-      - Command loads spec from .utopia/specs/<spec-id>.yaml
-      - Command validates spec before chunking
-      - Command saves WorkItems to .utopia/work-items/<spec-id>/
-      - Command prints summary (N work items created)
-      - Command fails with clear error if spec not found or invalid
+    - id: chunk-command
+      description: |
+        Add CLI command to chunk a spec into WorkItems.
+      acceptance_criteria:
+        - Command is "utopia chunk <spec-id>"
+        - Command loads spec from .utopia/specs/<spec-id>.yaml
+        - Command validates spec before chunking
+        - Command saves WorkItems to .utopia/work-items/<spec-id>/
+        - Command prints summary (N work items created)
+        - Command fails with clear error if spec not found or invalid
 
+    - id: change-request-to-spec-conversion
+      description: |-
+        Convert a change request to a chunkable spec by transforming all operations into features
+      acceptance_criteria:
+        - ChangeRequest has ToSpec() method that returns a *Spec
+        - ToSpec() sets spec ID to the change request ID
+        - ToSpec() sets spec title to the change request title
+        - Add operations with features are included as-is (preserving ID, description, criteria)
+        - Add operations with only domain knowledge are ignored (no feature to chunk)
+        - Remove operations become features with ID remove-{feature_id}, description explaining removal, and acceptance criteria based on the reason
+        - Modify operations become features with ID modify-{feature_id}, description of what to modify, and acceptance criteria listing the deltas (criteria to add, remove, edit)
+
+    - id: chunk-command-change-request-fallback
+      description: |-
+        Chunk command falls back to loading change requests when spec not found
+      acceptance_criteria:
+        - Command first attempts to load from .utopia/specs/<id>.yaml
+        - If not found, attempts to load from .utopia/specs/_changerequests/<id>.yaml
+        - If change request found, converts to spec using ToSpec() before chunking
+        - If neither found, returns clear error listing both locations checked
+        - WorkItems are saved to .utopia/work-items/<change-request-id>/

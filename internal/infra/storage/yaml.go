@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/leightonvanrooijen/utopia/internal/domain"
@@ -41,6 +42,32 @@ func (s *YAMLStore) LoadSpec(id string) (*domain.Spec, error) {
 	}
 
 	return &spec, nil
+}
+
+// LoadSpecOrChangeRequest attempts to load a spec, falling back to loading
+// a change request and converting it to a spec if the spec is not found.
+// This enables chunking change requests using the same command as specs.
+//
+// Returns:
+// - (*Spec, false, nil) if spec found in .utopia/specs/
+// - (*Spec, true, nil) if change request found and converted
+// - (nil, false, error) if neither found or other error
+func (s *YAMLStore) LoadSpecOrChangeRequest(id string) (*domain.Spec, bool, error) {
+	// First, try to load as a regular spec
+	spec, err := s.LoadSpec(id)
+	if err == nil {
+		return spec, false, nil
+	}
+
+	// If spec not found, try loading as a change request
+	cr, crErr := s.LoadChangeRequest(id)
+	if crErr != nil {
+		// Neither spec nor change request found
+		return nil, false, fmt.Errorf("not found in .utopia/specs/%s.yaml or .utopia/specs/_changerequests/%s.yaml", id, id)
+	}
+
+	// Convert change request to spec
+	return cr.ToSpec(), true, nil
 }
 
 // ListSpecs returns all specs in the specs directory
@@ -278,11 +305,59 @@ func (s *YAMLStore) writeYAML(path string, data interface{}) error {
 		return fmt.Errorf("failed to marshal YAML: %w", err)
 	}
 
-	if err := os.WriteFile(path, bytes, 0644); err != nil {
+	// Post-process to add blank lines between features for readability
+	content := addFeatureSpacing(string(bytes))
+
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		return fmt.Errorf("failed to write file %s: %w", path, err)
 	}
 
 	return nil
+}
+
+// featurePattern matches the start of a feature in YAML (indented "- id:")
+var featurePattern = regexp.MustCompile(`(?m)^(\s+- id:)`)
+
+// addFeatureSpacing inserts blank lines between features in YAML output
+// This makes the output more readable by separating feature blocks
+func addFeatureSpacing(content string) string {
+	// Split into lines
+	lines := strings.Split(content, "\n")
+	var result []string
+	inFeatures := false
+	firstFeature := true
+
+	for _, line := range lines {
+		// Detect when we enter the features section
+		if strings.HasPrefix(line, "features:") {
+			inFeatures = true
+			result = append(result, line)
+			firstFeature = true
+			continue
+		}
+
+		// Detect when we leave the features section (non-indented line after features)
+		if inFeatures && len(line) > 0 && line[0] != ' ' && !strings.HasPrefix(line, "features:") {
+			inFeatures = false
+		}
+
+		// Add blank line before each feature (except the first one)
+		// Match "    - id:" pattern (4-space indent typical of yaml.Marshal)
+		trimmed := strings.TrimLeft(line, " ")
+		if inFeatures && strings.HasPrefix(trimmed, "- id:") {
+			if !firstFeature {
+				// Check if previous line isn't already blank
+				if len(result) > 0 && strings.TrimSpace(result[len(result)-1]) != "" {
+					result = append(result, "")
+				}
+			}
+			firstFeature = false
+		}
+
+		result = append(result, line)
+	}
+
+	return strings.Join(result, "\n")
 }
 
 // readYAML reads and unmarshals a file

@@ -66,10 +66,14 @@ func runChunk(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	// Load the spec
-	spec, err := store.LoadSpec(specID)
+	// Load the spec (or change request converted to spec)
+	spec, isChangeRequest, err := store.LoadSpecOrChangeRequest(specID)
 	if err != nil {
-		return fmt.Errorf("spec not found: %s\n\nCheck .utopia/specs/ for available specs", specID)
+		return fmt.Errorf("spec not found: %s\n\nCheck .utopia/specs/ or .utopia/specs/_changerequests/ for available specs", specID)
+	}
+
+	if isChangeRequest {
+		fmt.Printf("Loaded change request: %s\n", specID)
 	}
 
 	// Determine which strategy to use

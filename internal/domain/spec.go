@@ -2,7 +2,10 @@ package domain
 
 import (
 	"fmt"
+	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Status represents the lifecycle state of a spec
@@ -35,6 +38,45 @@ type Feature struct {
 	ID                 string   `yaml:"id"`
 	Description        string   `yaml:"description"`
 	AcceptanceCriteria []string `yaml:"acceptance_criteria"`
+}
+
+// MarshalYAML customizes YAML output for Feature to use block style
+// for multi-line descriptions.
+func (f Feature) MarshalYAML() (interface{}, error) {
+	// Create a node structure manually to control formatting
+	node := &yaml.Node{
+		Kind: yaml.MappingNode,
+	}
+
+	// Add id
+	node.Content = append(node.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Value: "id"},
+		&yaml.Node{Kind: yaml.ScalarNode, Value: f.ID},
+	)
+
+	// Add description with block style if multi-line
+	descNode := &yaml.Node{Kind: yaml.ScalarNode, Value: f.Description}
+	if strings.Contains(f.Description, "\n") || len(f.Description) > 60 {
+		descNode.Style = yaml.LiteralStyle // Forces | block style
+	}
+	node.Content = append(node.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Value: "description"},
+		descNode,
+	)
+
+	// Add acceptance_criteria
+	criteriaNode := &yaml.Node{Kind: yaml.SequenceNode}
+	for _, c := range f.AcceptanceCriteria {
+		criteriaNode.Content = append(criteriaNode.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Value: c},
+		)
+	}
+	node.Content = append(node.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Value: "acceptance_criteria"},
+		criteriaNode,
+	)
+
+	return node, nil
 }
 
 // NewSpec creates a new spec with sensible defaults
@@ -380,6 +422,86 @@ func (s *Spec) removeDomainKnowledge(knowledge string) error {
 		}
 	}
 	return fmt.Errorf("domain knowledge not found: %s", knowledge)
+}
+
+// ToSpec converts a change request to a chunkable Spec by transforming
+// all operations into features. This enables chunking change requests
+// directly without needing a parent spec.
+//
+// Operation handling:
+// - "add" with feature: included as-is
+// - "add" with only domain knowledge: ignored (no feature to chunk)
+// - "remove": becomes feature "remove-{feature_id}" with removal task
+// - "modify": becomes feature "modify-{feature_id}" with delta criteria
+func (cr *ChangeRequest) ToSpec() *Spec {
+	spec := NewSpec(cr.ID, cr.Title)
+	spec.Description = "Generated from change request: " + cr.Title
+
+	for _, change := range cr.Changes {
+		switch change.Operation {
+		case "add":
+			if change.Feature != nil {
+				spec.Features = append(spec.Features, *change.Feature)
+			}
+			// Ignore add operations with only domain knowledge
+
+		case "remove":
+			if change.FeatureID != "" {
+				feature := Feature{
+					ID:          "remove-" + change.FeatureID,
+					Description: fmt.Sprintf("Remove the %s feature from the codebase", change.FeatureID),
+					AcceptanceCriteria: []string{
+						fmt.Sprintf("All code related to feature %q is removed", change.FeatureID),
+						fmt.Sprintf("All tests for feature %q are removed", change.FeatureID),
+						"No references to the removed feature remain in the codebase",
+					},
+				}
+				if change.Reason != "" {
+					feature.AcceptanceCriteria = append(feature.AcceptanceCriteria,
+						fmt.Sprintf("Removal reason: %s", change.Reason))
+				}
+				spec.Features = append(spec.Features, feature)
+			}
+
+		case "modify":
+			if change.FeatureID != "" {
+				feature := Feature{
+					ID:          "modify-" + change.FeatureID,
+					Description: fmt.Sprintf("Modify the %s feature", change.FeatureID),
+				}
+
+				// Add description change if provided
+				if change.Description != "" {
+					feature.Description = fmt.Sprintf("Modify the %s feature: %s", change.FeatureID, change.Description)
+				}
+
+				// Build acceptance criteria from the deltas
+				var criteria []string
+
+				if change.Criteria != nil {
+					for _, add := range change.Criteria.Add {
+						criteria = append(criteria, add)
+					}
+					for _, remove := range change.Criteria.Remove {
+						criteria = append(criteria, fmt.Sprintf("Remove/undo: %s", remove))
+					}
+					for _, edit := range change.Criteria.Edit {
+						criteria = append(criteria, fmt.Sprintf("Change from %q to: %s", edit.Old, edit.New))
+					}
+				}
+
+				// Ensure at least one criterion exists
+				if len(criteria) == 0 {
+					criteria = append(criteria, fmt.Sprintf("Feature %q is updated as specified", change.FeatureID))
+				}
+
+				feature.AcceptanceCriteria = criteria
+				spec.Features = append(spec.Features, feature)
+			}
+		}
+	}
+
+	return spec
 }
 
 // ApplyChanges applies all changes from the change request to the given spec.

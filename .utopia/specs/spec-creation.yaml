@@ -1,0 +1,98 @@
+id: spec-creation
+title: Specification Creation System
+status: draft
+description: |
+  The spec creation system provides an AI-guided workflow for creating and
+  modifying specifications. Users run `utopia spec` and Claude intelligently
+  determines whether to create a new spec, a change request, or both based
+  on the conversation and existing spec landscape.
+
+  Key characteristics:
+  - AI-driven mode selection (no flags needed)
+  - Claude explores existing specs before deciding
+  - Unified conversational flow for all modes
+  - Automatic YAML validation with fix sessions
+
+domain_knowledge:
+  - Claude must see existing specs to make informed decisions about new vs change request
+  - Change requests require exact parent_spec ID matching
+  - Modify/remove operations require exact text matching (no fuzzy matching)
+  - New specs go to .utopia/specs/_drafts/current-spec.yaml initially
+  - Change requests go to .utopia/specs/_changerequests/{id}.yaml
+  - The AI classifies intent based on conversation, not user-selected flags
+
+features:
+  - id: unified-entry-point
+    description: |
+      Single CLI command that handles all spec creation modes.
+    acceptance_criteria:
+      - Command is "utopia spec" with no required mode flags
+      - Command loads existing specs and provides them to Claude
+      - Command sets up appropriate output paths for both new specs and change requests
+      - Command prints helpful tips (e.g., watch command for live updates)
+
+  - id: existing-spec-exploration
+    description: |
+      Claude receives summaries of existing specs to inform its decisions.
+    acceptance_criteria:
+      - All specs from .utopia/specs/ are loaded at session start
+      - Spec summaries include id, title, description, and feature IDs
+      - Summaries are injected into the system prompt
+      - Claude references existing specs when classifying user intent
+
+  - id: ai-mode-classification
+    description: |
+      Claude determines the appropriate mode based on conversation.
+    acceptance_criteria:
+      - Claude asks what the user wants to accomplish
+      - Claude compares request against existing spec coverage
+      - "Claude classifies as: new spec, change request, or both"
+      - Claude confirms classification with user before proceeding
+      - User can correct the classification if needed
+
+  - id: new-spec-flow
+    description: |
+      Guided conversation flow for creating new specifications.
+    acceptance_criteria:
+      - "Flow progresses through stages: EXPLORE, DEFINE, SPECIFY"
+      - Claude asks one question at a time
+      - Claude summarizes and confirms understanding
+      - Output is written to .utopia/specs/_drafts/current-spec.yaml
+      - Spec follows standard YAML format (id, title, status, description, domain_knowledge, features)
+
+  - id: change-request-flow
+    description: |
+      Guided conversation flow for creating change requests.
+    acceptance_criteria:
+      - Claude identifies which existing spec to modify
+      - Claude determines what changes are needed (add, modify, remove)
+      - Claude verifies parent_spec ID matches exactly
+      - Output is written to .utopia/specs/_changerequests/{id}.yaml
+      - Change request follows standard format (id, type, parent_spec, title, status, changes)
+
+  - id: combined-flow
+    description: |
+      Handle cases where user needs both a new spec and changes to existing specs.
+    acceptance_criteria:
+      - Claude recognizes when requirements span new and existing functionality
+      - Claude creates new spec first, then change request(s)
+      - Each output is written to its appropriate location
+      - Claude explains what was created and where
+
+  - id: yaml-validation
+    description: |
+      Validate generated YAML after session ends.
+    acceptance_criteria:
+      - All specs in .utopia/specs/ are validated after session
+      - Validation checks YAML syntax and required fields
+      - If validation fails, error message is displayed
+      - A fix session is started automatically on validation failure
+
+  - id: fix-session
+    description: |
+      Automated session to fix YAML validation errors.
+    acceptance_criteria:
+      - Fix session receives the validation error details
+      - Claude reads the problematic file(s)
+      - Claude fixes YAML syntax issues (quoting, indentation)
+      - Fixed files are saved automatically

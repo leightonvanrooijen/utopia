@@ -1114,3 +1114,439 @@ func TestApplyChanges_PreservesStatusThroughMultipleUpdates(t *testing.T) {
 		t.Errorf("expected status 'approved', got %q", spec.Status)
 	}
 }
+
+// Tests for ChangeRequest.ToSpec
+
+func TestToSpec_SetsIDAndTitle(t *testing.T) {
+	cr := &ChangeRequest{
+		ID:         "my-change-request",
+		Title:      "My Change Request Title",
+		ParentSpec: "parent-spec",
+		Changes:    []Change{},
+	}
+
+	spec := cr.ToSpec()
+
+	if spec.ID != "my-change-request" {
+		t.Errorf("expected ID 'my-change-request', got %q", spec.ID)
+	}
+
+	if spec.Title != "My Change Request Title" {
+		t.Errorf("expected title 'My Change Request Title', got %q", spec.Title)
+	}
+
+	if !strings.Contains(spec.Description, "Generated from change request") {
+		t.Error("description should mention it was generated from a change request")
+	}
+}
+
+func TestToSpec_AddFeatureOperation(t *testing.T) {
+	cr := &ChangeRequest{
+		ID:         "cr-add-feature",
+		Title:      "Add Feature CR",
+		ParentSpec: "parent-spec",
+		Changes: []Change{
+			{
+				Operation: "add",
+				Feature: &Feature{
+					ID:                 "new-feature",
+					Description:        "A brand new feature",
+					AcceptanceCriteria: []string{"Criterion 1", "Criterion 2"},
+				},
+			},
+		},
+	}
+
+	spec := cr.ToSpec()
+
+	if len(spec.Features) != 1 {
+		t.Fatalf("expected 1 feature, got %d", len(spec.Features))
+	}
+
+	f := spec.Features[0]
+	if f.ID != "new-feature" {
+		t.Errorf("expected feature ID 'new-feature', got %q", f.ID)
+	}
+	if f.Description != "A brand new feature" {
+		t.Errorf("expected description 'A brand new feature', got %q", f.Description)
+	}
+	if len(f.AcceptanceCriteria) != 2 {
+		t.Errorf("expected 2 acceptance criteria, got %d", len(f.AcceptanceCriteria))
+	}
+}
+
+func TestToSpec_AddDomainKnowledgeOnly_Ignored(t *testing.T) {
+	cr := &ChangeRequest{
+		ID:         "cr-add-dk",
+		Title:      "Add Domain Knowledge CR",
+		ParentSpec: "parent-spec",
+		Changes: []Change{
+			{
+				Operation:       "add",
+				DomainKnowledge: []string{"Some knowledge", "More knowledge"},
+			},
+		},
+	}
+
+	spec := cr.ToSpec()
+
+	// Add operations with only domain knowledge should be ignored
+	if len(spec.Features) != 0 {
+		t.Errorf("expected 0 features (domain knowledge only should be ignored), got %d", len(spec.Features))
+	}
+}
+
+func TestToSpec_RemoveOperation(t *testing.T) {
+	cr := &ChangeRequest{
+		ID:         "cr-remove",
+		Title:      "Remove Feature CR",
+		ParentSpec: "parent-spec",
+		Changes: []Change{
+			{
+				Operation: "remove",
+				FeatureID: "deprecated-feature",
+				Reason:    "No longer needed after refactoring",
+			},
+		},
+	}
+
+	spec := cr.ToSpec()
+
+	if len(spec.Features) != 1 {
+		t.Fatalf("expected 1 feature, got %d", len(spec.Features))
+	}
+
+	f := spec.Features[0]
+	if f.ID != "remove-deprecated-feature" {
+		t.Errorf("expected feature ID 'remove-deprecated-feature', got %q", f.ID)
+	}
+	if !strings.Contains(f.Description, "Remove") {
+		t.Error("description should mention removal")
+	}
+	if !strings.Contains(f.Description, "deprecated-feature") {
+		t.Error("description should mention the feature being removed")
+	}
+
+	// Should have acceptance criteria about removal
+	if len(f.AcceptanceCriteria) < 3 {
+		t.Errorf("expected at least 3 acceptance criteria, got %d", len(f.AcceptanceCriteria))
+	}
+
+	// Should include the reason
+	foundReason := false
+	for _, c := range f.AcceptanceCriteria {
+		if strings.Contains(c, "No longer needed after refactoring") {
+			foundReason = true
+			break
+		}
+	}
+	if !foundReason {
+		t.Error("acceptance criteria should include the removal reason")
+	}
+}
+
+func TestToSpec_RemoveOperationWithoutReason(t *testing.T) {
+	cr := &ChangeRequest{
+		ID:         "cr-remove-no-reason",
+		Title:      "Remove Without Reason",
+		ParentSpec: "parent-spec",
+		Changes: []Change{
+			{
+				Operation: "remove",
+				FeatureID: "old-feature",
+			},
+		},
+	}
+
+	spec := cr.ToSpec()
+
+	if len(spec.Features) != 1 {
+		t.Fatalf("expected 1 feature, got %d", len(spec.Features))
+	}
+
+	// Should still have base criteria even without reason
+	if len(spec.Features[0].AcceptanceCriteria) < 3 {
+		t.Errorf("expected at least 3 acceptance criteria, got %d", len(spec.Features[0].AcceptanceCriteria))
+	}
+}
+
+func TestToSpec_ModifyOperation_AddCriteria(t *testing.T) {
+	cr := &ChangeRequest{
+		ID:         "cr-modify",
+		Title:      "Modify Feature CR",
+		ParentSpec: "parent-spec",
+		Changes: []Change{
+			{
+				Operation: "modify",
+				FeatureID: "existing-feature",
+				Criteria: &CriteriaModify{
+					Add: []string{"New criterion 1", "New criterion 2"},
+				},
+			},
+		},
+	}
+
+	spec := cr.ToSpec()
+
+	if len(spec.Features) != 1 {
+		t.Fatalf("expected 1 feature, got %d", len(spec.Features))
+	}
+
+	f := spec.Features[0]
+	if f.ID != "modify-existing-feature" {
+		t.Errorf("expected feature ID 'modify-existing-feature', got %q", f.ID)
+	}
+
+	// The added criteria should be in the acceptance criteria
+	if len(f.AcceptanceCriteria) != 2 {
+		t.Errorf("expected 2 acceptance criteria, got %d", len(f.AcceptanceCriteria))
+	}
+	if f.AcceptanceCriteria[0] != "New criterion 1" {
+		t.Errorf("expected 'New criterion 1', got %q", f.AcceptanceCriteria[0])
+	}
+}
+
+func TestToSpec_ModifyOperation_RemoveCriteria(t *testing.T) {
+	cr := &ChangeRequest{
+		ID:         "cr-modify-remove",
+		Title:      "Modify Feature - Remove Criteria",
+		ParentSpec: "parent-spec",
+		Changes: []Change{
+			{
+				Operation: "modify",
+				FeatureID: "existing-feature",
+				Criteria: &CriteriaModify{
+					Remove: []string{"Old criterion to remove"},
+				},
+			},
+		},
+	}
+
+	spec := cr.ToSpec()
+
+	if len(spec.Features) != 1 {
+		t.Fatalf("expected 1 feature, got %d", len(spec.Features))
+	}
+
+	// Should have a criterion about removal
+	found := false
+	for _, c := range spec.Features[0].AcceptanceCriteria {
+		if strings.Contains(c, "Remove/undo") && strings.Contains(c, "Old criterion to remove") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("acceptance criteria should describe the criterion to remove")
+	}
+}
+
+func TestToSpec_ModifyOperation_EditCriteria(t *testing.T) {
+	cr := &ChangeRequest{
+		ID:         "cr-modify-edit",
+		Title:      "Modify Feature - Edit Criteria",
+		ParentSpec: "parent-spec",
+		Changes: []Change{
+			{
+				Operation: "modify",
+				FeatureID: "existing-feature",
+				Criteria: &CriteriaModify{
+					Edit: []EditPair{
+						{Old: "Old text", New: "New text"},
+					},
+				},
+			},
+		},
+	}
+
+	spec := cr.ToSpec()
+
+	if len(spec.Features) != 1 {
+		t.Fatalf("expected 1 feature, got %d", len(spec.Features))
+	}
+
+	// Should have a criterion about the edit
+	found := false
+	for _, c := range spec.Features[0].AcceptanceCriteria {
+		if strings.Contains(c, "Old text") && strings.Contains(c, "New text") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("acceptance criteria should describe the edit operation")
+	}
+}
+
+func TestToSpec_ModifyOperation_WithDescription(t *testing.T) {
+	cr := &ChangeRequest{
+		ID:         "cr-modify-desc",
+		Title:      "Modify Feature - With Description",
+		ParentSpec: "parent-spec",
+		Changes: []Change{
+			{
+				Operation:   "modify",
+				FeatureID:   "existing-feature",
+				Description: "Updated to support new requirements",
+				Criteria: &CriteriaModify{
+					Add: []string{"Supports new format"},
+				},
+			},
+		},
+	}
+
+	spec := cr.ToSpec()
+
+	if len(spec.Features) != 1 {
+		t.Fatalf("expected 1 feature, got %d", len(spec.Features))
+	}
+
+	if !strings.Contains(spec.Features[0].Description, "Updated to support new requirements") {
+		t.Errorf("description should include the provided description, got %q", spec.Features[0].Description)
+	}
+}
+
+func TestToSpec_ModifyOperation_NoCriteria(t *testing.T) {
+	cr := &ChangeRequest{
+		ID:         "cr-modify-no-criteria",
+		Title:      "Modify Feature - No Criteria",
+		ParentSpec: "parent-spec",
+		Changes: []Change{
+			{
+				Operation:   "modify",
+				FeatureID:   "existing-feature",
+				Description: "Just updating description",
+			},
+		},
+	}
+
+	spec := cr.ToSpec()
+
+	if len(spec.Features) != 1 {
+		t.Fatalf("expected 1 feature, got %d", len(spec.Features))
+	}
+
+	// Should have at least one default criterion
+	if len(spec.Features[0].AcceptanceCriteria) < 1 {
+		t.Error("should have at least one acceptance criterion even without explicit criteria changes")
+	}
+}
+
+func TestToSpec_MixedOperations(t *testing.T) {
+	cr := &ChangeRequest{
+		ID:         "cr-mixed",
+		Title:      "Mixed Operations CR",
+		ParentSpec: "parent-spec",
+		Changes: []Change{
+			{
+				Operation: "add",
+				Feature: &Feature{
+					ID:                 "new-feature",
+					Description:        "Brand new",
+					AcceptanceCriteria: []string{"Works"},
+				},
+			},
+			{
+				Operation:       "add",
+				DomainKnowledge: []string{"Some knowledge"}, // Should be ignored
+			},
+			{
+				Operation: "modify",
+				FeatureID: "existing-feature",
+				Criteria: &CriteriaModify{
+					Add: []string{"New criterion"},
+				},
+			},
+			{
+				Operation: "remove",
+				FeatureID: "old-feature",
+				Reason:    "Deprecated",
+			},
+		},
+	}
+
+	spec := cr.ToSpec()
+
+	// Should have 3 features: 1 add, 1 modify, 1 remove
+	// The add with only domain knowledge is ignored
+	if len(spec.Features) != 3 {
+		t.Fatalf("expected 3 features, got %d", len(spec.Features))
+	}
+
+	// Verify we have the expected feature IDs
+	ids := make(map[string]bool)
+	for _, f := range spec.Features {
+		ids[f.ID] = true
+	}
+
+	if !ids["new-feature"] {
+		t.Error("missing 'new-feature'")
+	}
+	if !ids["modify-existing-feature"] {
+		t.Error("missing 'modify-existing-feature'")
+	}
+	if !ids["remove-old-feature"] {
+		t.Error("missing 'remove-old-feature'")
+	}
+}
+
+func TestToSpec_EmptyChanges(t *testing.T) {
+	cr := &ChangeRequest{
+		ID:         "cr-empty",
+		Title:      "Empty CR",
+		ParentSpec: "parent-spec",
+		Changes:    []Change{},
+	}
+
+	spec := cr.ToSpec()
+
+	if len(spec.Features) != 0 {
+		t.Errorf("expected 0 features for empty change request, got %d", len(spec.Features))
+	}
+}
+
+func TestToSpec_RemoveWithoutFeatureID_Ignored(t *testing.T) {
+	cr := &ChangeRequest{
+		ID:         "cr-remove-no-id",
+		Title:      "Remove Without Feature ID",
+		ParentSpec: "parent-spec",
+		Changes: []Change{
+			{
+				Operation: "remove",
+				// No FeatureID - only domain knowledge
+				DomainKnowledge: []string{"Knowledge to remove"},
+			},
+		},
+	}
+
+	spec := cr.ToSpec()
+
+	// Remove operation without feature_id should be ignored
+	if len(spec.Features) != 0 {
+		t.Errorf("expected 0 features (remove without feature_id should be ignored), got %d", len(spec.Features))
+	}
+}
+
+func TestToSpec_ModifyWithoutFeatureID_Ignored(t *testing.T) {
+	cr := &ChangeRequest{
+		ID:         "cr-modify-no-id",
+		Title:      "Modify Without Feature ID",
+		ParentSpec: "parent-spec",
+		Changes: []Change{
+			{
+				Operation: "modify",
+				// No FeatureID
+				DomainKnowledgeMod: &DomainKnowledgeModify{
+					Add: []string{"New knowledge"},
+				},
+			},
+		},
+	}
+
+	spec := cr.ToSpec()
+
+	// Modify operation without feature_id should be ignored
+	if len(spec.Features) != 0 {
+		t.Errorf("expected 0 features (modify without feature_id should be ignored), got %d", len(spec.Features))
+	}
+}

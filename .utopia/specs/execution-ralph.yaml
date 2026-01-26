@@ -1,6 +1,8 @@
 id: execution-ralph
 title: Ralph Execution Loop
 status: draft
+created: 0001-01-01T00:00:00Z
+updated: 2026-01-26T12:51:47.726388+11:00
 description: |
   The Ralph execution loop runs WorkItems produced by the chunker.
 
@@ -12,14 +14,14 @@ description: |
   - Sequential execution, resumes from where it left off
 
   Depends on: verification (for running verification commands)
-
 domain_knowledge:
   - Each iteration is a fresh Claude context; state is rebuilt from git/files
   - The <COMPLETE> token distinguishes intentional completion from step-limit exits
   - Only inject failures from previous iteration (not accumulated history)
   - Human oversight assumed; user can Ctrl+C if loop is stuck
   - Backpressure via verification replaces explicit direction
-
+  - Timeout applies to entire execution session, not per-WorkItem
+  - Timeout timer starts when execution begins, not when each WorkItem starts
 features:
   - id: ralph-loop
     description: |
@@ -33,7 +35,6 @@ features:
       - If verification fails, capture output, rebuild prompt with failures, retry
       - Loop continues until success or max iterations (if configured)
       - Loop logs each iteration (attempt N, token found, verification result)
-
   - id: failure-injection
     description: |
       Inject failure output into prompt for retry iterations.
@@ -42,7 +43,6 @@ features:
       - Subsequent iterations include PREVIOUS FAILURES with verification output
       - Only failures from immediately previous iteration (not accumulated)
       - Failures are injected as raw text in code block
-
   - id: work-item-status
     description: |
       Track WorkItem status through execution.
@@ -51,7 +51,6 @@ features:
       - Status persisted to .utopia/work-items/<spec-id>/<item-id>.yaml
       - Completed status includes iteration count
       - In-progress status includes current iteration count
-
   - id: sequential-executor
     description: |
       Execute WorkItems in order, one at a time.
@@ -61,7 +60,6 @@ features:
       - Executes items sequentially (waits for completion before next)
       - Stops if max iterations reached on any item
       - Continues from first non-completed item on resume
-
   - id: execute-command
     description: |
       CLI command to execute WorkItems for a spec.
@@ -72,7 +70,6 @@ features:
       - Command prints when item completes
       - Command handles Ctrl+C gracefully (saves current state)
       - On max iterations, prints message and exits
-
   - id: streaming-output
     description: |
       Stream Claude output in real-time during execution using --verbose flag.
@@ -82,3 +79,24 @@ features:
       - Output is still captured for completion token detection
       - Works with both stdout and stderr streams
       - Streaming does not interfere with Ctrl+C handling
+  - id: timeout-flag
+    description: Add --timeout flag that accepts duration in minutes
+    acceptance_criteria:
+      - Flag accepts a positive integer representing minutes (e.g., --timeout 30)
+      - Flag is optional with no default (executions run indefinitely by default)
+      - Invalid values (negative, zero, non-numeric) produce clear error message
+      - Flag is added to the "utopia execute <spec-id>" command
+  - id: timeout-trigger
+    description: Trigger graceful shutdown when session timeout is reached
+    acceptance_criteria:
+      - Execution stops after specified minutes have elapsed from session start
+      - Shutdown uses same code path as Ctrl+C (existing persistence mechanism)
+      - In-progress WorkItem state is saved and can be resumed
+      - Timer continues across WorkItem boundaries (not reset per item)
+  - id: timeout-notification
+    description: Notify user when timeout occurs
+    acceptance_criteria:
+      - Terminal displays clear message indicating timeout was reached
+      - Message includes total session duration
+      - Message indicates that progress was saved and can be resumed
+      - Message differs from normal completion (user knows it was timeout, not success)
