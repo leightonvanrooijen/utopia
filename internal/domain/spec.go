@@ -31,6 +31,11 @@ type Spec struct {
 
 	// Features with their acceptance criteria
 	Features []Feature `yaml:"features"`
+
+	// IsRefactor indicates this spec was converted from a Refactor.
+	// When true, system-level refactor constraints are automatically
+	// injected during chunking. This field is not persisted to YAML.
+	IsRefactor bool `yaml:"-"`
 }
 
 // Feature represents a capability of the system

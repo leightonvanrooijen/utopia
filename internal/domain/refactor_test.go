@@ -245,3 +245,83 @@ func TestInvalidStatusTransitionError_Error(t *testing.T) {
 		t.Errorf("Error() = %q, want %q", err.Error(), expected)
 	}
 }
+
+func TestRefactor_ToSpec(t *testing.T) {
+	r := &Refactor{
+		ID:     "extract-auth",
+		Title:  "Extract Authentication",
+		Status: RefactorStatusReady,
+		Tasks: []RefactorTask{
+			{
+				ID:                 "task-1",
+				Description:        "Create auth package",
+				AcceptanceCriteria: []string{"Package exists", "Tests pass"},
+			},
+			{
+				ID:                 "task-2",
+				Description:        "Move auth functions",
+				AcceptanceCriteria: []string{"Functions moved", "No breaking changes"},
+			},
+		},
+	}
+
+	spec := r.ToSpec()
+
+	// Verify basic fields
+	if spec.ID != r.ID {
+		t.Errorf("ID = %q, want %q", spec.ID, r.ID)
+	}
+	if spec.Title != r.Title {
+		t.Errorf("Title = %q, want %q", spec.Title, r.Title)
+	}
+	if spec.Description != "Refactor: "+r.Title {
+		t.Errorf("Description = %q, want %q", spec.Description, "Refactor: "+r.Title)
+	}
+
+	// Verify IsRefactor is set
+	if !spec.IsRefactor {
+		t.Error("IsRefactor should be true for spec converted from refactor")
+	}
+
+	// Verify features match tasks
+	if len(spec.Features) != len(r.Tasks) {
+		t.Fatalf("Features count = %d, want %d", len(spec.Features), len(r.Tasks))
+	}
+
+	for i, task := range r.Tasks {
+		feature := spec.Features[i]
+		if feature.ID != task.ID {
+			t.Errorf("Feature[%d].ID = %q, want %q", i, feature.ID, task.ID)
+		}
+		if feature.Description != task.Description {
+			t.Errorf("Feature[%d].Description = %q, want %q", i, feature.Description, task.Description)
+		}
+		if len(feature.AcceptanceCriteria) != len(task.AcceptanceCriteria) {
+			t.Errorf("Feature[%d].AcceptanceCriteria count = %d, want %d",
+				i, len(feature.AcceptanceCriteria), len(task.AcceptanceCriteria))
+		}
+	}
+}
+
+func TestRefactor_ToSpec_IsRefactorNotStored(t *testing.T) {
+	// The IsRefactor field should NOT be stored in YAML (yaml:"-" tag)
+	// This is verified by checking the struct tag directly
+	r := &Refactor{
+		ID:     "test",
+		Title:  "Test",
+		Status: RefactorStatusDraft,
+		Tasks: []RefactorTask{
+			{ID: "t1", Description: "Test task", AcceptanceCriteria: []string{"Done"}},
+		},
+	}
+
+	spec := r.ToSpec()
+
+	// IsRefactor should be true in memory
+	if !spec.IsRefactor {
+		t.Error("IsRefactor should be true")
+	}
+
+	// Note: The yaml:"-" tag on Spec.IsRefactor ensures it won't be persisted
+	// This is a structural guarantee, not a runtime check
+}

@@ -142,6 +142,26 @@ func itoa(i int) string {
 	return string(digits)
 }
 
+// ToSpec converts a Refactor to a Spec for chunking.
+// The resulting Spec is marked as a refactor (IsRefactor = true)
+// so that system-level refactor constraints can be automatically injected.
+func (r *Refactor) ToSpec() *Spec {
+	spec := NewSpec(r.ID, r.Title)
+	spec.Description = "Refactor: " + r.Title
+	spec.IsRefactor = true
+
+	for _, task := range r.Tasks {
+		feature := Feature{
+			ID:                 task.ID,
+			Description:        task.Description,
+			AcceptanceCriteria: task.AcceptanceCriteria,
+		}
+		spec.Features = append(spec.Features, feature)
+	}
+
+	return spec
+}
+
 // RefactorValidationError holds multiple validation errors for a refactor
 type RefactorValidationError struct {
 	Errors []string

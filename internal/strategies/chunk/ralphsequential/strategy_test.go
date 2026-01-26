@@ -503,3 +503,194 @@ func TestVagueTerms_NotEmpty(t *testing.T) {
 		t.Error("VagueTerms should not be empty")
 	}
 }
+
+func TestRefactorSystemConstraints_NotEmpty(t *testing.T) {
+	if len(RefactorSystemConstraints) == 0 {
+		t.Error("RefactorSystemConstraints should not be empty")
+	}
+}
+
+func TestRefactorSystemConstraints_RequiredText(t *testing.T) {
+	// Verify required constraint text per acceptance criteria
+	requiredPhrases := []string{
+		"This is a refactor. Existing behavior MUST be preserved.",
+		"All existing tests must pass without modification",
+	}
+
+	for _, phrase := range requiredPhrases {
+		found := false
+		for _, c := range RefactorSystemConstraints {
+			if c == phrase {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("RefactorSystemConstraints missing required phrase: %q", phrase)
+		}
+	}
+}
+
+func TestStrategy_Chunk_RefactorSpec_InjectsConstraints(t *testing.T) {
+	s := New()
+
+	// Create a spec marked as a refactor
+	spec := &domain.Spec{
+		ID:         "refactor-test",
+		Title:      "Test Refactor",
+		IsRefactor: true,
+		Features: []domain.Feature{
+			{
+				ID:                 "task-1",
+				Description:        "Refactor the auth module",
+				AcceptanceCriteria: []string{"Auth module is refactored"},
+			},
+		},
+	}
+
+	items, err := s.Chunk(spec)
+	if err != nil {
+		t.Fatalf("Chunk() error = %v", err)
+	}
+
+	if len(items) != 1 {
+		t.Fatalf("Chunk() returned %d items, want 1", len(items))
+	}
+
+	item := items[0]
+
+	// Verify refactor system constraints are included
+	for _, rc := range RefactorSystemConstraints {
+		found := false
+		for _, c := range item.Constraints {
+			if c == rc {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("work item missing refactor system constraint: %q", rc)
+		}
+	}
+
+	// Verify constraints appear in the CONSTRAINTS section of the prompt
+	if !strings.Contains(item.Prompt, "## CONSTRAINTS") {
+		t.Error("Prompt should contain CONSTRAINTS section")
+	}
+	for _, rc := range RefactorSystemConstraints {
+		if !strings.Contains(item.Prompt, rc) {
+			t.Errorf("Prompt CONSTRAINTS section should contain: %q", rc)
+		}
+	}
+}
+
+func TestStrategy_Chunk_NonRefactorSpec_NoRefactorConstraints(t *testing.T) {
+	s := New()
+
+	// Create a regular (non-refactor) spec
+	spec := &domain.Spec{
+		ID:         "regular-spec",
+		Title:      "Regular Spec",
+		IsRefactor: false, // Not a refactor
+		Features: []domain.Feature{
+			{
+				ID:                 "feature-1",
+				Description:        "Add new feature",
+				AcceptanceCriteria: []string{"Feature is added"},
+			},
+		},
+	}
+
+	items, err := s.Chunk(spec)
+	if err != nil {
+		t.Fatalf("Chunk() error = %v", err)
+	}
+
+	item := items[0]
+
+	// Verify refactor system constraints are NOT included
+	for _, rc := range RefactorSystemConstraints {
+		for _, c := range item.Constraints {
+			if c == rc {
+				t.Errorf("non-refactor work item should NOT have refactor constraint: %q", rc)
+			}
+		}
+	}
+}
+
+func TestStrategy_ChunkRefactor(t *testing.T) {
+	s := New()
+
+	refactor := &domain.Refactor{
+		ID:    "test-refactor",
+		Title: "Test Refactoring",
+		Tasks: []domain.RefactorTask{
+			{
+				ID:                 "task-1",
+				Description:        "Extract helper function",
+				AcceptanceCriteria: []string{"Helper function is extracted"},
+			},
+			{
+				ID:                 "task-2",
+				Description:        "Rename variable",
+				AcceptanceCriteria: []string{"Variable is renamed"},
+			},
+		},
+	}
+
+	items, err := s.ChunkRefactor(refactor)
+	if err != nil {
+		t.Fatalf("ChunkRefactor() error = %v", err)
+	}
+
+	if len(items) != 2 {
+		t.Fatalf("ChunkRefactor() returned %d items, want 2", len(items))
+	}
+
+	// Verify all items have refactor constraints
+	for i, item := range items {
+		for _, rc := range RefactorSystemConstraints {
+			found := false
+			for _, c := range item.Constraints {
+				if c == rc {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("items[%d] missing refactor system constraint: %q", i, rc)
+			}
+		}
+	}
+}
+
+func TestStrategy_MergeConstraints_RefactorConstraintsFirst(t *testing.T) {
+	s := New()
+
+	spec := &domain.Spec{
+		ID:         "refactor-order-test",
+		IsRefactor: true,
+		Features: []domain.Feature{
+			{ID: "f1", Description: "Test", AcceptanceCriteria: []string{"Works"}},
+		},
+	}
+
+	items, err := s.Chunk(spec)
+	if err != nil {
+		t.Fatalf("Chunk() error = %v", err)
+	}
+
+	constraints := items[0].Constraints
+
+	// Refactor constraints should come first
+	if len(constraints) < len(RefactorSystemConstraints) {
+		t.Fatalf("not enough constraints: got %d, want at least %d",
+			len(constraints), len(RefactorSystemConstraints))
+	}
+
+	for i, rc := range RefactorSystemConstraints {
+		if constraints[i] != rc {
+			t.Errorf("constraint[%d] = %q, want refactor constraint %q", i, constraints[i], rc)
+		}
+	}
+}

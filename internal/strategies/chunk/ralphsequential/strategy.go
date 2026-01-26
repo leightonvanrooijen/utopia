@@ -14,6 +14,13 @@ var DefaultConstraints = []string{
 	"Architecture is already correct",
 }
 
+// RefactorSystemConstraints are automatically injected for refactor WorkItems.
+// These ensure refactors preserve existing behavior.
+var RefactorSystemConstraints = []string{
+	"This is a refactor. Existing behavior MUST be preserved.",
+	"All existing tests must pass without modification",
+}
+
 // VagueTerms are phrases that indicate non-verifiable acceptance criteria.
 var VagueTerms = []string{
 	"should be good",
@@ -65,16 +72,26 @@ func (s *Strategy) Chunk(spec *domain.Spec) ([]*domain.WorkItem, error) {
 			i, // Order is the position in the spec
 		)
 
-		// Build the prompt with task + criteria baked in
-		workItem.Prompt = BuildPrompt(feature, nil)
-
 		// Apply constraints (spec-level + defaults, deduplicated)
+		// Refactor system constraints are automatically included when spec.IsRefactor is true
 		workItem.Constraints = s.mergeConstraints(spec)
+
+		// Build the prompt with task + criteria + constraints baked in
+		workItem.Prompt = BuildPromptWithConstraints(feature, workItem.Constraints, nil)
 
 		workItems = append(workItems, workItem)
 	}
 
 	return workItems, nil
+}
+
+// ChunkRefactor transforms a refactor into work items.
+// This is a convenience method that converts the refactor to a spec
+// and chunks it. The resulting work items automatically include
+// refactor system constraints.
+func (s *Strategy) ChunkRefactor(refactor *domain.Refactor) ([]*domain.WorkItem, error) {
+	spec := refactor.ToSpec()
+	return s.Chunk(spec)
 }
 
 // validate checks that the spec is suitable for chunking.
@@ -112,12 +129,24 @@ func (s *Strategy) validate(spec *domain.Spec) error {
 }
 
 // mergeConstraints combines default constraints with spec-level constraints,
-// deduplicating any that appear in both.
+// deduplicating any that appear in both. If the spec is a refactor,
+// refactor system constraints are automatically prepended.
 func (s *Strategy) mergeConstraints(spec *domain.Spec) []string {
 	seen := make(map[string]bool)
 	var result []string
 
-	// Add defaults first
+	// Add refactor system constraints first (if applicable)
+	if spec.IsRefactor {
+		for _, c := range RefactorSystemConstraints {
+			normalized := strings.TrimSpace(strings.ToLower(c))
+			if !seen[normalized] {
+				seen[normalized] = true
+				result = append(result, c)
+			}
+		}
+	}
+
+	// Add defaults
 	for _, c := range DefaultConstraints {
 		normalized := strings.TrimSpace(strings.ToLower(c))
 		if !seen[normalized] {
