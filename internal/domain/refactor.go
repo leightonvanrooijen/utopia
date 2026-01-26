@@ -91,3 +91,74 @@ type InvalidStatusTransitionError struct {
 func (e *InvalidStatusTransitionError) Error() string {
 	return "invalid status transition from " + string(e.From) + " to " + string(e.To)
 }
+
+// ValidateRefactor checks that a refactor has all required fields populated correctly.
+// Returns nil if valid, or an error describing what's missing/invalid.
+func ValidateRefactor(r *Refactor) error {
+	var errors []string
+
+	if r.ID == "" {
+		errors = append(errors, "missing required field: id")
+	}
+	if r.Title == "" {
+		errors = append(errors, "missing required field: title")
+	}
+	if r.Status == "" {
+		errors = append(errors, "missing required field: status")
+	}
+	if len(r.Tasks) == 0 {
+		errors = append(errors, "missing required field: tasks (must have at least one task)")
+	}
+
+	for i, task := range r.Tasks {
+		taskPrefix := "task[" + itoa(i) + "]"
+		if task.ID == "" {
+			errors = append(errors, taskPrefix+": missing required field: id")
+		}
+		if task.Description == "" {
+			errors = append(errors, taskPrefix+": missing required field: description")
+		}
+		if len(task.AcceptanceCriteria) == 0 {
+			errors = append(errors, taskPrefix+": missing required field: acceptance_criteria (must have at least one criterion)")
+		}
+	}
+
+	if len(errors) > 0 {
+		return &RefactorValidationError{Errors: errors}
+	}
+	return nil
+}
+
+// itoa converts an int to a string without importing strconv
+func itoa(i int) string {
+	if i == 0 {
+		return "0"
+	}
+	var digits []byte
+	for i > 0 {
+		digits = append([]byte{byte('0' + i%10)}, digits...)
+		i /= 10
+	}
+	return string(digits)
+}
+
+// RefactorValidationError holds multiple validation errors for a refactor
+type RefactorValidationError struct {
+	Errors []string
+}
+
+func (e *RefactorValidationError) Error() string {
+	return "refactor validation failed:\n  - " + joinStrings(e.Errors, "\n  - ")
+}
+
+// joinStrings joins strings with a separator without importing strings package
+func joinStrings(strs []string, sep string) string {
+	if len(strs) == 0 {
+		return ""
+	}
+	result := strs[0]
+	for i := 1; i < len(strs); i++ {
+		result += sep + strs[i]
+	}
+	return result
+}

@@ -204,10 +204,28 @@ func runRefactor(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// validateRefactors attempts to load all refactors and returns any validation errors
+// validateRefactors loads all refactors and validates their structure.
+// It checks for:
+// - YAML syntax (via unmarshaling)
+// - Required fields: id, title, status, tasks
+// - Each task must have: id, description, and at least one acceptance criterion
 func validateRefactors(store *storage.YAMLStore) error {
-	_, err := store.ListRefactors()
-	return err
+	refactors, err := store.ListRefactors()
+	if err != nil {
+		return err // YAML syntax error
+	}
+
+	var allErrors []string
+	for _, r := range refactors {
+		if validationErr := domain.ValidateRefactor(r); validationErr != nil {
+			allErrors = append(allErrors, fmt.Sprintf("refactor '%s': %s", r.ID, validationErr.Error()))
+		}
+	}
+
+	if len(allErrors) > 0 {
+		return fmt.Errorf("%s", strings.Join(allErrors, "\n"))
+	}
+	return nil
 }
 
 // buildRefactorsSummary creates a readable summary of existing refactors for Claude
