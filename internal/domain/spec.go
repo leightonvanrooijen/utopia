@@ -119,14 +119,50 @@ const (
 	ChangeRequestComplete   ChangeRequestStatus = "complete"
 )
 
-// ChangeRequest represents a set of changes to apply to a parent spec
+// CRType represents the type of change request which determines behavior and constraints
+type CRType string
+
+const (
+	CRTypeFeature     CRType = "feature"
+	CRTypeEnhancement CRType = "enhancement"
+	CRTypeRefactor    CRType = "refactor"
+	CRTypeRemoval     CRType = "removal"
+	CRTypeInitiative  CRType = "initiative"
+)
+
+// IsValidCRType checks if a string is a valid CR type
+func IsValidCRType(t string) bool {
+	switch CRType(t) {
+	case CRTypeFeature, CRTypeEnhancement, CRTypeRefactor, CRTypeRemoval, CRTypeInitiative:
+		return true
+	}
+	return false
+}
+
+// Phase represents an ordered phase within an initiative CR
+type Phase struct {
+	Type    CRType   `yaml:"type"`              // Type of this phase (feature, refactor, etc.)
+	Changes []Change `yaml:"changes,omitempty"` // For feature/enhancement/removal phases
+	Tasks   []Task   `yaml:"tasks,omitempty"`   // For refactor phases
+}
+
+// Task represents a single task within a refactor CR or phase
+type Task struct {
+	ID                 string   `yaml:"id"`
+	Description        string   `yaml:"description"`
+	AcceptanceCriteria []string `yaml:"acceptance_criteria"`
+}
+
+// ChangeRequest represents a set of changes to apply to specs
 type ChangeRequest struct {
 	ID         string              `yaml:"id"`
-	Type       string              `yaml:"type"` // Always "change-request"
-	ParentSpec string              `yaml:"parent_spec"`
+	Type       CRType              `yaml:"type"` // Required: feature, enhancement, refactor, removal, initiative
+	ParentSpec string              `yaml:"parent_spec,omitempty"`
 	Title      string              `yaml:"title"`
 	Status     ChangeRequestStatus `yaml:"status"`
-	Changes    []Change            `yaml:"changes"`
+	Changes    []Change            `yaml:"changes,omitempty"` // For feature/enhancement/removal types
+	Tasks      []Task              `yaml:"tasks,omitempty"`   // For refactor type
+	Phases     []Phase             `yaml:"phases,omitempty"`  // For initiative type
 }
 
 // EditPair represents an old/new pair for edit operations
@@ -433,7 +469,12 @@ func (s *Spec) removeDomainKnowledge(knowledge string) error {
 // all operations into features. This enables chunking change requests
 // directly without needing a parent spec.
 //
-// Operation handling:
+// Type-specific behavior:
+// - refactor: Uses Tasks array, sets IsRefactor=true for constraint injection
+// - feature/enhancement/removal: Uses Changes array
+// - initiative: Should be chunked per-phase, not as a whole
+//
+// Operation handling (for Changes):
 // - "add" with feature: included as-is
 // - "add" with only domain knowledge: ignored (no feature to chunk)
 // - "remove": becomes feature "remove-{feature_id}" with removal task
@@ -442,6 +483,21 @@ func (cr *ChangeRequest) ToSpec() *Spec {
 	spec := NewSpec(cr.ID, cr.Title)
 	spec.Description = "Generated from change request: " + cr.Title
 
+	// Refactor CRs use Tasks and get behavior-preservation constraints
+	if cr.Type == CRTypeRefactor {
+		spec.IsRefactor = true
+		for _, task := range cr.Tasks {
+			feature := Feature{
+				ID:                 task.ID,
+				Description:        task.Description,
+				AcceptanceCriteria: task.AcceptanceCriteria,
+			}
+			spec.Features = append(spec.Features, feature)
+		}
+		return spec
+	}
+
+	// Feature/enhancement/removal CRs use Changes
 	for _, change := range cr.Changes {
 		switch change.Operation {
 		case "add":
@@ -534,4 +590,109 @@ func (cr *ChangeRequest) ApplyChanges(spec *Spec) error {
 	// Restore original status - merge should not change spec status
 	spec.Status = originalStatus
 	return nil
+}
+
+// ValidateChangeRequest checks that a change request has all required fields
+// and type-specific structure populated correctly.
+// Returns nil if valid, or an error describing what's missing/invalid.
+func ValidateChangeRequest(cr *ChangeRequest) error {
+	var errors []string
+
+	// Required fields for all CRs
+	if cr.ID == "" {
+		errors = append(errors, "missing required field: id")
+	}
+	if cr.Title == "" {
+		errors = append(errors, "missing required field: title")
+	}
+	if cr.Status == "" {
+		errors = append(errors, "missing required field: status")
+	}
+
+	// Type is required and must be valid
+	if cr.Type == "" {
+		errors = append(errors, "missing required field: type")
+	} else if !IsValidCRType(string(cr.Type)) {
+		errors = append(errors, fmt.Sprintf("invalid type %q: must be one of feature, enhancement, refactor, removal, initiative", cr.Type))
+	} else {
+		// Type-specific validation
+		switch cr.Type {
+		case CRTypeFeature, CRTypeEnhancement, CRTypeRemoval:
+			if len(cr.Changes) == 0 {
+				errors = append(errors, fmt.Sprintf("type %q requires changes array", cr.Type))
+			}
+			if len(cr.Tasks) > 0 {
+				errors = append(errors, fmt.Sprintf("type %q should not have tasks array (use changes instead)", cr.Type))
+			}
+			if len(cr.Phases) > 0 {
+				errors = append(errors, fmt.Sprintf("type %q should not have phases array", cr.Type))
+			}
+
+		case CRTypeRefactor:
+			if len(cr.Tasks) == 0 {
+				errors = append(errors, "type refactor requires tasks array")
+			}
+			if len(cr.Changes) > 0 {
+				errors = append(errors, "type refactor should not have changes array (use tasks instead)")
+			}
+			if len(cr.Phases) > 0 {
+				errors = append(errors, "type refactor should not have phases array")
+			}
+			// Validate each task
+			for i, task := range cr.Tasks {
+				taskPrefix := fmt.Sprintf("tasks[%d]", i)
+				if task.ID == "" {
+					errors = append(errors, taskPrefix+": missing required field: id")
+				}
+				if task.Description == "" {
+					errors = append(errors, taskPrefix+": missing required field: description")
+				}
+				if len(task.AcceptanceCriteria) == 0 {
+					errors = append(errors, taskPrefix+": missing required field: acceptance_criteria")
+				}
+			}
+
+		case CRTypeInitiative:
+			if len(cr.Phases) == 0 {
+				errors = append(errors, "type initiative requires phases array")
+			}
+			if len(cr.Changes) > 0 {
+				errors = append(errors, "type initiative should not have changes array (use phases instead)")
+			}
+			if len(cr.Tasks) > 0 {
+				errors = append(errors, "type initiative should not have tasks array (use phases instead)")
+			}
+			// Validate each phase has appropriate content for its type
+			for i, phase := range cr.Phases {
+				phasePrefix := fmt.Sprintf("phases[%d]", i)
+				if phase.Type == "" {
+					errors = append(errors, phasePrefix+": missing required field: type")
+				} else if phase.Type == CRTypeInitiative {
+					errors = append(errors, phasePrefix+": phase type cannot be initiative (no nesting)")
+				} else if phase.Type == CRTypeRefactor {
+					if len(phase.Tasks) == 0 {
+						errors = append(errors, phasePrefix+": refactor phase requires tasks")
+					}
+				} else {
+					if len(phase.Changes) == 0 {
+						errors = append(errors, phasePrefix+": phase requires changes")
+					}
+				}
+			}
+		}
+	}
+
+	if len(errors) > 0 {
+		return &CRValidationError{Errors: errors}
+	}
+	return nil
+}
+
+// CRValidationError holds multiple validation errors for a change request
+type CRValidationError struct {
+	Errors []string
+}
+
+func (e *CRValidationError) Error() string {
+	return "change request validation failed:\n  - " + strings.Join(e.Errors, "\n  - ")
 }
