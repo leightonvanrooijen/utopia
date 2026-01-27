@@ -87,6 +87,14 @@ func runChunk(cmd *cobra.Command, args []string) error {
 	switch sourceType {
 	case storage.SourceChangeRequest:
 		fmt.Printf("Loaded change request: %s\n", docID)
+		// Update CR status to in-progress when chunking begins
+		cr, err := store.LoadChangeRequest(docID)
+		if err == nil {
+			cr.Status = domain.ChangeRequestInProgress
+			if err := store.SaveChangeRequest(cr); err != nil {
+				return fmt.Errorf("failed to update CR status: %w", err)
+			}
+		}
 	case storage.SourceRefactor:
 		fmt.Printf("Loaded refactor: %s\n", docID)
 	}
@@ -193,8 +201,11 @@ func chunkInitiative(cr *domain.ChangeRequest, store *storage.YAMLStore, config 
 		}
 	}
 
-	// Update phase status to in-progress
+	// Update phase status and CR status to in-progress
 	cr.Phases[phaseIndex].Status = domain.PhaseStatusInProgress
+	if cr.Status != domain.ChangeRequestInProgress {
+		cr.Status = domain.ChangeRequestInProgress
+	}
 	if err := store.SaveChangeRequest(cr); err != nil {
 		return fmt.Errorf("failed to update CR status: %w", err)
 	}

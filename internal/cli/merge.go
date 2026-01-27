@@ -179,6 +179,12 @@ func runMerge(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Mark CR as complete before deletion
+	cr.Status = domain.ChangeRequestComplete
+	if err := store.SaveChangeRequest(cr); err != nil {
+		return fmt.Errorf("failed to update CR status: %w", err)
+	}
+
 	// Delete the change request
 	if err := store.DeleteChangeRequest(changeRequestID); err != nil {
 		return fmt.Errorf("failed to delete change request: %w", err)
@@ -355,6 +361,12 @@ func mergeInitiative(cr *domain.ChangeRequest, changeRequestID, utopiaDir string
 		return nil
 	}
 
+	// Mark CR as complete before deletion
+	cr.Status = domain.ChangeRequestComplete
+	if err := store.SaveChangeRequest(cr); err != nil {
+		return fmt.Errorf("failed to update CR status: %w", err)
+	}
+
 	// Delete the change request
 	if err := store.DeleteChangeRequest(changeRequestID); err != nil {
 		return fmt.Errorf("failed to delete change request: %w", err)
@@ -402,6 +414,12 @@ func mergeRefactor(cr *domain.ChangeRequest, changeRequestID, utopiaDir string, 
 		fmt.Println("Dry run mode - no changes applied")
 		fmt.Printf("\nWould delete refactor CR: %s (no specs modified)\n", changeRequestID)
 		return nil
+	}
+
+	// Mark CR as complete before deletion
+	cr.Status = domain.ChangeRequestComplete
+	if err := store.SaveChangeRequest(cr); err != nil {
+		return fmt.Errorf("failed to update CR status: %w", err)
 	}
 
 	// Delete the change request (no spec modifications for refactors)
