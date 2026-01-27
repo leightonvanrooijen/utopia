@@ -4,89 +4,89 @@ status: draft
 created: 0001-01-01T00:00:00Z
 updated: 2026-01-26T13:15:14.722617+11:00
 description: |
-    A system for managing changes to existing specifications. Change requests
-    are temporary specs that define deltas (add, modify, remove) to a parent
-    spec. Once implemented, the changes are merged into the parent spec to
-    maintain it as the single source of truth for the current system state.
+  A system for managing changes to existing specifications. Change requests
+  are temporary specs that define deltas (add, modify, remove) to a parent
+  spec. Once implemented, the changes are merged into the parent spec to
+  maintain it as the single source of truth for the current system state.
 domain_knowledge:
-    - Main specs always represent the current state of the implemented system
-    - Change requests are temporary and deleted/archived after merging
-    - A single change request can contain multiple operations of different types
-    - Feature IDs cannot be renamed via modify (use remove + add instead)
-    - Domain knowledge items are matched by exact string content
-    - Change requests live in .utopia/specs/_changerequests/
+  - Main specs always represent the current state of the implemented system
+  - Change requests are temporary and deleted/archived after merging
+  - A single change request can contain multiple operations of different types
+  - Feature IDs cannot be renamed via modify (use remove + add instead)
+  - Domain knowledge items are matched by exact string content
+  - Change requests live in .utopia/specs/_changerequests/
 features:
-    - id: change-request-structure
-      description: Define the YAML structure for change request specs
-      acceptance_criteria:
-        - 'Change request has required fields: id, type, parent_spec, title, status, changes'
-        - type field is always 'change-request'
-        - parent_spec references the id of an existing spec
-        - status follows same values as regular specs (draft, approved, in-progress, complete)
-        - changes is a list of operations
+  - id: change-request-structure
+    description: Define the YAML structure for change request specs
+    acceptance_criteria:
+      - 'Change request has required fields: id, type, parent_spec, title, status, changes'
+      - type field is always 'change-request'
+      - parent_spec references the id of an existing spec
+      - status follows same values as regular specs (draft, approved, in-progress, complete)
+      - changes is a list of operations
 
-    - id: add-operation
-      description: Add new features or domain knowledge to a spec
-      acceptance_criteria:
-        - operation field is 'add'
-        - Can add a feature with full feature definition (id, description, acceptance_criteria)
-        - Can add domain_knowledge as a list of new knowledge strings
-        - Added features must have unique IDs not present in parent spec
-        - Added domain knowledge must not duplicate existing entries
+  - id: add-operation
+    description: Add new features or domain knowledge to a spec
+    acceptance_criteria:
+      - operation field is 'add'
+      - Can add a feature with full feature definition (id, description, acceptance_criteria)
+      - Can add domain_knowledge as a list of new knowledge strings
+      - Added features must have unique IDs not present in parent spec
+      - Added domain knowledge must not duplicate existing entries
 
-    - id: modify-operation
-      description: Modify existing features or domain knowledge in a spec
-      acceptance_criteria:
-        - operation field is 'modify'
-        - For features, targets by feature_id which must exist in parent spec
-        - Can optionally update feature description
-        - Can add new acceptance criteria via criteria.add list
-        - Can remove existing acceptance criteria via criteria.remove list
-        - Can edit existing acceptance criteria via criteria.edit list with old/new pairs
-        - criteria.remove items must match existing criteria exactly
-        - criteria.edit old values must match existing criteria exactly
-        - For domain_knowledge, supports add, remove, and edit sub-operations
-        - domain_knowledge.edit uses old/new pairs for string replacement
+  - id: modify-operation
+    description: Modify existing features or domain knowledge in a spec
+    acceptance_criteria:
+      - operation field is 'modify'
+      - For features, targets by feature_id which must exist in parent spec
+      - Can optionally update feature description
+      - Can add new acceptance criteria via criteria.add list
+      - Can remove existing acceptance criteria via criteria.remove list
+      - Can edit existing acceptance criteria via criteria.edit list with old/new pairs
+      - criteria.remove items must match existing criteria exactly
+      - criteria.edit old values must match existing criteria exactly
+      - For domain_knowledge, supports add, remove, and edit sub-operations
+      - domain_knowledge.edit uses old/new pairs for string replacement
 
-    - id: remove-operation
-      description: Remove features or domain knowledge from a spec
-      acceptance_criteria:
-        - operation field is 'remove'
-        - For features, specifies feature_id to remove
-        - feature_id must exist in parent spec
-        - Can optionally include reason field for documentation
-        - For domain_knowledge, provides list of exact strings to remove
-        - domain_knowledge strings must match existing entries exactly
+  - id: remove-operation
+    description: Remove features or domain knowledge from a spec
+    acceptance_criteria:
+      - operation field is 'remove'
+      - For features, specifies feature_id to remove
+      - feature_id must exist in parent spec
+      - Can optionally include reason field for documentation
+      - For domain_knowledge, provides list of exact strings to remove
+      - domain_knowledge strings must match existing entries exactly
 
-    - id: change-request-location
-      description: Change requests are stored in a dedicated directory
-      acceptance_criteria:
-        - Change requests are created in .utopia/specs/_changerequests/
-        - 'Filename follows pattern: {parent-spec-id}-{change-description}.yaml'
-        - Directory is created if it doesn't exist
+  - id: change-request-location
+    description: Change requests are stored in a dedicated directory
+    acceptance_criteria:
+      - Change requests are created in .utopia/specs/_changerequests/
+      - 'Filename follows pattern: {parent-spec-id}-{change-description}.yaml'
+      - Directory is created if it doesn't exist
 
-    - id: merge-workflow
-      description: Process for merging change requests into parent specs
-      acceptance_criteria:
-        - After implementation, parent spec is updated to reflect all changes
-        - Add operations append new features/domain_knowledge to parent
-        - Modify operations update existing features/domain_knowledge in parent
-        - Remove operations delete features/domain_knowledge from parent
-        - Change request is deleted or moved to archive after successful merge
-        - Parent spec status remains unchanged by merge
+  - id: merge-workflow
+    description: Process for merging change requests into parent specs
+    acceptance_criteria:
+      - After implementation, parent spec is updated to reflect all changes
+      - Add operations append new features/domain_knowledge to parent
+      - Modify operations update existing features/domain_knowledge in parent
+      - Remove operations delete features/domain_knowledge from parent
+      - Change request is deleted or moved to archive after successful merge
+      - Parent spec status remains unchanged by merge
 
-    - id: merge-command
-      description: |-
-        CLI command to merge a completed change request into its parent spec
-      acceptance_criteria:
-        - Command is "utopia merge <change-request-id>"
-        - Command loads the change request from .utopia/specs/_changerequests/
-        - Command loads the parent spec using the parent_spec field
-        - Command applies all changes using ApplyChanges() method
-        - Command saves the updated parent spec
-        - Command deletes the change request file after successful merge
-        - Command deletes the work items directory for the change request after merge
-        - Command prints summary of what was merged (features added/modified/removed)
-        - Command fails with clear error if change request not found
-        - Command fails with clear error if parent spec not found
-        - Command supports --dry-run flag to preview changes without applying
+  - id: merge-command
+    description: |-
+      CLI command to merge a completed change request into its parent spec
+    acceptance_criteria:
+      - Command is "utopia merge <change-request-id>"
+      - Command loads the change request from .utopia/specs/_changerequests/
+      - Command loads the parent spec using the parent_spec field
+      - Command applies all changes using ApplyChanges() method
+      - Command saves the updated parent spec
+      - Command deletes the change request file after successful merge
+      - Command deletes the work items directory for the change request after merge
+      - Command prints summary of what was merged (features added/modified/removed)
+      - Command fails with clear error if change request not found
+      - Command fails with clear error if parent spec not found
+      - Command supports --dry-run flag to preview changes without applying

@@ -1,0 +1,42 @@
+id: yaml-formatting
+title: YAML Formatting System
+status: draft
+description: |
+  A standardized YAML formatting package that ensures consistent output across
+  all YAML files in the Utopia project.
+
+  Uses Google's yamlfmt library as the formatting engine, providing both a
+  reusable package for programmatic use and a CLI command for manual formatting.
+
+  Key characteristics:
+  - Single source of truth for YAML formatting rules
+  - Reusable package for any code that writes YAML
+  - CLI command for formatting existing/manually-edited files
+
+domain_knowledge:
+  - Google yamlfmt is used as a Go library (github.com/google/yamlfmt), not shelled out to CLI
+  - The formatter package is the single source of formatting configuration
+  - Formatting configuration should be centralized, not scattered across the codebase
+  - config.yaml is excluded from formatting (user-edited, different structure)
+
+features:
+  - id: formatter-package
+    description: |
+      A dedicated formatter package that wraps Google yamlfmt with Utopia-specific
+      configuration defaults.
+    acceptance_criteria:
+      - Package lives at internal/infra/formatter
+      - Imports and uses github.com/google/yamlfmt as a Go library
+      - Exposes a Format(content []byte) ([]byte, error) function
+      - Configuration is centralized in the package
+      - Default config uses indent=2, retain_line_breaks=true, eof_newline=true, trim_trailing_whitespace=true
+
+  - id: format-command
+    description: |
+      CLI command to format YAML files in the .utopia directory.
+    acceptance_criteria:
+      - Command is "utopia format" with no required arguments
+      - Formats all files matching .utopia/**/*.yaml
+      - Excludes .utopia/config.yaml
+      - Prints count of files formatted
+      - Supports --check flag that exits non-zero if files would be changed (for CI)

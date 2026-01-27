@@ -2,7 +2,7 @@ id: chunking-ralph-sequential
 title: Ralph Sequential Chunking Strategy
 status: draft
 created: 0001-01-01T00:00:00Z
-updated: 2026-01-26T13:19:31.290605+11:00
+updated: 2026-01-27T11:20:55.432944+11:00
 description: |
     The "ralph-sequential" chunking strategy transforms a structured specification into
     discrete WorkItems optimized for Ralph Wiggum loop execution.
@@ -23,6 +23,9 @@ domain_knowledge:
     - Change requests can be chunked directly using the same command as specs
     - All operation types (add, modify, remove) are converted to WorkItems
     - The chunk command falls back to _changerequests directory if spec not found in main specs
+    - Refactors use the same chunking infrastructure as specs
+    - Refactor WorkItems receive additional behavior-preservation constraints
+    - The chunk command detects document type (spec, change-request, refactor) and applies appropriate handling
 features:
     - id: ralph-sequential-strategy
       description: |
@@ -107,6 +110,9 @@ features:
         - Command saves WorkItems to .utopia/work-items/<spec-id>/
         - Command prints summary (N work items created)
         - Command fails with clear error if spec not found or invalid
+        - Command attempts to load from .utopia/refactors/<id>.yaml if not found in specs or change requests
+        - Command detects document type and applies appropriate chunking (spec, change-request, or refactor)
+        - If refactor found, converts tasks to WorkItems with refactor constraints
 
     - id: change-request-to-spec-conversion
       description: |-
@@ -129,3 +135,25 @@ features:
         - If change request found, converts to spec using ToSpec() before chunking
         - If neither found, returns clear error listing both locations checked
         - WorkItems are saved to .utopia/work-items/<change-request-id>/
+
+    - id: refactor-chunking
+      description: |
+        Support chunking refactor documents into WorkItems.
+        Refactor tasks map to WorkItems similar to spec features.
+      acceptance_criteria:
+        - Chunk command accepts refactor documents from .utopia/refactors/
+        - Refactor tasks are converted to WorkItems (one WorkItem per task)
+        - WorkItem ID is <refactor-id>-<task-id>
+        - WorkItem Title is the task description
+        - WorkItem Prompt is rendered using the same template as specs
+        - WorkItems are saved to .utopia/work-items/<refactor-id>/
+
+    - id: refactor-constraint-injection
+      description: |
+        Inject behavior-preservation constraints for refactor WorkItems.
+      acceptance_criteria:
+        - Refactor WorkItems include "This is a refactor. Existing behavior MUST be preserved."
+        - Refactor WorkItems include "All existing tests must pass without modification"
+        - These constraints are prepended to the CONSTRAINTS section
+        - Spec WorkItems do not receive these constraints
+        - Constraint injection happens during prompt building
