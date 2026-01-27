@@ -16,14 +16,19 @@ var (
 )
 
 var chunkCmd = &cobra.Command{
-	Use:   "chunk <spec-id>",
-	Short: "Chunk a spec into work items",
-	Long: `Transform a specification into discrete work items for Ralph execution.
+	Use:   "chunk <id>",
+	Short: "Chunk a spec or refactor into work items",
+	Long: `Transform a specification or refactor into discrete work items for Ralph execution.
 
-The chunking strategy determines how features are mapped to work items:
-  - ralph-sequential: One work item per feature, executed in order
+The command searches for the ID in the following order:
+  1. .utopia/specs/<id>.yaml (spec)
+  2. .utopia/specs/_changerequests/<id>.yaml (change request)
+  3. .utopia/refactors/<id>.yaml (refactor)
 
-Work items are saved to .utopia/work-items/<spec-id>/`,
+The chunking strategy determines how features/tasks are mapped to work items:
+  - ralph-sequential: One work item per feature/task, executed in order
+
+Work items are saved to .utopia/work-items/<id>/`,
 	Args: cobra.ExactArgs(1),
 	RunE: runChunk,
 }
@@ -44,7 +49,7 @@ func RegisterChunkStrategy(s chunkStrategy.Strategy) {
 }
 
 func runChunk(cmd *cobra.Command, args []string) error {
-	specID := args[0]
+	docID := args[0]
 	projectDir := GetProjectDir(cmd)
 
 	absPath, err := filepath.Abs(projectDir)
@@ -66,14 +71,17 @@ func runChunk(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	// Load the spec (or change request converted to spec)
-	spec, isChangeRequest, err := store.LoadSpecOrChangeRequest(specID)
+	// Load the spec, change request, or refactor (all converted to spec)
+	spec, sourceType, err := store.LoadSpecOrChangeRequestOrRefactor(docID)
 	if err != nil {
-		return fmt.Errorf("spec not found: %s\n\nCheck .utopia/specs/ or .utopia/specs/_changerequests/ for available specs", specID)
+		return fmt.Errorf("document not found: %s\n\nCheck .utopia/specs/, .utopia/specs/_changerequests/, or .utopia/refactors/ for available documents", docID)
 	}
 
-	if isChangeRequest {
-		fmt.Printf("Loaded change request: %s\n", specID)
+	switch sourceType {
+	case storage.SourceChangeRequest:
+		fmt.Printf("Loaded change request: %s\n", docID)
+	case storage.SourceRefactor:
+		fmt.Printf("Loaded refactor: %s\n", docID)
 	}
 
 	// Determine which strategy to use
@@ -100,14 +108,14 @@ func runChunk(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("chunking failed: %w", err)
 	}
 
-	// Save work items to .utopia/work-items/<spec-id>/
+	// Save work items to .utopia/work-items/<id>/
 	for _, item := range workItems {
-		if err := store.SaveWorkItemForSpec(specID, item); err != nil {
+		if err := store.SaveWorkItemForSpec(docID, item); err != nil {
 			return fmt.Errorf("failed to save work item %s: %w", item.ID, err)
 		}
 	}
 
-	fmt.Printf("Created %d work item(s) in .utopia/work-items/%s/\n", len(workItems), specID)
+	fmt.Printf("Created %d work item(s) in .utopia/work-items/%s/\n", len(workItems), docID)
 
 	// Print summary
 	fmt.Println("\nWork items:")

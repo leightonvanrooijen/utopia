@@ -44,6 +44,15 @@ func (s *YAMLStore) LoadSpec(id string) (*domain.Spec, error) {
 	return &spec, nil
 }
 
+// SourceType indicates where a loaded spec originated from
+type SourceType string
+
+const (
+	SourceSpec          SourceType = "spec"
+	SourceChangeRequest SourceType = "change-request"
+	SourceRefactor      SourceType = "refactor"
+)
+
 // LoadSpecOrChangeRequest attempts to load a spec, falling back to loading
 // a change request and converting it to a spec if the spec is not found.
 // This enables chunking change requests using the same command as specs.
@@ -53,21 +62,47 @@ func (s *YAMLStore) LoadSpec(id string) (*domain.Spec, error) {
 // - (*Spec, true, nil) if change request found and converted
 // - (nil, false, error) if neither found or other error
 func (s *YAMLStore) LoadSpecOrChangeRequest(id string) (*domain.Spec, bool, error) {
+	spec, sourceType, err := s.LoadSpecOrChangeRequestOrRefactor(id)
+	if err != nil {
+		return nil, false, err
+	}
+	return spec, sourceType == SourceChangeRequest, nil
+}
+
+// LoadSpecOrChangeRequestOrRefactor attempts to load a spec, change request, or refactor
+// by ID, converting to a Spec for uniform chunking.
+//
+// Search order:
+// 1. .utopia/specs/{id}.yaml
+// 2. .utopia/specs/_changerequests/{id}.yaml
+// 3. .utopia/refactors/{id}.yaml
+//
+// Returns:
+// - (*Spec, SourceSpec, nil) if spec found
+// - (*Spec, SourceChangeRequest, nil) if change request found and converted
+// - (*Spec, SourceRefactor, nil) if refactor found and converted
+// - (nil, "", error) if none found or other error
+func (s *YAMLStore) LoadSpecOrChangeRequestOrRefactor(id string) (*domain.Spec, SourceType, error) {
 	// First, try to load as a regular spec
 	spec, err := s.LoadSpec(id)
 	if err == nil {
-		return spec, false, nil
+		return spec, SourceSpec, nil
 	}
 
 	// If spec not found, try loading as a change request
 	cr, crErr := s.LoadChangeRequest(id)
-	if crErr != nil {
-		// Neither spec nor change request found
-		return nil, false, fmt.Errorf("not found in .utopia/specs/%s.yaml or .utopia/specs/_changerequests/%s.yaml", id, id)
+	if crErr == nil {
+		return cr.ToSpec(), SourceChangeRequest, nil
 	}
 
-	// Convert change request to spec
-	return cr.ToSpec(), true, nil
+	// If change request not found, try loading as a refactor
+	r, rErr := s.LoadRefactor(id)
+	if rErr == nil {
+		return r.ToSpec(), SourceRefactor, nil
+	}
+
+	// None found
+	return nil, "", fmt.Errorf("not found in .utopia/specs/%s.yaml, .utopia/specs/_changerequests/%s.yaml, or .utopia/refactors/%s.yaml", id, id, id)
 }
 
 // ListSpecs returns all specs in the specs directory
