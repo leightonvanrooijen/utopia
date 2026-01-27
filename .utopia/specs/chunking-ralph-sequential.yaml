@@ -22,7 +22,7 @@ domain_knowledge:
     - The completion token <COMPLETE> distinguishes intentional completion from step-limit exits
     - Change requests can be chunked directly using the same command as specs
     - All operation types (add, modify, remove) are converted to WorkItems
-    - The chunk command falls back to _changerequests directory if spec not found in main specs
+    - The chunk command falls back to change-requests directory if spec not found in main specs
     - Refactors use the same chunking infrastructure as specs
     - Refactor WorkItems receive additional behavior-preservation constraints
     - The chunk command detects document type (spec, change-request, refactor) and applies appropriate handling
@@ -131,7 +131,8 @@ features:
         Chunk command falls back to loading change requests when spec not found
       acceptance_criteria:
         - Command first attempts to load from .utopia/specs/<id>.yaml
-        - If not found, attempts to load from .utopia/specs/_changerequests/<id>.yaml
+        - If not found, attempts to load from .utopia/change-requests/<id>.yaml
+        - Fallback checks .utopia/change-requests/ directory (unified CR location)
         - If change request found, converts to spec using ToSpec() before chunking
         - If neither found, returns clear error listing both locations checked
         - WorkItems are saved to .utopia/work-items/<change-request-id>/
