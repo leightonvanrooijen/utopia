@@ -1,171 +1,176 @@
 id: unified-change-request-system
 title: Unified Change Request System
 status: draft
+created: 0001-01-01T00:00:00Z
+updated: 2026-01-27T15:19:03.465764+11:00
 description: |
-  A unified system where all work flows through Change Requests. CRs are standalone
-  documents that describe work to be done. Each change within a CR can target a
-  different spec, enabling cross-cutting changes. Specs become derived artifacts
-  that represent "what the system does now" - built up from merged change requests.
+    A unified system where all work flows through Change Requests. CRs are standalone
+    documents that describe work to be done. Each change within a CR can target a
+    different spec, enabling cross-cutting changes. Specs become derived artifacts
+    that represent "what the system does now" - built up from merged change requests.
 
-  Key characteristics:
-  - Everything is a Change Request (features, refactors, enhancements, etc.)
-  - CRs are standalone (not tied to a single parent spec)
-  - Each change targets a specific spec (or no spec for refactors)
-  - Merge handles multi-spec CRs by applying changes to each target
-  - Specs are the source of truth OUTPUT, not input
-  - Initiatives group related CRs with explicit ordering
-
+    Key characteristics:
+    - Everything is a Change Request (features, refactors, enhancements, etc.)
+    - CRs are standalone (not tied to a single parent spec)
+    - Each change targets a specific spec (or no spec for refactors)
+    - Merge handles multi-spec CRs by applying changes to each target
+    - Specs are the source of truth OUTPUT, not input
+    - Initiatives group related CRs with explicit ordering
 domain_knowledge:
-  - CRs describe work; Specs describe current system state
-  - A single CR can affect 0 specs (refactor), 1 spec (simple feature), or N specs (cross-cutting)
-  - Refactors have tasks (no spec impact), features have changes (spec impact)
-  - The type field determines merge behavior and constraints
-  - Initiatives contain phases that are executed in order
-  - Claude must see summaries of existing specs before classifying intent
-  - Modify/remove operations require exact text matching (no fuzzy matching)
-  - Feature IDs cannot be renamed via modify (use remove + add instead)
-  - Refactor scope is discovered during implementation, not defined upfront
-  - CRs are deleted after successful merge (temporary work artifacts)
-  - All CR types follow status lifecycle draft → in-progress → complete
-  - Refactor tasks need acceptance criteria for Ralph execution
-
+    - CRs describe work; Specs describe current system state
+    - A single CR can affect 0 specs (refactor), 1 spec (simple feature), or N specs (cross-cutting)
+    - Refactors have tasks (no spec impact), features have changes (spec impact)
+    - The type field determines merge behavior and constraints
+    - Initiatives contain phases that are executed in order
+    - Claude must see summaries of existing specs before classifying intent
+    - Modify/remove operations require exact text matching (no fuzzy matching)
+    - Feature IDs cannot be renamed via modify (use remove + add instead)
+    - Refactor scope is discovered during implementation, not defined upfront
+    - CRs are deleted after successful merge (temporary work artifacts)
+    - All CR types follow status lifecycle draft → in-progress → complete
+    - Refactor tasks need acceptance criteria for Ralph execution
 features:
-  - id: cr-types
-    description: |
-      Change requests have a type field that determines behavior and constraints.
-    acceptance_criteria:
-      - type field is required on all CRs
-      - Supported types are feature, enhancement, refactor, removal, initiative
-      - Refactor type automatically injects behavior-preservation constraints
-      - Initiative type contains ordered phases instead of changes/tasks
+    - id: cr-types
+      description: |
+        Change requests have a type field that determines behavior and constraints.
+      acceptance_criteria:
+        - type field is required on all CRs
+        - Supported types are feature, enhancement, refactor, removal, initiative
+        - Refactor type automatically injects behavior-preservation constraints
+        - Initiative type contains ordered phases instead of changes/tasks
 
-  - id: per-change-spec-targeting
-    description: |
-      Each change within a CR specifies which spec it affects.
-    acceptance_criteria:
-      - Changes have a spec field identifying the target spec
-      - spec field is required for feature/enhancement/removal types
-      - spec field is omitted for refactor tasks (no spec impact)
-      - Multiple changes can target different specs in one CR
-      - Changes can target specs that don't exist yet (will be created)
+    - id: per-change-spec-targeting
+      description: |
+        Each change within a CR specifies which spec it affects.
+      acceptance_criteria:
+        - Changes have a spec field identifying the target spec
+        - spec field is required for feature/enhancement/removal types
+        - spec field is omitted for refactor tasks (no spec impact)
+        - Multiple changes can target different specs in one CR
+        - Changes can target specs that don't exist yet (will be created)
 
-  - id: refactor-tasks
-    description: |
-      Refactor CRs use tasks instead of changes since they don't affect specs.
-    acceptance_criteria:
-      - Refactor CRs have tasks array (not changes)
-      - Each task has id, description, acceptance_criteria
-      - Tasks do not have a spec field
-      - Behavior-preservation constraint is auto-injected during chunking
-      - Merge for refactors deletes the CR without modifying any specs
+    - id: refactor-tasks
+      description: |
+        Refactor CRs use tasks instead of changes since they don't affect specs.
+      acceptance_criteria:
+        - Refactor CRs have tasks array (not changes)
+        - Each task has id, description, acceptance_criteria
+        - Tasks do not have a spec field
+        - Behavior-preservation constraint is auto-injected during chunking
+        - Merge for refactors deletes the CR without modifying any specs
 
-  - id: multi-spec-merge
-    description: |
-      Merge command handles CRs that affect multiple specs.
-    acceptance_criteria:
-      - Merge groups changes by target spec
-      - Each spec is loaded, modified, and saved independently
-      - If target spec doesn't exist, it is created (for add operations)
-      - All changes applied atomically (rollback on failure)
-      - Merge prints summary showing which specs were affected
+    - id: multi-spec-merge
+      description: |
+        Merge command handles CRs that affect multiple specs.
+      acceptance_criteria:
+        - Merge groups changes by target spec
+        - Each spec is loaded, modified, and saved independently
+        - If target spec doesn't exist, it is created (for add operations)
+        - All changes applied atomically (rollback on failure)
+        - Merge prints summary showing which specs were affected
 
-  - id: initiative-phases
-    description: |
-      Initiative CRs contain ordered phases, each with its own type.
-    acceptance_criteria:
-      - Initiative CRs have phases array
-      - Each phase has type (feature, refactor, etc.) and corresponding content
-      - Phases execute in order (phase 2 waits for phase 1 to complete)
-      - Each phase is chunked and executed independently
-      - Initiative tracks overall progress across phases
+    - id: initiative-phases
+      description: |
+        Initiative CRs contain ordered phases, each with its own type.
+      acceptance_criteria:
+        - Initiative CRs have phases array
+        - Each phase has type (feature, refactor, etc.) and corresponding content
+        - Phases execute in order (phase 2 waits for phase 1 to complete)
+        - Each phase is chunked and executed independently
+        - Initiative tracks overall progress across phases
 
-  - id: cr-storage-location
-    description: |
-      Change requests are stored separately from specs.
-    acceptance_criteria:
-      - CRs stored in .utopia/change-requests/ directory
-      - Specs remain in .utopia/specs/ directory
-      - Work items stored in .utopia/work-items/<cr-id>/
-      - CRs and specs are parallel concepts, not parent-child
+    - id: cr-storage-location
+      description: |
+        Change requests are stored separately from specs.
+      acceptance_criteria:
+        - CRs stored in .utopia/change-requests/ directory
+        - Specs remain in .utopia/specs/ directory
+        - Work items stored in .utopia/work-items/<cr-id>/
+        - CRs and specs are parallel concepts, not parent-child
 
-  - id: classification-guidance
-    description: |
-      System helps classify user intent into correct CR type.
-    acceptance_criteria:
-      - Claude asks clarifying questions when intent is ambiguous
-      - Key question is "does this change observable behavior?"
-      - If behavior unchanged, type is refactor
-      - If new capability, type is feature
-      - If modifying existing capability, type is enhancement
+    - id: classification-guidance
+      description: |
+        System helps classify user intent into correct CR type.
+      acceptance_criteria:
+        - Claude asks clarifying questions when intent is ambiguous
+        - Key question is "does this change observable behavior?"
+        - If behavior unchanged, type is refactor
+        - If new capability, type is feature
+        - If modifying existing capability, type is enhancement
 
-  - id: existing-spec-exploration
-    description: |
-      Claude receives summaries of existing specs to inform classification decisions.
-    acceptance_criteria:
-      - All specs from .utopia/specs/ are loaded at session start
-      - Spec summaries include id, title, description, and feature IDs
-      - Summaries are injected into the system prompt
-      - Claude references existing specs when classifying user intent
-      - Claude can identify which spec(s) a change should target
+    - id: existing-spec-exploration
+      description: |
+        Claude receives summaries of existing specs to inform classification decisions.
+      acceptance_criteria:
+        - All specs from .utopia/specs/ are loaded at session start
+        - Spec summaries include id, title, description, and feature IDs
+        - Summaries are injected into the system prompt
+        - Claude references existing specs when classifying user intent
+        - Claude can identify which spec(s) a change should target
 
-  - id: yaml-validation
-    description: |
-      Validate generated CR YAML after session ends with automatic fix sessions.
-    acceptance_criteria:
-      - CR files are validated after AI session ends
-      - Validation checks YAML syntax and required fields
-      - Required fields depend on type (changes for feature, tasks for refactor, phases for initiative)
-      - If validation fails, error message is displayed
-      - A fix session is started automatically on validation failure
-      - Fix session receives validation error details
-      - Claude reads the problematic file and fixes issues
-      - Fixed files are saved automatically
+    - id: yaml-validation
+      description: |
+        Validate generated CR YAML after session ends with automatic fix sessions.
+      acceptance_criteria:
+        - CR files are validated after AI session ends
+        - Validation checks YAML syntax and required fields
+        - Required fields depend on type (changes for feature, tasks for refactor, phases for initiative)
+        - If validation fails, error message is displayed
+        - A fix session is started automatically on validation failure
+        - Fix session receives validation error details
+        - Claude reads the problematic file and fixes issues
+        - Fixed files are saved automatically
 
-  - id: operation-structure
-    description: |
-      Define the detailed structure of add/modify/remove operations within changes.
-    acceptance_criteria:
-      - Add operation can add a feature with full definition (id, description, acceptance_criteria)
-      - Add operation can add domain_knowledge as a list of strings
-      - Modify operation targets by feature_id which must exist in target spec
-      - Modify operation can update feature description
-      - Modify operation supports criteria.add, criteria.remove, criteria.edit
-      - criteria.edit uses old/new pairs for replacement
-      - Remove operation specifies feature_id to remove
-      - Remove operation can include optional reason field
-      - All remove/modify text matching is exact (no fuzzy matching)
+    - id: operation-structure
+      description: |
+        Define the detailed structure of add/modify/remove operations within changes.
+      acceptance_criteria:
+        - Add operation can add a feature with full definition (id, description, acceptance_criteria)
+        - Add operation can add domain_knowledge as a list of strings
+        - Modify operation targets by feature_id which must exist in target spec
+        - Modify operation can update feature description
+        - Modify operation supports criteria.add, criteria.remove, criteria.edit
+        - criteria.edit uses old/new pairs for replacement
+        - Remove operation specifies feature_id to remove
+        - Remove operation can include optional reason field
+        - All remove/modify text matching is exact (no fuzzy matching)
+        - delete-spec operation deletes an entire spec file
+        - delete-spec requires spec field identifying which spec to delete
+        - delete-spec has optional reason field documenting why deletion is needed
+        - Merge deletes the spec file from .utopia/specs/ directory
+        - Merge fails with clear error if spec to delete doesn't exist
 
-  - id: cr-lifecycle
-    description: |
-      Define the status lifecycle for change requests.
-    acceptance_criteria:
-      - CRs are created in draft status
-      - Status transitions are draft → in-progress → complete
-      - Status is updated when chunking begins (in-progress)
-      - Status is updated when merge completes (complete)
-      - Completed CRs are deleted after successful merge
-      - Deletion includes the CR file and its work-items directory
-      - Refactor CRs follow same lifecycle (deleted after merge, no spec changes)
+    - id: cr-lifecycle
+      description: |
+        Define the status lifecycle for change requests.
+      acceptance_criteria:
+        - CRs are created in draft status
+        - Status transitions are draft → in-progress → complete
+        - Status is updated when chunking begins (in-progress)
+        - Status is updated when merge completes (complete)
+        - Completed CRs are deleted after successful merge
+        - Deletion includes the CR file and its work-items directory
+        - Refactor CRs follow same lifecycle (deleted after merge, no spec changes)
 
-  - id: cr-command
-    description: |
-      CLI command to create change requests via AI-guided conversation.
-    acceptance_criteria:
-      - Command is "utopia cr" with no required arguments
-      - Command loads existing specs and provides summaries to Claude
-      - Command sets up output path to .utopia/change-requests/
-      - Claude guides user through defining the CR
-      - Claude determines type based on conversation
-      - Claude asks one question at a time
-      - Output is written to .utopia/change-requests/<cr-id>.yaml
-      - Command prints helpful tips (e.g., watch command for live updates)
+    - id: cr-command
+      description: |
+        CLI command to create change requests via AI-guided conversation.
+      acceptance_criteria:
+        - Command is "utopia cr" with no required arguments
+        - Command loads existing specs and provides summaries to Claude
+        - Command sets up output path to .utopia/change-requests/
+        - Claude guides user through defining the CR
+        - Claude determines type based on conversation
+        - Claude asks one question at a time
+        - Output is written to .utopia/change-requests/<cr-id>.yaml
+        - Command prints helpful tips (e.g., watch command for live updates)
 
-  - id: behavior-preservation-constraints
-    description: |
-      Specific constraint text injected for refactor CRs during chunking.
-    acceptance_criteria:
-      - Constraint text includes "This is a refactor. Existing behavior MUST be preserved."
-      - Constraint text includes "All existing tests must pass without modification"
-      - Constraints are prepended to the CONSTRAINTS section of WorkItem prompts
-      - Only type refactor CRs receive these constraints
-      - Constraints are not stored in the CR document itself (injected at chunk time)
+    - id: behavior-preservation-constraints
+      description: |
+        Specific constraint text injected for refactor CRs during chunking.
+      acceptance_criteria:
+        - Constraint text includes "This is a refactor. Existing behavior MUST be preserved."
+        - Constraint text includes "All existing tests must pass without modification"
+        - Constraints are prepended to the CONSTRAINTS section of WorkItem prompts
+        - Only type refactor CRs receive these constraints
+        - Constraints are not stored in the CR document itself (injected at chunk time)

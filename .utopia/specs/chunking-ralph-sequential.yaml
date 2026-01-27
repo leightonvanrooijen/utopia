@@ -2,7 +2,7 @@ id: chunking-ralph-sequential
 title: Ralph Sequential Chunking Strategy
 status: draft
 created: 0001-01-01T00:00:00Z
-updated: 2026-01-27T11:20:55.432944+11:00
+updated: 2026-01-27T15:32:23.492634+11:00
 description: |
     The "ralph-sequential" chunking strategy transforms a structured specification into
     discrete WorkItems optimized for Ralph Wiggum loop execution.
@@ -125,6 +125,9 @@ features:
         - Add operations with only domain knowledge are ignored (no feature to chunk)
         - Remove operations become features with ID remove-{feature_id}, description explaining removal, and acceptance criteria based on the reason
         - Modify operations become features with ID modify-{feature_id}, description of what to modify, and acceptance criteria listing the deltas (criteria to add, remove, edit)
+        - delete-spec operations become features with ID delete-spec-{spec}, description explaining deletion, and acceptance criteria that the spec file is removed
+        - CRs with both changes and tasks are supported - changes converted to features, tasks converted to features
+        - Tasks on any CR type are converted to features (not just refactor CRs)
 
     - id: chunk-command-change-request-fallback
       description: |-
@@ -158,3 +161,5 @@ features:
         - These constraints are prepended to the CONSTRAINTS section
         - Spec WorkItems do not receive these constraints
         - Constraint injection happens during prompt building
+        - Behavior-preservation constraints are injected based on IsRefactor flag, not document type
+        - CRs with type refactor receive behavior-preservation constraints on all work items
