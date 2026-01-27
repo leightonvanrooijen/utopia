@@ -159,6 +159,8 @@ title: Fix behavior to match spec
 status: draft
 tasks:  # Note: tasks, not changes (bugfixes don't modify specs)
   - id: task-id
+    spec: target-spec-id  # REQUIRED: Which spec defines correct behavior
+    feature_id: feature-to-fix  # REQUIRED: Which feature defines correct behavior
     description: |
       Fix [feature] to match spec [spec-id].
       Current behavior: [what it does wrong]
@@ -436,7 +438,9 @@ Fix the validation errors in the change request files. The CRs are located in: %
 - title: human-readable title
 - status: "draft", "in-progress", or "complete"
 - tasks: array of tasks (REQUIRED, cannot be empty)
-  - Each task needs: id, description, acceptance_criteria
+  - Each task needs: id, description, acceptance_criteria, spec, feature_id
+  - spec: target spec that defines correct behavior (REQUIRED)
+  - feature_id: feature that defines correct behavior (REQUIRED)
   - Tasks reference spec/feature but don't modify the spec
 
 ### initiative type requires:

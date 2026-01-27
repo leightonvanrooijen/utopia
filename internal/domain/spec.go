@@ -157,11 +157,16 @@ type Phase struct {
 	Tasks   []Task      `yaml:"tasks,omitempty"`   // For refactor phases
 }
 
-// Task represents a single task within a refactor CR or phase
+// Task represents a single task within a refactor or bugfix CR or phase.
+// For bugfix tasks, Spec and FeatureID reference the spec/feature that defines correct behavior.
 type Task struct {
 	ID                 string   `yaml:"id"`
 	Description        string   `yaml:"description"`
 	AcceptanceCriteria []string `yaml:"acceptance_criteria"`
+	// Spec references the target spec (required for bugfix tasks, not used for refactors)
+	Spec string `yaml:"spec,omitempty"`
+	// FeatureID references the feature that defines correct behavior (required for bugfix tasks)
+	FeatureID string `yaml:"feature_id,omitempty"`
 }
 
 // ChangeRequest represents a set of changes to apply to specs
@@ -615,7 +620,7 @@ func ValidateChangeRequest(cr *ChangeRequest) error {
 			if len(cr.Phases) > 0 {
 				errors = append(errors, "type bugfix should not have phases array")
 			}
-			// Validate each task
+			// Validate each task - bugfix tasks require spec and feature_id references
 			for i, task := range cr.Tasks {
 				taskPrefix := fmt.Sprintf("tasks[%d]", i)
 				if task.ID == "" {
@@ -626,6 +631,12 @@ func ValidateChangeRequest(cr *ChangeRequest) error {
 				}
 				if len(task.AcceptanceCriteria) == 0 {
 					errors = append(errors, taskPrefix+": missing required field: acceptance_criteria")
+				}
+				if task.Spec == "" {
+					errors = append(errors, taskPrefix+": missing required field: spec (bugfix tasks must reference target spec)")
+				}
+				if task.FeatureID == "" {
+					errors = append(errors, taskPrefix+": missing required field: feature_id (bugfix tasks must reference feature that defines correct behavior)")
 				}
 			}
 
@@ -649,6 +660,18 @@ func ValidateChangeRequest(cr *ChangeRequest) error {
 				} else if phase.Type == CRTypeRefactor || phase.Type == CRTypeBugfix {
 					if len(phase.Tasks) == 0 {
 						errors = append(errors, fmt.Sprintf("%s: %s phase requires tasks", phasePrefix, phase.Type))
+					}
+					// Validate bugfix phase tasks require spec and feature_id
+					if phase.Type == CRTypeBugfix {
+						for j, task := range phase.Tasks {
+							taskPrefix := fmt.Sprintf("%s.tasks[%d]", phasePrefix, j)
+							if task.Spec == "" {
+								errors = append(errors, taskPrefix+": missing required field: spec (bugfix tasks must reference target spec)")
+							}
+							if task.FeatureID == "" {
+								errors = append(errors, taskPrefix+": missing required field: feature_id (bugfix tasks must reference feature that defines correct behavior)")
+							}
+						}
 					}
 				} else {
 					if len(phase.Changes) == 0 {
