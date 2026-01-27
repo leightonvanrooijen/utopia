@@ -176,100 +176,17 @@ func TestStrategy_Validate_NoAcceptanceCriteria(t *testing.T) {
 	}
 }
 
-func TestStrategy_Validate_VagueTerms(t *testing.T) {
-	tests := []struct {
-		name      string
-		criterion string
-		wantError bool
-	}{
-		{"should be good", "The code should be good", true},
-		{"works well", "It works well with other systems", true},
-		{"is nice", "The API is nice", true},
-		{"looks good", "The output looks good", true},
-		{"feels right", "The UX feels right", true},
-		{"is clean", "The code is clean", true},
-		{"is better", "This approach is better", true},
-		{"is optimal", "Performance is optimal", true},
-		{"is fast enough", "Response time is fast enough", true},
-		{"is reasonable", "Memory usage is reasonable", true},
-		{"specific criterion", "Returns HTTP 200 on success", false},
-		{"testable criterion", "Creates a file at /tmp/test.txt", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			s := New(nil)
-			cr := crWithFeatures("test",
-				domain.Feature{ID: "f1", Description: "Test", AcceptanceCriteria: []string{tt.criterion}},
-			)
-
-			_, err := s.Chunk(cr)
-
-			if tt.wantError && err == nil {
-				t.Errorf("Chunk() should reject vague criterion %q", tt.criterion)
-			}
-			if !tt.wantError && err != nil {
-				t.Errorf("Chunk() should accept criterion %q, got error: %v", tt.criterion, err)
-			}
-		})
-	}
-}
-
-func TestStrategy_Validate_VagueTermInQuotes(t *testing.T) {
-	s := New(nil)
-
-	// Vague terms in quotes should be allowed (they're examples)
-	cr := crWithFeatures("quoted-cr",
-		domain.Feature{
-			ID:          "f1",
-			Description: "Error handling",
-			AcceptanceCriteria: []string{
-				`Error message should not contain "looks good" literally`,
-				`Avoid responses like "is nice" in production`,
-			},
-		},
-	)
-
-	_, err := s.Chunk(cr)
-	if err != nil {
-		t.Errorf("Chunk() should allow vague terms in quotes: %v", err)
-	}
-}
-
-func TestStrategy_Validate_VagueTermInSingleQuotes(t *testing.T) {
-	s := New(nil)
-
-	// Note: The quote detection algorithm counts all single quotes,
-	// so apostrophes in contractions (like "Don't") can interfere.
-	// Use examples without contractions for reliable detection.
-	cr := crWithFeatures("single-quoted-cr",
-		domain.Feature{
-			ID:          "f1",
-			Description: "Validation",
-			AcceptanceCriteria: []string{
-				`Never return 'should be good' as a status`,
-			},
-		},
-	)
-
-	_, err := s.Chunk(cr)
-	if err != nil {
-		t.Errorf("Chunk() should allow vague terms in single quotes: %v", err)
-	}
-}
-
-func TestStrategy_Validate_MultipleErrors(t *testing.T) {
+func TestStrategy_Validate_MultipleEmptyCriteria(t *testing.T) {
 	s := New(nil)
 
 	cr := crWithFeatures("multi-error-cr",
 		domain.Feature{ID: "f1", Description: "No criteria", AcceptanceCriteria: []string{}},
-		domain.Feature{ID: "f2", Description: "Vague", AcceptanceCriteria: []string{"It should be good"}},
-		domain.Feature{ID: "f3", Description: "Also vague", AcceptanceCriteria: []string{"Performance is reasonable"}},
+		domain.Feature{ID: "f2", Description: "Also empty", AcceptanceCriteria: []string{}},
 	)
 
 	_, err := s.Chunk(cr)
 	if err == nil {
-		t.Fatal("Chunk() should return error for multiple invalid features")
+		t.Fatal("Chunk() should return error for features without acceptance criteria")
 	}
 
 	valErr, ok := err.(*ValidationError)
@@ -277,9 +194,8 @@ func TestStrategy_Validate_MultipleErrors(t *testing.T) {
 		t.Fatalf("error should be *ValidationError, got %T", err)
 	}
 
-	// Should have at least 3 errors (1 missing criteria + 2 vague)
-	if len(valErr.Errors) < 3 {
-		t.Errorf("ValidationError should have at least 3 errors, got %d: %v", len(valErr.Errors), valErr.Errors)
+	if len(valErr.Errors) != 2 {
+		t.Errorf("ValidationError should have 2 errors, got %d: %v", len(valErr.Errors), valErr.Errors)
 	}
 }
 
@@ -346,35 +262,6 @@ func TestLooksLikeConstraint(t *testing.T) {
 	}
 }
 
-func TestContainsVagueTerm(t *testing.T) {
-	tests := []struct {
-		name      string
-		criterion string
-		vagueTerm string
-		expected  bool
-	}{
-		{"direct match", "Code should be good", "should be good", true},
-		{"case insensitive", "Code SHOULD BE GOOD", "should be good", true},
-		{"in double quotes", `Warn user with "should be good" message`, "should be good", false},
-		{"in single quotes", `Avoid 'should be good' responses`, "should be good", false},
-		{"not present", "Returns HTTP 200", "should be good", false},
-		{"partial match at start", "Should be validated", "should be good", false},
-		{"nested quotes double-single", `Say "it's good"`, "is good", false},
-		// Known limitation: apostrophes count as single quotes
-		{"apostrophe interference", `Don't say 'should be good'`, "should be good", true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := containsVagueTerm(tt.criterion, tt.vagueTerm)
-			if got != tt.expected {
-				t.Errorf("containsVagueTerm(%q, %q) = %v, want %v",
-					tt.criterion, tt.vagueTerm, got, tt.expected)
-			}
-		})
-	}
-}
-
 func TestValidationError_Error(t *testing.T) {
 	err := &ValidationError{
 		Errors: []string{"error 1", "error 2", "error 3"},
@@ -396,12 +283,6 @@ func TestValidationError_Error(t *testing.T) {
 func TestDefaultConstraints_NotEmpty(t *testing.T) {
 	if len(DefaultConstraints) == 0 {
 		t.Error("DefaultConstraints should not be empty")
-	}
-}
-
-func TestVagueTerms_NotEmpty(t *testing.T) {
-	if len(VagueTerms) == 0 {
-		t.Error("VagueTerms should not be empty")
 	}
 }
 

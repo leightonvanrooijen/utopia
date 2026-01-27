@@ -29,20 +29,6 @@ var BugfixSystemConstraints = []string{
 	"Fix only the behavior that deviates from the spec",
 }
 
-// VagueTerms are phrases that indicate non-verifiable acceptance criteria.
-var VagueTerms = []string{
-	"should be good",
-	"works well",
-	"is nice",
-	"looks good",
-	"feels right",
-	"is clean",
-	"is better",
-	"is optimal",
-	"is fast enough",
-	"is reasonable",
-}
-
 // SpecLoader is a function that loads a spec by ID.
 // This allows the chunking strategy to load referenced specs for bugfix tasks
 // without being coupled to a specific storage implementation.
@@ -411,25 +397,11 @@ func (s *Strategy) validateFeatures(features []domain.Feature) error {
 	var errors []string
 
 	for _, feature := range features {
-		// Check for empty acceptance criteria
 		if len(feature.AcceptanceCriteria) == 0 {
 			errors = append(errors, fmt.Sprintf(
 				"feature %q has no acceptance criteria",
 				feature.ID,
 			))
-			continue
-		}
-
-		// Check for vague terms in criteria
-		for _, criterion := range feature.AcceptanceCriteria {
-			for _, vague := range VagueTerms {
-				if containsVagueTerm(criterion, vague) {
-					errors = append(errors, fmt.Sprintf(
-						"feature %q has vague criterion: %q (contains %q)",
-						feature.ID, criterion, vague,
-					))
-				}
-			}
 		}
 	}
 
@@ -539,32 +511,6 @@ func looksLikeConstraint(s string) bool {
 		}
 	}
 	return false
-}
-
-// containsVagueTerm checks if a criterion contains a vague term, but ignores
-// terms that appear within quotes (as examples in the criterion description).
-func containsVagueTerm(criterion, vagueTerm string) bool {
-	lower := strings.ToLower(criterion)
-	vagueLower := strings.ToLower(vagueTerm)
-
-	// Check if the vague term appears at all
-	idx := strings.Index(lower, vagueLower)
-	if idx == -1 {
-		return false
-	}
-
-	// Check if it's within quotes (either single or double)
-	// by counting quotes before the match
-	beforeMatch := criterion[:idx]
-	doubleQuotes := strings.Count(beforeMatch, "\"")
-	singleQuotes := strings.Count(beforeMatch, "'")
-
-	// If odd number of quotes, we're inside a quoted string (likely an example)
-	if doubleQuotes%2 == 1 || singleQuotes%2 == 1 {
-		return false
-	}
-
-	return true
 }
 
 // ValidationError contains validation failures from spec checking.
