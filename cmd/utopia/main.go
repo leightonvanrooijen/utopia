@@ -10,6 +10,7 @@ func main() {
 	// Register available strategies
 	cli.RegisterChunkStrategy(ralphsequential.New())
 	cli.RegisterExecuteStrategy(sequential.New())
+	cli.RegisterExecuteChunkStrategy(ralphsequential.New())
 
 	// Run CLI
 	cli.Execute()
