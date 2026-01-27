@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/leightonvanrooijen/utopia/internal/domain"
 	"github.com/leightonvanrooijen/utopia/internal/infra/storage"
 	"github.com/spf13/cobra"
 )
@@ -62,6 +63,14 @@ func runMerge(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("Change Request: %s\n", cr.Title)
+	fmt.Printf("Type: %s\n", cr.Type)
+
+	// Refactor CRs don't modify specs - just delete the CR
+	if cr.Type == domain.CRTypeRefactor {
+		return mergeRefactor(cr, changeRequestID, utopiaDir, store)
+	}
+
+	// Feature/enhancement/removal CRs modify specs
 	fmt.Printf("Parent Spec: %s\n", cr.ParentSpec)
 	fmt.Println()
 
@@ -139,6 +148,47 @@ func runMerge(cmd *cobra.Command, args []string) error {
 
 	fmt.Println()
 	fmt.Printf("Successfully merged %d change(s) into %s\n", len(cr.Changes), cr.ParentSpec)
+
+	return nil
+}
+
+// mergeRefactor handles merge for refactor CRs, which don't modify specs.
+// Refactors only restructure code while preserving behavior, so merge
+// simply deletes the CR and its work items.
+func mergeRefactor(cr *domain.ChangeRequest, changeRequestID, utopiaDir string, store *storage.YAMLStore) error {
+	fmt.Printf("Tasks completed: %d\n", len(cr.Tasks))
+	fmt.Println()
+
+	// Summarize tasks
+	fmt.Println("Completed tasks:")
+	for _, task := range cr.Tasks {
+		fmt.Printf("  ✓ %s: %s\n", task.ID, task.Description)
+	}
+	fmt.Println()
+
+	if mergeDryRun {
+		fmt.Println("Dry run mode - no changes applied")
+		fmt.Printf("\nWould delete refactor CR: %s (no specs modified)\n", changeRequestID)
+		return nil
+	}
+
+	// Delete the change request (no spec modifications for refactors)
+	if err := store.DeleteChangeRequest(changeRequestID); err != nil {
+		return fmt.Errorf("failed to delete change request: %w", err)
+	}
+	fmt.Printf("✓ Deleted change request: %s\n", changeRequestID)
+
+	// Delete work items directory if it exists
+	workItemsDir := filepath.Join(utopiaDir, "work-items", changeRequestID)
+	if _, err := os.Stat(workItemsDir); err == nil {
+		if err := os.RemoveAll(workItemsDir); err != nil {
+			return fmt.Errorf("failed to delete work items: %w", err)
+		}
+		fmt.Printf("✓ Deleted work items: %s\n", changeRequestID)
+	}
+
+	fmt.Println()
+	fmt.Printf("Successfully completed refactor: %s (no specs modified)\n", cr.Title)
 
 	return nil
 }
