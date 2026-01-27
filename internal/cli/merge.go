@@ -16,15 +16,16 @@ var (
 
 var mergeCmd = &cobra.Command{
 	Use:   "merge <change-request-id>",
-	Short: "Merge a change request into its parent spec",
-	Long: `Merge a completed change request into its parent specification.
+	Short: "Merge a change request into target specs",
+	Long: `Merge a completed change request into its target specifications.
 
 This command:
   1. Loads the change request from .utopia/specs/_changerequests/
-  2. Loads the parent spec referenced by the change request
-  3. Applies all changes (add, modify, remove operations)
-  4. Saves the updated parent spec
-  5. Deletes the change request and its work items
+  2. Groups changes by target spec
+  3. Loads each target spec (or creates it for add operations)
+  4. Applies changes to each spec
+  5. Saves all updated specs atomically
+  6. Deletes the change request and its work items
 
 Use --dry-run to preview changes without applying them.`,
 	Args: cobra.ExactArgs(1),
@@ -71,43 +72,56 @@ func runMerge(cmd *cobra.Command, args []string) error {
 	}
 
 	// Feature/enhancement/removal CRs modify specs
-	fmt.Printf("Parent Spec: %s\n", cr.ParentSpec)
+	// Group changes by target spec
+	changesBySpec := groupChangesBySpec(cr.Changes)
+	specIDs := sortedSpecIDs(changesBySpec)
+
+	fmt.Printf("Target specs: %d\n", len(specIDs))
 	fmt.Println()
 
-	// Load the parent spec
-	parentSpec, err := store.LoadSpec(cr.ParentSpec)
-	if err != nil {
-		return fmt.Errorf("parent spec not found: %s\n\nThe change request references a spec that doesn't exist", cr.ParentSpec)
-	}
-
-	// Summarize changes
+	// Summarize changes per spec
 	fmt.Println("Changes to apply:")
-	var addCount, modifyCount, removeCount int
-	for _, change := range cr.Changes {
-		switch change.Operation {
-		case "add":
-			addCount++
-			if change.Feature != nil {
-				fmt.Printf("  + Add feature: %s\n", change.Feature.ID)
+	var totalAdd, totalModify, totalRemove int
+	for _, specID := range specIDs {
+		changes := changesBySpec[specID]
+		var addCount, modifyCount, removeCount int
+		for _, change := range changes {
+			switch change.Operation {
+			case "add":
+				addCount++
+			case "modify":
+				modifyCount++
+			case "remove":
+				removeCount++
 			}
-			if len(change.DomainKnowledge) > 0 {
-				fmt.Printf("  + Add %d domain knowledge item(s)\n", len(change.DomainKnowledge))
-			}
-		case "modify":
-			modifyCount++
-			if change.FeatureID != "" {
-				fmt.Printf("  ~ Modify feature: %s\n", change.FeatureID)
-			}
-			if change.DomainKnowledgeMod != nil {
-				fmt.Printf("  ~ Modify domain knowledge\n")
-			}
-		case "remove":
-			removeCount++
-			if change.FeatureID != "" {
-				fmt.Printf("  - Remove feature: %s\n", change.FeatureID)
-			}
-			if len(change.DomainKnowledge) > 0 {
-				fmt.Printf("  - Remove %d domain knowledge item(s)\n", len(change.DomainKnowledge))
+		}
+		totalAdd += addCount
+		totalModify += modifyCount
+		totalRemove += removeCount
+		fmt.Printf("  %s: +%d ~%d -%d\n", specID, addCount, modifyCount, removeCount)
+		for _, change := range changes {
+			switch change.Operation {
+			case "add":
+				if change.Feature != nil {
+					fmt.Printf("    + Add feature: %s\n", change.Feature.ID)
+				}
+				if len(change.DomainKnowledge) > 0 {
+					fmt.Printf("    + Add %d domain knowledge item(s)\n", len(change.DomainKnowledge))
+				}
+			case "modify":
+				if change.FeatureID != "" {
+					fmt.Printf("    ~ Modify feature: %s\n", change.FeatureID)
+				}
+				if change.DomainKnowledgeMod != nil {
+					fmt.Printf("    ~ Modify domain knowledge\n")
+				}
+			case "remove":
+				if change.FeatureID != "" {
+					fmt.Printf("    - Remove feature: %s\n", change.FeatureID)
+				}
+				if len(change.DomainKnowledge) > 0 {
+					fmt.Printf("    - Remove %d domain knowledge item(s)\n", len(change.DomainKnowledge))
+				}
 			}
 		}
 	}
@@ -115,21 +129,50 @@ func runMerge(cmd *cobra.Command, args []string) error {
 
 	if mergeDryRun {
 		fmt.Println("Dry run mode - no changes applied")
-		fmt.Printf("\nWould merge %d add, %d modify, %d remove operation(s) into %s\n",
-			addCount, modifyCount, removeCount, cr.ParentSpec)
+		fmt.Printf("\nWould merge %d add, %d modify, %d remove operation(s) into %d spec(s)\n",
+			totalAdd, totalModify, totalRemove, len(specIDs))
 		return nil
 	}
 
-	// Apply the changes
-	if err := cr.ApplyChanges(parentSpec); err != nil {
-		return fmt.Errorf("failed to apply changes: %w", err)
+	// Load all specs (or create for add-only operations)
+	specs := make(map[string]*domain.Spec)
+	createdSpecs := make(map[string]bool)
+	for _, specID := range specIDs {
+		spec, err := store.LoadSpec(specID)
+		if err != nil {
+			// Check if all changes for this spec are "add" operations
+			if allAdds(changesBySpec[specID]) {
+				// Create a new spec
+				spec = domain.NewSpec(specID, specID)
+				createdSpecs[specID] = true
+			} else {
+				return fmt.Errorf("spec not found: %s\n\nThe change request references a spec that doesn't exist (non-add operations require existing spec)", specID)
+			}
+		}
+		specs[specID] = spec
 	}
 
-	// Save the updated parent spec
-	if err := store.SaveSpec(parentSpec); err != nil {
-		return fmt.Errorf("failed to save updated spec: %w", err)
+	// Apply changes to each spec (in memory first for atomicity)
+	for _, specID := range specIDs {
+		spec := specs[specID]
+		changes := changesBySpec[specID]
+		tempCR := &domain.ChangeRequest{Changes: changes}
+		if err := tempCR.ApplyChanges(spec); err != nil {
+			return fmt.Errorf("failed to apply changes to spec %s: %w", specID, err)
+		}
 	}
-	fmt.Printf("✓ Updated spec: %s\n", cr.ParentSpec)
+
+	// Save all specs (atomic commit phase)
+	for _, specID := range specIDs {
+		if err := store.SaveSpec(specs[specID]); err != nil {
+			return fmt.Errorf("failed to save spec %s: %w\n\nSome specs may have been saved. Manual cleanup may be required.", specID, err)
+		}
+		if createdSpecs[specID] {
+			fmt.Printf("✓ Created spec: %s\n", specID)
+		} else {
+			fmt.Printf("✓ Updated spec: %s\n", specID)
+		}
+	}
 
 	// Delete the change request
 	if err := store.DeleteChangeRequest(changeRequestID); err != nil {
@@ -146,10 +189,55 @@ func runMerge(cmd *cobra.Command, args []string) error {
 		fmt.Printf("✓ Deleted work items: %s\n", changeRequestID)
 	}
 
+	// Print summary
 	fmt.Println()
-	fmt.Printf("Successfully merged %d change(s) into %s\n", len(cr.Changes), cr.ParentSpec)
+	fmt.Println("Merge Summary:")
+	fmt.Printf("  Total changes: %d\n", len(cr.Changes))
+	fmt.Printf("  Specs affected: %d\n", len(specIDs))
+	for _, specID := range specIDs {
+		if createdSpecs[specID] {
+			fmt.Printf("    - %s (created)\n", specID)
+		} else {
+			fmt.Printf("    - %s (updated)\n", specID)
+		}
+	}
 
 	return nil
+}
+
+// groupChangesBySpec groups changes by their target spec ID
+func groupChangesBySpec(changes []domain.Change) map[string][]domain.Change {
+	result := make(map[string][]domain.Change)
+	for _, change := range changes {
+		specID := change.Spec
+		result[specID] = append(result[specID], change)
+	}
+	return result
+}
+
+// sortedSpecIDs returns spec IDs in sorted order for deterministic processing
+func sortedSpecIDs(changesBySpec map[string][]domain.Change) []string {
+	ids := make([]string, 0, len(changesBySpec))
+	for id := range changesBySpec {
+		ids = append(ids, id)
+	}
+	// Simple insertion sort for deterministic order
+	for i := 1; i < len(ids); i++ {
+		for j := i; j > 0 && ids[j] < ids[j-1]; j-- {
+			ids[j], ids[j-1] = ids[j-1], ids[j]
+		}
+	}
+	return ids
+}
+
+// allAdds returns true if all changes are "add" operations
+func allAdds(changes []domain.Change) bool {
+	for _, c := range changes {
+		if c.Operation != "add" {
+			return false
+		}
+	}
+	return true
 }
 
 // mergeRefactor handles merge for refactor CRs, which don't modify specs.
