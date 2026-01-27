@@ -92,12 +92,10 @@ features:
 
     - id: validation-verifiable-criteria
       description: |
-        Validate that all acceptance criteria in a spec are verifiable.
-        Reject specs with vague or non-testable criteria.
+        Validate that all features have acceptance criteria before chunking.
       acceptance_criteria:
         - Chunker rejects specs where any feature has zero acceptance criteria
-        - Chunker warns on criteria containing vague terms (e.g., "should be good", "works well")
-        - Validation errors include feature ID and problematic criterion
+        - Validation errors include the feature ID
         - Validation runs before any WorkItems are generated
 
     - id: change-request-to-spec-conversion
