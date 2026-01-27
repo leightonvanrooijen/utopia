@@ -1,11 +1,14 @@
 package cli
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -25,7 +28,7 @@ var (
 )
 
 var executeCmd = &cobra.Command{
-	Use:   "execute <cr-id>",
+	Use:   "execute [cr-id]",
 	Short: "Execute a change request using the Ralph loop",
 	Long: `Execute a change request (CR) or spec using the Ralph loop.
 
@@ -33,6 +36,8 @@ This command handles the full workflow:
   1. Loads the change request from .utopia/change-requests/<cr-id>.yaml
   2. Chunks the CR into work items (if not already chunked)
   3. Executes work items until all complete or max iterations is reached
+
+If no CR ID is provided, lists available change requests for interactive selection.
 
 The chunking strategy determines how features/tasks become work items:
   - ralph-sequential: One work item per feature/task, executed in order
@@ -42,7 +47,7 @@ The execution strategy determines how work items are processed:
 
 Press Ctrl+C to gracefully stop execution (current state will be saved).
 Run the command again to resume from where you left off.`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.MaximumNArgs(1),
 	RunE: runExecute,
 }
 
@@ -72,7 +77,6 @@ func RegisterExecuteChunkStrategy(s chunkStrategy.Strategy) {
 }
 
 func runExecute(cmd *cobra.Command, args []string) error {
-	crID := args[0]
 	projectDir := GetProjectDir(cmd)
 
 	// Validate timeout flag
@@ -97,6 +101,19 @@ func runExecute(cmd *cobra.Command, args []string) error {
 	config, err := store.LoadConfig()
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// Get CR ID from args or interactive selection
+	var crID string
+	if len(args) > 0 {
+		crID = args[0]
+	} else {
+		// Interactive selection
+		selectedID, err := selectChangeRequest(store)
+		if err != nil {
+			return err
+		}
+		crID = selectedID
 	}
 
 	// Load the change request
@@ -209,6 +226,43 @@ func runExecute(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Completed: %d/%d work items\n", result.Completed, result.Total)
 
 	return nil
+}
+
+// selectChangeRequest lists available CRs and prompts the user to select one.
+func selectChangeRequest(store *storage.YAMLStore) (string, error) {
+	crs, err := store.ListChangeRequests()
+	if err != nil {
+		return "", fmt.Errorf("failed to list change requests: %w", err)
+	}
+
+	if len(crs) == 0 {
+		return "", fmt.Errorf("no change requests found in .utopia/change-requests/\n\nCreate one with: utopia cr")
+	}
+
+	fmt.Println("Available change requests:")
+	fmt.Println()
+	for i, cr := range crs {
+		fmt.Printf("  [%d] %s\n", i+1, cr.Title)
+	}
+	fmt.Println()
+
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Print("Select a change request (number): ")
+	input, err := reader.ReadString('\n')
+	if err != nil {
+		return "", fmt.Errorf("failed to read input: %w", err)
+	}
+
+	input = strings.TrimSpace(input)
+	selection, err := strconv.Atoi(input)
+	if err != nil || selection < 1 || selection > len(crs) {
+		return "", fmt.Errorf("invalid selection: %s (enter a number between 1 and %d)", input, len(crs))
+	}
+
+	selectedCR := crs[selection-1]
+	fmt.Printf("\nSelected: %s\n\n", selectedCR.Title)
+
+	return selectedCR.ID, nil
 }
 
 // chunkCR invokes the chunking strategy to produce work items from a change request.
