@@ -82,3 +82,48 @@ changes:
     domain_knowledge:
       - Exact domain knowledge text to remove
       - Another domain knowledge item to remove
+
+---
+# Initiative CR Example
+# Initiatives contain ordered phases, each with its own type.
+# Phases execute in order (phase 2 waits for phase 1 to complete).
+
+# id: platform-migration
+# type: initiative
+# title: Platform Migration Initiative
+# status: draft
+# current_phase: 0  # 0-indexed, tracks which phase is active
+#
+# phases:
+#   # Phase 1: Add new platform features
+#   - type: feature
+#     status: pending  # pending, in-progress, complete
+#     changes:
+#       - operation: add
+#         spec: new-platform
+#         feature:
+#           id: core-api
+#           description: Core API for new platform
+#           acceptance_criteria:
+#             - API endpoints are implemented
+#             - Authentication is working
+#
+#   # Phase 2: Refactor existing code
+#   - type: refactor
+#     status: pending
+#     tasks:
+#       - id: migrate-database
+#         description: Migrate database schema to new structure
+#         acceptance_criteria:
+#           - All data is migrated
+#           - No data loss occurs
+#           - Existing behavior preserved
+#
+#   # Phase 3: Remove old features
+#   - type: removal
+#     status: pending
+#     changes:
+#       - operation: remove
+#         spec: old-platform
+#         feature_id: legacy-api
+#         reason: Replaced by new platform API

@@ -139,11 +139,21 @@ func IsValidCRType(t string) bool {
 	return false
 }
 
+// PhaseStatus represents the lifecycle state of a phase within an initiative
+type PhaseStatus string
+
+const (
+	PhaseStatusPending    PhaseStatus = "pending"
+	PhaseStatusInProgress PhaseStatus = "in-progress"
+	PhaseStatusComplete   PhaseStatus = "complete"
+)
+
 // Phase represents an ordered phase within an initiative CR
 type Phase struct {
-	Type    CRType   `yaml:"type"`              // Type of this phase (feature, refactor, etc.)
-	Changes []Change `yaml:"changes,omitempty"` // For feature/enhancement/removal phases
-	Tasks   []Task   `yaml:"tasks,omitempty"`   // For refactor phases
+	Type    CRType      `yaml:"type"`              // Type of this phase (feature, refactor, etc.)
+	Status  PhaseStatus `yaml:"status,omitempty"`  // Phase execution status (defaults to pending)
+	Changes []Change    `yaml:"changes,omitempty"` // For feature/enhancement/removal phases
+	Tasks   []Task      `yaml:"tasks,omitempty"`   // For refactor phases
 }
 
 // Task represents a single task within a refactor CR or phase
@@ -155,14 +165,15 @@ type Task struct {
 
 // ChangeRequest represents a set of changes to apply to specs
 type ChangeRequest struct {
-	ID         string              `yaml:"id"`
-	Type       CRType              `yaml:"type"` // Required: feature, enhancement, refactor, removal, initiative
-	ParentSpec string              `yaml:"parent_spec,omitempty"`
-	Title      string              `yaml:"title"`
-	Status     ChangeRequestStatus `yaml:"status"`
-	Changes    []Change            `yaml:"changes,omitempty"` // For feature/enhancement/removal types
-	Tasks      []Task              `yaml:"tasks,omitempty"`   // For refactor type
-	Phases     []Phase             `yaml:"phases,omitempty"`  // For initiative type
+	ID           string              `yaml:"id"`
+	Type         CRType              `yaml:"type"` // Required: feature, enhancement, refactor, removal, initiative
+	ParentSpec   string              `yaml:"parent_spec,omitempty"`
+	Title        string              `yaml:"title"`
+	Status       ChangeRequestStatus `yaml:"status"`
+	Changes      []Change            `yaml:"changes,omitempty"`      // For feature/enhancement/removal types
+	Tasks        []Task              `yaml:"tasks,omitempty"`        // For refactor type
+	Phases       []Phase             `yaml:"phases,omitempty"`       // For initiative type
+	CurrentPhase int                 `yaml:"current_phase,omitempty"` // For initiative: 0-indexed current phase (0 = first phase)
 }
 
 // EditPair represents an old/new pair for edit operations
@@ -564,6 +575,134 @@ func (cr *ChangeRequest) ToSpec() *Spec {
 	}
 
 	return spec
+}
+
+// PhaseToSpec converts a specific phase of an initiative CR to a chunkable Spec.
+// The phaseIndex is 0-based. This enables per-phase chunking for initiatives.
+//
+// Returns an error if:
+// - The CR is not an initiative type
+// - The phaseIndex is out of bounds
+func (cr *ChangeRequest) PhaseToSpec(phaseIndex int) (*Spec, error) {
+	if cr.Type != CRTypeInitiative {
+		return nil, fmt.Errorf("PhaseToSpec only valid for initiative CRs, got type %q", cr.Type)
+	}
+	if phaseIndex < 0 || phaseIndex >= len(cr.Phases) {
+		return nil, fmt.Errorf("phase index %d out of bounds (0-%d)", phaseIndex, len(cr.Phases)-1)
+	}
+
+	phase := cr.Phases[phaseIndex]
+	spec := NewSpec(
+		fmt.Sprintf("%s-phase-%d", cr.ID, phaseIndex),
+		fmt.Sprintf("%s (Phase %d)", cr.Title, phaseIndex+1),
+	)
+	spec.Description = fmt.Sprintf("Phase %d of initiative: %s", phaseIndex+1, cr.Title)
+
+	// Refactor phases use Tasks and get behavior-preservation constraints
+	if phase.Type == CRTypeRefactor {
+		spec.IsRefactor = true
+		for _, task := range phase.Tasks {
+			feature := Feature{
+				ID:                 task.ID,
+				Description:        task.Description,
+				AcceptanceCriteria: task.AcceptanceCriteria,
+			}
+			spec.Features = append(spec.Features, feature)
+		}
+		return spec, nil
+	}
+
+	// Feature/enhancement/removal phases use Changes
+	for _, change := range phase.Changes {
+		switch change.Operation {
+		case "add":
+			if change.Feature != nil {
+				spec.Features = append(spec.Features, *change.Feature)
+			}
+
+		case "remove":
+			if change.FeatureID != "" {
+				feature := Feature{
+					ID:          "remove-" + change.FeatureID,
+					Description: fmt.Sprintf("Remove the %s feature from the codebase", change.FeatureID),
+					AcceptanceCriteria: []string{
+						fmt.Sprintf("All code related to feature %q is removed", change.FeatureID),
+						fmt.Sprintf("All tests for feature %q are removed", change.FeatureID),
+						"No references to the removed feature remain in the codebase",
+					},
+				}
+				if change.Reason != "" {
+					feature.AcceptanceCriteria = append(feature.AcceptanceCriteria,
+						fmt.Sprintf("Removal reason: %s", change.Reason))
+				}
+				spec.Features = append(spec.Features, feature)
+			}
+
+		case "modify":
+			if change.FeatureID != "" {
+				feature := Feature{
+					ID:          "modify-" + change.FeatureID,
+					Description: fmt.Sprintf("Modify the %s feature", change.FeatureID),
+				}
+
+				if change.Description != "" {
+					feature.Description = fmt.Sprintf("Modify the %s feature: %s", change.FeatureID, change.Description)
+				}
+
+				var criteria []string
+				if change.Criteria != nil {
+					for _, add := range change.Criteria.Add {
+						criteria = append(criteria, add)
+					}
+					for _, remove := range change.Criteria.Remove {
+						criteria = append(criteria, fmt.Sprintf("Remove/undo: %s", remove))
+					}
+					for _, edit := range change.Criteria.Edit {
+						criteria = append(criteria, fmt.Sprintf("Change from %q to: %s", edit.Old, edit.New))
+					}
+				}
+
+				if len(criteria) == 0 {
+					criteria = append(criteria, fmt.Sprintf("Feature %q is updated as specified", change.FeatureID))
+				}
+
+				feature.AcceptanceCriteria = criteria
+				spec.Features = append(spec.Features, feature)
+			}
+		}
+	}
+
+	return spec, nil
+}
+
+// GetCurrentPhase returns the current phase index for an initiative CR.
+// Returns -1 if not an initiative or all phases are complete.
+func (cr *ChangeRequest) GetCurrentPhase() int {
+	if cr.Type != CRTypeInitiative || len(cr.Phases) == 0 {
+		return -1
+	}
+	return cr.CurrentPhase
+}
+
+// IsPhaseComplete returns true if the specified phase is complete.
+func (cr *ChangeRequest) IsPhaseComplete(phaseIndex int) bool {
+	if phaseIndex < 0 || phaseIndex >= len(cr.Phases) {
+		return false
+	}
+	return cr.Phases[phaseIndex].Status == PhaseStatusComplete
+}
+
+// AllPhasesComplete returns true if all phases in an initiative are complete.
+func (cr *ChangeRequest) AllPhasesComplete() bool {
+	if cr.Type != CRTypeInitiative {
+		return false
+	}
+	for _, phase := range cr.Phases {
+		if phase.Status != PhaseStatusComplete {
+			return false
+		}
+	}
+	return true
 }
 
 // ApplyChanges applies all changes from the change request to the given spec.

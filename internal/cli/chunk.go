@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/leightonvanrooijen/utopia/internal/domain"
 	"github.com/leightonvanrooijen/utopia/internal/infra/storage"
 	chunkStrategy "github.com/leightonvanrooijen/utopia/internal/strategies/chunk"
 	"github.com/spf13/cobra"
@@ -71,6 +72,12 @@ func runChunk(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
+	// Check if this is an initiative CR (needs special per-phase handling)
+	cr, crErr := store.LoadChangeRequest(docID)
+	if crErr == nil && cr.Type == domain.CRTypeInitiative {
+		return chunkInitiative(cr, store, config, chunkRegistry, docID)
+	}
+
 	// Load the spec, change request, or refactor (all converted to spec)
 	spec, sourceType, err := store.LoadSpecOrChangeRequestOrRefactor(docID)
 	if err != nil {
@@ -121,6 +128,97 @@ func runChunk(cmd *cobra.Command, args []string) error {
 	fmt.Println("\nWork items:")
 	for _, item := range workItems {
 		fmt.Printf("  [%d] %s\n", item.Order, item.ID)
+	}
+
+	return nil
+}
+
+// chunkInitiative handles chunking for initiative CRs, which chunk per-phase.
+// Only the current phase is chunked; subsequent phases wait for previous completion.
+func chunkInitiative(cr *domain.ChangeRequest, store *storage.YAMLStore, config *domain.Config, registry *chunkStrategy.Registry, crID string) error {
+	fmt.Printf("Loaded initiative: %s\n", cr.Title)
+	fmt.Printf("Phases: %d total\n", len(cr.Phases))
+
+	// Find the current phase to chunk
+	phaseIndex := cr.CurrentPhase
+	if phaseIndex >= len(cr.Phases) {
+		return fmt.Errorf("all phases complete - nothing to chunk")
+	}
+
+	// Check if current phase is already chunked (work items exist)
+	phaseWorkDir := fmt.Sprintf("%s/phase-%d", crID, phaseIndex)
+	existingItems, _ := store.ListWorkItemsForSpec(phaseWorkDir)
+	if len(existingItems) > 0 {
+		fmt.Printf("\nPhase %d already chunked (%d work items exist)\n", phaseIndex+1, len(existingItems))
+		fmt.Printf("Run 'utopia execute %s' to continue execution\n", crID)
+		return nil
+	}
+
+	phase := cr.Phases[phaseIndex]
+	fmt.Printf("\nChunking phase %d/%d (type: %s)\n", phaseIndex+1, len(cr.Phases), phase.Type)
+
+	// Convert phase to spec
+	spec, err := cr.PhaseToSpec(phaseIndex)
+	if err != nil {
+		return fmt.Errorf("failed to convert phase to spec: %w", err)
+	}
+
+	// Determine which strategy to use
+	strategyName := chunkStrategyFlag
+	if strategyName == "" {
+		strategyName = config.Strategies.Chunk
+	}
+
+	strategy, ok := registry.Get(strategyName)
+	if !ok {
+		available := registry.List()
+		if len(available) == 0 {
+			return fmt.Errorf("no chunking strategies registered")
+		}
+		return fmt.Errorf("unknown strategy %q (available: %v)", strategyName, available)
+	}
+
+	fmt.Printf("Using '%s' strategy: %s\n\n", strategy.Name(), strategy.Description())
+
+	// Run the strategy
+	workItems, err := strategy.Chunk(spec)
+	if err != nil {
+		return fmt.Errorf("chunking failed: %w", err)
+	}
+
+	// Save work items to .utopia/work-items/<cr-id>/phase-<n>/
+	for _, item := range workItems {
+		if err := store.SaveWorkItemForSpec(phaseWorkDir, item); err != nil {
+			return fmt.Errorf("failed to save work item %s: %w", item.ID, err)
+		}
+	}
+
+	// Update phase status to in-progress
+	cr.Phases[phaseIndex].Status = domain.PhaseStatusInProgress
+	if err := store.SaveChangeRequest(cr); err != nil {
+		return fmt.Errorf("failed to update CR status: %w", err)
+	}
+
+	fmt.Printf("Created %d work item(s) in .utopia/work-items/%s/\n", len(workItems), phaseWorkDir)
+
+	// Print summary
+	fmt.Println("\nWork items:")
+	for _, item := range workItems {
+		fmt.Printf("  [%d] %s\n", item.Order, item.ID)
+	}
+
+	// Show initiative progress
+	fmt.Printf("\nInitiative progress: Phase %d/%d\n", phaseIndex+1, len(cr.Phases))
+	for i, p := range cr.Phases {
+		status := "pending"
+		if p.Status != "" {
+			status = string(p.Status)
+		}
+		marker := " "
+		if i == phaseIndex {
+			marker = "→"
+		}
+		fmt.Printf("  %s [%d] %s (%s)\n", marker, i+1, p.Type, status)
 	}
 
 	return nil

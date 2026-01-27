@@ -71,6 +71,11 @@ func runMerge(cmd *cobra.Command, args []string) error {
 		return mergeRefactor(cr, changeRequestID, utopiaDir, store)
 	}
 
+	// Initiative CRs have phases that each need to be merged
+	if cr.Type == domain.CRTypeInitiative {
+		return mergeInitiative(cr, changeRequestID, utopiaDir, store)
+	}
+
 	// Feature/enhancement/removal CRs modify specs
 	// Group changes by target spec
 	changesBySpec := groupChangesBySpec(cr.Changes)
@@ -238,6 +243,145 @@ func allAdds(changes []domain.Change) bool {
 		}
 	}
 	return true
+}
+
+// mergeInitiative handles merge for initiative CRs with multiple phases.
+// Each phase's changes are applied to their target specs in order.
+// Refactor phases don't modify specs (they only restructure code).
+func mergeInitiative(cr *domain.ChangeRequest, changeRequestID, utopiaDir string, store *storage.YAMLStore) error {
+	fmt.Printf("Phases: %d total\n", len(cr.Phases))
+
+	// Check all phases are complete
+	for i, phase := range cr.Phases {
+		if phase.Status != domain.PhaseStatusComplete {
+			return fmt.Errorf("phase %d is not complete (status: %s)\n\nComplete all phases before merging", i+1, phase.Status)
+		}
+	}
+
+	fmt.Println()
+
+	// Collect all changes from non-refactor phases
+	var allChanges []domain.Change
+	var refactorPhaseCount int
+	for i, phase := range cr.Phases {
+		if phase.Type == domain.CRTypeRefactor {
+			refactorPhaseCount++
+			fmt.Printf("Phase %d (refactor): %d tasks - no spec changes\n", i+1, len(phase.Tasks))
+			continue
+		}
+		fmt.Printf("Phase %d (%s): %d changes\n", i+1, phase.Type, len(phase.Changes))
+		allChanges = append(allChanges, phase.Changes...)
+	}
+	fmt.Println()
+
+	if len(allChanges) == 0 && refactorPhaseCount == len(cr.Phases) {
+		// All phases were refactors - just clean up
+		fmt.Println("All phases were refactors - no spec modifications needed")
+	} else if len(allChanges) > 0 {
+		// Group changes by target spec
+		changesBySpec := groupChangesBySpec(allChanges)
+		specIDs := sortedSpecIDs(changesBySpec)
+
+		fmt.Println("Changes to apply:")
+		var totalAdd, totalModify, totalRemove int
+		for _, specID := range specIDs {
+			changes := changesBySpec[specID]
+			var addCount, modifyCount, removeCount int
+			for _, change := range changes {
+				switch change.Operation {
+				case "add":
+					addCount++
+				case "modify":
+					modifyCount++
+				case "remove":
+					removeCount++
+				}
+			}
+			totalAdd += addCount
+			totalModify += modifyCount
+			totalRemove += removeCount
+			fmt.Printf("  %s: +%d ~%d -%d\n", specID, addCount, modifyCount, removeCount)
+		}
+		fmt.Println()
+
+		if mergeDryRun {
+			fmt.Println("Dry run mode - no changes applied")
+			fmt.Printf("\nWould merge %d add, %d modify, %d remove operation(s) into %d spec(s)\n",
+				totalAdd, totalModify, totalRemove, len(specIDs))
+			return nil
+		}
+
+		// Load all specs (or create for add-only operations)
+		specs := make(map[string]*domain.Spec)
+		createdSpecs := make(map[string]bool)
+		for _, specID := range specIDs {
+			spec, err := store.LoadSpec(specID)
+			if err != nil {
+				if allAdds(changesBySpec[specID]) {
+					spec = domain.NewSpec(specID, specID)
+					createdSpecs[specID] = true
+				} else {
+					return fmt.Errorf("spec not found: %s\n\nThe change request references a spec that doesn't exist (non-add operations require existing spec)", specID)
+				}
+			}
+			specs[specID] = spec
+		}
+
+		// Apply changes to each spec
+		for _, specID := range specIDs {
+			spec := specs[specID]
+			changes := changesBySpec[specID]
+			tempCR := &domain.ChangeRequest{Changes: changes}
+			if err := tempCR.ApplyChanges(spec); err != nil {
+				return fmt.Errorf("failed to apply changes to spec %s: %w", specID, err)
+			}
+		}
+
+		// Save all specs
+		for _, specID := range specIDs {
+			if err := store.SaveSpec(specs[specID]); err != nil {
+				return fmt.Errorf("failed to save spec %s: %w", specID, err)
+			}
+			if createdSpecs[specID] {
+				fmt.Printf("✓ Created spec: %s\n", specID)
+			} else {
+				fmt.Printf("✓ Updated spec: %s\n", specID)
+			}
+		}
+	}
+
+	if mergeDryRun {
+		fmt.Println("Dry run mode - no changes applied")
+		return nil
+	}
+
+	// Delete the change request
+	if err := store.DeleteChangeRequest(changeRequestID); err != nil {
+		return fmt.Errorf("failed to delete change request: %w", err)
+	}
+	fmt.Printf("✓ Deleted change request: %s\n", changeRequestID)
+
+	// Delete work items for all phases
+	for i := range cr.Phases {
+		phaseWorkDir := filepath.Join(utopiaDir, "work-items", changeRequestID, fmt.Sprintf("phase-%d", i))
+		if _, err := os.Stat(phaseWorkDir); err == nil {
+			if err := os.RemoveAll(phaseWorkDir); err != nil {
+				return fmt.Errorf("failed to delete work items for phase %d: %w", i+1, err)
+			}
+			fmt.Printf("✓ Deleted work items: phase %d\n", i+1)
+		}
+	}
+
+	// Also delete the parent work-items directory for this CR if it's empty
+	crWorkDir := filepath.Join(utopiaDir, "work-items", changeRequestID)
+	if entries, err := os.ReadDir(crWorkDir); err == nil && len(entries) == 0 {
+		os.Remove(crWorkDir)
+	}
+
+	fmt.Println()
+	fmt.Printf("Successfully merged initiative: %s\n", cr.Title)
+
+	return nil
 }
 
 // mergeRefactor handles merge for refactor CRs, which don't modify specs.

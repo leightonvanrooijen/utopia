@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/leightonvanrooijen/utopia/internal/domain"
 	"github.com/leightonvanrooijen/utopia/internal/infra/storage"
 	executeStrategy "github.com/leightonvanrooijen/utopia/internal/strategies/execute"
 	"github.com/spf13/cobra"
@@ -79,6 +80,12 @@ func runExecute(cmd *cobra.Command, args []string) error {
 	config, err := store.LoadConfig()
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// Check if this is an initiative CR (needs per-phase execution)
+	cr, crErr := store.LoadChangeRequest(specID)
+	if crErr == nil && cr.Type == domain.CRTypeInitiative {
+		return executeInitiative(cmd, cr, store, config, absPath, utopiaDir, executeRegistry)
 	}
 
 	// Check that work items exist for this spec
@@ -171,6 +178,148 @@ func runExecute(cmd *cobra.Command, args []string) error {
 	// Success!
 	fmt.Printf("\nAll work items completed successfully!\n")
 	fmt.Printf("Completed: %d/%d work items\n", result.Completed, result.Total)
+
+	return nil
+}
+
+// executeInitiative handles execution for initiative CRs, executing phases in order.
+// Each phase must complete before the next can begin.
+func executeInitiative(cmd *cobra.Command, cr *domain.ChangeRequest, store *storage.YAMLStore, config *domain.Config, projectDir, utopiaDir string, registry *executeStrategy.Registry) error {
+	fmt.Printf("Executing initiative: %s\n", cr.Title)
+	fmt.Printf("Phases: %d total, current: %d\n", len(cr.Phases), cr.CurrentPhase+1)
+
+	// Find the current phase
+	phaseIndex := cr.CurrentPhase
+	if phaseIndex >= len(cr.Phases) {
+		fmt.Printf("\nAll phases complete!\n")
+		fmt.Printf("Run 'utopia merge %s' to finalize the initiative\n", cr.ID)
+		return nil
+	}
+
+	phase := cr.Phases[phaseIndex]
+	phaseWorkDir := fmt.Sprintf("%s/phase-%d", cr.ID, phaseIndex)
+
+	// Check that work items exist for this phase
+	items, err := store.ListWorkItemsForSpec(phaseWorkDir)
+	if err != nil {
+		return fmt.Errorf("failed to load work items: %w", err)
+	}
+	if len(items) == 0 {
+		return fmt.Errorf("no work items found for phase %d\n\nRun 'utopia chunk %s' first", phaseIndex+1, cr.ID)
+	}
+
+	// Determine which strategy to use
+	strategyName := executeStrategyFlag
+	if strategyName == "" {
+		strategyName = config.Strategies.Execute
+	}
+
+	strategy, ok := registry.Get(strategyName)
+	if !ok {
+		available := registry.List()
+		if len(available) == 0 {
+			return fmt.Errorf("no execution strategies registered")
+		}
+		return fmt.Errorf("unknown strategy %q (available: %v)", strategyName, available)
+	}
+
+	fmt.Printf("\nExecuting phase %d/%d (type: %s)\n", phaseIndex+1, len(cr.Phases), phase.Type)
+	fmt.Printf("Using '%s' strategy: %s\n", strategy.Name(), strategy.Description())
+	fmt.Printf("Work items: %d\n", len(items))
+	if executeTimeoutFlag > 0 {
+		fmt.Printf("Timeout: %d minute(s)\n", executeTimeoutFlag)
+	}
+	fmt.Println()
+
+	// Track session start time
+	sessionStart := time.Now()
+
+	// Set up context with optional timeout
+	var ctx context.Context
+	var cancel context.CancelFunc
+	if executeTimeoutFlag > 0 {
+		ctx, cancel = context.WithTimeout(context.Background(), time.Duration(executeTimeoutFlag)*time.Minute)
+	} else {
+		ctx, cancel = context.WithCancel(context.Background())
+	}
+	defer cancel()
+
+	// Handle interrupt signals
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		fmt.Println("\n\nInterrupt received, saving state and stopping...")
+		cancel()
+	}()
+
+	// Run the strategy for this phase's work items
+	result, err := strategy.Execute(ctx, phaseWorkDir, store, config, projectDir)
+	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			sessionDuration := time.Since(sessionStart).Round(time.Second)
+			fmt.Printf("\n⏱  TIMEOUT REACHED\n")
+			fmt.Printf("Session duration: %s\n", sessionDuration)
+			fmt.Printf("Phase %d completed: %d/%d work items\n", phaseIndex+1, result.Completed, result.Total)
+			if result.StoppedAt != "" {
+				fmt.Printf("Stopped at: %s\n", result.StoppedAt)
+			}
+			fmt.Printf("\nProgress saved. Run 'utopia execute %s' to resume.\n", cr.ID)
+			return fmt.Errorf("execution timed out after %d minute(s)", executeTimeoutFlag)
+		}
+		if ctx.Err() == context.Canceled {
+			fmt.Printf("\nExecution stopped by user.\n")
+			fmt.Printf("Phase %d completed: %d/%d work items\n", phaseIndex+1, result.Completed, result.Total)
+			if result.StoppedAt != "" {
+				fmt.Printf("Stopped at: %s\n", result.StoppedAt)
+			}
+			fmt.Println("\nRun 'utopia execute " + cr.ID + "' to resume.")
+			return nil
+		}
+		// Actual error
+		fmt.Printf("\nExecution stopped: %s\n", err)
+		fmt.Printf("Phase %d completed: %d/%d work items\n", phaseIndex+1, result.Completed, result.Total)
+		if result.StoppedAt != "" {
+			fmt.Printf("Stopped at: %s\n", result.StoppedAt)
+		}
+		return err
+	}
+
+	// Phase completed successfully - update status and advance to next phase
+	cr.Phases[phaseIndex].Status = domain.PhaseStatusComplete
+	cr.CurrentPhase = phaseIndex + 1
+
+	if err := store.SaveChangeRequest(cr); err != nil {
+		return fmt.Errorf("failed to update CR status: %w", err)
+	}
+
+	fmt.Printf("\nPhase %d completed successfully!\n", phaseIndex+1)
+	fmt.Printf("Work items: %d/%d\n", result.Completed, result.Total)
+
+	// Show initiative progress
+	fmt.Printf("\nInitiative progress:\n")
+	for i, p := range cr.Phases {
+		status := "pending"
+		if p.Status != "" {
+			status = string(p.Status)
+		}
+		marker := " "
+		if i == cr.CurrentPhase {
+			marker = "→"
+		} else if p.Status == domain.PhaseStatusComplete {
+			marker = "✓"
+		}
+		fmt.Printf("  %s [%d] %s (%s)\n", marker, i+1, p.Type, status)
+	}
+
+	// Check if there are more phases
+	if cr.CurrentPhase < len(cr.Phases) {
+		fmt.Printf("\nNext: Phase %d (%s)\n", cr.CurrentPhase+1, cr.Phases[cr.CurrentPhase].Type)
+		fmt.Printf("Run 'utopia chunk %s' to prepare the next phase\n", cr.ID)
+	} else {
+		fmt.Printf("\nAll phases complete!\n")
+		fmt.Printf("Run 'utopia merge %s' to finalize the initiative\n", cr.ID)
+	}
 
 	return nil
 }
