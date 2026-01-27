@@ -495,21 +495,22 @@ func (cr *ChangeRequest) ToSpec() *Spec {
 	spec := NewSpec(cr.ID, cr.Title)
 	spec.Description = "Generated from change request: " + cr.Title
 
-	// Refactor CRs use Tasks and get behavior-preservation constraints
+	// Refactor CRs get behavior-preservation constraints
 	if cr.Type == CRTypeRefactor {
 		spec.IsRefactor = true
-		for _, task := range cr.Tasks {
-			feature := Feature{
-				ID:                 task.ID,
-				Description:        task.Description,
-				AcceptanceCriteria: task.AcceptanceCriteria,
-			}
-			spec.Features = append(spec.Features, feature)
-		}
-		return spec
 	}
 
-	// Feature/enhancement/removal CRs use Changes
+	// Convert tasks to features (supported on any CR type)
+	for _, task := range cr.Tasks {
+		feature := Feature{
+			ID:                 task.ID,
+			Description:        task.Description,
+			AcceptanceCriteria: task.AcceptanceCriteria,
+		}
+		spec.Features = append(spec.Features, feature)
+	}
+
+	// Convert changes to features
 	for _, change := range cr.Changes {
 		switch change.Operation {
 		case "add":
@@ -616,21 +617,22 @@ func (cr *ChangeRequest) PhaseToSpec(phaseIndex int) (*Spec, error) {
 	)
 	spec.Description = fmt.Sprintf("Phase %d of initiative: %s", phaseIndex+1, cr.Title)
 
-	// Refactor phases use Tasks and get behavior-preservation constraints
+	// Refactor phases get behavior-preservation constraints
 	if phase.Type == CRTypeRefactor {
 		spec.IsRefactor = true
-		for _, task := range phase.Tasks {
-			feature := Feature{
-				ID:                 task.ID,
-				Description:        task.Description,
-				AcceptanceCriteria: task.AcceptanceCriteria,
-			}
-			spec.Features = append(spec.Features, feature)
-		}
-		return spec, nil
 	}
 
-	// Feature/enhancement/removal phases use Changes
+	// Convert tasks to features (supported on any phase type)
+	for _, task := range phase.Tasks {
+		feature := Feature{
+			ID:                 task.ID,
+			Description:        task.Description,
+			AcceptanceCriteria: task.AcceptanceCriteria,
+		}
+		spec.Features = append(spec.Features, feature)
+	}
+
+	// Convert changes to features
 	for _, change := range phase.Changes {
 		switch change.Operation {
 		case "add":

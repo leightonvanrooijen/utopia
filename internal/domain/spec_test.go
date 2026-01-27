@@ -1744,3 +1744,329 @@ func TestToSpec_DeleteSpecOperationWithoutSpec_Ignored(t *testing.T) {
 		t.Errorf("expected 0 features (delete-spec without spec should be ignored), got %d", len(spec.Features))
 	}
 }
+
+// Tests for CRs with both changes and tasks
+
+func TestToSpec_FeatureCR_WithTasks_ConvertsBoth(t *testing.T) {
+	cr := &ChangeRequest{
+		ID:    "feature-with-tasks",
+		Type:  CRTypeFeature,
+		Title: "Feature CR with Tasks",
+		Changes: []Change{
+			{
+				Operation: "add",
+				Feature: &Feature{
+					ID:                 "new-feature",
+					Description:        "A new feature",
+					AcceptanceCriteria: []string{"Feature works"},
+				},
+			},
+		},
+		Tasks: []Task{
+			{
+				ID:                 "setup-task",
+				Description:        "Set up infrastructure",
+				AcceptanceCriteria: []string{"Infrastructure is ready"},
+			},
+		},
+	}
+
+	spec := cr.ToSpec()
+
+	// Should have 2 features: 1 from task, 1 from change
+	if len(spec.Features) != 2 {
+		t.Fatalf("expected 2 features (1 task + 1 change), got %d", len(spec.Features))
+	}
+
+	// Tasks should be converted first
+	if spec.Features[0].ID != "setup-task" {
+		t.Errorf("expected first feature ID 'setup-task', got %q", spec.Features[0].ID)
+	}
+	if spec.Features[0].Description != "Set up infrastructure" {
+		t.Errorf("expected description 'Set up infrastructure', got %q", spec.Features[0].Description)
+	}
+
+	// Changes should be converted after
+	if spec.Features[1].ID != "new-feature" {
+		t.Errorf("expected second feature ID 'new-feature', got %q", spec.Features[1].ID)
+	}
+
+	// Should NOT be marked as refactor
+	if spec.IsRefactor {
+		t.Error("feature CR should not have IsRefactor=true")
+	}
+}
+
+func TestToSpec_RefactorCR_WithChanges_ConvertsBoth(t *testing.T) {
+	cr := &ChangeRequest{
+		ID:    "refactor-with-changes",
+		Type:  CRTypeRefactor,
+		Title: "Refactor CR with Changes",
+		Tasks: []Task{
+			{
+				ID:                 "rename-vars",
+				Description:        "Rename variables",
+				AcceptanceCriteria: []string{"Variables are renamed"},
+			},
+		},
+		Changes: []Change{
+			{
+				Operation: "modify",
+				FeatureID: "existing-feature",
+				Criteria: &CriteriaModify{
+					Add: []string{"New criterion"},
+				},
+			},
+		},
+	}
+
+	spec := cr.ToSpec()
+
+	// Should have 2 features: 1 from task, 1 from change
+	if len(spec.Features) != 2 {
+		t.Fatalf("expected 2 features (1 task + 1 change), got %d", len(spec.Features))
+	}
+
+	// Tasks should be converted first
+	if spec.Features[0].ID != "rename-vars" {
+		t.Errorf("expected first feature ID 'rename-vars', got %q", spec.Features[0].ID)
+	}
+
+	// Changes should be converted after
+	if spec.Features[1].ID != "modify-existing-feature" {
+		t.Errorf("expected second feature ID 'modify-existing-feature', got %q", spec.Features[1].ID)
+	}
+
+	// Should be marked as refactor
+	if !spec.IsRefactor {
+		t.Error("refactor CR should have IsRefactor=true")
+	}
+}
+
+func TestToSpec_EnhancementCR_WithTasks(t *testing.T) {
+	cr := &ChangeRequest{
+		ID:    "enhancement-with-tasks",
+		Type:  CRTypeEnhancement,
+		Title: "Enhancement with Tasks",
+		Tasks: []Task{
+			{
+				ID:                 "prepare-env",
+				Description:        "Prepare environment",
+				AcceptanceCriteria: []string{"Environment is prepared"},
+			},
+			{
+				ID:                 "cleanup",
+				Description:        "Clean up after enhancement",
+				AcceptanceCriteria: []string{"Cleanup is done"},
+			},
+		},
+	}
+
+	spec := cr.ToSpec()
+
+	// Should have 2 features from tasks
+	if len(spec.Features) != 2 {
+		t.Fatalf("expected 2 features from tasks, got %d", len(spec.Features))
+	}
+
+	if spec.Features[0].ID != "prepare-env" {
+		t.Errorf("expected first feature ID 'prepare-env', got %q", spec.Features[0].ID)
+	}
+	if spec.Features[1].ID != "cleanup" {
+		t.Errorf("expected second feature ID 'cleanup', got %q", spec.Features[1].ID)
+	}
+
+	// Enhancement CRs should NOT be marked as refactor
+	if spec.IsRefactor {
+		t.Error("enhancement CR should not have IsRefactor=true")
+	}
+}
+
+func TestToSpec_RemovalCR_WithTasks(t *testing.T) {
+	cr := &ChangeRequest{
+		ID:    "removal-with-tasks",
+		Type:  CRTypeRemoval,
+		Title: "Removal with Tasks",
+		Changes: []Change{
+			{
+				Operation: "remove",
+				FeatureID: "deprecated-feature",
+				Reason:    "No longer needed",
+			},
+		},
+		Tasks: []Task{
+			{
+				ID:                 "archive-data",
+				Description:        "Archive user data before removal",
+				AcceptanceCriteria: []string{"Data is archived"},
+			},
+		},
+	}
+
+	spec := cr.ToSpec()
+
+	// Should have 2 features: 1 from task, 1 from change
+	if len(spec.Features) != 2 {
+		t.Fatalf("expected 2 features (1 task + 1 change), got %d", len(spec.Features))
+	}
+
+	// Task should be first
+	if spec.Features[0].ID != "archive-data" {
+		t.Errorf("expected first feature ID 'archive-data', got %q", spec.Features[0].ID)
+	}
+
+	// Remove change should be second
+	if spec.Features[1].ID != "remove-deprecated-feature" {
+		t.Errorf("expected second feature ID 'remove-deprecated-feature', got %q", spec.Features[1].ID)
+	}
+}
+
+// Tests for PhaseToSpec with both changes and tasks
+
+func TestPhaseToSpec_FeaturePhase_WithTasks_ConvertsBoth(t *testing.T) {
+	cr := &ChangeRequest{
+		ID:    "initiative-mixed",
+		Type:  CRTypeInitiative,
+		Title: "Initiative with Mixed Phase",
+		Phases: []Phase{
+			{
+				Type: CRTypeFeature,
+				Changes: []Change{
+					{
+						Operation: "add",
+						Feature: &Feature{
+							ID:                 "new-feature",
+							Description:        "A new feature",
+							AcceptanceCriteria: []string{"Feature works"},
+						},
+					},
+				},
+				Tasks: []Task{
+					{
+						ID:                 "setup-task",
+						Description:        "Set up infrastructure",
+						AcceptanceCriteria: []string{"Infrastructure is ready"},
+					},
+				},
+			},
+		},
+	}
+
+	spec, err := cr.PhaseToSpec(0)
+	if err != nil {
+		t.Fatalf("PhaseToSpec returned error: %v", err)
+	}
+
+	// Should have 2 features: 1 from task, 1 from change
+	if len(spec.Features) != 2 {
+		t.Fatalf("expected 2 features (1 task + 1 change), got %d", len(spec.Features))
+	}
+
+	// Tasks should be converted first
+	if spec.Features[0].ID != "setup-task" {
+		t.Errorf("expected first feature ID 'setup-task', got %q", spec.Features[0].ID)
+	}
+
+	// Changes should be converted after
+	if spec.Features[1].ID != "new-feature" {
+		t.Errorf("expected second feature ID 'new-feature', got %q", spec.Features[1].ID)
+	}
+
+	// Feature phase should NOT be marked as refactor
+	if spec.IsRefactor {
+		t.Error("feature phase should not have IsRefactor=true")
+	}
+}
+
+func TestPhaseToSpec_RefactorPhase_WithChanges_ConvertsBoth(t *testing.T) {
+	cr := &ChangeRequest{
+		ID:    "initiative-refactor-mixed",
+		Type:  CRTypeInitiative,
+		Title: "Initiative with Refactor Phase having Changes",
+		Phases: []Phase{
+			{
+				Type: CRTypeRefactor,
+				Tasks: []Task{
+					{
+						ID:                 "rename-vars",
+						Description:        "Rename variables",
+						AcceptanceCriteria: []string{"Variables are renamed"},
+					},
+				},
+				Changes: []Change{
+					{
+						Operation: "modify",
+						FeatureID: "existing-feature",
+						Criteria: &CriteriaModify{
+							Add: []string{"New criterion"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	spec, err := cr.PhaseToSpec(0)
+	if err != nil {
+		t.Fatalf("PhaseToSpec returned error: %v", err)
+	}
+
+	// Should have 2 features: 1 from task, 1 from change
+	if len(spec.Features) != 2 {
+		t.Fatalf("expected 2 features (1 task + 1 change), got %d", len(spec.Features))
+	}
+
+	// Tasks should be converted first
+	if spec.Features[0].ID != "rename-vars" {
+		t.Errorf("expected first feature ID 'rename-vars', got %q", spec.Features[0].ID)
+	}
+
+	// Changes should be converted after
+	if spec.Features[1].ID != "modify-existing-feature" {
+		t.Errorf("expected second feature ID 'modify-existing-feature', got %q", spec.Features[1].ID)
+	}
+
+	// Refactor phase should be marked as refactor
+	if !spec.IsRefactor {
+		t.Error("refactor phase should have IsRefactor=true")
+	}
+}
+
+func TestPhaseToSpec_EnhancementPhase_WithTasks(t *testing.T) {
+	cr := &ChangeRequest{
+		ID:    "initiative-enhancement-tasks",
+		Type:  CRTypeInitiative,
+		Title: "Initiative with Enhancement Phase having Tasks",
+		Phases: []Phase{
+			{
+				Type: CRTypeEnhancement,
+				Tasks: []Task{
+					{
+						ID:                 "prepare-env",
+						Description:        "Prepare environment",
+						AcceptanceCriteria: []string{"Environment is prepared"},
+					},
+				},
+			},
+		},
+	}
+
+	spec, err := cr.PhaseToSpec(0)
+	if err != nil {
+		t.Fatalf("PhaseToSpec returned error: %v", err)
+	}
+
+	// Should have 1 feature from task
+	if len(spec.Features) != 1 {
+		t.Fatalf("expected 1 feature from task, got %d", len(spec.Features))
+	}
+
+	if spec.Features[0].ID != "prepare-env" {
+		t.Errorf("expected feature ID 'prepare-env', got %q", spec.Features[0].ID)
+	}
+
+	// Enhancement phase should NOT be marked as refactor
+	if spec.IsRefactor {
+		t.Error("enhancement phase should not have IsRefactor=true")
+	}
+}
