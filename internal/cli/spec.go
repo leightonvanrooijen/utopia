@@ -184,7 +184,7 @@ func runSpec(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create change requests directory if it doesn't exist
-	changeRequestsDir := filepath.Join(utopiaDir, "specs", "_changerequests")
+	changeRequestsDir := filepath.Join(utopiaDir, "change-requests")
 	if err := os.MkdirAll(changeRequestsDir, 0755); err != nil {
 		return fmt.Errorf("failed to create change requests directory: %w", err)
 	}

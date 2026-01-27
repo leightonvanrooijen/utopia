@@ -20,7 +20,7 @@ var mergeCmd = &cobra.Command{
 	Long: `Merge a completed change request into its target specifications.
 
 This command:
-  1. Loads the change request from .utopia/specs/_changerequests/
+  1. Loads the change request from .utopia/change-requests/
   2. Groups changes by target spec
   3. Loads each target spec (or creates it for add operations)
   4. Applies changes to each spec
@@ -60,7 +60,7 @@ func runMerge(cmd *cobra.Command, args []string) error {
 	// Load the change request
 	cr, err := store.LoadChangeRequest(changeRequestID)
 	if err != nil {
-		return fmt.Errorf("change request not found: %s\n\nCheck .utopia/specs/_changerequests/ for available change requests", changeRequestID)
+		return fmt.Errorf("change request not found: %s\n\nCheck .utopia/change-requests/ for available change requests", changeRequestID)
 	}
 
 	fmt.Printf("Change Request: %s\n", cr.Title)

@@ -23,7 +23,7 @@ var chunkCmd = &cobra.Command{
 
 The command searches for the ID in the following order:
   1. .utopia/specs/<id>.yaml (spec)
-  2. .utopia/specs/_changerequests/<id>.yaml (change request)
+  2. .utopia/change-requests/<id>.yaml (change request)
   3. .utopia/refactors/<id>.yaml (refactor)
 
 The chunking strategy determines how features/tasks are mapped to work items:
@@ -81,7 +81,7 @@ func runChunk(cmd *cobra.Command, args []string) error {
 	// Load the spec, change request, or refactor (all converted to spec)
 	spec, sourceType, err := store.LoadSpecOrChangeRequestOrRefactor(docID)
 	if err != nil {
-		return fmt.Errorf("document not found: %s\n\nCheck .utopia/specs/, .utopia/specs/_changerequests/, or .utopia/refactors/ for available documents", docID)
+		return fmt.Errorf("document not found: %s\n\nCheck .utopia/specs/, .utopia/change-requests/, or .utopia/refactors/ for available documents", docID)
 	}
 
 	switch sourceType {

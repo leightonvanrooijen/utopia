@@ -74,7 +74,7 @@ func (s *YAMLStore) LoadSpecOrChangeRequest(id string) (*domain.Spec, bool, erro
 //
 // Search order:
 // 1. .utopia/specs/{id}.yaml
-// 2. .utopia/specs/_changerequests/{id}.yaml
+// 2. .utopia/change-requests/{id}.yaml
 // 3. .utopia/refactors/{id}.yaml
 //
 // Returns:
@@ -102,7 +102,7 @@ func (s *YAMLStore) LoadSpecOrChangeRequestOrRefactor(id string) (*domain.Spec, 
 	}
 
 	// None found
-	return nil, "", fmt.Errorf("not found in .utopia/specs/%s.yaml, .utopia/specs/_changerequests/%s.yaml, or .utopia/refactors/%s.yaml", id, id, id)
+	return nil, "", fmt.Errorf("not found in .utopia/specs/%s.yaml, .utopia/change-requests/%s.yaml, or .utopia/refactors/%s.yaml", id, id, id)
 }
 
 // ListSpecs returns all specs in the specs directory
@@ -268,9 +268,9 @@ func (s *YAMLStore) LoadConfig() (*domain.Config, error) {
 	return &config, nil
 }
 
-// SaveChangeRequest writes a change request to .utopia/specs/_changerequests/{id}.yaml
+// SaveChangeRequest writes a change request to .utopia/change-requests/{id}.yaml
 func (s *YAMLStore) SaveChangeRequest(cr *domain.ChangeRequest) error {
-	dir := filepath.Join(s.baseDir, "specs", "_changerequests")
+	dir := filepath.Join(s.baseDir, "change-requests")
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("failed to create change requests directory: %w", err)
 	}
@@ -279,9 +279,9 @@ func (s *YAMLStore) SaveChangeRequest(cr *domain.ChangeRequest) error {
 	return s.writeYAML(path, cr)
 }
 
-// LoadChangeRequest reads a change request from .utopia/specs/_changerequests/{id}.yaml
+// LoadChangeRequest reads a change request from .utopia/change-requests/{id}.yaml
 func (s *YAMLStore) LoadChangeRequest(id string) (*domain.ChangeRequest, error) {
-	path := filepath.Join(s.baseDir, "specs", "_changerequests", id+".yaml")
+	path := filepath.Join(s.baseDir, "change-requests", id+".yaml")
 
 	var cr domain.ChangeRequest
 	if err := s.readYAML(path, &cr); err != nil {
@@ -291,18 +291,18 @@ func (s *YAMLStore) LoadChangeRequest(id string) (*domain.ChangeRequest, error) 
 	return &cr, nil
 }
 
-// DeleteChangeRequest removes a change request file from .utopia/specs/_changerequests/{id}.yaml
+// DeleteChangeRequest removes a change request file from .utopia/change-requests/{id}.yaml
 func (s *YAMLStore) DeleteChangeRequest(id string) error {
-	path := filepath.Join(s.baseDir, "specs", "_changerequests", id+".yaml")
+	path := filepath.Join(s.baseDir, "change-requests", id+".yaml")
 	if err := os.Remove(path); err != nil {
 		return fmt.Errorf("failed to delete change request %s: %w", id, err)
 	}
 	return nil
 }
 
-// ListChangeRequests returns all change requests in the _changerequests directory
+// ListChangeRequests returns all change requests in the change-requests directory
 func (s *YAMLStore) ListChangeRequests() ([]*domain.ChangeRequest, error) {
-	dir := filepath.Join(s.baseDir, "specs", "_changerequests")
+	dir := filepath.Join(s.baseDir, "change-requests")
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {

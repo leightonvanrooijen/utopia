@@ -68,3 +68,8 @@ func (p *Project) ConfigPath() string {
 func (p *Project) RefactorsDir() string {
 	return filepath.Join(p.UtopiaDir(), "refactors")
 }
+
+// ChangeRequestsDir returns the change-requests directory path
+func (p *Project) ChangeRequestsDir() string {
+	return filepath.Join(p.UtopiaDir(), "change-requests")
+}

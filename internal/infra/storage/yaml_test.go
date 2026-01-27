@@ -17,8 +17,11 @@ func setupTestDir(t *testing.T) (string, func()) {
 	}
 
 	// Create necessary subdirectories
-	if err := os.MkdirAll(filepath.Join(dir, "specs", "_changerequests"), 0755); err != nil {
-		t.Fatalf("failed to create subdirs: %v", err)
+	if err := os.MkdirAll(filepath.Join(dir, "specs"), 0755); err != nil {
+		t.Fatalf("failed to create specs subdir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "change-requests"), 0755); err != nil {
+		t.Fatalf("failed to create change-requests subdir: %v", err)
 	}
 
 	cleanup := func() {
@@ -179,8 +182,8 @@ func TestLoadSpecOrChangeRequest_NeitherExists(t *testing.T) {
 	if !strings.Contains(err.Error(), "specs") {
 		t.Error("error should mention specs directory")
 	}
-	if !strings.Contains(err.Error(), "_changerequests") {
-		t.Error("error should mention _changerequests directory")
+	if !strings.Contains(err.Error(), "change-requests") {
+		t.Error("error should mention change-requests directory")
 	}
 }
 
