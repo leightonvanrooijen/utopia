@@ -188,14 +188,15 @@ type DomainKnowledgeModify struct {
 // Change represents a single operation in a change request
 type Change struct {
 	Operation       string   `yaml:"operation"` // "add", "modify", "remove"
+	Spec            string   `yaml:"spec,omitempty"` // Target spec ID (required for feature/enhancement/removal)
 	Feature         *Feature `yaml:"feature,omitempty"`
 	DomainKnowledge []string `yaml:"domain_knowledge,omitempty"`
 	// For modify/remove operations
-	FeatureID             string                 `yaml:"feature_id,omitempty"`
-	Description           string                 `yaml:"description,omitempty"`
-	Criteria              *CriteriaModify        `yaml:"criteria,omitempty"`
-	DomainKnowledgeMod    *DomainKnowledgeModify `yaml:"domain_knowledge_mod,omitempty"`
-	Reason                string                 `yaml:"reason,omitempty"`
+	FeatureID          string                 `yaml:"feature_id,omitempty"`
+	Description        string                 `yaml:"description,omitempty"`
+	Criteria           *CriteriaModify        `yaml:"criteria,omitempty"`
+	DomainKnowledgeMod *DomainKnowledgeModify `yaml:"domain_knowledge_mod,omitempty"`
+	Reason             string                 `yaml:"reason,omitempty"`
 }
 
 // ApplyAddChange applies an "add" operation to the spec
@@ -627,6 +628,12 @@ func ValidateChangeRequest(cr *ChangeRequest) error {
 			if len(cr.Phases) > 0 {
 				errors = append(errors, fmt.Sprintf("type %q should not have phases array", cr.Type))
 			}
+			// Validate each change has a spec field
+			for i, change := range cr.Changes {
+				if change.Spec == "" {
+					errors = append(errors, fmt.Sprintf("changes[%d]: missing required field: spec", i))
+				}
+			}
 
 		case CRTypeRefactor:
 			if len(cr.Tasks) == 0 {
@@ -676,6 +683,12 @@ func ValidateChangeRequest(cr *ChangeRequest) error {
 				} else {
 					if len(phase.Changes) == 0 {
 						errors = append(errors, phasePrefix+": phase requires changes")
+					}
+					// Validate each change in non-refactor phases has a spec field
+					for j, change := range phase.Changes {
+						if change.Spec == "" {
+							errors = append(errors, fmt.Sprintf("%s.changes[%d]: missing required field: spec", phasePrefix, j))
+						}
 					}
 				}
 			}

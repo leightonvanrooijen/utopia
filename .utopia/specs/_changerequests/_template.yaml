@@ -5,23 +5,32 @@
 #
 # Required fields:
 #   - id: Unique identifier for this change request
-#   - type: Must be 'change-request'
-#   - parent_spec: ID of the spec being changed (must exist)
+#   - type: One of: feature, enhancement, refactor, removal, initiative
 #   - title: Human-readable title describing the change
 #   - status: One of: draft, approved, in-progress, complete
-#   - changes: List of operations to apply to the parent spec
+#   - changes: List of operations (for feature/enhancement/removal types)
 #
-# Location: .utopia/specs/_changerequests/{parent-spec-id}-{change-description}.yaml
+# Each change requires:
+#   - spec: Target spec ID (required for feature/enhancement/removal types)
+#   - operation: One of: add, modify, remove
+#
+# Notes:
+#   - Refactor CRs use 'tasks' array instead of 'changes' (no spec impact)
+#   - Initiative CRs use 'phases' array with ordered phases
+#   - Changes can target specs that don't exist yet (will be created)
+#   - Multiple changes can target different specs in one CR
+#
+# Location: .utopia/change-requests/{cr-id}.yaml
 
 id: example-spec-add-feature
-type: change-request
-parent_spec: example-spec
+type: feature
 title: Add new authentication feature
 status: draft
 
 changes:
   # Add operation - adds new features or domain knowledge
   - operation: add
+    spec: example-spec  # Target spec for this change
     feature:
       id: new-feature-id
       description: |
@@ -31,12 +40,14 @@ changes:
         - Second acceptance criterion
 
   - operation: add
+    spec: example-spec  # Can add to same spec or different spec
     domain_knowledge:
       - New domain knowledge item to add
       - Another domain knowledge item
 
   # Modify operation - updates existing features or domain knowledge
   - operation: modify
+    spec: example-spec  # Target spec containing the feature to modify
     feature_id: existing-feature-id
     description: |  # Optional - update feature description
       Updated description for the feature.
@@ -50,6 +61,7 @@ changes:
           new: Updated text for the criterion
 
   - operation: modify
+    spec: example-spec  # Target spec to modify domain knowledge in
     domain_knowledge_mod:
       add:
         - New domain knowledge to add
@@ -61,10 +73,12 @@ changes:
 
   # Remove operation - removes features or domain knowledge
   - operation: remove
+    spec: example-spec  # Target spec containing the feature to remove
     feature_id: feature-to-remove
     reason: Optional explanation for why this feature is being removed
 
   - operation: remove
+    spec: another-spec  # Can target different spec in same CR
     domain_knowledge:
       - Exact domain knowledge text to remove
       - Another domain knowledge item to remove
