@@ -70,7 +70,22 @@ Based on the user's description, determine if this is:
 - **Change Request**: Modifications, additions, or removals to an existing spec
 - **Both**: New functionality that also requires changes to existing specs
 
-Tell the user your assessment: "This sounds like [new spec / a change to X / both]. Does that match your understanding?"
+**For Change Requests, classify the TYPE by asking: "Does this change observable behavior?"**
+
+| Intent Signal | CR Type | Key Question |
+|--------------|---------|--------------|
+| Behavior unchanged (code cleanup, restructure) | refactor | "Will the system behave exactly the same afterward?" |
+| New capability that doesn't exist | feature | "Is this something users can't do today?" |
+| Modifying how existing capability works | enhancement | "Are we changing how an existing feature behaves?" |
+| Removing existing capability | removal | "Are we deleting something that currently exists?" |
+| Multiple ordered changes with dependencies | initiative | "Does this require phased execution?" |
+
+**When intent is ambiguous, ask clarifying questions:**
+- "To help me classify this correctly: will users notice any difference in behavior, or is this purely a code improvement?"
+- "Is this adding something new, or changing how something existing works?"
+- "Does this need to happen in phases, or can all changes be applied together?"
+
+Tell the user your assessment: "This sounds like [new spec / a TYPE change request to X / both]. Does that match your understanding?"
 
 ### PHASE 3: EXPLORE & DEFINE
 For new specs:
@@ -107,40 +122,68 @@ features:
 ` + "```" + `
 
 ### For CHANGE REQUESTS
-Save to: %s/{parent-spec-id}-{change-description}.yaml
+Save to: %s/{spec-id}-{change-description}.yaml
 
+**Choose the correct type based on classification:**
+
+#### Feature CR (new capability)
 ` + "```yaml" + `
-id: parent-spec-id-change-description
-type: change-request
-parent_spec: parent-spec-id  # Must match an existing spec ID exactly
-title: Description of the change
+id: spec-id-add-feature-name
+type: feature
+title: Add new capability
 status: draft
-
 changes:
-  # ADD new features or domain knowledge
   - operation: add
+    spec: target-spec-id  # Which spec to add to
     feature:
       id: new-feature-id
       description: What this feature does
       acceptance_criteria:
-        - Specific condition
-    # OR add domain knowledge:
-    # domain_knowledge:
-    #   - New knowledge item
+        - Specific testable condition
+` + "```" + `
 
-  # MODIFY existing features
+#### Enhancement CR (modify existing capability)
+` + "```yaml" + `
+id: spec-id-enhance-feature-name
+type: enhancement
+title: Enhance existing feature
+status: draft
+changes:
   - operation: modify
-    feature_id: existing-feature-id  # Must exist in parent spec
+    spec: target-spec-id
+    feature_id: existing-feature-id
     description: Updated description  # Optional
     criteria:
       add: ["New criterion"]
-      remove: ["Exact text to remove"]  # Must match exactly
+      remove: ["Exact text to remove"]
       edit:
         - old: "Exact old text"
           new: "Replacement text"
+` + "```" + `
 
-  # REMOVE features or domain knowledge
+#### Refactor CR (behavior unchanged)
+` + "```yaml" + `
+id: spec-id-refactor-description
+type: refactor
+title: Refactor without behavior change
+status: draft
+tasks:  # Note: tasks, not changes (refactors don't modify specs)
+  - id: task-id
+    description: What needs to be refactored
+    acceptance_criteria:
+      - Existing behavior is preserved
+      - Code improvement is achieved
+` + "```" + `
+
+#### Removal CR (delete capability)
+` + "```yaml" + `
+id: spec-id-remove-feature-name
+type: removal
+title: Remove deprecated feature
+status: draft
+changes:
   - operation: remove
+    spec: target-spec-id
     feature_id: feature-to-remove
     reason: Why this is being removed
 ` + "```" + `
