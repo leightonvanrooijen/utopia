@@ -77,16 +77,33 @@ func runMerge(cmd *cobra.Command, args []string) error {
 	}
 
 	// Feature/enhancement/removal CRs modify specs
-	// Group changes by target spec
-	changesBySpec := groupChangesBySpec(cr.Changes)
+	// Separate delete-spec operations from other operations
+	var regularChanges []domain.Change
+	var deleteSpecChanges []domain.Change
+	for _, change := range cr.Changes {
+		if change.Operation == "delete-spec" {
+			deleteSpecChanges = append(deleteSpecChanges, change)
+		} else {
+			regularChanges = append(regularChanges, change)
+		}
+	}
+
+	// Group regular changes by target spec
+	changesBySpec := groupChangesBySpec(regularChanges)
 	specIDs := sortedSpecIDs(changesBySpec)
 
-	fmt.Printf("Target specs: %d\n", len(specIDs))
-	fmt.Println()
+	// Count totals including delete-spec
+	var totalAdd, totalModify, totalRemove, totalDeleteSpec int
+	totalDeleteSpec = len(deleteSpecChanges)
 
-	// Summarize changes per spec
-	fmt.Println("Changes to apply:")
-	var totalAdd, totalModify, totalRemove int
+	// Print summary header
+	if len(specIDs) > 0 || len(deleteSpecChanges) > 0 {
+		fmt.Printf("Target specs: %d\n", len(specIDs)+len(deleteSpecChanges))
+		fmt.Println()
+		fmt.Println("Changes to apply:")
+	}
+
+	// Summarize regular changes per spec
 	for _, specID := range specIDs {
 		changes := changesBySpec[specID]
 		var addCount, modifyCount, removeCount int
@@ -130,16 +147,35 @@ func runMerge(cmd *cobra.Command, args []string) error {
 			}
 		}
 	}
-	fmt.Println()
+
+	// Summarize delete-spec operations
+	for _, change := range deleteSpecChanges {
+		fmt.Printf("  %s: DELETE SPEC\n", change.Spec)
+		fmt.Printf("    ✗ Delete entire spec file\n")
+		if change.Reason != "" {
+			fmt.Printf("      Reason: %s\n", change.Reason)
+		}
+	}
+
+	if len(specIDs) > 0 || len(deleteSpecChanges) > 0 {
+		fmt.Println()
+	}
 
 	if mergeDryRun {
 		fmt.Println("Dry run mode - no changes applied")
-		fmt.Printf("\nWould merge %d add, %d modify, %d remove operation(s) into %d spec(s)\n",
-			totalAdd, totalModify, totalRemove, len(specIDs))
+		fmt.Printf("\nWould merge %d add, %d modify, %d remove, %d delete-spec operation(s)\n",
+			totalAdd, totalModify, totalRemove, totalDeleteSpec)
 		return nil
 	}
 
-	// Load all specs (or create for add-only operations)
+	// Validate delete-spec targets exist before proceeding
+	for _, change := range deleteSpecChanges {
+		if _, err := store.LoadSpec(change.Spec); err != nil {
+			return fmt.Errorf("cannot delete spec %q: spec not found", change.Spec)
+		}
+	}
+
+	// Load all specs for regular operations (or create for add-only operations)
 	specs := make(map[string]*domain.Spec)
 	createdSpecs := make(map[string]bool)
 	for _, specID := range specIDs {
@@ -157,7 +193,7 @@ func runMerge(cmd *cobra.Command, args []string) error {
 		specs[specID] = spec
 	}
 
-	// Apply changes to each spec (in memory first for atomicity)
+	// Apply regular changes to each spec (in memory first for atomicity)
 	for _, specID := range specIDs {
 		spec := specs[specID]
 		changes := changesBySpec[specID]
@@ -167,7 +203,7 @@ func runMerge(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Save all specs (atomic commit phase)
+	// Save all modified specs (atomic commit phase)
 	for _, specID := range specIDs {
 		if err := store.SaveSpec(specs[specID]); err != nil {
 			return fmt.Errorf("failed to save spec %s: %w\n\nSome specs may have been saved. Manual cleanup may be required.", specID, err)
@@ -177,6 +213,16 @@ func runMerge(cmd *cobra.Command, args []string) error {
 		} else {
 			fmt.Printf("✓ Updated spec: %s\n", specID)
 		}
+	}
+
+	// Delete specs (after all other operations succeed)
+	deletedSpecs := make(map[string]bool)
+	for _, change := range deleteSpecChanges {
+		if err := store.DeleteSpec(change.Spec); err != nil {
+			return fmt.Errorf("failed to delete spec %s: %w", change.Spec, err)
+		}
+		deletedSpecs[change.Spec] = true
+		fmt.Printf("✓ Deleted spec: %s\n", change.Spec)
 	}
 
 	// Mark CR as complete before deletion
@@ -204,13 +250,16 @@ func runMerge(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 	fmt.Println("Merge Summary:")
 	fmt.Printf("  Total changes: %d\n", len(cr.Changes))
-	fmt.Printf("  Specs affected: %d\n", len(specIDs))
+	fmt.Printf("  Specs affected: %d\n", len(specIDs)+len(deletedSpecs))
 	for _, specID := range specIDs {
 		if createdSpecs[specID] {
 			fmt.Printf("    - %s (created)\n", specID)
 		} else {
 			fmt.Printf("    - %s (updated)\n", specID)
 		}
+	}
+	for specID := range deletedSpecs {
+		fmt.Printf("    - %s (deleted)\n", specID)
 	}
 
 	return nil
@@ -284,12 +333,24 @@ func mergeInitiative(cr *domain.ChangeRequest, changeRequestID, utopiaDir string
 		// All phases were refactors - just clean up
 		fmt.Println("All phases were refactors - no spec modifications needed")
 	} else if len(allChanges) > 0 {
-		// Group changes by target spec
-		changesBySpec := groupChangesBySpec(allChanges)
+		// Separate delete-spec operations from other operations
+		var regularChanges []domain.Change
+		var deleteSpecChanges []domain.Change
+		for _, change := range allChanges {
+			if change.Operation == "delete-spec" {
+				deleteSpecChanges = append(deleteSpecChanges, change)
+			} else {
+				regularChanges = append(regularChanges, change)
+			}
+		}
+
+		// Group regular changes by target spec
+		changesBySpec := groupChangesBySpec(regularChanges)
 		specIDs := sortedSpecIDs(changesBySpec)
 
 		fmt.Println("Changes to apply:")
-		var totalAdd, totalModify, totalRemove int
+		var totalAdd, totalModify, totalRemove, totalDeleteSpec int
+		totalDeleteSpec = len(deleteSpecChanges)
 		for _, specID := range specIDs {
 			changes := changesBySpec[specID]
 			var addCount, modifyCount, removeCount int
@@ -308,16 +369,26 @@ func mergeInitiative(cr *domain.ChangeRequest, changeRequestID, utopiaDir string
 			totalRemove += removeCount
 			fmt.Printf("  %s: +%d ~%d -%d\n", specID, addCount, modifyCount, removeCount)
 		}
+		for _, change := range deleteSpecChanges {
+			fmt.Printf("  %s: DELETE SPEC\n", change.Spec)
+		}
 		fmt.Println()
 
 		if mergeDryRun {
 			fmt.Println("Dry run mode - no changes applied")
-			fmt.Printf("\nWould merge %d add, %d modify, %d remove operation(s) into %d spec(s)\n",
-				totalAdd, totalModify, totalRemove, len(specIDs))
+			fmt.Printf("\nWould merge %d add, %d modify, %d remove, %d delete-spec operation(s)\n",
+				totalAdd, totalModify, totalRemove, totalDeleteSpec)
 			return nil
 		}
 
-		// Load all specs (or create for add-only operations)
+		// Validate delete-spec targets exist before proceeding
+		for _, change := range deleteSpecChanges {
+			if _, err := store.LoadSpec(change.Spec); err != nil {
+				return fmt.Errorf("cannot delete spec %q: spec not found", change.Spec)
+			}
+		}
+
+		// Load all specs for regular operations (or create for add-only operations)
 		specs := make(map[string]*domain.Spec)
 		createdSpecs := make(map[string]bool)
 		for _, specID := range specIDs {
@@ -333,7 +404,7 @@ func mergeInitiative(cr *domain.ChangeRequest, changeRequestID, utopiaDir string
 			specs[specID] = spec
 		}
 
-		// Apply changes to each spec
+		// Apply regular changes to each spec
 		for _, specID := range specIDs {
 			spec := specs[specID]
 			changes := changesBySpec[specID]
@@ -343,7 +414,7 @@ func mergeInitiative(cr *domain.ChangeRequest, changeRequestID, utopiaDir string
 			}
 		}
 
-		// Save all specs
+		// Save all modified specs
 		for _, specID := range specIDs {
 			if err := store.SaveSpec(specs[specID]); err != nil {
 				return fmt.Errorf("failed to save spec %s: %w", specID, err)
@@ -353,6 +424,14 @@ func mergeInitiative(cr *domain.ChangeRequest, changeRequestID, utopiaDir string
 			} else {
 				fmt.Printf("✓ Updated spec: %s\n", specID)
 			}
+		}
+
+		// Delete specs (after all other operations succeed)
+		for _, change := range deleteSpecChanges {
+			if err := store.DeleteSpec(change.Spec); err != nil {
+				return fmt.Errorf("failed to delete spec %s: %w", change.Spec, err)
+			}
+			fmt.Printf("✓ Deleted spec: %s\n", change.Spec)
 		}
 	}
 

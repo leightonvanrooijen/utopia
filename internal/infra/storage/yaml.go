@@ -44,6 +44,18 @@ func (s *YAMLStore) LoadSpec(id string) (*domain.Spec, error) {
 	return &spec, nil
 }
 
+// DeleteSpec removes a spec file from .utopia/specs/{id}.yaml
+func (s *YAMLStore) DeleteSpec(id string) error {
+	path := filepath.Join(s.baseDir, "specs", id+".yaml")
+	if err := os.Remove(path); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("spec not found: %s", id)
+		}
+		return fmt.Errorf("failed to delete spec %s: %w", id, err)
+	}
+	return nil
+}
+
 // SourceType indicates where a loaded spec originated from
 type SourceType string
 

@@ -198,8 +198,8 @@ type DomainKnowledgeModify struct {
 
 // Change represents a single operation in a change request
 type Change struct {
-	Operation       string   `yaml:"operation"` // "add", "modify", "remove"
-	Spec            string   `yaml:"spec,omitempty"` // Target spec ID (required for feature/enhancement/removal)
+	Operation       string   `yaml:"operation"` // "add", "modify", "remove", "delete-spec"
+	Spec            string   `yaml:"spec,omitempty"` // Target spec ID (required for feature/enhancement/removal/delete-spec)
 	Feature         *Feature `yaml:"feature,omitempty"`
 	DomainKnowledge []string `yaml:"domain_knowledge,omitempty"`
 	// For modify/remove operations
@@ -207,7 +207,7 @@ type Change struct {
 	Description        string                 `yaml:"description,omitempty"`
 	Criteria           *CriteriaModify        `yaml:"criteria,omitempty"`
 	DomainKnowledgeMod *DomainKnowledgeModify `yaml:"domain_knowledge_mod,omitempty"`
-	Reason             string                 `yaml:"reason,omitempty"`
+	Reason             string                 `yaml:"reason,omitempty"` // For remove and delete-spec operations
 }
 
 // ApplyAddChange applies an "add" operation to the spec
@@ -571,6 +571,24 @@ func (cr *ChangeRequest) ToSpec() *Spec {
 				feature.AcceptanceCriteria = criteria
 				spec.Features = append(spec.Features, feature)
 			}
+
+		case "delete-spec":
+			if change.Spec != "" {
+				feature := Feature{
+					ID:          "delete-spec-" + change.Spec,
+					Description: fmt.Sprintf("Delete the entire %s spec file", change.Spec),
+					AcceptanceCriteria: []string{
+						fmt.Sprintf("All code implementing features from spec %q is removed", change.Spec),
+						fmt.Sprintf("All tests for features from spec %q are removed", change.Spec),
+						fmt.Sprintf("The spec file .utopia/specs/%s.yaml is deleted", change.Spec),
+					},
+				}
+				if change.Reason != "" {
+					feature.AcceptanceCriteria = append(feature.AcceptanceCriteria,
+						fmt.Sprintf("Deletion reason: %s", change.Reason))
+				}
+				spec.Features = append(spec.Features, feature)
+			}
 		}
 	}
 
@@ -669,6 +687,24 @@ func (cr *ChangeRequest) PhaseToSpec(phaseIndex int) (*Spec, error) {
 				feature.AcceptanceCriteria = criteria
 				spec.Features = append(spec.Features, feature)
 			}
+
+		case "delete-spec":
+			if change.Spec != "" {
+				feature := Feature{
+					ID:          "delete-spec-" + change.Spec,
+					Description: fmt.Sprintf("Delete the entire %s spec file", change.Spec),
+					AcceptanceCriteria: []string{
+						fmt.Sprintf("All code implementing features from spec %q is removed", change.Spec),
+						fmt.Sprintf("All tests for features from spec %q are removed", change.Spec),
+						fmt.Sprintf("The spec file .utopia/specs/%s.yaml is deleted", change.Spec),
+					},
+				}
+				if change.Reason != "" {
+					feature.AcceptanceCriteria = append(feature.AcceptanceCriteria,
+						fmt.Sprintf("Deletion reason: %s", change.Reason))
+				}
+				spec.Features = append(spec.Features, feature)
+			}
 		}
 	}
 
@@ -709,6 +745,7 @@ func (cr *ChangeRequest) AllPhasesComplete() bool {
 // Changes are applied in order. If any change fails, the error is returned
 // and the spec may be in a partially modified state.
 // Note: The spec's Status is preserved (not modified by this operation).
+// Note: delete-spec operations are skipped here - they are handled at the merge level.
 func (cr *ChangeRequest) ApplyChanges(spec *Spec) error {
 	originalStatus := spec.Status
 	for i, change := range cr.Changes {
@@ -720,6 +757,9 @@ func (cr *ChangeRequest) ApplyChanges(spec *Spec) error {
 			err = spec.ApplyModifyChange(change)
 		case "remove":
 			err = spec.ApplyRemoveChange(change)
+		case "delete-spec":
+			// delete-spec is handled at the merge level, not here
+			continue
 		default:
 			err = fmt.Errorf("unknown operation: %s", change.Operation)
 		}

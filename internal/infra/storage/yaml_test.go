@@ -579,6 +579,56 @@ func TestYAMLFormatting_BlockStyleDescription(t *testing.T) {
 	}
 }
 
+func TestDeleteSpec_Success(t *testing.T) {
+	dir, cleanup := setupTestDir(t)
+	defer cleanup()
+
+	store := NewYAMLStore(dir)
+
+	// Create a spec
+	spec := domain.NewSpec("to-delete", "Spec To Delete")
+	spec.Features = []domain.Feature{
+		{ID: "feature-1", Description: "A feature", AcceptanceCriteria: []string{"Works"}},
+	}
+	if err := store.SaveSpec(spec); err != nil {
+		t.Fatalf("failed to save spec: %v", err)
+	}
+
+	// Verify it exists
+	_, err := store.LoadSpec("to-delete")
+	if err != nil {
+		t.Fatalf("spec should exist before deletion: %v", err)
+	}
+
+	// Delete it
+	if err := store.DeleteSpec("to-delete"); err != nil {
+		t.Fatalf("DeleteSpec failed: %v", err)
+	}
+
+	// Verify it's gone
+	_, err = store.LoadSpec("to-delete")
+	if err == nil {
+		t.Error("spec should not exist after deletion")
+	}
+}
+
+func TestDeleteSpec_NotFound(t *testing.T) {
+	dir, cleanup := setupTestDir(t)
+	defer cleanup()
+
+	store := NewYAMLStore(dir)
+
+	// Try to delete a non-existent spec
+	err := store.DeleteSpec("nonexistent")
+	if err == nil {
+		t.Fatal("expected error when deleting nonexistent spec, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "spec not found") {
+		t.Errorf("error should mention 'spec not found', got: %v", err)
+	}
+}
+
 func TestMergeWorkflow_FullScenario(t *testing.T) {
 	dir, cleanup := setupTestDir(t)
 	defer cleanup()

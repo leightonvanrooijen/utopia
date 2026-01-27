@@ -1615,3 +1615,132 @@ func TestToSpec_NonRefactorCR_IsRefactorFalse(t *testing.T) {
 		t.Error("ToSpec() should NOT set IsRefactor=true for non-refactor CRs")
 	}
 }
+
+// Tests for delete-spec operation
+
+func TestApplyChanges_SkipsDeleteSpecOperation(t *testing.T) {
+	spec := NewSpec("test-spec", "Test Spec")
+	spec.AddFeature(Feature{
+		ID:          "existing-feature",
+		Description: "This should remain",
+	})
+
+	cr := &ChangeRequest{
+		ID:         "cr-with-delete-spec",
+		ParentSpec: "test-spec",
+		Changes: []Change{
+			{
+				Operation: "delete-spec",
+				Spec:      "other-spec",
+				Reason:    "No longer needed",
+			},
+		},
+	}
+
+	// ApplyChanges should skip delete-spec operations (they are handled at merge level)
+	err := cr.ApplyChanges(spec)
+	if err != nil {
+		t.Fatalf("ApplyChanges should not fail for delete-spec: %v", err)
+	}
+
+	// The spec should be unchanged
+	if len(spec.Features) != 1 {
+		t.Errorf("expected 1 feature (unchanged), got %d", len(spec.Features))
+	}
+}
+
+func TestToSpec_DeleteSpecOperation(t *testing.T) {
+	cr := &ChangeRequest{
+		ID:         "cr-delete-spec",
+		Title:      "Delete Spec CR",
+		ParentSpec: "parent-spec",
+		Changes: []Change{
+			{
+				Operation: "delete-spec",
+				Spec:      "obsolete-spec",
+				Reason:    "Feature has been deprecated",
+			},
+		},
+	}
+
+	spec := cr.ToSpec()
+
+	if len(spec.Features) != 1 {
+		t.Fatalf("expected 1 feature for delete-spec, got %d", len(spec.Features))
+	}
+
+	f := spec.Features[0]
+	if f.ID != "delete-spec-obsolete-spec" {
+		t.Errorf("expected feature ID 'delete-spec-obsolete-spec', got %q", f.ID)
+	}
+	if !strings.Contains(f.Description, "Delete") {
+		t.Error("description should mention deletion")
+	}
+	if !strings.Contains(f.Description, "obsolete-spec") {
+		t.Error("description should mention the spec being deleted")
+	}
+
+	// Should have acceptance criteria
+	if len(f.AcceptanceCriteria) < 3 {
+		t.Errorf("expected at least 3 acceptance criteria, got %d", len(f.AcceptanceCriteria))
+	}
+
+	// Should include the reason
+	foundReason := false
+	for _, c := range f.AcceptanceCriteria {
+		if strings.Contains(c, "Feature has been deprecated") {
+			foundReason = true
+			break
+		}
+	}
+	if !foundReason {
+		t.Error("acceptance criteria should include the deletion reason")
+	}
+}
+
+func TestToSpec_DeleteSpecOperationWithoutReason(t *testing.T) {
+	cr := &ChangeRequest{
+		ID:         "cr-delete-no-reason",
+		Title:      "Delete Without Reason",
+		ParentSpec: "parent-spec",
+		Changes: []Change{
+			{
+				Operation: "delete-spec",
+				Spec:      "old-spec",
+			},
+		},
+	}
+
+	spec := cr.ToSpec()
+
+	if len(spec.Features) != 1 {
+		t.Fatalf("expected 1 feature, got %d", len(spec.Features))
+	}
+
+	// Should still have base criteria even without reason
+	if len(spec.Features[0].AcceptanceCriteria) < 3 {
+		t.Errorf("expected at least 3 acceptance criteria, got %d", len(spec.Features[0].AcceptanceCriteria))
+	}
+}
+
+func TestToSpec_DeleteSpecOperationWithoutSpec_Ignored(t *testing.T) {
+	cr := &ChangeRequest{
+		ID:         "cr-delete-no-spec",
+		Title:      "Delete Without Spec",
+		ParentSpec: "parent-spec",
+		Changes: []Change{
+			{
+				Operation: "delete-spec",
+				// No Spec field
+				Reason: "Some reason",
+			},
+		},
+	}
+
+	spec := cr.ToSpec()
+
+	// delete-spec operation without spec field should be ignored
+	if len(spec.Features) != 0 {
+		t.Errorf("expected 0 features (delete-spec without spec should be ignored), got %d", len(spec.Features))
+	}
+}
