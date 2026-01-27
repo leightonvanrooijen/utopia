@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"bytes"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/leightonvanrooijen/utopia/internal/domain"
@@ -518,6 +520,240 @@ func mergeRefactor(cr *domain.ChangeRequest, changeRequestID, utopiaDir string, 
 
 	fmt.Println()
 	fmt.Printf("Successfully completed refactor: %s (no specs modified)\n", cr.Title)
+
+	return nil
+}
+
+// MergeResult contains the outcome of a merge operation for auto-merge flows
+type MergeResult struct {
+	SpecsModified []string // IDs of specs that were modified/created
+	SpecsDeleted  []string // IDs of specs that were deleted
+	IsRefactor    bool     // True if this was a refactor (no spec changes)
+}
+
+// PerformMerge applies CR changes to specs without deleting the CR or work items.
+// This is used by the execute command to auto-merge after successful completion.
+// Returns MergeResult on success, or error if merge fails.
+// Note: This does NOT delete the CR or work items - caller handles cleanup after git commit.
+func PerformMerge(cr *domain.ChangeRequest, store *storage.YAMLStore) (*MergeResult, error) {
+	result := &MergeResult{}
+
+	// Refactor CRs don't modify specs
+	if cr.Type == domain.CRTypeRefactor {
+		result.IsRefactor = true
+		return result, nil
+	}
+
+	// Initiative CRs have phases
+	if cr.Type == domain.CRTypeInitiative {
+		return performMergeInitiative(cr, store)
+	}
+
+	// Feature/enhancement/removal CRs modify specs
+	return performMergeChanges(cr.Changes, store)
+}
+
+// performMergeChanges applies a set of changes to specs.
+// Used for both regular CRs and initiative phases.
+func performMergeChanges(changes []domain.Change, store *storage.YAMLStore) (*MergeResult, error) {
+	result := &MergeResult{}
+
+	// Separate delete-spec operations from other operations
+	var regularChanges []domain.Change
+	var deleteSpecChanges []domain.Change
+	for _, change := range changes {
+		if change.Operation == "delete-spec" {
+			deleteSpecChanges = append(deleteSpecChanges, change)
+		} else {
+			regularChanges = append(regularChanges, change)
+		}
+	}
+
+	// Group regular changes by target spec
+	changesBySpec := groupChangesBySpec(regularChanges)
+	specIDs := sortedSpecIDs(changesBySpec)
+
+	// Validate delete-spec targets exist before proceeding
+	for _, change := range deleteSpecChanges {
+		if _, err := store.LoadSpec(change.Spec); err != nil {
+			return nil, fmt.Errorf("cannot delete spec %q: spec not found", change.Spec)
+		}
+	}
+
+	// Load all specs for regular operations (or create for add-only operations)
+	specs := make(map[string]*domain.Spec)
+	createdSpecs := make(map[string]bool)
+	for _, specID := range specIDs {
+		spec, err := store.LoadSpec(specID)
+		if err != nil {
+			// Check if all changes for this spec are "add" operations
+			if allAdds(changesBySpec[specID]) {
+				// Create a new spec
+				spec = domain.NewSpec(specID, specID)
+				createdSpecs[specID] = true
+			} else {
+				return nil, fmt.Errorf("spec not found: %s (non-add operations require existing spec)", specID)
+			}
+		}
+		specs[specID] = spec
+	}
+
+	// Apply regular changes to each spec (in memory first for atomicity)
+	for _, specID := range specIDs {
+		spec := specs[specID]
+		specChanges := changesBySpec[specID]
+		tempCR := &domain.ChangeRequest{Changes: specChanges}
+		if err := tempCR.ApplyChanges(spec); err != nil {
+			return nil, fmt.Errorf("failed to apply changes to spec %s: %w", specID, err)
+		}
+	}
+
+	// Save all modified specs (atomic commit phase)
+	for _, specID := range specIDs {
+		if err := store.SaveSpec(specs[specID]); err != nil {
+			return nil, fmt.Errorf("failed to save spec %s: %w", specID, err)
+		}
+		result.SpecsModified = append(result.SpecsModified, specID)
+	}
+
+	// Delete specs (after all other operations succeed)
+	for _, change := range deleteSpecChanges {
+		if err := store.DeleteSpec(change.Spec); err != nil {
+			return nil, fmt.Errorf("failed to delete spec %s: %w", change.Spec, err)
+		}
+		result.SpecsDeleted = append(result.SpecsDeleted, change.Spec)
+	}
+
+	return result, nil
+}
+
+// performMergeInitiative applies all phase changes from an initiative CR.
+func performMergeInitiative(cr *domain.ChangeRequest, store *storage.YAMLStore) (*MergeResult, error) {
+	result := &MergeResult{}
+
+	// Check all phases are complete
+	for i, phase := range cr.Phases {
+		if phase.Status != domain.PhaseStatusComplete {
+			return nil, fmt.Errorf("phase %d is not complete (status: %s)", i+1, phase.Status)
+		}
+	}
+
+	// Collect all changes from non-refactor phases
+	var allChanges []domain.Change
+	allRefactors := true
+	for _, phase := range cr.Phases {
+		if phase.Type == domain.CRTypeRefactor {
+			continue
+		}
+		allRefactors = false
+		allChanges = append(allChanges, phase.Changes...)
+	}
+
+	if allRefactors {
+		result.IsRefactor = true
+		return result, nil
+	}
+
+	if len(allChanges) > 0 {
+		phaseResult, err := performMergeChanges(allChanges, store)
+		if err != nil {
+			return nil, err
+		}
+		result.SpecsModified = phaseResult.SpecsModified
+		result.SpecsDeleted = phaseResult.SpecsDeleted
+	}
+
+	return result, nil
+}
+
+// CleanupAfterMerge deletes the CR and work items after a successful merge and git commit.
+func CleanupAfterMerge(cr *domain.ChangeRequest, crID, utopiaDir string, store *storage.YAMLStore) error {
+	// Mark CR as complete before deletion
+	cr.Status = domain.ChangeRequestComplete
+	if err := store.SaveChangeRequest(cr); err != nil {
+		return fmt.Errorf("failed to update CR status: %w", err)
+	}
+
+	// Delete the change request
+	if err := store.DeleteChangeRequest(crID); err != nil {
+		return fmt.Errorf("failed to delete change request: %w", err)
+	}
+
+	// Delete work items
+	if cr.Type == domain.CRTypeInitiative {
+		// Delete work items for all phases
+		for i := range cr.Phases {
+			phaseWorkDir := filepath.Join(utopiaDir, "work-items", crID, fmt.Sprintf("phase-%d", i))
+			if _, err := os.Stat(phaseWorkDir); err == nil {
+				if err := os.RemoveAll(phaseWorkDir); err != nil {
+					return fmt.Errorf("failed to delete work items for phase %d: %w", i+1, err)
+				}
+			}
+		}
+		// Remove parent directory if empty
+		crWorkDir := filepath.Join(utopiaDir, "work-items", crID)
+		if entries, err := os.ReadDir(crWorkDir); err == nil && len(entries) == 0 {
+			os.Remove(crWorkDir)
+		}
+	} else {
+		// Delete work items directory for regular CRs
+		workItemsDir := filepath.Join(utopiaDir, "work-items", crID)
+		if _, err := os.Stat(workItemsDir); err == nil {
+			if err := os.RemoveAll(workItemsDir); err != nil {
+				return fmt.Errorf("failed to delete work items: %w", err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// GitCommitSpecMerge creates a git commit for spec merge changes.
+// Returns nil if commit succeeds, or error describing the failure.
+func GitCommitSpecMerge(projectDir string, cr *domain.ChangeRequest, mergeResult *MergeResult) error {
+	// Build commit message
+	var msg string
+	if mergeResult.IsRefactor {
+		msg = fmt.Sprintf("spec: merge refactor CR '%s'\n\nNo spec modifications (refactor only).", cr.Title)
+	} else {
+		msg = fmt.Sprintf("spec: merge CR '%s'", cr.Title)
+		if len(mergeResult.SpecsModified) > 0 || len(mergeResult.SpecsDeleted) > 0 {
+			msg += "\n\nModified specs:"
+			for _, s := range mergeResult.SpecsModified {
+				msg += fmt.Sprintf("\n  - %s", s)
+			}
+			for _, s := range mergeResult.SpecsDeleted {
+				msg += fmt.Sprintf("\n  - %s (deleted)", s)
+			}
+		}
+	}
+
+	// Stage spec changes
+	specsDir := filepath.Join(projectDir, ".utopia", "specs")
+	addCmd := exec.Command("git", "add", specsDir)
+	addCmd.Dir = projectDir
+	var addStderr bytes.Buffer
+	addCmd.Stderr = &addStderr
+	if err := addCmd.Run(); err != nil {
+		return fmt.Errorf("git add failed: %w (%s)", err, addStderr.String())
+	}
+
+	// Check if there are changes to commit
+	diffCmd := exec.Command("git", "diff", "--cached", "--quiet")
+	diffCmd.Dir = projectDir
+	if err := diffCmd.Run(); err == nil {
+		// No changes to commit (exit code 0 means no diff)
+		return nil
+	}
+
+	// Commit
+	commitCmd := exec.Command("git", "commit", "-m", msg)
+	commitCmd.Dir = projectDir
+	var commitStderr bytes.Buffer
+	commitCmd.Stderr = &commitStderr
+	if err := commitCmd.Run(); err != nil {
+		return fmt.Errorf("git commit failed: %w (%s)", err, commitStderr.String())
+	}
 
 	return nil
 }
