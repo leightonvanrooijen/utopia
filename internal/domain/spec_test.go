@@ -1550,3 +1550,68 @@ func TestToSpec_ModifyWithoutFeatureID_Ignored(t *testing.T) {
 		t.Errorf("expected 0 features (modify without feature_id should be ignored), got %d", len(spec.Features))
 	}
 }
+
+func TestToSpec_RefactorCR_SetsIsRefactor(t *testing.T) {
+	cr := &ChangeRequest{
+		ID:    "refactor-auth",
+		Type:  CRTypeRefactor,
+		Title: "Refactor authentication module",
+		Tasks: []Task{
+			{
+				ID:                 "extract-helper",
+				Description:        "Extract auth helper functions",
+				AcceptanceCriteria: []string{"Helper functions are extracted"},
+			},
+			{
+				ID:                 "rename-vars",
+				Description:        "Rename variables for clarity",
+				AcceptanceCriteria: []string{"Variables are renamed"},
+			},
+		},
+	}
+
+	spec := cr.ToSpec()
+
+	// Verify IsRefactor flag is set
+	if !spec.IsRefactor {
+		t.Error("ToSpec() should set IsRefactor=true for refactor CRs")
+	}
+
+	// Verify tasks are converted to features
+	if len(spec.Features) != 2 {
+		t.Fatalf("expected 2 features, got %d", len(spec.Features))
+	}
+
+	// Verify task data is preserved
+	if spec.Features[0].ID != "extract-helper" {
+		t.Errorf("expected feature ID 'extract-helper', got %q", spec.Features[0].ID)
+	}
+	if spec.Features[0].Description != "Extract auth helper functions" {
+		t.Errorf("expected description 'Extract auth helper functions', got %q", spec.Features[0].Description)
+	}
+}
+
+func TestToSpec_NonRefactorCR_IsRefactorFalse(t *testing.T) {
+	cr := &ChangeRequest{
+		ID:    "feature-add",
+		Type:  CRTypeFeature,
+		Title: "Add new feature",
+		Changes: []Change{
+			{
+				Operation: "add",
+				Feature: &Feature{
+					ID:                 "new-feature",
+					Description:        "A new feature",
+					AcceptanceCriteria: []string{"Feature works"},
+				},
+			},
+		},
+	}
+
+	spec := cr.ToSpec()
+
+	// Verify IsRefactor flag is NOT set for feature CRs
+	if spec.IsRefactor {
+		t.Error("ToSpec() should NOT set IsRefactor=true for non-refactor CRs")
+	}
+}
