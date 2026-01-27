@@ -268,26 +268,42 @@ func runSpec(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println()
-	fmt.Println("Session ended. Validating specs...")
+	fmt.Println("Session ended. Validating...")
 
 	// Validate all specs in the specs directory
-	validationErr := validateSpecs(store)
-	if validationErr == nil {
+	specValidationErr := validateSpecs(store)
+	if specValidationErr != nil {
+		fmt.Println()
+		fmt.Printf("✗ Spec validation failed:\n%s\n", specValidationErr)
+		fmt.Println()
+		fmt.Println("Starting Claude session to fix spec validation errors...")
+		fmt.Println()
+
+		fixPrompt := fmt.Sprintf(specFixSystemPrompt, utopiaDir, specValidationErr)
+		_, err = cli.Session(ctx, fixPrompt)
+		if err != nil {
+			return fmt.Errorf("claude fix session failed: %w", err)
+		}
+	} else {
 		fmt.Println("✓ All specs are valid YAML")
-		return nil
 	}
 
-	// Validation failed - start a Claude session to fix the errors
-	fmt.Println()
-	fmt.Printf("✗ Spec validation failed:\n%s\n", validationErr)
-	fmt.Println()
-	fmt.Println("Starting Claude session to fix validation errors...")
-	fmt.Println()
+	// Validate all change requests in the change-requests directory
+	crValidationErr := validateChangeRequests(store)
+	if crValidationErr != nil {
+		fmt.Println()
+		fmt.Printf("✗ Change request validation failed:\n%s\n", crValidationErr)
+		fmt.Println()
+		fmt.Println("Starting Claude session to fix CR validation errors...")
+		fmt.Println()
 
-	fixPrompt := fmt.Sprintf(specFixSystemPrompt, utopiaDir, validationErr)
-	_, err = cli.Session(ctx, fixPrompt)
-	if err != nil {
-		return fmt.Errorf("claude fix session failed: %w", err)
+		fixPrompt := fmt.Sprintf(crFixSystemPrompt, utopiaDir, crValidationErr)
+		_, err = cli.Session(ctx, fixPrompt)
+		if err != nil {
+			return fmt.Errorf("claude CR fix session failed: %w", err)
+		}
+	} else {
+		fmt.Println("✓ All change requests are valid")
 	}
 
 	return nil
@@ -297,6 +313,30 @@ func runSpec(cmd *cobra.Command, args []string) error {
 func validateSpecs(store *storage.YAMLStore) error {
 	_, err := store.ListSpecs()
 	return err
+}
+
+// validateChangeRequests validates all change request files for YAML syntax and required fields.
+// Returns nil if all CRs are valid, or an error describing validation failures.
+func validateChangeRequests(store *storage.YAMLStore) error {
+	crs, err := store.ListChangeRequests()
+	if err != nil {
+		// ListChangeRequests returns parse errors for invalid YAML
+		return err
+	}
+
+	// Validate each CR has required fields based on type
+	var allErrors []string
+	for _, cr := range crs {
+		if validationErr := domain.ValidateChangeRequest(cr); validationErr != nil {
+			allErrors = append(allErrors, fmt.Sprintf("%s: %v", cr.ID, validationErr))
+		}
+	}
+
+	if len(allErrors) > 0 {
+		return fmt.Errorf("change request validation errors:\n%s", strings.Join(allErrors, "\n"))
+	}
+
+	return nil
 }
 
 // buildSpecsSummary creates a readable summary of existing specs for Claude
@@ -353,5 +393,52 @@ Fix the YAML validation errors in the spec files. The specs are located in: %s/s
 ## Common YAML Fixes
 - "did not find expected key" usually means unquoted special characters
 - "cannot unmarshal !!map into string" means YAML is parsing a string as a map (quote the string)
+
+Start by reading the file mentioned in the error and fixing it.`
+
+// crFixSystemPrompt is used when change requests fail validation
+const crFixSystemPrompt = `You are a CR Fix Claude - an AI assistant that helps fix Change Request YAML validation errors.
+
+## Your Task
+Fix the validation errors in the change request files. The CRs are located in: %s/change-requests/
+
+## Validation Error
+%s
+
+## CR Structure Requirements by Type
+
+### feature/enhancement/removal types require:
+- id: unique identifier (kebab-case)
+- type: "feature", "enhancement", or "removal"
+- title: human-readable title
+- status: "draft", "in-progress", or "complete"
+- changes: array of changes (REQUIRED, cannot be empty)
+  - Each change MUST have a "spec" field specifying the target spec ID
+  - Each change has an "operation" field: "add", "modify", or "remove"
+
+### refactor type requires:
+- id: unique identifier (kebab-case)
+- type: "refactor"
+- title: human-readable title
+- status: "draft", "in-progress", or "complete"
+- tasks: array of tasks (REQUIRED, cannot be empty)
+  - Each task needs: id, description, acceptance_criteria
+  - Tasks do NOT have a "spec" field (refactors don't modify specs)
+
+### initiative type requires:
+- id: unique identifier (kebab-case)
+- type: "initiative"
+- title: human-readable title
+- status: "draft", "in-progress", or "complete"
+- phases: array of phases (REQUIRED, cannot be empty)
+  - Each phase has a "type" field (feature, enhancement, removal, or refactor)
+  - Refactor phases use "tasks" array
+  - Other phase types use "changes" array (each change needs "spec" field)
+
+## Guidelines
+- Read the problematic file mentioned in the error
+- Fix validation issues (missing fields, wrong structure for type)
+- Fix YAML syntax issues (unquoted colons/braces, indentation)
+- Save the fixed file
 
 Start by reading the file mentioned in the error and fixing it.`
