@@ -275,6 +275,12 @@ func selectChangeRequest(store *storage.YAMLStore) (string, error) {
 	return selectedCR.ID, nil
 }
 
+// SpecLoaderConfigurable is an optional interface that chunking strategies can implement
+// to receive a spec loader for loading referenced specs during bugfix chunking.
+type SpecLoaderConfigurable interface {
+	SetSpecLoader(loader func(specID string) (*domain.Spec, error))
+}
+
 // chunkCR invokes the chunking strategy to produce work items from a change request.
 func chunkCR(cr *domain.ChangeRequest, crID string, store *storage.YAMLStore, config *domain.Config, registry *chunkStrategy.Registry) ([]*domain.WorkItem, error) {
 	fmt.Printf("Chunking change request: %s\n", cr.Title)
@@ -298,6 +304,11 @@ func chunkCR(cr *domain.ChangeRequest, crID string, store *storage.YAMLStore, co
 			return nil, fmt.Errorf("no chunking strategies registered")
 		}
 		return nil, fmt.Errorf("unknown chunk strategy %q (available: %v)", strategyName, available)
+	}
+
+	// Configure spec loader if the strategy supports it (needed for bugfix CRs)
+	if configurable, ok := strategy.(SpecLoaderConfigurable); ok {
+		configurable.SetSpecLoader(store.LoadSpec)
 	}
 
 	fmt.Printf("Using '%s' chunk strategy: %s\n", strategy.Name(), strategy.Description())
@@ -344,6 +355,11 @@ func chunkPhase(crID string, phaseIndex int, phase *domain.Phase, store *storage
 			return nil, fmt.Errorf("no chunking strategies registered")
 		}
 		return nil, fmt.Errorf("unknown chunk strategy %q (available: %v)", strategyName, available)
+	}
+
+	// Configure spec loader if the strategy supports it (needed for bugfix phases)
+	if configurable, ok := strategy.(SpecLoaderConfigurable); ok {
+		configurable.SetSpecLoader(store.LoadSpec)
 	}
 
 	fmt.Printf("Using '%s' chunk strategy: %s\n", strategy.Name(), strategy.Description())

@@ -113,7 +113,7 @@ func TestBuildPromptWithConstraints(t *testing.T) {
 		"No network calls",
 	}
 
-	prompt := BuildPromptWithConstraints(feature, customConstraints, nil)
+	prompt := BuildPromptWithConstraints(feature, customConstraints, nil, nil)
 
 	// Should contain custom constraints
 	if !strings.Contains(prompt, "Use only standard library") {
@@ -134,7 +134,7 @@ func TestBuildPromptWithConstraints_AndFailures(t *testing.T) {
 	constraints := []string{"Constraint A"}
 	failures := []string{"Test failed: got nil"}
 
-	prompt := BuildPromptWithConstraints(feature, constraints, failures)
+	prompt := BuildPromptWithConstraints(feature, constraints, failures, nil)
 
 	// Should have both constraints and failures
 	if !strings.Contains(prompt, "Constraint A") {

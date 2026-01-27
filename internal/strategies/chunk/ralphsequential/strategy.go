@@ -25,6 +25,7 @@ var RefactorSystemConstraints = []string{
 // These ensure bugfixes correct behavior to match the spec.
 var BugfixSystemConstraints = []string{
 	"This is a bugfix. The implementation must be corrected to match the spec.",
+	"The acceptance criteria below are the source of truth for correct behavior.",
 	"Fix only the behavior that deviates from the spec",
 }
 
@@ -42,13 +43,35 @@ var VagueTerms = []string{
 	"is reasonable",
 }
 
+// SpecLoader is a function that loads a spec by ID.
+// This allows the chunking strategy to load referenced specs for bugfix tasks
+// without being coupled to a specific storage implementation.
+type SpecLoader func(specID string) (*domain.Spec, error)
+
+// bugfixFeature wraps a feature extracted from a bugfix task with its spec reference.
+// This allows the chunking strategy to load the referenced spec feature.
+type bugfixFeature struct {
+	feature   domain.Feature
+	specRef   string // The spec ID to load
+	featureID string // The feature ID within that spec
+}
+
 // Strategy implements the ralph-sequential chunking approach.
 // It creates one WorkItem per feature, executed in spec order.
-type Strategy struct{}
+type Strategy struct {
+	specLoader SpecLoader
+}
 
 // New creates a new ralph-sequential strategy.
-func New() *Strategy {
-	return &Strategy{}
+// The specLoader is optional - if nil, use SetSpecLoader before chunking bugfix CRs.
+func New(specLoader SpecLoader) *Strategy {
+	return &Strategy{specLoader: specLoader}
+}
+
+// SetSpecLoader sets the spec loader for loading referenced specs during bugfix chunking.
+// This allows the spec loader to be set after strategy creation when the storage becomes available.
+func (s *Strategy) SetSpecLoader(loader SpecLoader) {
+	s.specLoader = loader
 }
 
 // Name returns the strategy identifier.
@@ -64,11 +87,21 @@ func (s *Strategy) Description() string {
 // Chunk transforms a change request into work items.
 func (s *Strategy) Chunk(cr *domain.ChangeRequest) ([]*domain.WorkItem, error) {
 	// Extract features from the CR
-	features := s.extractFeatures(cr)
+	features, bugfixRefs := s.extractFeatures(cr)
 
 	// Determine CR type for constraint injection
 	isRefactor := cr.Type == domain.CRTypeRefactor
 	isBugfix := cr.Type == domain.CRTypeBugfix
+
+	// For bugfix CRs, validate and load referenced spec features
+	var refFeatures map[string]*domain.Feature
+	if isBugfix && len(bugfixRefs) > 0 {
+		var err error
+		refFeatures, err = s.loadReferencedFeatures(bugfixRefs)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	// Validate before generating any work items
 	if err := s.validateFeatures(features); err != nil {
@@ -90,7 +123,12 @@ func (s *Strategy) Chunk(cr *domain.ChangeRequest) ([]*domain.WorkItem, error) {
 		workItem.Constraints = s.mergeConstraintsForCRType(isRefactor, isBugfix)
 
 		// Build the prompt with task + criteria + constraints baked in
-		workItem.Prompt = BuildPromptWithConstraints(feature, workItem.Constraints, nil)
+		// For bugfix items, include the referenced feature for the REFERENCE section
+		var refFeature *domain.Feature
+		if isBugfix && refFeatures != nil {
+			refFeature = refFeatures[feature.ID]
+		}
+		workItem.Prompt = BuildPromptWithConstraints(feature, workItem.Constraints, nil, refFeature)
 
 		workItems = append(workItems, workItem)
 	}
@@ -99,8 +137,10 @@ func (s *Strategy) Chunk(cr *domain.ChangeRequest) ([]*domain.WorkItem, error) {
 }
 
 // extractFeatures converts CR tasks and changes into a flat list of features for chunking.
-func (s *Strategy) extractFeatures(cr *domain.ChangeRequest) []domain.Feature {
+// For bugfix CRs, the returned bugfixRefs map contains spec/feature references keyed by task ID.
+func (s *Strategy) extractFeatures(cr *domain.ChangeRequest) ([]domain.Feature, map[string]bugfixFeature) {
 	var features []domain.Feature
+	bugfixRefs := make(map[string]bugfixFeature)
 
 	// Convert tasks to features (supported on any CR type)
 	for _, task := range cr.Tasks {
@@ -110,6 +150,15 @@ func (s *Strategy) extractFeatures(cr *domain.ChangeRequest) []domain.Feature {
 			AcceptanceCriteria: task.AcceptanceCriteria,
 		}
 		features = append(features, feature)
+
+		// For bugfix tasks, track the spec/feature reference
+		if task.Spec != "" && task.FeatureID != "" {
+			bugfixRefs[task.ID] = bugfixFeature{
+				feature:   feature,
+				specRef:   task.Spec,
+				featureID: task.FeatureID,
+			}
+		}
 	}
 
 	// Convert changes to features
@@ -195,17 +244,27 @@ func (s *Strategy) extractFeatures(cr *domain.ChangeRequest) []domain.Feature {
 		}
 	}
 
-	return features
+	return features, bugfixRefs
 }
 
 // ChunkPhase transforms a single phase of an initiative CR into work items.
 func (s *Strategy) ChunkPhase(crID string, phaseIndex int, phase *domain.Phase) ([]*domain.WorkItem, error) {
 	// Extract features from the phase
-	features := s.extractFeaturesFromPhase(phase)
+	features, bugfixRefs := s.extractFeaturesFromPhase(phase)
 
 	// Determine phase type for constraint injection
 	isRefactor := phase.Type == domain.CRTypeRefactor
 	isBugfix := phase.Type == domain.CRTypeBugfix
+
+	// For bugfix phases, validate and load referenced spec features
+	var refFeatures map[string]*domain.Feature
+	if isBugfix && len(bugfixRefs) > 0 {
+		var err error
+		refFeatures, err = s.loadReferencedFeatures(bugfixRefs)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	// Validate before generating any work items
 	if err := s.validateFeatures(features); err != nil {
@@ -228,7 +287,12 @@ func (s *Strategy) ChunkPhase(crID string, phaseIndex int, phase *domain.Phase) 
 		workItem.Constraints = s.mergeConstraintsForCRType(isRefactor, isBugfix)
 
 		// Build the prompt with task + criteria + constraints baked in
-		workItem.Prompt = BuildPromptWithConstraints(feature, workItem.Constraints, nil)
+		// For bugfix items, include the referenced feature for the REFERENCE section
+		var refFeature *domain.Feature
+		if isBugfix && refFeatures != nil {
+			refFeature = refFeatures[feature.ID]
+		}
+		workItem.Prompt = BuildPromptWithConstraints(feature, workItem.Constraints, nil, refFeature)
 
 		workItems = append(workItems, workItem)
 	}
@@ -237,8 +301,10 @@ func (s *Strategy) ChunkPhase(crID string, phaseIndex int, phase *domain.Phase) 
 }
 
 // extractFeaturesFromPhase converts phase tasks and changes into a flat list of features.
-func (s *Strategy) extractFeaturesFromPhase(phase *domain.Phase) []domain.Feature {
+// For bugfix phases, the returned bugfixRefs map contains spec/feature references keyed by task ID.
+func (s *Strategy) extractFeaturesFromPhase(phase *domain.Phase) ([]domain.Feature, map[string]bugfixFeature) {
 	var features []domain.Feature
+	bugfixRefs := make(map[string]bugfixFeature)
 
 	// Convert tasks to features (supported on any phase type)
 	for _, task := range phase.Tasks {
@@ -248,6 +314,15 @@ func (s *Strategy) extractFeaturesFromPhase(phase *domain.Phase) []domain.Featur
 			AcceptanceCriteria: task.AcceptanceCriteria,
 		}
 		features = append(features, feature)
+
+		// For bugfix tasks, track the spec/feature reference
+		if task.Spec != "" && task.FeatureID != "" {
+			bugfixRefs[task.ID] = bugfixFeature{
+				feature:   feature,
+				specRef:   task.Spec,
+				featureID: task.FeatureID,
+			}
+		}
 	}
 
 	// Convert changes to features
@@ -328,7 +403,7 @@ func (s *Strategy) extractFeaturesFromPhase(phase *domain.Phase) []domain.Featur
 		}
 	}
 
-	return features
+	return features, bugfixRefs
 }
 
 // validateFeatures checks that the features extracted from a CR are suitable for chunking.
@@ -363,6 +438,52 @@ func (s *Strategy) validateFeatures(features []domain.Feature) error {
 	}
 
 	return nil
+}
+
+// loadReferencedFeatures loads the spec features referenced by bugfix tasks.
+// Returns a map from task ID to the referenced feature from the spec.
+// Fails with a clear error if the spec or feature is not found.
+func (s *Strategy) loadReferencedFeatures(bugfixRefs map[string]bugfixFeature) (map[string]*domain.Feature, error) {
+	if s.specLoader == nil {
+		return nil, fmt.Errorf("bugfix CR references specs but no spec loader is configured")
+	}
+
+	result := make(map[string]*domain.Feature)
+	// Cache loaded specs to avoid reloading the same spec multiple times
+	specCache := make(map[string]*domain.Spec)
+
+	for taskID, ref := range bugfixRefs {
+		// Load spec (with caching)
+		spec, ok := specCache[ref.specRef]
+		if !ok {
+			var err error
+			spec, err = s.specLoader(ref.specRef)
+			if err != nil {
+				return nil, fmt.Errorf("bugfix task %q references spec %q which could not be loaded: %w", taskID, ref.specRef, err)
+			}
+			if spec == nil {
+				return nil, fmt.Errorf("bugfix task %q references spec %q which was not found", taskID, ref.specRef)
+			}
+			specCache[ref.specRef] = spec
+		}
+
+		// Find the feature in the spec
+		var foundFeature *domain.Feature
+		for i := range spec.Features {
+			if spec.Features[i].ID == ref.featureID {
+				foundFeature = &spec.Features[i]
+				break
+			}
+		}
+
+		if foundFeature == nil {
+			return nil, fmt.Errorf("bugfix task %q references feature %q in spec %q but feature not found", taskID, ref.featureID, ref.specRef)
+		}
+
+		result[taskID] = foundFeature
+	}
+
+	return result, nil
 }
 
 // mergeConstraintsForCRType combines default constraints, adding type-specific

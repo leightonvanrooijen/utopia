@@ -8,9 +8,9 @@ import (
 
 func main() {
 	// Register available strategies
-	cli.RegisterChunkStrategy(ralphsequential.New())
 	cli.RegisterExecuteStrategy(sequential.New())
-	cli.RegisterExecuteChunkStrategy(ralphsequential.New())
+	// SpecLoader is configured at runtime when chunking (via SetSpecLoader)
+	cli.RegisterExecuteChunkStrategy(ralphsequential.New(nil))
 
 	// Run CLI
 	cli.Execute()
