@@ -2,7 +2,7 @@ id: chunking-ralph-sequential
 title: Ralph Sequential Chunking Strategy
 status: draft
 created: 0001-01-01T00:00:00Z
-updated: 2026-01-27T15:32:23.492634+11:00
+updated: 2026-01-28T09:16:37.427636+11:00
 description: |
     The "ralph-sequential" chunking strategy transforms a structured specification into
     discrete WorkItems optimized for Ralph Wiggum loop execution.
@@ -100,20 +100,6 @@ features:
         - Validation errors include feature ID and problematic criterion
         - Validation runs before any WorkItems are generated
 
-    - id: chunk-command
-      description: |
-        Add CLI command to chunk a spec into WorkItems.
-      acceptance_criteria:
-        - Command is "utopia chunk <spec-id>"
-        - Command loads spec from .utopia/specs/<spec-id>.yaml
-        - Command validates spec before chunking
-        - Command saves WorkItems to .utopia/work-items/<spec-id>/
-        - Command prints summary (N work items created)
-        - Command fails with clear error if spec not found or invalid
-        - Command attempts to load from .utopia/refactors/<id>.yaml if not found in specs or change requests
-        - Command detects document type and applies appropriate chunking (spec, change-request, or refactor)
-        - If refactor found, converts tasks to WorkItems with refactor constraints
-
     - id: change-request-to-spec-conversion
       description: |-
         Convert a change request to a chunkable spec by transforming all operations into features
@@ -163,3 +149,18 @@ features:
         - Constraint injection happens during prompt building
         - Behavior-preservation constraints are injected based on IsRefactor flag, not document type
         - CRs with type refactor receive behavior-preservation constraints on all work items
+
+    - id: bugfix-constraint-injection
+      description: |
+        Inject bugfix-specific constraints and inline feature content for bugfix WorkItems.
+        This ensures Ralph has the source of truth for correct behavior.
+      acceptance_criteria:
+        - Bugfix WorkItems include "This is a bugfix. The implementation must be corrected to match the spec."
+        - Bugfix WorkItems include "The acceptance criteria below are the source of truth for correct behavior."
+        - Bugfix WorkItems include inline REFERENCE section with feature description and acceptance criteria
+        - REFERENCE section is injected after TASK section, before CONSTRAINTS
+        - Feature content is loaded from the referenced spec at chunk time
+        - Chunker validates that referenced spec and feature_id exist
+        - Chunker fails with clear error if referenced feature not found
+        - Constraint injection happens during prompt building based on IsBugfix flag
+        - CRs with type bugfix receive bugfix constraints on all work items

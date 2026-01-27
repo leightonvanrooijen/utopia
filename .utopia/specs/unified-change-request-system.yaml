@@ -2,7 +2,7 @@ id: unified-change-request-system
 title: Unified Change Request System
 status: draft
 created: 0001-01-01T00:00:00Z
-updated: 2026-01-27T15:19:03.465764+11:00
+updated: 2026-01-28T09:16:37.427637+11:00
 description: |
     A unified system where all work flows through Change Requests. CRs are standalone
     documents that describe work to be done. Each change within a CR can target a
@@ -35,9 +35,11 @@ features:
         Change requests have a type field that determines behavior and constraints.
       acceptance_criteria:
         - type field is required on all CRs
-        - Supported types are feature, enhancement, refactor, removal, initiative
+        - Supported types are feature, enhancement, refactor, removal, initiative, bugfix
         - Refactor type automatically injects behavior-preservation constraints
         - Initiative type contains ordered phases instead of changes/tasks
+        - Bugfix type uses tasks (like refactor) but corrects behavior to match spec
+        - Bugfix tasks reference spec and feature_id but do not modify the spec
 
     - id: per-change-spec-targeting
       description: |
@@ -174,3 +176,15 @@ features:
         - Constraints are prepended to the CONSTRAINTS section of WorkItem prompts
         - Only type refactor CRs receive these constraints
         - Constraints are not stored in the CR document itself (injected at chunk time)
+
+    - id: bugfix-tasks
+      description: |
+        Bugfix CRs use tasks that reference the spec/feature they are fixing against.
+        Unlike refactors (behavior preservation), bugfixes correct behavior to match specs.
+      acceptance_criteria:
+        - Bugfix CRs have tasks array (not changes)
+        - Each task has id, description, acceptance_criteria
+        - Each task has spec field referencing the target spec (e.g., "execution-ralph")
+        - Each task has feature_id field referencing the feature that defines correct behavior
+        - Tasks do not modify the spec (reference only)
+        - Merge for bugfixes deletes the CR without modifying any specs (like refactors)
