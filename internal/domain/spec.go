@@ -128,12 +128,13 @@ const (
 	CRTypeRefactor    CRType = "refactor"
 	CRTypeRemoval     CRType = "removal"
 	CRTypeInitiative  CRType = "initiative"
+	CRTypeBugfix      CRType = "bugfix"
 )
 
 // IsValidCRType checks if a string is a valid CR type
 func IsValidCRType(t string) bool {
 	switch CRType(t) {
-	case CRTypeFeature, CRTypeEnhancement, CRTypeRefactor, CRTypeRemoval, CRTypeInitiative:
+	case CRTypeFeature, CRTypeEnhancement, CRTypeRefactor, CRTypeRemoval, CRTypeInitiative, CRTypeBugfix:
 		return true
 	}
 	return false
@@ -559,7 +560,7 @@ func ValidateChangeRequest(cr *ChangeRequest) error {
 	if cr.Type == "" {
 		errors = append(errors, "missing required field: type")
 	} else if !IsValidCRType(string(cr.Type)) {
-		errors = append(errors, fmt.Sprintf("invalid type %q: must be one of feature, enhancement, refactor, removal, initiative", cr.Type))
+		errors = append(errors, fmt.Sprintf("invalid type %q: must be one of feature, enhancement, refactor, removal, initiative, bugfix", cr.Type))
 	} else {
 		// Type-specific validation
 		switch cr.Type {
@@ -604,6 +605,30 @@ func ValidateChangeRequest(cr *ChangeRequest) error {
 				}
 			}
 
+		case CRTypeBugfix:
+			if len(cr.Tasks) == 0 {
+				errors = append(errors, "type bugfix requires tasks array")
+			}
+			if len(cr.Changes) > 0 {
+				errors = append(errors, "type bugfix should not have changes array (use tasks instead)")
+			}
+			if len(cr.Phases) > 0 {
+				errors = append(errors, "type bugfix should not have phases array")
+			}
+			// Validate each task
+			for i, task := range cr.Tasks {
+				taskPrefix := fmt.Sprintf("tasks[%d]", i)
+				if task.ID == "" {
+					errors = append(errors, taskPrefix+": missing required field: id")
+				}
+				if task.Description == "" {
+					errors = append(errors, taskPrefix+": missing required field: description")
+				}
+				if len(task.AcceptanceCriteria) == 0 {
+					errors = append(errors, taskPrefix+": missing required field: acceptance_criteria")
+				}
+			}
+
 		case CRTypeInitiative:
 			if len(cr.Phases) == 0 {
 				errors = append(errors, "type initiative requires phases array")
@@ -621,15 +646,15 @@ func ValidateChangeRequest(cr *ChangeRequest) error {
 					errors = append(errors, phasePrefix+": missing required field: type")
 				} else if phase.Type == CRTypeInitiative {
 					errors = append(errors, phasePrefix+": phase type cannot be initiative (no nesting)")
-				} else if phase.Type == CRTypeRefactor {
+				} else if phase.Type == CRTypeRefactor || phase.Type == CRTypeBugfix {
 					if len(phase.Tasks) == 0 {
-						errors = append(errors, phasePrefix+": refactor phase requires tasks")
+						errors = append(errors, fmt.Sprintf("%s: %s phase requires tasks", phasePrefix, phase.Type))
 					}
 				} else {
 					if len(phase.Changes) == 0 {
 						errors = append(errors, phasePrefix+": phase requires changes")
 					}
-					// Validate each change in non-refactor phases has a spec field
+					// Validate each change in non-refactor/non-bugfix phases has a spec field
 					for j, change := range phase.Changes {
 						if change.Spec == "" {
 							errors = append(errors, fmt.Sprintf("%s.changes[%d]: missing required field: spec", phasePrefix, j))

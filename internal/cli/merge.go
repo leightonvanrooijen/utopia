@@ -68,8 +68,8 @@ func runMerge(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Change Request: %s\n", cr.Title)
 	fmt.Printf("Type: %s\n", cr.Type)
 
-	// Refactor CRs don't modify specs - just delete the CR
-	if cr.Type == domain.CRTypeRefactor {
+	// Refactor and bugfix CRs don't modify specs - just delete the CR
+	if cr.Type == domain.CRTypeRefactor || cr.Type == domain.CRTypeBugfix {
 		return mergeRefactor(cr, changeRequestID, utopiaDir, store)
 	}
 
@@ -317,13 +317,13 @@ func mergeInitiative(cr *domain.ChangeRequest, changeRequestID, utopiaDir string
 
 	fmt.Println()
 
-	// Collect all changes from non-refactor phases
+	// Collect all changes from non-refactor/non-bugfix phases
 	var allChanges []domain.Change
-	var refactorPhaseCount int
+	var taskOnlyPhaseCount int
 	for i, phase := range cr.Phases {
-		if phase.Type == domain.CRTypeRefactor {
-			refactorPhaseCount++
-			fmt.Printf("Phase %d (refactor): %d tasks - no spec changes\n", i+1, len(phase.Tasks))
+		if phase.Type == domain.CRTypeRefactor || phase.Type == domain.CRTypeBugfix {
+			taskOnlyPhaseCount++
+			fmt.Printf("Phase %d (%s): %d tasks - no spec changes\n", i+1, phase.Type, len(phase.Tasks))
 			continue
 		}
 		fmt.Printf("Phase %d (%s): %d changes\n", i+1, phase.Type, len(phase.Changes))
@@ -331,9 +331,9 @@ func mergeInitiative(cr *domain.ChangeRequest, changeRequestID, utopiaDir string
 	}
 	fmt.Println()
 
-	if len(allChanges) == 0 && refactorPhaseCount == len(cr.Phases) {
-		// All phases were refactors - just clean up
-		fmt.Println("All phases were refactors - no spec modifications needed")
+	if len(allChanges) == 0 && taskOnlyPhaseCount == len(cr.Phases) {
+		// All phases were refactors/bugfixes - just clean up
+		fmt.Println("All phases were refactors/bugfixes - no spec modifications needed")
 	} else if len(allChanges) > 0 {
 		// Separate delete-spec operations from other operations
 		var regularChanges []domain.Change
@@ -538,8 +538,8 @@ type MergeResult struct {
 func PerformMerge(cr *domain.ChangeRequest, store *storage.YAMLStore) (*MergeResult, error) {
 	result := &MergeResult{}
 
-	// Refactor CRs don't modify specs
-	if cr.Type == domain.CRTypeRefactor {
+	// Refactor and bugfix CRs don't modify specs
+	if cr.Type == domain.CRTypeRefactor || cr.Type == domain.CRTypeBugfix {
 		result.IsRefactor = true
 		return result, nil
 	}
@@ -638,18 +638,18 @@ func performMergeInitiative(cr *domain.ChangeRequest, store *storage.YAMLStore) 
 		}
 	}
 
-	// Collect all changes from non-refactor phases
+	// Collect all changes from non-refactor/non-bugfix phases
 	var allChanges []domain.Change
-	allRefactors := true
+	allTaskOnly := true
 	for _, phase := range cr.Phases {
-		if phase.Type == domain.CRTypeRefactor {
+		if phase.Type == domain.CRTypeRefactor || phase.Type == domain.CRTypeBugfix {
 			continue
 		}
-		allRefactors = false
+		allTaskOnly = false
 		allChanges = append(allChanges, phase.Changes...)
 	}
 
-	if allRefactors {
+	if allTaskOnly {
 		result.IsRefactor = true
 		return result, nil
 	}

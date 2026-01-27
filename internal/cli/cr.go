@@ -22,6 +22,7 @@ Change requests define modifications to existing specifications:
   - feature:     Add new capability to an existing spec
   - enhancement: Modify how an existing feature works
   - refactor:    Code improvement without behavior change
+  - bugfix:      Correct behavior to match spec
   - removal:     Delete an existing capability
   - initiative:  Multi-phase changes with ordered execution
 
@@ -74,6 +75,7 @@ Determine the CR type by asking: "Does this change observable behavior?"
 | Behavior unchanged (code cleanup, restructure) | refactor | "Will the system behave exactly the same afterward?" |
 | New capability that doesn't exist | feature | "Is this something users can't do today?" |
 | Modifying how existing capability works | enhancement | "Are we changing how an existing feature behaves?" |
+| Behavior doesn't match spec (bug) | bugfix | "Should this already work according to the spec?" |
 | Removing existing capability | removal | "Are we deleting something that currently exists?" |
 | Multiple ordered changes with dependencies | initiative | "Does this require phased execution?" |
 
@@ -89,6 +91,7 @@ Capture the specific changes with testable acceptance criteria:
 - For features: What's the new capability? What are the acceptance criteria?
 - For enhancements: What existing feature? How should it change?
 - For refactors: What code improvement? How do we verify behavior is preserved?
+- For bugfixes: What spec/feature is broken? How should it behave per the spec?
 - For removals: What's being removed? Why?
 - For initiatives: What are the phases? What's the execution order?
 
@@ -146,6 +149,23 @@ tasks:  # Note: tasks, not changes (refactors don't modify specs)
     acceptance_criteria:
       - Existing behavior is preserved
       - Code improvement is achieved
+` + "```" + `
+
+### Bugfix CR (correct behavior to match spec)
+` + "```yaml" + `
+id: spec-id-fix-feature-name
+type: bugfix
+title: Fix behavior to match spec
+status: draft
+tasks:  # Note: tasks, not changes (bugfixes don't modify specs)
+  - id: task-id
+    description: |
+      Fix [feature] to match spec [spec-id].
+      Current behavior: [what it does wrong]
+      Expected behavior: [what the spec says it should do]
+    acceptance_criteria:
+      - Behavior matches spec [spec-id] feature [feature-id]
+      - [Specific testable condition from spec]
 ` + "```" + `
 
 ### Removal CR (delete capability)
@@ -410,14 +430,23 @@ Fix the validation errors in the change request files. The CRs are located in: %
   - Each task needs: id, description, acceptance_criteria
   - Tasks do NOT have a "spec" field (refactors don't modify specs)
 
+### bugfix type requires:
+- id: unique identifier (kebab-case)
+- type: "bugfix"
+- title: human-readable title
+- status: "draft", "in-progress", or "complete"
+- tasks: array of tasks (REQUIRED, cannot be empty)
+  - Each task needs: id, description, acceptance_criteria
+  - Tasks reference spec/feature but don't modify the spec
+
 ### initiative type requires:
 - id: unique identifier (kebab-case)
 - type: "initiative"
 - title: human-readable title
 - status: "draft", "in-progress", or "complete"
 - phases: array of phases (REQUIRED, cannot be empty)
-  - Each phase has a "type" field (feature, enhancement, removal, or refactor)
-  - Refactor phases use "tasks" array
+  - Each phase has a "type" field (feature, enhancement, removal, refactor, or bugfix)
+  - Refactor and bugfix phases use "tasks" array
   - Other phase types use "changes" array (each change needs "spec" field)
 
 ## Guidelines

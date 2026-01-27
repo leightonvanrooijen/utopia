@@ -21,6 +21,13 @@ var RefactorSystemConstraints = []string{
 	"All existing tests must pass without modification",
 }
 
+// BugfixSystemConstraints are automatically injected for bugfix WorkItems.
+// These ensure bugfixes correct behavior to match the spec.
+var BugfixSystemConstraints = []string{
+	"This is a bugfix. The implementation must be corrected to match the spec.",
+	"Fix only the behavior that deviates from the spec",
+}
+
 // VagueTerms are phrases that indicate non-verifiable acceptance criteria.
 var VagueTerms = []string{
 	"should be good",
@@ -59,8 +66,9 @@ func (s *Strategy) Chunk(cr *domain.ChangeRequest) ([]*domain.WorkItem, error) {
 	// Extract features from the CR
 	features := s.extractFeatures(cr)
 
-	// Determine if this is a refactor (for constraint injection)
+	// Determine CR type for constraint injection
 	isRefactor := cr.Type == domain.CRTypeRefactor
+	isBugfix := cr.Type == domain.CRTypeBugfix
 
 	// Validate before generating any work items
 	if err := s.validateFeatures(features); err != nil {
@@ -78,8 +86,8 @@ func (s *Strategy) Chunk(cr *domain.ChangeRequest) ([]*domain.WorkItem, error) {
 			i, // Order is the position in the CR
 		)
 
-		// Apply constraints (defaults + refactor constraints if applicable)
-		workItem.Constraints = s.mergeConstraintsForCR(isRefactor)
+		// Apply constraints (defaults + type-specific constraints)
+		workItem.Constraints = s.mergeConstraintsForCRType(isRefactor, isBugfix)
 
 		// Build the prompt with task + criteria + constraints baked in
 		workItem.Prompt = BuildPromptWithConstraints(feature, workItem.Constraints, nil)
@@ -195,8 +203,9 @@ func (s *Strategy) ChunkPhase(crID string, phaseIndex int, phase *domain.Phase) 
 	// Extract features from the phase
 	features := s.extractFeaturesFromPhase(phase)
 
-	// Determine if this is a refactor phase (for constraint injection)
+	// Determine phase type for constraint injection
 	isRefactor := phase.Type == domain.CRTypeRefactor
+	isBugfix := phase.Type == domain.CRTypeBugfix
 
 	// Validate before generating any work items
 	if err := s.validateFeatures(features); err != nil {
@@ -215,8 +224,8 @@ func (s *Strategy) ChunkPhase(crID string, phaseIndex int, phase *domain.Phase) 
 			i, // Order is the position in the phase
 		)
 
-		// Apply constraints (defaults + refactor constraints if applicable)
-		workItem.Constraints = s.mergeConstraintsForCR(isRefactor)
+		// Apply constraints (defaults + type-specific constraints)
+		workItem.Constraints = s.mergeConstraintsForCRType(isRefactor, isBugfix)
 
 		// Build the prompt with task + criteria + constraints baked in
 		workItem.Prompt = BuildPromptWithConstraints(feature, workItem.Constraints, nil)
@@ -356,15 +365,26 @@ func (s *Strategy) validateFeatures(features []domain.Feature) error {
 	return nil
 }
 
-// mergeConstraintsForCR combines default constraints, adding refactor
-// system constraints if the CR is a refactor type.
-func (s *Strategy) mergeConstraintsForCR(isRefactor bool) []string {
+// mergeConstraintsForCRType combines default constraints, adding type-specific
+// system constraints for refactor or bugfix types.
+func (s *Strategy) mergeConstraintsForCRType(isRefactor, isBugfix bool) []string {
 	seen := make(map[string]bool)
 	var result []string
 
 	// Add refactor system constraints first (if applicable)
 	if isRefactor {
 		for _, c := range RefactorSystemConstraints {
+			normalized := strings.TrimSpace(strings.ToLower(c))
+			if !seen[normalized] {
+				seen[normalized] = true
+				result = append(result, c)
+			}
+		}
+	}
+
+	// Add bugfix system constraints (if applicable)
+	if isBugfix {
+		for _, c := range BugfixSystemConstraints {
 			normalized := strings.TrimSpace(strings.ToLower(c))
 			if !seen[normalized] {
 				seen[normalized] = true
