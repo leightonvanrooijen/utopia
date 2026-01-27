@@ -321,3 +321,109 @@ func buildCRsSummary(crs []*domain.ChangeRequest) string {
 
 	return sb.String()
 }
+
+// buildSpecsSummary creates a readable summary of existing specs for Claude
+func buildSpecsSummary(specs []*domain.Spec) string {
+	if len(specs) == 0 {
+		return "(No existing specs found)"
+	}
+
+	var sb strings.Builder
+	for _, spec := range specs {
+		sb.WriteString(fmt.Sprintf("### %s\n", spec.ID))
+		sb.WriteString(fmt.Sprintf("**Title:** %s\n", spec.Title))
+		sb.WriteString(fmt.Sprintf("**Status:** %s\n", spec.Status))
+
+		// Truncate description if too long
+		desc := strings.TrimSpace(spec.Description)
+		if len(desc) > 200 {
+			desc = desc[:200] + "..."
+		}
+		sb.WriteString(fmt.Sprintf("**Description:** %s\n", desc))
+
+		// List feature IDs
+		if len(spec.Features) > 0 {
+			sb.WriteString("**Features:** ")
+			featureIDs := make([]string, len(spec.Features))
+			for i, f := range spec.Features {
+				featureIDs[i] = f.ID
+			}
+			sb.WriteString(strings.Join(featureIDs, ", "))
+			sb.WriteString("\n")
+		}
+		sb.WriteString("\n")
+	}
+
+	return sb.String()
+}
+
+// validateChangeRequests validates all change request files for YAML syntax and required fields.
+// Returns nil if all CRs are valid, or an error describing validation failures.
+func validateChangeRequests(store *storage.YAMLStore) error {
+	crs, err := store.ListChangeRequests()
+	if err != nil {
+		// ListChangeRequests returns parse errors for invalid YAML
+		return err
+	}
+
+	// Validate each CR has required fields based on type
+	var allErrors []string
+	for _, cr := range crs {
+		if validationErr := domain.ValidateChangeRequest(cr); validationErr != nil {
+			allErrors = append(allErrors, fmt.Sprintf("%s: %v", cr.ID, validationErr))
+		}
+	}
+
+	if len(allErrors) > 0 {
+		return fmt.Errorf("change request validation errors:\n%s", strings.Join(allErrors, "\n"))
+	}
+
+	return nil
+}
+
+// crFixSystemPrompt is used when change requests fail validation
+const crFixSystemPrompt = `You are a CR Fix Claude - an AI assistant that helps fix Change Request YAML validation errors.
+
+## Your Task
+Fix the validation errors in the change request files. The CRs are located in: %s/change-requests/
+
+## Validation Error
+%s
+
+## CR Structure Requirements by Type
+
+### feature/enhancement/removal types require:
+- id: unique identifier (kebab-case)
+- type: "feature", "enhancement", or "removal"
+- title: human-readable title
+- status: "draft", "in-progress", or "complete"
+- changes: array of changes (REQUIRED, cannot be empty)
+  - Each change MUST have a "spec" field specifying the target spec ID
+  - Each change has an "operation" field: "add", "modify", or "remove"
+
+### refactor type requires:
+- id: unique identifier (kebab-case)
+- type: "refactor"
+- title: human-readable title
+- status: "draft", "in-progress", or "complete"
+- tasks: array of tasks (REQUIRED, cannot be empty)
+  - Each task needs: id, description, acceptance_criteria
+  - Tasks do NOT have a "spec" field (refactors don't modify specs)
+
+### initiative type requires:
+- id: unique identifier (kebab-case)
+- type: "initiative"
+- title: human-readable title
+- status: "draft", "in-progress", or "complete"
+- phases: array of phases (REQUIRED, cannot be empty)
+  - Each phase has a "type" field (feature, enhancement, removal, or refactor)
+  - Refactor phases use "tasks" array
+  - Other phase types use "changes" array (each change needs "spec" field)
+
+## Guidelines
+- Read the problematic file mentioned in the error
+- Fix validation issues (missing fields, wrong structure for type)
+- Fix YAML syntax issues (unquoted colons/braces, indentation)
+- Save the fixed file
+
+Start by reading the file mentioned in the error and fixing it.`
