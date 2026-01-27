@@ -4,18 +4,22 @@ import (
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 )
 
-// Strategy defines the interface for chunking specs into work items.
-// Different strategies transform specs into work items in different ways:
-// - ralph-sequential: one WorkItem per feature, executed in spec order
+// Strategy defines the interface for chunking change requests into work items.
+// Different strategies transform CRs into work items in different ways:
+// - ralph-sequential: one WorkItem per feature/task, executed in CR order
 // - (future) parallel: work items that can execute concurrently
 // - (future) atomic: smaller, more granular work items
 type Strategy interface {
-	// Chunk transforms a spec into a slice of work items.
+	// Chunk transforms a change request into a slice of work items.
 	// The strategy is responsible for:
-	// - Validating the spec is chunkable
+	// - Validating the CR is chunkable
 	// - Creating work items with appropriate prompts
 	// - Setting execution order and constraints
-	Chunk(spec *domain.Spec) ([]*domain.WorkItem, error)
+	Chunk(cr *domain.ChangeRequest) ([]*domain.WorkItem, error)
+
+	// ChunkPhase transforms a single phase of an initiative CR into work items.
+	// The crID and phaseIndex are used to generate unique work item IDs.
+	ChunkPhase(crID string, phaseIndex int, phase *domain.Phase) ([]*domain.WorkItem, error)
 
 	// Name returns the strategy identifier (e.g., "ralph-sequential")
 	Name() string

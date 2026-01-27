@@ -56,58 +56,6 @@ func (s *YAMLStore) DeleteSpec(id string) error {
 	return nil
 }
 
-// SourceType indicates where a loaded spec originated from
-type SourceType string
-
-const (
-	SourceSpec          SourceType = "spec"
-	SourceChangeRequest SourceType = "change-request"
-)
-
-// LoadSpecOrChangeRequest attempts to load a spec, falling back to loading
-// a change request and converting it to a spec if the spec is not found.
-// This enables chunking change requests using the same command as specs.
-//
-// Returns:
-// - (*Spec, false, nil) if spec found in .utopia/specs/
-// - (*Spec, true, nil) if change request found and converted
-// - (nil, false, error) if neither found or other error
-func (s *YAMLStore) LoadSpecOrChangeRequest(id string) (*domain.Spec, bool, error) {
-	spec, sourceType, err := s.LoadSpecOrChangeRequestOrRefactor(id)
-	if err != nil {
-		return nil, false, err
-	}
-	return spec, sourceType == SourceChangeRequest, nil
-}
-
-// LoadSpecOrChangeRequestOrRefactor attempts to load a spec or change request
-// by ID, converting to a Spec for uniform chunking.
-//
-// Search order:
-// 1. .utopia/specs/{id}.yaml
-// 2. .utopia/change-requests/{id}.yaml
-//
-// Returns:
-// - (*Spec, SourceSpec, nil) if spec found
-// - (*Spec, SourceChangeRequest, nil) if change request found and converted
-// - (nil, "", error) if none found or other error
-func (s *YAMLStore) LoadSpecOrChangeRequestOrRefactor(id string) (*domain.Spec, SourceType, error) {
-	// First, try to load as a regular spec
-	spec, err := s.LoadSpec(id)
-	if err == nil {
-		return spec, SourceSpec, nil
-	}
-
-	// If spec not found, try loading as a change request
-	cr, crErr := s.LoadChangeRequest(id)
-	if crErr == nil {
-		return cr.ToSpec(), SourceChangeRequest, nil
-	}
-
-	// None found
-	return nil, "", fmt.Errorf("not found in .utopia/specs/%s.yaml or .utopia/change-requests/%s.yaml", id, id)
-}
-
 // ListSpecs returns all specs in the specs directory
 func (s *YAMLStore) ListSpecs() ([]*domain.Spec, error) {
 	dir := filepath.Join(s.baseDir, "specs")

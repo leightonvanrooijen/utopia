@@ -38,22 +38,34 @@ func TestStrategy_Description(t *testing.T) {
 	}
 }
 
+// Helper function to create a CR with add operations for features
+func crWithFeatures(id string, features ...domain.Feature) *domain.ChangeRequest {
+	cr := &domain.ChangeRequest{
+		ID:    id,
+		Type:  domain.CRTypeFeature,
+		Title: "Test CR",
+	}
+	for _, f := range features {
+		cr.Changes = append(cr.Changes, domain.Change{
+			Operation: "add",
+			Feature:   &f,
+		})
+	}
+	return cr
+}
+
 func TestStrategy_Chunk_SingleFeature(t *testing.T) {
 	s := New()
 
-	spec := &domain.Spec{
-		ID:    "test-spec",
-		Title: "Test Spec",
-		Features: []domain.Feature{
-			{
-				ID:                 "feature-1",
-				Description:        "First feature",
-				AcceptanceCriteria: []string{"Criterion A", "Criterion B"},
-			},
+	cr := crWithFeatures("test-cr",
+		domain.Feature{
+			ID:                 "feature-1",
+			Description:        "First feature",
+			AcceptanceCriteria: []string{"Criterion A", "Criterion B"},
 		},
-	}
+	)
 
-	items, err := s.Chunk(spec)
+	items, err := s.Chunk(cr)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
@@ -65,8 +77,8 @@ func TestStrategy_Chunk_SingleFeature(t *testing.T) {
 	item := items[0]
 
 	// Verify ID format
-	if item.ID != "test-spec-feature-1" {
-		t.Errorf("ID = %q, want %q", item.ID, "test-spec-feature-1")
+	if item.ID != "test-cr-feature-1" {
+		t.Errorf("ID = %q, want %q", item.ID, "test-cr-feature-1")
 	}
 
 	// Verify order
@@ -91,16 +103,13 @@ func TestStrategy_Chunk_SingleFeature(t *testing.T) {
 func TestStrategy_Chunk_MultipleFeatures(t *testing.T) {
 	s := New()
 
-	spec := &domain.Spec{
-		ID: "multi-spec",
-		Features: []domain.Feature{
-			{ID: "f1", Description: "Feature 1", AcceptanceCriteria: []string{"C1"}},
-			{ID: "f2", Description: "Feature 2", AcceptanceCriteria: []string{"C2"}},
-			{ID: "f3", Description: "Feature 3", AcceptanceCriteria: []string{"C3"}},
-		},
-	}
+	cr := crWithFeatures("multi-cr",
+		domain.Feature{ID: "f1", Description: "Feature 1", AcceptanceCriteria: []string{"C1"}},
+		domain.Feature{ID: "f2", Description: "Feature 2", AcceptanceCriteria: []string{"C2"}},
+		domain.Feature{ID: "f3", Description: "Feature 3", AcceptanceCriteria: []string{"C3"}},
+	)
 
-	items, err := s.Chunk(spec)
+	items, err := s.Chunk(cr)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
@@ -115,7 +124,7 @@ func TestStrategy_Chunk_MultipleFeatures(t *testing.T) {
 			t.Errorf("items[%d].Order = %d, want %d", i, item.Order, i)
 		}
 
-		expectedID := "multi-spec-f" + string(rune('1'+i))
+		expectedID := "multi-cr-f" + string(rune('1'+i))
 		if item.ID != expectedID {
 			t.Errorf("items[%d].ID = %q, want %q", i, item.ID, expectedID)
 		}
@@ -125,32 +134,30 @@ func TestStrategy_Chunk_MultipleFeatures(t *testing.T) {
 func TestStrategy_Chunk_NoFeatures(t *testing.T) {
 	s := New()
 
-	spec := &domain.Spec{
-		ID:       "empty-spec",
-		Features: []domain.Feature{},
+	cr := &domain.ChangeRequest{
+		ID:      "empty-cr",
+		Type:    domain.CRTypeFeature,
+		Changes: []domain.Change{},
 	}
 
-	items, err := s.Chunk(spec)
+	items, err := s.Chunk(cr)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
 
 	if len(items) != 0 {
-		t.Errorf("Chunk() returned %d items for empty spec, want 0", len(items))
+		t.Errorf("Chunk() returned %d items for empty CR, want 0", len(items))
 	}
 }
 
 func TestStrategy_Validate_NoAcceptanceCriteria(t *testing.T) {
 	s := New()
 
-	spec := &domain.Spec{
-		ID: "invalid-spec",
-		Features: []domain.Feature{
-			{ID: "bad-feature", Description: "No criteria", AcceptanceCriteria: []string{}},
-		},
-	}
+	cr := crWithFeatures("invalid-cr",
+		domain.Feature{ID: "bad-feature", Description: "No criteria", AcceptanceCriteria: []string{}},
+	)
 
-	_, err := s.Chunk(spec)
+	_, err := s.Chunk(cr)
 	if err == nil {
 		t.Fatal("Chunk() should return error for feature without acceptance criteria")
 	}
@@ -192,14 +199,11 @@ func TestStrategy_Validate_VagueTerms(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := New()
-			spec := &domain.Spec{
-				ID: "test",
-				Features: []domain.Feature{
-					{ID: "f1", Description: "Test", AcceptanceCriteria: []string{tt.criterion}},
-				},
-			}
+			cr := crWithFeatures("test",
+				domain.Feature{ID: "f1", Description: "Test", AcceptanceCriteria: []string{tt.criterion}},
+			)
 
-			_, err := s.Chunk(spec)
+			_, err := s.Chunk(cr)
 
 			if tt.wantError && err == nil {
 				t.Errorf("Chunk() should reject vague criterion %q", tt.criterion)
@@ -215,21 +219,18 @@ func TestStrategy_Validate_VagueTermInQuotes(t *testing.T) {
 	s := New()
 
 	// Vague terms in quotes should be allowed (they're examples)
-	spec := &domain.Spec{
-		ID: "quoted-spec",
-		Features: []domain.Feature{
-			{
-				ID:          "f1",
-				Description: "Error handling",
-				AcceptanceCriteria: []string{
-					`Error message should not contain "looks good" literally`,
-					`Avoid responses like "is nice" in production`,
-				},
+	cr := crWithFeatures("quoted-cr",
+		domain.Feature{
+			ID:          "f1",
+			Description: "Error handling",
+			AcceptanceCriteria: []string{
+				`Error message should not contain "looks good" literally`,
+				`Avoid responses like "is nice" in production`,
 			},
 		},
-	}
+	)
 
-	_, err := s.Chunk(spec)
+	_, err := s.Chunk(cr)
 	if err != nil {
 		t.Errorf("Chunk() should allow vague terms in quotes: %v", err)
 	}
@@ -241,20 +242,17 @@ func TestStrategy_Validate_VagueTermInSingleQuotes(t *testing.T) {
 	// Note: The quote detection algorithm counts all single quotes,
 	// so apostrophes in contractions (like "Don't") can interfere.
 	// Use examples without contractions for reliable detection.
-	spec := &domain.Spec{
-		ID: "single-quoted-spec",
-		Features: []domain.Feature{
-			{
-				ID:          "f1",
-				Description: "Validation",
-				AcceptanceCriteria: []string{
-					`Never return 'should be good' as a status`,
-				},
+	cr := crWithFeatures("single-quoted-cr",
+		domain.Feature{
+			ID:          "f1",
+			Description: "Validation",
+			AcceptanceCriteria: []string{
+				`Never return 'should be good' as a status`,
 			},
 		},
-	}
+	)
 
-	_, err := s.Chunk(spec)
+	_, err := s.Chunk(cr)
 	if err != nil {
 		t.Errorf("Chunk() should allow vague terms in single quotes: %v", err)
 	}
@@ -263,16 +261,13 @@ func TestStrategy_Validate_VagueTermInSingleQuotes(t *testing.T) {
 func TestStrategy_Validate_MultipleErrors(t *testing.T) {
 	s := New()
 
-	spec := &domain.Spec{
-		ID: "multi-error-spec",
-		Features: []domain.Feature{
-			{ID: "f1", Description: "No criteria", AcceptanceCriteria: []string{}},
-			{ID: "f2", Description: "Vague", AcceptanceCriteria: []string{"It should be good"}},
-			{ID: "f3", Description: "Also vague", AcceptanceCriteria: []string{"Performance is reasonable"}},
-		},
-	}
+	cr := crWithFeatures("multi-error-cr",
+		domain.Feature{ID: "f1", Description: "No criteria", AcceptanceCriteria: []string{}},
+		domain.Feature{ID: "f2", Description: "Vague", AcceptanceCriteria: []string{"It should be good"}},
+		domain.Feature{ID: "f3", Description: "Also vague", AcceptanceCriteria: []string{"Performance is reasonable"}},
+	)
 
-	_, err := s.Chunk(spec)
+	_, err := s.Chunk(cr)
 	if err == nil {
 		t.Fatal("Chunk() should return error for multiple invalid features")
 	}
@@ -291,15 +286,11 @@ func TestStrategy_Validate_MultipleErrors(t *testing.T) {
 func TestStrategy_MergeConstraints_DefaultsOnly(t *testing.T) {
 	s := New()
 
-	spec := &domain.Spec{
-		ID:              "no-knowledge",
-		DomainKnowledge: []string{},
-		Features: []domain.Feature{
-			{ID: "f1", Description: "Test", AcceptanceCriteria: []string{"Works"}},
-		},
-	}
+	cr := crWithFeatures("no-knowledge",
+		domain.Feature{ID: "f1", Description: "Test", AcceptanceCriteria: []string{"Works"}},
+	)
 
-	items, err := s.Chunk(spec)
+	items, err := s.Chunk(cr)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
@@ -322,96 +313,6 @@ func TestStrategy_MergeConstraints_DefaultsOnly(t *testing.T) {
 		if !found {
 			t.Errorf("missing default constraint: %q", dc)
 		}
-	}
-}
-
-func TestStrategy_MergeConstraints_WithDomainKnowledge(t *testing.T) {
-	s := New()
-
-	spec := &domain.Spec{
-		ID: "with-knowledge",
-		DomainKnowledge: []string{
-			"Do not use external APIs",       // Should be included (starts with "Do not")
-			"Never store passwords in plain", // Should be included (starts with "Never")
-			"This is just info",              // Should NOT be included (not a constraint)
-			"Always validate input",          // Should be included (starts with "Always")
-		},
-		Features: []domain.Feature{
-			{ID: "f1", Description: "Test", AcceptanceCriteria: []string{"Works"}},
-		},
-	}
-
-	items, err := s.Chunk(spec)
-	if err != nil {
-		t.Fatalf("Chunk() error = %v", err)
-	}
-
-	constraints := items[0].Constraints
-
-	// Should have defaults + 3 constraint-like knowledge items
-	expectedMin := len(DefaultConstraints) + 3
-	if len(constraints) < expectedMin {
-		t.Errorf("got %d constraints, want at least %d", len(constraints), expectedMin)
-	}
-
-	// Verify constraint-like items are included
-	mustContain := []string{
-		"Do not use external APIs",
-		"Never store passwords in plain",
-		"Always validate input",
-	}
-	for _, expected := range mustContain {
-		found := false
-		for _, c := range constraints {
-			if c == expected {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Errorf("missing expected constraint: %q", expected)
-		}
-	}
-
-	// Verify non-constraint is NOT included
-	for _, c := range constraints {
-		if c == "This is just info" {
-			t.Error("non-constraint domain knowledge should not be included")
-		}
-	}
-}
-
-func TestStrategy_MergeConstraints_Deduplication(t *testing.T) {
-	s := New()
-
-	spec := &domain.Spec{
-		ID: "duplicate-spec",
-		DomainKnowledge: []string{
-			"Do not introduce new abstractions, interfaces, or packages", // Duplicate of default
-			"do not introduce new abstractions, interfaces, or packages", // Case-different duplicate
-		},
-		Features: []domain.Feature{
-			{ID: "f1", Description: "Test", AcceptanceCriteria: []string{"Works"}},
-		},
-	}
-
-	items, err := s.Chunk(spec)
-	if err != nil {
-		t.Fatalf("Chunk() error = %v", err)
-	}
-
-	constraints := items[0].Constraints
-
-	// Count occurrences of the constraint
-	count := 0
-	for _, c := range constraints {
-		if strings.ToLower(c) == strings.ToLower("Do not introduce new abstractions, interfaces, or packages") {
-			count++
-		}
-	}
-
-	if count != 1 {
-		t.Errorf("duplicate constraint appeared %d times, want 1", count)
 	}
 }
 
@@ -531,15 +432,15 @@ func TestRefactorSystemConstraints_RequiredText(t *testing.T) {
 	}
 }
 
-func TestStrategy_Chunk_RefactorSpec_InjectsConstraints(t *testing.T) {
+func TestStrategy_Chunk_RefactorCR_InjectsConstraints(t *testing.T) {
 	s := New()
 
-	// Create a spec marked as a refactor
-	spec := &domain.Spec{
-		ID:         "refactor-test",
-		Title:      "Test Refactor",
-		IsRefactor: true,
-		Features: []domain.Feature{
+	// Create a refactor change request with tasks
+	cr := &domain.ChangeRequest{
+		ID:    "refactor-test",
+		Type:  domain.CRTypeRefactor,
+		Title: "Test Refactor",
+		Tasks: []domain.Task{
 			{
 				ID:                 "task-1",
 				Description:        "Refactor the auth module",
@@ -548,7 +449,7 @@ func TestStrategy_Chunk_RefactorSpec_InjectsConstraints(t *testing.T) {
 		},
 	}
 
-	items, err := s.Chunk(spec)
+	items, err := s.Chunk(cr)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
@@ -584,24 +485,19 @@ func TestStrategy_Chunk_RefactorSpec_InjectsConstraints(t *testing.T) {
 	}
 }
 
-func TestStrategy_Chunk_NonRefactorSpec_NoRefactorConstraints(t *testing.T) {
+func TestStrategy_Chunk_NonRefactorCR_NoRefactorConstraints(t *testing.T) {
 	s := New()
 
-	// Create a regular (non-refactor) spec
-	spec := &domain.Spec{
-		ID:         "regular-spec",
-		Title:      "Regular Spec",
-		IsRefactor: false, // Not a refactor
-		Features: []domain.Feature{
-			{
-				ID:                 "feature-1",
-				Description:        "Add new feature",
-				AcceptanceCriteria: []string{"Feature is added"},
-			},
+	// Create a feature change request (not a refactor)
+	cr := crWithFeatures("regular-cr",
+		domain.Feature{
+			ID:                 "feature-1",
+			Description:        "Add new feature",
+			AcceptanceCriteria: []string{"Feature is added"},
 		},
-	}
+	)
 
-	items, err := s.Chunk(spec)
+	items, err := s.Chunk(cr)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
@@ -621,15 +517,15 @@ func TestStrategy_Chunk_NonRefactorSpec_NoRefactorConstraints(t *testing.T) {
 func TestStrategy_MergeConstraints_RefactorConstraintsFirst(t *testing.T) {
 	s := New()
 
-	spec := &domain.Spec{
-		ID:         "refactor-order-test",
-		IsRefactor: true,
-		Features: []domain.Feature{
+	cr := &domain.ChangeRequest{
+		ID:   "refactor-order-test",
+		Type: domain.CRTypeRefactor,
+		Tasks: []domain.Task{
 			{ID: "f1", Description: "Test", AcceptanceCriteria: []string{"Works"}},
 		},
 	}
 
-	items, err := s.Chunk(spec)
+	items, err := s.Chunk(cr)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
@@ -649,11 +545,9 @@ func TestStrategy_MergeConstraints_RefactorConstraintsFirst(t *testing.T) {
 	}
 }
 
-// TestStrategy_Chunk_RefactorCR_InjectsConstraintsViaIsRefactorFlag verifies
-// that change requests with type "refactor" receive behavior-preservation
-// constraints on all work items. This is the end-to-end flow:
-// CR (type: refactor) -> ToSpec() sets IsRefactor=true -> Chunk() injects constraints
-func TestStrategy_Chunk_RefactorCR_InjectsConstraintsViaIsRefactorFlag(t *testing.T) {
+// TestStrategy_Chunk_RefactorCR_MultipleTasks verifies that change requests
+// with type "refactor" receive behavior-preservation constraints on all work items.
+func TestStrategy_Chunk_RefactorCR_MultipleTasks(t *testing.T) {
 	s := New()
 
 	// Create a refactor change request with multiple tasks
@@ -675,16 +569,7 @@ func TestStrategy_Chunk_RefactorCR_InjectsConstraintsViaIsRefactorFlag(t *testin
 		},
 	}
 
-	// Convert CR to Spec (this sets IsRefactor based on CR type)
-	spec := cr.ToSpec()
-
-	// Verify IsRefactor flag is set based on CR type, not document type
-	if !spec.IsRefactor {
-		t.Fatal("ToSpec() should set IsRefactor=true for refactor CRs")
-	}
-
-	// Chunk the spec
-	items, err := s.Chunk(spec)
+	items, err := s.Chunk(cr)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
@@ -715,9 +600,9 @@ func TestStrategy_Chunk_RefactorCR_InjectsConstraintsViaIsRefactorFlag(t *testin
 	}
 }
 
-// TestStrategy_Chunk_NonRefactorCR_NoRefactorConstraints verifies that
+// TestStrategy_Chunk_FeatureCR_NoRefactorConstraints verifies that
 // non-refactor CRs do NOT receive behavior-preservation constraints.
-func TestStrategy_Chunk_NonRefactorCR_NoRefactorConstraints(t *testing.T) {
+func TestStrategy_Chunk_FeatureCR_NoRefactorConstraints(t *testing.T) {
 	s := New()
 
 	// Create a feature change request (not a refactor)
@@ -737,14 +622,7 @@ func TestStrategy_Chunk_NonRefactorCR_NoRefactorConstraints(t *testing.T) {
 		},
 	}
 
-	spec := cr.ToSpec()
-
-	// Verify IsRefactor is NOT set for feature CRs
-	if spec.IsRefactor {
-		t.Fatal("ToSpec() should NOT set IsRefactor=true for feature CRs")
-	}
-
-	items, err := s.Chunk(spec)
+	items, err := s.Chunk(cr)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
@@ -758,5 +636,209 @@ func TestStrategy_Chunk_NonRefactorCR_NoRefactorConstraints(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// TestStrategy_ChunkPhase verifies that ChunkPhase correctly handles initiative phases
+func TestStrategy_ChunkPhase_SingleTask(t *testing.T) {
+	s := New()
+
+	phase := &domain.Phase{
+		Type: domain.CRTypeFeature,
+		Tasks: []domain.Task{
+			{
+				ID:                 "task-1",
+				Description:        "First task",
+				AcceptanceCriteria: []string{"Task completed"},
+			},
+		},
+	}
+
+	items, err := s.ChunkPhase("initiative-1", 0, phase)
+	if err != nil {
+		t.Fatalf("ChunkPhase() error = %v", err)
+	}
+
+	if len(items) != 1 {
+		t.Fatalf("ChunkPhase() returned %d items, want 1", len(items))
+	}
+
+	// Verify ID format includes phase info
+	if !strings.Contains(items[0].ID, "initiative-1-phase-0") {
+		t.Errorf("ID = %q, should contain 'initiative-1-phase-0'", items[0].ID)
+	}
+}
+
+func TestStrategy_ChunkPhase_RefactorPhase(t *testing.T) {
+	s := New()
+
+	phase := &domain.Phase{
+		Type: domain.CRTypeRefactor,
+		Tasks: []domain.Task{
+			{
+				ID:                 "refactor-task",
+				Description:        "Refactor code",
+				AcceptanceCriteria: []string{"Code refactored"},
+			},
+		},
+	}
+
+	items, err := s.ChunkPhase("initiative-1", 1, phase)
+	if err != nil {
+		t.Fatalf("ChunkPhase() error = %v", err)
+	}
+
+	// Verify refactor constraints are injected
+	for _, rc := range RefactorSystemConstraints {
+		found := false
+		for _, c := range items[0].Constraints {
+			if c == rc {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("work item missing refactor system constraint: %q", rc)
+		}
+	}
+}
+
+func TestStrategy_ChunkPhase_WithChanges(t *testing.T) {
+	s := New()
+
+	phase := &domain.Phase{
+		Type: domain.CRTypeFeature,
+		Changes: []domain.Change{
+			{
+				Operation: "add",
+				Feature: &domain.Feature{
+					ID:                 "new-feature",
+					Description:        "New feature",
+					AcceptanceCriteria: []string{"Feature works"},
+				},
+			},
+		},
+	}
+
+	items, err := s.ChunkPhase("initiative-1", 0, phase)
+	if err != nil {
+		t.Fatalf("ChunkPhase() error = %v", err)
+	}
+
+	if len(items) != 1 {
+		t.Fatalf("ChunkPhase() returned %d items, want 1", len(items))
+	}
+
+	if !strings.Contains(items[0].ID, "new-feature") {
+		t.Errorf("ID = %q, should contain 'new-feature'", items[0].ID)
+	}
+}
+
+// Test extractFeatures with different operation types
+func TestStrategy_ExtractFeatures_RemoveOperation(t *testing.T) {
+	s := New()
+
+	cr := &domain.ChangeRequest{
+		ID:   "remove-test",
+		Type: domain.CRTypeRemoval,
+		Changes: []domain.Change{
+			{
+				Operation: "remove",
+				FeatureID: "old-feature",
+				Reason:    "No longer needed",
+			},
+		},
+	}
+
+	items, err := s.Chunk(cr)
+	if err != nil {
+		t.Fatalf("Chunk() error = %v", err)
+	}
+
+	if len(items) != 1 {
+		t.Fatalf("Chunk() returned %d items, want 1", len(items))
+	}
+
+	// Verify the generated work item ID includes the feature ID
+	if !strings.Contains(items[0].ID, "remove-old-feature") {
+		t.Errorf("ID = %q, should contain 'remove-old-feature'", items[0].ID)
+	}
+
+	// Verify the reason is in acceptance criteria
+	if !strings.Contains(items[0].Prompt, "No longer needed") {
+		t.Error("Prompt should contain removal reason")
+	}
+}
+
+func TestStrategy_ExtractFeatures_ModifyOperation(t *testing.T) {
+	s := New()
+
+	cr := &domain.ChangeRequest{
+		ID:   "modify-test",
+		Type: domain.CRTypeEnhancement,
+		Changes: []domain.Change{
+			{
+				Operation:   "modify",
+				FeatureID:   "existing-feature",
+				Description: "Updated behavior",
+				Criteria: &domain.CriteriaModify{
+					Add: []string{"New criterion"},
+				},
+			},
+		},
+	}
+
+	items, err := s.Chunk(cr)
+	if err != nil {
+		t.Fatalf("Chunk() error = %v", err)
+	}
+
+	if len(items) != 1 {
+		t.Fatalf("Chunk() returned %d items, want 1", len(items))
+	}
+
+	// Verify the generated work item ID includes the feature ID
+	if !strings.Contains(items[0].ID, "modify-existing-feature") {
+		t.Errorf("ID = %q, should contain 'modify-existing-feature'", items[0].ID)
+	}
+
+	// Verify the description change
+	if !strings.Contains(items[0].Prompt, "Updated behavior") {
+		t.Error("Prompt should contain updated description")
+	}
+}
+
+func TestStrategy_ExtractFeatures_DeleteSpecOperation(t *testing.T) {
+	s := New()
+
+	cr := &domain.ChangeRequest{
+		ID:   "delete-spec-test",
+		Type: domain.CRTypeRemoval,
+		Changes: []domain.Change{
+			{
+				Operation: "delete-spec",
+				Spec:      "old-spec",
+				Reason:    "Deprecated",
+			},
+		},
+	}
+
+	items, err := s.Chunk(cr)
+	if err != nil {
+		t.Fatalf("Chunk() error = %v", err)
+	}
+
+	if len(items) != 1 {
+		t.Fatalf("Chunk() returned %d items, want 1", len(items))
+	}
+
+	// Verify the generated work item ID includes the feature ID
+	if !strings.Contains(items[0].ID, "delete-spec-old-spec") {
+		t.Errorf("ID = %q, should contain 'delete-spec-old-spec'", items[0].ID)
+	}
+
+	// Verify the deletion info is in prompt
+	if !strings.Contains(items[0].Prompt, "old-spec") {
+		t.Error("Prompt should contain spec name")
 	}
 }

@@ -54,27 +54,32 @@ func (s *Strategy) Description() string {
 	return "One WorkItem per feature, executed sequentially in spec order"
 }
 
-// Chunk transforms a spec into work items.
-func (s *Strategy) Chunk(spec *domain.Spec) ([]*domain.WorkItem, error) {
+// Chunk transforms a change request into work items.
+func (s *Strategy) Chunk(cr *domain.ChangeRequest) ([]*domain.WorkItem, error) {
+	// Extract features from the CR
+	features := s.extractFeatures(cr)
+
+	// Determine if this is a refactor (for constraint injection)
+	isRefactor := cr.Type == domain.CRTypeRefactor
+
 	// Validate before generating any work items
-	if err := s.validate(spec); err != nil {
+	if err := s.validateFeatures(features); err != nil {
 		return nil, err
 	}
 
-	workItems := make([]*domain.WorkItem, 0, len(spec.Features))
+	workItems := make([]*domain.WorkItem, 0, len(features))
 
-	for i, feature := range spec.Features {
+	for i, feature := range features {
 		workItem := domain.NewWorkItem(
-			fmt.Sprintf("%s-%s", spec.ID, feature.ID),
-			spec.ID,
+			fmt.Sprintf("%s-%s", cr.ID, feature.ID),
+			cr.ID,
 			feature.ID,
 			feature,
-			i, // Order is the position in the spec
+			i, // Order is the position in the CR
 		)
 
-		// Apply constraints (spec-level + defaults, deduplicated)
-		// Refactor system constraints are automatically included when spec.IsRefactor is true
-		workItem.Constraints = s.mergeConstraints(spec)
+		// Apply constraints (defaults + refactor constraints if applicable)
+		workItem.Constraints = s.mergeConstraintsForCR(isRefactor)
 
 		// Build the prompt with task + criteria + constraints baked in
 		workItem.Prompt = BuildPromptWithConstraints(feature, workItem.Constraints, nil)
@@ -85,11 +90,243 @@ func (s *Strategy) Chunk(spec *domain.Spec) ([]*domain.WorkItem, error) {
 	return workItems, nil
 }
 
-// validate checks that the spec is suitable for chunking.
-func (s *Strategy) validate(spec *domain.Spec) error {
+// extractFeatures converts CR tasks and changes into a flat list of features for chunking.
+func (s *Strategy) extractFeatures(cr *domain.ChangeRequest) []domain.Feature {
+	var features []domain.Feature
+
+	// Convert tasks to features (supported on any CR type)
+	for _, task := range cr.Tasks {
+		feature := domain.Feature{
+			ID:                 task.ID,
+			Description:        task.Description,
+			AcceptanceCriteria: task.AcceptanceCriteria,
+		}
+		features = append(features, feature)
+	}
+
+	// Convert changes to features
+	for _, change := range cr.Changes {
+		switch change.Operation {
+		case "add":
+			if change.Feature != nil {
+				features = append(features, *change.Feature)
+			}
+			// Ignore add operations with only domain knowledge
+
+		case "remove":
+			if change.FeatureID != "" {
+				feature := domain.Feature{
+					ID:          "remove-" + change.FeatureID,
+					Description: fmt.Sprintf("Remove the %s feature from the codebase", change.FeatureID),
+					AcceptanceCriteria: []string{
+						fmt.Sprintf("All code related to feature %q is removed", change.FeatureID),
+						fmt.Sprintf("All tests for feature %q are removed", change.FeatureID),
+						"No references to the removed feature remain in the codebase",
+					},
+				}
+				if change.Reason != "" {
+					feature.AcceptanceCriteria = append(feature.AcceptanceCriteria,
+						fmt.Sprintf("Removal reason: %s", change.Reason))
+				}
+				features = append(features, feature)
+			}
+
+		case "modify":
+			if change.FeatureID != "" {
+				feature := domain.Feature{
+					ID:          "modify-" + change.FeatureID,
+					Description: fmt.Sprintf("Modify the %s feature", change.FeatureID),
+				}
+
+				// Add description change if provided
+				if change.Description != "" {
+					feature.Description = fmt.Sprintf("Modify the %s feature: %s", change.FeatureID, change.Description)
+				}
+
+				// Build acceptance criteria from the deltas
+				var criteria []string
+
+				if change.Criteria != nil {
+					for _, add := range change.Criteria.Add {
+						criteria = append(criteria, add)
+					}
+					for _, remove := range change.Criteria.Remove {
+						criteria = append(criteria, fmt.Sprintf("Remove/undo: %s", remove))
+					}
+					for _, edit := range change.Criteria.Edit {
+						criteria = append(criteria, fmt.Sprintf("Change from %q to: %s", edit.Old, edit.New))
+					}
+				}
+
+				// Ensure at least one criterion exists
+				if len(criteria) == 0 {
+					criteria = append(criteria, fmt.Sprintf("Feature %q is updated as specified", change.FeatureID))
+				}
+
+				feature.AcceptanceCriteria = criteria
+				features = append(features, feature)
+			}
+
+		case "delete-spec":
+			if change.Spec != "" {
+				feature := domain.Feature{
+					ID:          "delete-spec-" + change.Spec,
+					Description: fmt.Sprintf("Delete the entire %s spec file", change.Spec),
+					AcceptanceCriteria: []string{
+						fmt.Sprintf("All code implementing features from spec %q is removed", change.Spec),
+						fmt.Sprintf("All tests for features from spec %q are removed", change.Spec),
+						fmt.Sprintf("The spec file .utopia/specs/%s.yaml is deleted", change.Spec),
+					},
+				}
+				if change.Reason != "" {
+					feature.AcceptanceCriteria = append(feature.AcceptanceCriteria,
+						fmt.Sprintf("Deletion reason: %s", change.Reason))
+				}
+				features = append(features, feature)
+			}
+		}
+	}
+
+	return features
+}
+
+// ChunkPhase transforms a single phase of an initiative CR into work items.
+func (s *Strategy) ChunkPhase(crID string, phaseIndex int, phase *domain.Phase) ([]*domain.WorkItem, error) {
+	// Extract features from the phase
+	features := s.extractFeaturesFromPhase(phase)
+
+	// Determine if this is a refactor phase (for constraint injection)
+	isRefactor := phase.Type == domain.CRTypeRefactor
+
+	// Validate before generating any work items
+	if err := s.validateFeatures(features); err != nil {
+		return nil, err
+	}
+
+	workItems := make([]*domain.WorkItem, 0, len(features))
+	phaseWorkItemPrefix := fmt.Sprintf("%s-phase-%d", crID, phaseIndex)
+
+	for i, feature := range features {
+		workItem := domain.NewWorkItem(
+			fmt.Sprintf("%s-%s", phaseWorkItemPrefix, feature.ID),
+			phaseWorkItemPrefix,
+			feature.ID,
+			feature,
+			i, // Order is the position in the phase
+		)
+
+		// Apply constraints (defaults + refactor constraints if applicable)
+		workItem.Constraints = s.mergeConstraintsForCR(isRefactor)
+
+		// Build the prompt with task + criteria + constraints baked in
+		workItem.Prompt = BuildPromptWithConstraints(feature, workItem.Constraints, nil)
+
+		workItems = append(workItems, workItem)
+	}
+
+	return workItems, nil
+}
+
+// extractFeaturesFromPhase converts phase tasks and changes into a flat list of features.
+func (s *Strategy) extractFeaturesFromPhase(phase *domain.Phase) []domain.Feature {
+	var features []domain.Feature
+
+	// Convert tasks to features (supported on any phase type)
+	for _, task := range phase.Tasks {
+		feature := domain.Feature{
+			ID:                 task.ID,
+			Description:        task.Description,
+			AcceptanceCriteria: task.AcceptanceCriteria,
+		}
+		features = append(features, feature)
+	}
+
+	// Convert changes to features
+	for _, change := range phase.Changes {
+		switch change.Operation {
+		case "add":
+			if change.Feature != nil {
+				features = append(features, *change.Feature)
+			}
+
+		case "remove":
+			if change.FeatureID != "" {
+				feature := domain.Feature{
+					ID:          "remove-" + change.FeatureID,
+					Description: fmt.Sprintf("Remove the %s feature from the codebase", change.FeatureID),
+					AcceptanceCriteria: []string{
+						fmt.Sprintf("All code related to feature %q is removed", change.FeatureID),
+						fmt.Sprintf("All tests for feature %q are removed", change.FeatureID),
+						"No references to the removed feature remain in the codebase",
+					},
+				}
+				if change.Reason != "" {
+					feature.AcceptanceCriteria = append(feature.AcceptanceCriteria,
+						fmt.Sprintf("Removal reason: %s", change.Reason))
+				}
+				features = append(features, feature)
+			}
+
+		case "modify":
+			if change.FeatureID != "" {
+				feature := domain.Feature{
+					ID:          "modify-" + change.FeatureID,
+					Description: fmt.Sprintf("Modify the %s feature", change.FeatureID),
+				}
+
+				if change.Description != "" {
+					feature.Description = fmt.Sprintf("Modify the %s feature: %s", change.FeatureID, change.Description)
+				}
+
+				var criteria []string
+				if change.Criteria != nil {
+					for _, add := range change.Criteria.Add {
+						criteria = append(criteria, add)
+					}
+					for _, remove := range change.Criteria.Remove {
+						criteria = append(criteria, fmt.Sprintf("Remove/undo: %s", remove))
+					}
+					for _, edit := range change.Criteria.Edit {
+						criteria = append(criteria, fmt.Sprintf("Change from %q to: %s", edit.Old, edit.New))
+					}
+				}
+
+				if len(criteria) == 0 {
+					criteria = append(criteria, fmt.Sprintf("Feature %q is updated as specified", change.FeatureID))
+				}
+
+				feature.AcceptanceCriteria = criteria
+				features = append(features, feature)
+			}
+
+		case "delete-spec":
+			if change.Spec != "" {
+				feature := domain.Feature{
+					ID:          "delete-spec-" + change.Spec,
+					Description: fmt.Sprintf("Delete the entire %s spec file", change.Spec),
+					AcceptanceCriteria: []string{
+						fmt.Sprintf("All code implementing features from spec %q is removed", change.Spec),
+						fmt.Sprintf("All tests for features from spec %q are removed", change.Spec),
+						fmt.Sprintf("The spec file .utopia/specs/%s.yaml is deleted", change.Spec),
+					},
+				}
+				if change.Reason != "" {
+					feature.AcceptanceCriteria = append(feature.AcceptanceCriteria,
+						fmt.Sprintf("Deletion reason: %s", change.Reason))
+				}
+				features = append(features, feature)
+			}
+		}
+	}
+
+	return features
+}
+
+// validateFeatures checks that the features extracted from a CR are suitable for chunking.
+func (s *Strategy) validateFeatures(features []domain.Feature) error {
 	var errors []string
 
-	for _, feature := range spec.Features {
+	for _, feature := range features {
 		// Check for empty acceptance criteria
 		if len(feature.AcceptanceCriteria) == 0 {
 			errors = append(errors, fmt.Sprintf(
@@ -119,15 +356,14 @@ func (s *Strategy) validate(spec *domain.Spec) error {
 	return nil
 }
 
-// mergeConstraints combines default constraints with spec-level constraints,
-// deduplicating any that appear in both. If the spec is a refactor,
-// refactor system constraints are automatically prepended.
-func (s *Strategy) mergeConstraints(spec *domain.Spec) []string {
+// mergeConstraintsForCR combines default constraints, adding refactor
+// system constraints if the CR is a refactor type.
+func (s *Strategy) mergeConstraintsForCR(isRefactor bool) []string {
 	seen := make(map[string]bool)
 	var result []string
 
 	// Add refactor system constraints first (if applicable)
-	if spec.IsRefactor {
+	if isRefactor {
 		for _, c := range RefactorSystemConstraints {
 			normalized := strings.TrimSpace(strings.ToLower(c))
 			if !seen[normalized] {
@@ -143,19 +379,6 @@ func (s *Strategy) mergeConstraints(spec *domain.Spec) []string {
 		if !seen[normalized] {
 			seen[normalized] = true
 			result = append(result, c)
-		}
-	}
-
-	// Add spec-level constraints (from domain_knowledge that look like constraints)
-	// In the future, we could add a dedicated spec.Constraints field
-	for _, knowledge := range spec.DomainKnowledge {
-		normalized := strings.TrimSpace(strings.ToLower(knowledge))
-		if !seen[normalized] {
-			seen[normalized] = true
-			// Only include if it reads like a constraint (imperative/prohibition)
-			if looksLikeConstraint(knowledge) {
-				result = append(result, knowledge)
-			}
 		}
 	}
 

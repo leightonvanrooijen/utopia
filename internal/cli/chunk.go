@@ -18,12 +18,10 @@ var (
 
 var chunkCmd = &cobra.Command{
 	Use:   "chunk <id>",
-	Short: "Chunk a spec or change request into work items",
-	Long: `Transform a specification or change request into discrete work items for Ralph execution.
+	Short: "Chunk a change request into work items",
+	Long: `Transform a change request into discrete work items for Ralph execution.
 
-The command searches for the ID in the following order:
-  1. .utopia/specs/<id>.yaml (spec)
-  2. .utopia/change-requests/<id>.yaml (change request)
+The command loads the change request from .utopia/change-requests/<id>.yaml
 
 The chunking strategy determines how features/tasks are mapped to work items:
   - ralph-sequential: One work item per feature/task, executed in order
@@ -71,28 +69,23 @@ func runChunk(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
+	// Load the change request
+	cr, err := store.LoadChangeRequest(docID)
+	if err != nil {
+		return fmt.Errorf("change request not found: %s\n\nCheck .utopia/change-requests/ for available change requests", docID)
+	}
+
 	// Check if this is an initiative CR (needs special per-phase handling)
-	cr, crErr := store.LoadChangeRequest(docID)
-	if crErr == nil && cr.Type == domain.CRTypeInitiative {
+	if cr.Type == domain.CRTypeInitiative {
 		return chunkInitiative(cr, store, config, chunkRegistry, docID)
 	}
 
-	// Load the spec or change request (change requests converted to spec)
-	spec, sourceType, err := store.LoadSpecOrChangeRequestOrRefactor(docID)
-	if err != nil {
-		return fmt.Errorf("document not found: %s\n\nCheck .utopia/specs/ or .utopia/change-requests/ for available documents", docID)
-	}
+	fmt.Printf("Loaded change request: %s\n", docID)
 
-	if sourceType == storage.SourceChangeRequest {
-		fmt.Printf("Loaded change request: %s\n", docID)
-		// Update CR status to in-progress when chunking begins
-		cr, err := store.LoadChangeRequest(docID)
-		if err == nil {
-			cr.Status = domain.ChangeRequestInProgress
-			if err := store.SaveChangeRequest(cr); err != nil {
-				return fmt.Errorf("failed to update CR status: %w", err)
-			}
-		}
+	// Update CR status to in-progress when chunking begins
+	cr.Status = domain.ChangeRequestInProgress
+	if err := store.SaveChangeRequest(cr); err != nil {
+		return fmt.Errorf("failed to update CR status: %w", err)
 	}
 
 	// Determine which strategy to use
@@ -111,10 +104,10 @@ func runChunk(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("Using '%s' strategy: %s\n", strategy.Name(), strategy.Description())
-	fmt.Printf("Chunking spec: %s\n\n", spec.Title)
+	fmt.Printf("Chunking change request: %s\n\n", cr.Title)
 
 	// Run the strategy (includes validation)
-	workItems, err := strategy.Chunk(spec)
+	workItems, err := strategy.Chunk(cr)
 	if err != nil {
 		return fmt.Errorf("chunking failed: %w", err)
 	}
@@ -158,14 +151,8 @@ func chunkInitiative(cr *domain.ChangeRequest, store *storage.YAMLStore, config 
 		return nil
 	}
 
-	phase := cr.Phases[phaseIndex]
+	phase := &cr.Phases[phaseIndex]
 	fmt.Printf("\nChunking phase %d/%d (type: %s)\n", phaseIndex+1, len(cr.Phases), phase.Type)
-
-	// Convert phase to spec
-	spec, err := cr.PhaseToSpec(phaseIndex)
-	if err != nil {
-		return fmt.Errorf("failed to convert phase to spec: %w", err)
-	}
 
 	// Determine which strategy to use
 	strategyName := chunkStrategyFlag
@@ -184,8 +171,8 @@ func chunkInitiative(cr *domain.ChangeRequest, store *storage.YAMLStore, config 
 
 	fmt.Printf("Using '%s' strategy: %s\n\n", strategy.Name(), strategy.Description())
 
-	// Run the strategy
-	workItems, err := strategy.Chunk(spec)
+	// Run the strategy on this phase
+	workItems, err := strategy.ChunkPhase(crID, phaseIndex, phase)
 	if err != nil {
 		return fmt.Errorf("chunking failed: %w", err)
 	}
