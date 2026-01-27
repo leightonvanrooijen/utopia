@@ -694,3 +694,115 @@ func TestStrategy_MergeConstraints_RefactorConstraintsFirst(t *testing.T) {
 		}
 	}
 }
+
+// TestStrategy_Chunk_RefactorCR_InjectsConstraintsViaIsRefactorFlag verifies
+// that change requests with type "refactor" receive behavior-preservation
+// constraints on all work items. This is the end-to-end flow:
+// CR (type: refactor) -> ToSpec() sets IsRefactor=true -> Chunk() injects constraints
+func TestStrategy_Chunk_RefactorCR_InjectsConstraintsViaIsRefactorFlag(t *testing.T) {
+	s := New()
+
+	// Create a refactor change request with multiple tasks
+	cr := &domain.ChangeRequest{
+		ID:    "refactor-auth",
+		Type:  domain.CRTypeRefactor,
+		Title: "Refactor authentication module",
+		Tasks: []domain.Task{
+			{
+				ID:                 "extract-helper",
+				Description:        "Extract auth helper functions",
+				AcceptanceCriteria: []string{"Helper functions are extracted"},
+			},
+			{
+				ID:                 "rename-vars",
+				Description:        "Rename variables for clarity",
+				AcceptanceCriteria: []string{"Variables are renamed"},
+			},
+		},
+	}
+
+	// Convert CR to Spec (this sets IsRefactor based on CR type)
+	spec := cr.ToSpec()
+
+	// Verify IsRefactor flag is set based on CR type, not document type
+	if !spec.IsRefactor {
+		t.Fatal("ToSpec() should set IsRefactor=true for refactor CRs")
+	}
+
+	// Chunk the spec
+	items, err := s.Chunk(spec)
+	if err != nil {
+		t.Fatalf("Chunk() error = %v", err)
+	}
+
+	if len(items) != 2 {
+		t.Fatalf("Chunk() returned %d items, want 2", len(items))
+	}
+
+	// Verify ALL work items receive behavior-preservation constraints
+	for i, item := range items {
+		for _, rc := range RefactorSystemConstraints {
+			found := false
+			for _, c := range item.Constraints {
+				if c == rc {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("work item[%d] (%s) missing refactor constraint: %q", i, item.ID, rc)
+			}
+		}
+
+		// Verify constraints appear in the prompt
+		if !strings.Contains(item.Prompt, "This is a refactor") {
+			t.Errorf("work item[%d] prompt should contain refactor constraint", i)
+		}
+	}
+}
+
+// TestStrategy_Chunk_NonRefactorCR_NoRefactorConstraints verifies that
+// non-refactor CRs do NOT receive behavior-preservation constraints.
+func TestStrategy_Chunk_NonRefactorCR_NoRefactorConstraints(t *testing.T) {
+	s := New()
+
+	// Create a feature change request (not a refactor)
+	cr := &domain.ChangeRequest{
+		ID:    "feature-new-login",
+		Type:  domain.CRTypeFeature,
+		Title: "Add OAuth login",
+		Changes: []domain.Change{
+			{
+				Operation: "add",
+				Feature: &domain.Feature{
+					ID:                 "oauth-login",
+					Description:        "Add OAuth login support",
+					AcceptanceCriteria: []string{"OAuth login works"},
+				},
+			},
+		},
+	}
+
+	spec := cr.ToSpec()
+
+	// Verify IsRefactor is NOT set for feature CRs
+	if spec.IsRefactor {
+		t.Fatal("ToSpec() should NOT set IsRefactor=true for feature CRs")
+	}
+
+	items, err := s.Chunk(spec)
+	if err != nil {
+		t.Fatalf("Chunk() error = %v", err)
+	}
+
+	// Verify work items do NOT have refactor constraints
+	for i, item := range items {
+		for _, rc := range RefactorSystemConstraints {
+			for _, c := range item.Constraints {
+				if c == rc {
+					t.Errorf("work item[%d] should NOT have refactor constraint: %q", i, rc)
+				}
+			}
+		}
+	}
+}
