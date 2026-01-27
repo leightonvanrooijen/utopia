@@ -62,7 +62,6 @@ type SourceType string
 const (
 	SourceSpec          SourceType = "spec"
 	SourceChangeRequest SourceType = "change-request"
-	SourceRefactor      SourceType = "refactor"
 )
 
 // LoadSpecOrChangeRequest attempts to load a spec, falling back to loading
@@ -81,18 +80,16 @@ func (s *YAMLStore) LoadSpecOrChangeRequest(id string) (*domain.Spec, bool, erro
 	return spec, sourceType == SourceChangeRequest, nil
 }
 
-// LoadSpecOrChangeRequestOrRefactor attempts to load a spec, change request, or refactor
+// LoadSpecOrChangeRequestOrRefactor attempts to load a spec or change request
 // by ID, converting to a Spec for uniform chunking.
 //
 // Search order:
 // 1. .utopia/specs/{id}.yaml
 // 2. .utopia/change-requests/{id}.yaml
-// 3. .utopia/refactors/{id}.yaml
 //
 // Returns:
 // - (*Spec, SourceSpec, nil) if spec found
 // - (*Spec, SourceChangeRequest, nil) if change request found and converted
-// - (*Spec, SourceRefactor, nil) if refactor found and converted
 // - (nil, "", error) if none found or other error
 func (s *YAMLStore) LoadSpecOrChangeRequestOrRefactor(id string) (*domain.Spec, SourceType, error) {
 	// First, try to load as a regular spec
@@ -107,14 +104,8 @@ func (s *YAMLStore) LoadSpecOrChangeRequestOrRefactor(id string) (*domain.Spec, 
 		return cr.ToSpec(), SourceChangeRequest, nil
 	}
 
-	// If change request not found, try loading as a refactor
-	r, rErr := s.LoadRefactor(id)
-	if rErr == nil {
-		return r.ToSpec(), SourceRefactor, nil
-	}
-
 	// None found
-	return nil, "", fmt.Errorf("not found in .utopia/specs/%s.yaml, .utopia/change-requests/%s.yaml, or .utopia/refactors/%s.yaml", id, id, id)
+	return nil, "", fmt.Errorf("not found in .utopia/specs/%s.yaml or .utopia/change-requests/%s.yaml", id, id)
 }
 
 // ListSpecs returns all specs in the specs directory
@@ -343,67 +334,6 @@ func (s *YAMLStore) ListChangeRequests() ([]*domain.ChangeRequest, error) {
 	}
 
 	return crs, nil
-}
-
-// SaveRefactor writes a refactor to .utopia/refactors/{id}.yaml
-func (s *YAMLStore) SaveRefactor(r *domain.Refactor) error {
-	dir := filepath.Join(s.baseDir, "refactors")
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create refactors directory: %w", err)
-	}
-
-	path := filepath.Join(dir, r.ID+".yaml")
-	return s.writeYAML(path, r)
-}
-
-// LoadRefactor reads a refactor from .utopia/refactors/{id}.yaml
-func (s *YAMLStore) LoadRefactor(id string) (*domain.Refactor, error) {
-	path := filepath.Join(s.baseDir, "refactors", id+".yaml")
-
-	var r domain.Refactor
-	if err := s.readYAML(path, &r); err != nil {
-		return nil, err
-	}
-
-	return &r, nil
-}
-
-// DeleteRefactor removes a refactor file from .utopia/refactors/{id}.yaml
-func (s *YAMLStore) DeleteRefactor(id string) error {
-	path := filepath.Join(s.baseDir, "refactors", id+".yaml")
-	if err := os.Remove(path); err != nil {
-		return fmt.Errorf("failed to delete refactor %s: %w", id, err)
-	}
-	return nil
-}
-
-// ListRefactors returns all refactors in the refactors directory
-func (s *YAMLStore) ListRefactors() ([]*domain.Refactor, error) {
-	dir := filepath.Join(s.baseDir, "refactors")
-
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return []*domain.Refactor{}, nil
-		}
-		return nil, fmt.Errorf("failed to read refactors directory: %w", err)
-	}
-
-	var refactors []*domain.Refactor
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
-			continue
-		}
-
-		id := strings.TrimSuffix(entry.Name(), ".yaml")
-		r, err := s.LoadRefactor(id)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load refactor %s: %w", id, err)
-		}
-		refactors = append(refactors, r)
-	}
-
-	return refactors, nil
 }
 
 // writeYAML marshals and writes data to a file

@@ -85,15 +85,6 @@ func (s *Strategy) Chunk(spec *domain.Spec) ([]*domain.WorkItem, error) {
 	return workItems, nil
 }
 
-// ChunkRefactor transforms a refactor into work items.
-// This is a convenience method that converts the refactor to a spec
-// and chunks it. The resulting work items automatically include
-// refactor system constraints.
-func (s *Strategy) ChunkRefactor(refactor *domain.Refactor) ([]*domain.WorkItem, error) {
-	spec := refactor.ToSpec()
-	return s.Chunk(spec)
-}
-
 // validate checks that the spec is suitable for chunking.
 func (s *Strategy) validate(spec *domain.Spec) error {
 	var errors []string

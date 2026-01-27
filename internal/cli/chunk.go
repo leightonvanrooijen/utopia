@@ -18,13 +18,12 @@ var (
 
 var chunkCmd = &cobra.Command{
 	Use:   "chunk <id>",
-	Short: "Chunk a spec or refactor into work items",
-	Long: `Transform a specification or refactor into discrete work items for Ralph execution.
+	Short: "Chunk a spec or change request into work items",
+	Long: `Transform a specification or change request into discrete work items for Ralph execution.
 
 The command searches for the ID in the following order:
   1. .utopia/specs/<id>.yaml (spec)
   2. .utopia/change-requests/<id>.yaml (change request)
-  3. .utopia/refactors/<id>.yaml (refactor)
 
 The chunking strategy determines how features/tasks are mapped to work items:
   - ralph-sequential: One work item per feature/task, executed in order
@@ -78,14 +77,13 @@ func runChunk(cmd *cobra.Command, args []string) error {
 		return chunkInitiative(cr, store, config, chunkRegistry, docID)
 	}
 
-	// Load the spec, change request, or refactor (all converted to spec)
+	// Load the spec or change request (change requests converted to spec)
 	spec, sourceType, err := store.LoadSpecOrChangeRequestOrRefactor(docID)
 	if err != nil {
-		return fmt.Errorf("document not found: %s\n\nCheck .utopia/specs/, .utopia/change-requests/, or .utopia/refactors/ for available documents", docID)
+		return fmt.Errorf("document not found: %s\n\nCheck .utopia/specs/ or .utopia/change-requests/ for available documents", docID)
 	}
 
-	switch sourceType {
-	case storage.SourceChangeRequest:
+	if sourceType == storage.SourceChangeRequest {
 		fmt.Printf("Loaded change request: %s\n", docID)
 		// Update CR status to in-progress when chunking begins
 		cr, err := store.LoadChangeRequest(docID)
@@ -95,8 +93,6 @@ func runChunk(cmd *cobra.Command, args []string) error {
 				return fmt.Errorf("failed to update CR status: %w", err)
 			}
 		}
-	case storage.SourceRefactor:
-		fmt.Printf("Loaded refactor: %s\n", docID)
 	}
 
 	// Determine which strategy to use

@@ -618,52 +618,6 @@ func TestStrategy_Chunk_NonRefactorSpec_NoRefactorConstraints(t *testing.T) {
 	}
 }
 
-func TestStrategy_ChunkRefactor(t *testing.T) {
-	s := New()
-
-	refactor := &domain.Refactor{
-		ID:    "test-refactor",
-		Title: "Test Refactoring",
-		Tasks: []domain.RefactorTask{
-			{
-				ID:                 "task-1",
-				Description:        "Extract helper function",
-				AcceptanceCriteria: []string{"Helper function is extracted"},
-			},
-			{
-				ID:                 "task-2",
-				Description:        "Rename variable",
-				AcceptanceCriteria: []string{"Variable is renamed"},
-			},
-		},
-	}
-
-	items, err := s.ChunkRefactor(refactor)
-	if err != nil {
-		t.Fatalf("ChunkRefactor() error = %v", err)
-	}
-
-	if len(items) != 2 {
-		t.Fatalf("ChunkRefactor() returned %d items, want 2", len(items))
-	}
-
-	// Verify all items have refactor constraints
-	for i, item := range items {
-		for _, rc := range RefactorSystemConstraints {
-			found := false
-			for _, c := range item.Constraints {
-				if c == rc {
-					found = true
-					break
-				}
-			}
-			if !found {
-				t.Errorf("items[%d] missing refactor system constraint: %q", i, rc)
-			}
-		}
-	}
-}
-
 func TestStrategy_MergeConstraints_RefactorConstraintsFirst(t *testing.T) {
 	s := New()
 
