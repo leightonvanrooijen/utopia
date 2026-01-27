@@ -365,48 +365,19 @@ func chunkPhase(crID string, phaseIndex int, phase *domain.Phase, store *storage
 }
 
 // executeInitiative handles execution for initiative CRs, executing phases in order.
-// Each phase must complete before the next can begin.
+// Phases execute continuously until all complete or the user interrupts with Ctrl+C.
 func executeInitiative(cmd *cobra.Command, cr *domain.ChangeRequest, store *storage.YAMLStore, config *domain.Config, projectDir, utopiaDir string, execRegistry *executeStrategy.Registry, chunkReg *chunkStrategy.Registry) error {
 	fmt.Printf("Executing initiative: %s\n", cr.Title)
 	fmt.Printf("Phases: %d total, current: %d\n", len(cr.Phases), cr.CurrentPhase+1)
 
-	// Find the current phase
-	phaseIndex := cr.CurrentPhase
-	if phaseIndex >= len(cr.Phases) {
+	// Check if already complete
+	if cr.CurrentPhase >= len(cr.Phases) {
 		fmt.Printf("\nAll phases complete!\n")
 		fmt.Printf("Run 'utopia merge %s' to finalize the initiative\n", cr.ID)
 		return nil
 	}
 
-	phase := cr.Phases[phaseIndex]
-	phaseWorkDir := fmt.Sprintf("%s/phase-%d", cr.ID, phaseIndex)
-
-	// Check if work items exist for this phase
-	items, err := store.ListWorkItemsForSpec(phaseWorkDir)
-	if err != nil {
-		return fmt.Errorf("failed to load work items: %w", err)
-	}
-
-	// If no work items exist, chunk this phase first
-	if len(items) == 0 {
-		// Update phase status to in-progress
-		cr.Phases[phaseIndex].Status = domain.PhaseStatusInProgress
-		if cr.Status != domain.ChangeRequestInProgress {
-			cr.Status = domain.ChangeRequestInProgress
-		}
-		if err := store.SaveChangeRequest(cr); err != nil {
-			return fmt.Errorf("failed to update CR status: %w", err)
-		}
-
-		items, err = chunkPhase(cr.ID, phaseIndex, &phase, store, config, chunkReg)
-		if err != nil {
-			return err
-		}
-	} else {
-		fmt.Printf("Found %d existing work item(s) for phase %d\n", len(items), phaseIndex+1)
-	}
-
-	// Determine which execution strategy to use
+	// Determine which execution strategy to use (once, outside the loop)
 	strategyName := executeStrategyFlag
 	if strategyName == "" {
 		strategyName = config.Strategies.Execute
@@ -421,18 +392,10 @@ func executeInitiative(cmd *cobra.Command, cr *domain.ChangeRequest, store *stor
 		return fmt.Errorf("unknown strategy %q (available: %v)", strategyName, available)
 	}
 
-	fmt.Printf("\nExecuting phase %d/%d (type: %s)\n", phaseIndex+1, len(cr.Phases), phase.Type)
-	fmt.Printf("Using '%s' strategy: %s\n", strategy.Name(), strategy.Description())
-	fmt.Printf("Work items: %d\n", len(items))
-	if executeTimeoutFlag > 0 {
-		fmt.Printf("Timeout: %d minute(s)\n", executeTimeoutFlag)
-	}
-	fmt.Println()
-
 	// Track session start time
 	sessionStart := time.Now()
 
-	// Set up context with optional timeout
+	// Set up context with optional timeout (shared across all phases)
 	var ctx context.Context
 	var cancel context.CancelFunc
 	if executeTimeoutFlag > 0 {
@@ -442,7 +405,7 @@ func executeInitiative(cmd *cobra.Command, cr *domain.ChangeRequest, store *stor
 	}
 	defer cancel()
 
-	// Handle interrupt signals
+	// Handle interrupt signals (shared across all phases)
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	go func() {
@@ -451,50 +414,90 @@ func executeInitiative(cmd *cobra.Command, cr *domain.ChangeRequest, store *stor
 		cancel()
 	}()
 
-	// Run the strategy for this phase's work items
-	result, err := strategy.Execute(ctx, phaseWorkDir, store, config, projectDir)
-	if err != nil {
-		if ctx.Err() == context.DeadlineExceeded {
-			sessionDuration := time.Since(sessionStart).Round(time.Second)
-			fmt.Printf("\n⏱  TIMEOUT REACHED\n")
-			fmt.Printf("Session duration: %s\n", sessionDuration)
+	// Execute phases continuously until all complete or interrupted
+	for cr.CurrentPhase < len(cr.Phases) {
+		phaseIndex := cr.CurrentPhase
+		phase := cr.Phases[phaseIndex]
+		phaseWorkDir := fmt.Sprintf("%s/phase-%d", cr.ID, phaseIndex)
+
+		// Check if work items exist for this phase
+		items, err := store.ListWorkItemsForSpec(phaseWorkDir)
+		if err != nil {
+			return fmt.Errorf("failed to load work items: %w", err)
+		}
+
+		// If no work items exist, chunk this phase first
+		if len(items) == 0 {
+			// Update phase status to in-progress
+			cr.Phases[phaseIndex].Status = domain.PhaseStatusInProgress
+			if cr.Status != domain.ChangeRequestInProgress {
+				cr.Status = domain.ChangeRequestInProgress
+			}
+			if err := store.SaveChangeRequest(cr); err != nil {
+				return fmt.Errorf("failed to update CR status: %w", err)
+			}
+
+			items, err = chunkPhase(cr.ID, phaseIndex, &phase, store, config, chunkReg)
+			if err != nil {
+				return err
+			}
+		} else {
+			fmt.Printf("Found %d existing work item(s) for phase %d\n", len(items), phaseIndex+1)
+		}
+
+		fmt.Printf("\nExecuting phase %d/%d (type: %s)\n", phaseIndex+1, len(cr.Phases), phase.Type)
+		fmt.Printf("Using '%s' strategy: %s\n", strategy.Name(), strategy.Description())
+		fmt.Printf("Work items: %d\n", len(items))
+		if executeTimeoutFlag > 0 {
+			fmt.Printf("Timeout: %d minute(s)\n", executeTimeoutFlag)
+		}
+		fmt.Println()
+
+		// Run the strategy for this phase's work items
+		result, err := strategy.Execute(ctx, phaseWorkDir, store, config, projectDir)
+		if err != nil {
+			if ctx.Err() == context.DeadlineExceeded {
+				sessionDuration := time.Since(sessionStart).Round(time.Second)
+				fmt.Printf("\n⏱  TIMEOUT REACHED\n")
+				fmt.Printf("Session duration: %s\n", sessionDuration)
+				fmt.Printf("Phase %d completed: %d/%d work items\n", phaseIndex+1, result.Completed, result.Total)
+				if result.StoppedAt != "" {
+					fmt.Printf("Stopped at: %s\n", result.StoppedAt)
+				}
+				fmt.Printf("\nProgress saved. Run 'utopia execute %s' to resume.\n", cr.ID)
+				return fmt.Errorf("execution timed out after %d minute(s)", executeTimeoutFlag)
+			}
+			if ctx.Err() == context.Canceled {
+				fmt.Printf("\nExecution stopped by user.\n")
+				fmt.Printf("Phase %d completed: %d/%d work items\n", phaseIndex+1, result.Completed, result.Total)
+				if result.StoppedAt != "" {
+					fmt.Printf("Stopped at: %s\n", result.StoppedAt)
+				}
+				fmt.Println("\nRun 'utopia execute " + cr.ID + "' to resume.")
+				return nil
+			}
+			// Actual error
+			fmt.Printf("\nExecution stopped: %s\n", err)
 			fmt.Printf("Phase %d completed: %d/%d work items\n", phaseIndex+1, result.Completed, result.Total)
 			if result.StoppedAt != "" {
 				fmt.Printf("Stopped at: %s\n", result.StoppedAt)
 			}
-			fmt.Printf("\nProgress saved. Run 'utopia execute %s' to resume.\n", cr.ID)
-			return fmt.Errorf("execution timed out after %d minute(s)", executeTimeoutFlag)
+			return err
 		}
-		if ctx.Err() == context.Canceled {
-			fmt.Printf("\nExecution stopped by user.\n")
-			fmt.Printf("Phase %d completed: %d/%d work items\n", phaseIndex+1, result.Completed, result.Total)
-			if result.StoppedAt != "" {
-				fmt.Printf("Stopped at: %s\n", result.StoppedAt)
-			}
-			fmt.Println("\nRun 'utopia execute " + cr.ID + "' to resume.")
-			return nil
+
+		// Phase completed successfully - update status and advance to next phase
+		cr.Phases[phaseIndex].Status = domain.PhaseStatusComplete
+		cr.CurrentPhase = phaseIndex + 1
+
+		if err := store.SaveChangeRequest(cr); err != nil {
+			return fmt.Errorf("failed to update CR status: %w", err)
 		}
-		// Actual error
-		fmt.Printf("\nExecution stopped: %s\n", err)
-		fmt.Printf("Phase %d completed: %d/%d work items\n", phaseIndex+1, result.Completed, result.Total)
-		if result.StoppedAt != "" {
-			fmt.Printf("Stopped at: %s\n", result.StoppedAt)
-		}
-		return err
+
+		fmt.Printf("\nPhase %d completed successfully! (%d/%d work items)\n", phaseIndex+1, result.Completed, result.Total)
 	}
 
-	// Phase completed successfully - update status and advance to next phase
-	cr.Phases[phaseIndex].Status = domain.PhaseStatusComplete
-	cr.CurrentPhase = phaseIndex + 1
-
-	if err := store.SaveChangeRequest(cr); err != nil {
-		return fmt.Errorf("failed to update CR status: %w", err)
-	}
-
-	fmt.Printf("\nPhase %d completed successfully!\n", phaseIndex+1)
-	fmt.Printf("Work items: %d/%d\n", result.Completed, result.Total)
-
-	// Show initiative progress
+	// All phases complete - show final summary
+	fmt.Printf("\nAll phases complete!\n")
 	fmt.Printf("\nInitiative progress:\n")
 	for i, p := range cr.Phases {
 		status := "pending"
@@ -502,22 +505,12 @@ func executeInitiative(cmd *cobra.Command, cr *domain.ChangeRequest, store *stor
 			status = string(p.Status)
 		}
 		marker := " "
-		if i == cr.CurrentPhase {
-			marker = "→"
-		} else if p.Status == domain.PhaseStatusComplete {
+		if p.Status == domain.PhaseStatusComplete {
 			marker = "✓"
 		}
 		fmt.Printf("  %s [%d] %s (%s)\n", marker, i+1, p.Type, status)
 	}
-
-	// Check if there are more phases
-	if cr.CurrentPhase < len(cr.Phases) {
-		fmt.Printf("\nNext: Phase %d (%s)\n", cr.CurrentPhase+1, cr.Phases[cr.CurrentPhase].Type)
-		fmt.Printf("Run 'utopia execute %s' to continue with the next phase\n", cr.ID)
-	} else {
-		fmt.Printf("\nAll phases complete!\n")
-		fmt.Printf("Run 'utopia merge %s' to finalize the initiative\n", cr.ID)
-	}
+	fmt.Printf("\nRun 'utopia merge %s' to finalize the initiative\n", cr.ID)
 
 	return nil
 }
