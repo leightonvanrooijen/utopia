@@ -334,3 +334,47 @@ func TestCompletionTokenDetection(t *testing.T) {
 		})
 	}
 }
+
+// TestExtractCRID verifies CR ID extraction from spec IDs
+func TestExtractCRID(t *testing.T) {
+	tests := []struct {
+		name     string
+		specID   string
+		expected string
+	}{
+		{
+			name:     "regular CR",
+			specID:   "my-change-request",
+			expected: "my-change-request",
+		},
+		{
+			name:     "initiative phase 0",
+			specID:   "my-initiative/phase-0",
+			expected: "my-initiative",
+		},
+		{
+			name:     "initiative phase 5",
+			specID:   "my-initiative/phase-5",
+			expected: "my-initiative",
+		},
+		{
+			name:     "CR with dashes",
+			specID:   "add-user-auth-feature",
+			expected: "add-user-auth-feature",
+		},
+		{
+			name:     "nested path (edge case)",
+			specID:   "cr-id/phase-0/extra",
+			expected: "cr-id",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractCRID(tt.specID)
+			if got != tt.expected {
+				t.Errorf("extractCRID(%q) = %q, want %q", tt.specID, got, tt.expected)
+			}
+		})
+	}
+}

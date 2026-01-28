@@ -1,8 +1,10 @@
 package sequential
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"os/exec"
 	"sort"
 	"strings"
 
@@ -79,7 +81,7 @@ func (s *Strategy) Execute(ctx context.Context, specID string, store *storage.YA
 		fmt.Printf("[%d/%d] %s - starting execution\n", i+1, len(items), item.ID)
 
 		// Execute this work item with the Ralph loop
-		err := s.executeWorkItem(ctx, item, specID, store, cli, verifier, config)
+		err := s.executeWorkItem(ctx, item, specID, store, cli, verifier, config, projectDir)
 		if err != nil {
 			result.StoppedAt = item.ID
 			result.Reason = err.Error()
@@ -102,9 +104,17 @@ func (s *Strategy) executeWorkItem(
 	cli *claude.CLI,
 	verifier *verification.Runner,
 	config *domain.Config,
+	projectDir string,
 ) error {
 	maxIterations := config.Verification.MaxIterations
 	verifyCommand := config.Verification.Command
+
+	// Load CR title for commit message
+	crID := extractCRID(specID)
+	crTitle := ""
+	if cr, err := store.LoadChangeRequest(crID); err == nil {
+		crTitle = cr.Title
+	}
 
 	for {
 		// Check context cancellation (Ctrl+C)
@@ -162,7 +172,11 @@ func (s *Strategy) executeWorkItem(
 			fmt.Printf("  Iteration %d: no verification command configured, marking complete\n", item.IterationCount)
 			item.Status = domain.WorkItemCompleted
 			item.LastFailureOutput = ""
-			return store.SaveWorkItemForSpec(specID, item)
+			if err := store.SaveWorkItemForSpec(specID, item); err != nil {
+				return err
+			}
+			gitCommitWorkItem(projectDir, item, crTitle)
+			return nil
 		}
 
 		verifyResult, err := verifier.Run(ctx, verifyCommand)
@@ -174,7 +188,11 @@ func (s *Strategy) executeWorkItem(
 			fmt.Printf("  Iteration %d: verification passed!\n", item.IterationCount)
 			item.Status = domain.WorkItemCompleted
 			item.LastFailureOutput = ""
-			return store.SaveWorkItemForSpec(specID, item)
+			if err := store.SaveWorkItemForSpec(specID, item); err != nil {
+				return err
+			}
+			gitCommitWorkItem(projectDir, item, crTitle)
+			return nil
 		}
 
 		// Verification failed - inject failure and retry
@@ -197,4 +215,53 @@ func (s *Strategy) buildPrompt(item *domain.WorkItem) string {
 	}
 
 	return prompt
+}
+
+// extractCRID extracts the change request ID from a specID.
+// For regular CRs, specID is the CR ID directly.
+// For initiatives, specID is "cr-id/phase-N", so we extract the first part.
+func extractCRID(specID string) string {
+	if idx := strings.Index(specID, "/"); idx != -1 {
+		return specID[:idx]
+	}
+	return specID
+}
+
+// gitCommitWorkItem creates a git commit after a work item passes verification.
+// Returns nil on success, logs warning and returns nil on failure (non-blocking).
+func gitCommitWorkItem(projectDir string, item *domain.WorkItem, crTitle string) {
+	// Build commit message: subject line + body with CR title
+	subject := fmt.Sprintf("workitem: %s", item.ID)
+	body := crTitle
+	message := fmt.Sprintf("%s\n\n%s", subject, body)
+
+	// Stage all changes
+	addCmd := exec.Command("git", "add", "-A")
+	addCmd.Dir = projectDir
+	var addStderr bytes.Buffer
+	addCmd.Stderr = &addStderr
+	if err := addCmd.Run(); err != nil {
+		fmt.Printf("  ⚠ git add failed: %v (%s)\n", err, strings.TrimSpace(addStderr.String()))
+		return
+	}
+
+	// Check if there are changes to commit
+	diffCmd := exec.Command("git", "diff", "--cached", "--quiet")
+	diffCmd.Dir = projectDir
+	if err := diffCmd.Run(); err == nil {
+		// No changes to commit (exit code 0 means no diff)
+		return
+	}
+
+	// Commit
+	commitCmd := exec.Command("git", "commit", "-m", message)
+	commitCmd.Dir = projectDir
+	var commitStderr bytes.Buffer
+	commitCmd.Stderr = &commitStderr
+	if err := commitCmd.Run(); err != nil {
+		fmt.Printf("  ⚠ git commit failed: %v (%s)\n", err, strings.TrimSpace(commitStderr.String()))
+		return
+	}
+
+	fmt.Printf("  ✓ Created commit for %s\n", item.ID)
 }
