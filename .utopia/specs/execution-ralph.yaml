@@ -2,7 +2,7 @@ id: execution-ralph
 title: Ralph Execution Loop
 status: draft
 created: 0001-01-01T00:00:00Z
-updated: 2026-01-28T08:58:42.002705+11:00
+updated: 2026-01-28T12:26:32.861984+11:00
 description: |
     The Ralph execution loop runs WorkItems produced by the chunker.
 
@@ -127,3 +127,15 @@ features:
         - Message includes total session duration
         - Message indicates that progress was saved and can be resumed
         - Message differs from normal completion (user knows it was timeout, not success)
+
+    - id: workitem-commit
+      description: |
+        Automatically create a git commit after each WorkItem completes verification.
+        This provides atomic commits per WorkItem, making it easier to debug, review,
+        and rollback specific changes.
+      acceptance_criteria:
+        - After a WorkItem passes verification, stage all changes with `git add -A`
+        - 'Create a commit with message format ''workitem: <workitem-id>'' and CR title in body'
+        - Commit happens before moving to the next WorkItem
+        - If commit fails, log warning but continue execution (don't block on commit failure)
+        - Works for both regular CRs and initiative phases
