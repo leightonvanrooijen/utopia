@@ -66,30 +66,42 @@ Flows will be saved to: %s
 ## The Discovery Process
 
 ### PHASE 1: ANALYZE
-Start by analyzing the codebase structure:
+Start by analyzing the codebase structure with the filter in mind:
 1. Use Glob to explore the directory structure
 2. Read key files to understand organizational patterns
 3. Look for recurring structural patterns in the code
 4. Identify naming conventions from file and function names
 5. Detect boundaries (what calls what, what doesn't)
 
-Focus areas:
-- Directory structure and organization
-- File naming patterns
-- Class/struct/function naming patterns
-- Module boundaries and dependencies
-- Common abstractions and building blocks
+Focus on discovering DECISIONS this codebase made:
+- Directory conventions that aren't obvious (where do handlers go? services?)
+- Naming patterns unique to this project (not standard language conventions)
+- Boundaries that aren't industry standard (read-only layers, API restrictions)
+- Module dependencies that a new dev might violate
+- Abstractions invented for THIS codebase (not standard design patterns)
+
+Actively IGNORE while analyzing:
+- Standard error handling approaches
+- Common design patterns (factory, singleton, observer, etc.)
+- Language idioms any experienced dev would know
+- Code style (linter territory)
 
 ### PHASE 2: PROPOSE
-Present your findings to the user:
-- List the patterns you've identified
-- Explain why each is codebase-specific (not generic)
-- Propose which patterns deserve documentation
+For each pattern you found, apply the "Would They Get It Wrong?" filter:
+
+1. **Filter first**: Before presenting, run every potential pattern through the filter
+2. **Justify each pattern**: For patterns that pass, explain WHY a senior dev would get it wrong
+3. **Show your reasoning**: Present the pattern with its justification
+
+Format for each proposed pattern:
+- Pattern: [Name]
+- Would they get it wrong? YES because [specific reason]
+- What they'd do wrong: [concrete example of the mistake]
 
 Ask the user:
-- "Do these patterns look correct?"
-- "Should I add or remove any?"
-- "Are the boundaries I identified accurate?"
+- "Do these patterns pass the 'would they get it wrong' test?"
+- "Did I miss any codebase-specific patterns?"
+- "Did I incorrectly include any generic patterns?"
 
 ### PHASE 3: REFINE
 Based on user feedback:
@@ -110,27 +122,60 @@ Before writing any files, you MUST get explicit approval:
 ### PHASE 5: WRITE
 Only after receiving explicit approval, write the pattern and flow files with status: approved.
 
-## What to Document vs What to Ignore
+## The "Would They Get It Wrong?" Filter
+
+Before proposing ANY pattern, you MUST apply this filter:
 
 **The test: Would a competent developer who doesn't know THIS codebase get it wrong?**
 
-DOCUMENT - Building Blocks:
-- Codebase-specific structural patterns (Fetcher, Transformer, Service, etc.)
-- Boundaries unique to this project (read-only layers, no direct DB access, etc.)
-- Custom naming conventions (transform{Resource}.ts, {Name}Service.go, etc.)
-- How patterns compose together (flows)
-- Decisions made for THIS project
+For each potential pattern, ask yourself:
+1. If a senior developer joined tomorrow, would they naturally do this differently?
+2. Is this a decision WE made, or an industry default they'd already know?
 
-IGNORE - Generic Patterns:
-- Error handling (try/catch, Result types) - any senior dev knows this
-- Standard language idioms
-- SOLID, DRY, generic best practices
-- Formatting (covered by linters)
-- Patterns any senior developer would know
+If a senior dev would naturally do the right thing without documentation → REJECT the pattern.
+If they'd likely get it wrong without knowing our conventions → DOCUMENT the pattern.
 
-Heuristic: Is this a decision WE made, or an industry default?
-- Decision we made -> Document
-- Industry default -> Ignore
+### DOCUMENT (Pass the filter) - Codebase-Specific Decisions:
+- Structural patterns unique to this codebase (Fetcher, Transformer, etc.)
+- Boundaries we chose (read-only layers, no direct DB access, etc.)
+- Naming conventions we invented ({Name}Service.go, transform{Resource}.ts)
+- How OUR patterns compose together (flows)
+- Architectural decisions specific to THIS project
+
+### REJECT (Fail the filter) - Generic Knowledge:
+- Error handling patterns (try/catch, Result types, error wrapping)
+- Standard language idioms (Go interfaces, TypeScript generics)
+- SOLID, DRY, KISS, or other generic best practices
+- Code formatting (covered by linters/formatters)
+- Dependency injection, factory patterns, or other well-known design patterns
+- Testing patterns (unit tests, mocks, fixtures)
+- Any pattern a senior developer would know from industry experience
+
+### Examples
+
+REJECT - "Service Pattern":
+- Would they get it wrong? NO - every senior dev knows services
+- This is industry default, not our decision
+
+DOCUMENT - "Fetcher Pattern with read-only boundary":
+- Would they get it wrong? YES - they might add write operations
+- This is OUR decision that read boundaries exist
+
+REJECT - "Use Result types for errors":
+- Would they get it wrong? NO - this is a common Go/Rust/FP pattern
+- Industry standard, not codebase-specific
+
+DOCUMENT - "Transformers must not call external APIs":
+- Would they get it wrong? YES - they might add API calls for enrichment
+- This is a boundary WE chose for this codebase
+
+REJECT - "Use interfaces for dependency injection":
+- Would they get it wrong? NO - standard practice
+- Any experienced dev knows this
+
+DOCUMENT - "{Name}Handler files must live in internal/handlers/":
+- Would they get it wrong? YES - they might put handlers elsewhere
+- This is OUR directory convention
 
 ## Output Formats
 
