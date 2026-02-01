@@ -22,7 +22,7 @@ Unlike generic design patterns, these document decisions unique to THIS codebase
   - Naming conventions
   - How patterns compose together (flows)
 
-Use 'utopia patterns discover' to analyze your codebase and generate draft patterns.`,
+Use 'utopia patterns discover' to analyze your codebase and document patterns.`,
 }
 
 var discoverCmd = &cobra.Command{
@@ -33,15 +33,16 @@ var discoverCmd = &cobra.Command{
   2. Reads source files to identify recurring structural patterns
   3. Identifies naming conventions from file and function names
   4. Detects boundaries (what calls what, what doesn't)
-  5. Generates draft pattern and flow files for human review
+  5. Proposes patterns for human review and approval
 
 The discovery happens in a conversational session where:
   - AI proposes patterns based on codebase analysis
   - You provide feedback and guidance
   - AI refines the patterns
-  - Final patterns are written as draft files
+  - You explicitly approve the final patterns
+  - AI writes approved patterns to files
 
-Output: Draft .md files in .utopia/patterns/ with status: draft in frontmatter.`,
+Output: .md files in .utopia/patterns/ with status: approved in frontmatter.`,
 	RunE: runDiscover,
 }
 
@@ -99,8 +100,15 @@ Based on user feedback:
 
 Keep iterating until the user is satisfied.
 
-### PHASE 4: WRITE
-Once approved, write the pattern and flow files.
+### PHASE 4: APPROVE
+Before writing any files, you MUST get explicit approval:
+- Show the user the final list of patterns and flows you will write
+- Ask explicitly: "Do you approve these patterns? Say 'approve' or 'write them' to proceed."
+- Wait for clear approval words like: "approve", "approved", "yes write them", "looks good, write them", "go ahead"
+- Do NOT write files based on vague responses - ask for clarification
+
+### PHASE 5: WRITE
+Only after receiving explicit approval, write the pattern and flow files with status: approved.
 
 ## What to Document vs What to Ignore
 
@@ -132,7 +140,7 @@ Location: %s/{pattern-id}.md
 ` + "```markdown" + `
 ---
 id: kebab-case-identifier
-status: draft
+status: approved
 ---
 
 # Pattern Name
@@ -167,7 +175,7 @@ Location: %s/{flow-name}.md
 ` + "```markdown" + `
 ---
 id: kebab-case-identifier
-status: draft
+status: approved
 patterns:
   - pattern-id-1
   - pattern-id-2
@@ -203,8 +211,8 @@ What this flow accomplishes.
 - Start by exploring the codebase - use Glob and Read tools
 - Focus on codebase-specific patterns, not generic ones
 - Ask questions to verify your understanding
-- Only write files after user approval
-- All files must have status: draft in frontmatter
+- NEVER write files until you receive explicit approval (words like "approve", "approved", "write them")
+- All written files must have status: approved in frontmatter (they are source of truth once written)
 - Pattern IDs should be kebab-case
 - Create the directories if they don't exist
 
@@ -254,14 +262,14 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 	fmt.Println("This session will:")
 	fmt.Println("  1. Analyze your codebase structure")
-	fmt.Println("  2. Identify codebase-specific patterns")
-	fmt.Println("  3. Generate draft pattern and flow documentation")
+	fmt.Println("  2. Propose codebase-specific patterns")
+	fmt.Println("  3. Refine based on your feedback")
+	fmt.Println("  4. Write patterns you explicitly approve")
 	fmt.Println()
 	fmt.Println("Patterns will be saved to:", patternsDir)
 	fmt.Println("Flows will be saved to:", flowsDir)
 	fmt.Println()
-	fmt.Println("Tip: In another terminal, watch for changes with:")
-	fmt.Printf("  watch -n 1 'ls -la %s && echo && ls -la %s'\n", patternsDir, flowsDir)
+	fmt.Println("Tip: Say 'approve' or 'write them' when you're happy with the proposed patterns.")
 	fmt.Println()
 
 	// Run interactive Claude session
@@ -282,7 +290,7 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 	flowFiles, _ := filepath.Glob(filepath.Join(flowsDir, "*.md"))
 
 	if len(patternFiles) > 0 || len(flowFiles) > 0 {
-		fmt.Println("Created files:")
+		fmt.Println("Approved patterns written:")
 		for _, f := range patternFiles {
 			fmt.Printf("  ✓ %s\n", f)
 		}
@@ -290,7 +298,7 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 			fmt.Printf("  ✓ %s\n", f)
 		}
 		fmt.Println()
-		fmt.Println("Review these draft files and update status to 'approved' when ready.")
+		fmt.Println("These patterns are now the source of truth for your codebase architecture.")
 	} else {
 		fmt.Println("No pattern files were created in this session.")
 	}
