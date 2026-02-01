@@ -1,0 +1,120 @@
+id: pattern-finder
+title: pattern-finder
+status: draft
+created: 2026-02-01T12:53:35.420523+11:00
+updated: 2026-02-01T12:53:35.420529+11:00
+description: ""
+features:
+    - id: discover-command
+      description: |
+        Command: utopia patterns discover
+
+        Triggers an AI-driven analysis that:
+        1. Scans directory structure to identify organizational patterns
+        2. Reads source files to identify recurring structural patterns
+        3. Identifies naming conventions from file and function names
+        4. Detects boundaries (what calls what, what doesn't)
+        5. Generates draft pattern and flow files for human review
+
+        Output: Draft .md files in .utopia/patterns/ with status: draft in frontmatter.
+      acceptance_criteria:
+        - Command utopia patterns discover exists
+        - Command scans directory structure and source files
+        - Command outputs draft pattern files to .utopia/patterns/
+        - Command outputs draft flow files to .utopia/patterns/flows/
+        - 'All generated files have status: draft in frontmatter'
+
+    - id: pattern-file-format
+      description: |
+        Pattern files use YAML frontmatter + Markdown body.
+
+        Location: .utopia/patterns/{pattern-id}.md
+
+        Required frontmatter:
+          id: kebab-case identifier
+          status: draft | approved
+
+        Required markdown sections:
+          Description: One sentence - what this building block is
+          Responsibility: What this pattern owns (bullet list)
+          Boundaries: What this pattern must NOT do (bullet list)
+          Naming: File/function naming convention with template
+          Examples: File paths to real examples in codebase
+      acceptance_criteria:
+        - Pattern files are markdown with YAML frontmatter
+        - Frontmatter contains id and status fields
+        - Markdown contains Description, Responsibility, Boundaries, Naming, Examples sections
+        - Files stored at .utopia/patterns/{pattern-id}.md
+
+    - id: flow-file-format
+      description: |
+        Flow files describe how patterns compose together.
+
+        Location: .utopia/patterns/flows/{flow-name}.md
+
+        Required frontmatter:
+          id: kebab-case identifier
+          status: draft | approved
+          patterns: list of pattern ids involved in this flow
+
+        Required markdown sections:
+          Description: What this flow accomplishes
+          Diagram: ASCII or text showing data/control flow
+          Layer Rules: Table of what each pattern can/cannot call
+          Sequence: Numbered steps of how a request flows through
+      acceptance_criteria:
+        - Flow files are markdown with YAML frontmatter
+        - Frontmatter contains id, status, and patterns list
+        - Markdown contains Description, Diagram, Layer Rules, Sequence sections
+        - Files stored at .utopia/patterns/flows/{flow-name}.md
+
+    - id: curation-workflow
+      description: |
+        Human curation of discovered patterns.
+
+        After utopia patterns discover runs:
+        1. AI proposes patterns and flows
+        2. Human reviews and provides feedback in the same conversation
+        3. AI refines based on feedback
+        4. Repeat until human is satisfied
+        5. AI writes approved patterns to .utopia/patterns/ with status: approved
+
+        The entire discovery and curation happens in one conversational session,
+        similar to the CR creation flow.
+
+        Patterns with status: draft are proposals.
+        Patterns with status: approved are the source of truth.
+      acceptance_criteria:
+        - Discovery and curation happen in the same conversation
+        - AI proposes patterns, human gives feedback, AI refines
+        - Files are only written when human approves
+        - 'Written files have status: approved'
+
+    - id: documentation-criteria
+      description: |
+        What to document vs what to ignore.
+
+        The test: Would a competent developer who doesn't know THIS codebase get it wrong?
+
+        DOCUMENT - Building Blocks:
+          - Codebase-specific structural patterns (Fetcher, Transformer, etc.)
+          - Boundaries unique to this project (read-only, no writes)
+          - Custom naming conventions (transform{Resource}.ts)
+          - How patterns compose (flows)
+          - Decisions made for THIS project
+
+        IGNORE - Generic Patterns:
+          - Error handling (try/catch, Result types)
+          - Standard language idioms
+          - SOLID, DRY, generic best practices
+          - Formatting (covered by linters)
+          - Patterns any senior dev would know
+
+        Heuristic: Is this a decision we made, or a default?
+          - Decision we made -> Document
+          - Industry default -> Ignore
+      acceptance_criteria:
+        - Discovery AI filters using would get it wrong test
+        - AI proposes only codebase-specific architectural patterns
+        - AI does not propose generic programming patterns
+        - AI does not propose patterns covered by linters/formatters
