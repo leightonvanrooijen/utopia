@@ -101,7 +101,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	fmt.Println("  .utopia/work-items/    - Work items for Ralph")
 	fmt.Println()
 	fmt.Println("Next steps:")
-	fmt.Println("  utopia spec            - Start creating a specification")
+	fmt.Println("  utopia cr              - Create a change request")
 	fmt.Println("  utopia status          - View project status")
 
 	return nil
