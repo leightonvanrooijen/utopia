@@ -1,43 +1,53 @@
 id: verification
 title: Verification System
 status: draft
+created: 0001-01-01T00:00:00Z
+updated: 2026-02-08T09:25:39.234256+11:00
 description: |
-  The verification system runs user-provided commands to check if work is correct.
+    The verification system runs user-provided commands to check if work is correct.
 
-  It captures output for feedback to the execution loop on failure.
-  User is responsible for configuring commands that output failures only.
-
+    It captures output for feedback to the execution loop on failure.
+    User is responsible for configuring commands that output failures only.
 domain_knowledge:
-  - Verification command should output failures only (user's responsibility)
-  - Output is captured and fed back to execution loop on failure
-  - Pass/fail determined by exit code (0 = pass, non-zero = fail)
-  - Output truncation preserves tail (most recent failures most relevant)
-
+    - Verification command should output failures only (user's responsibility)
+    - Output is captured and fed back to execution loop on failure
+    - Pass/fail determined by exit code (0 = pass, non-zero = fail)
+    - Output truncation preserves tail (most recent failures most relevant)
 features:
-  - id: verification-config
-    description: |
-      Store verification command in project config.
-    acceptance_criteria:
-      - Config has verification.command field (e.g., "npm test --onlyFailures")
-      - Command is provided manually by user during "utopia init"
-      - User is responsible for configuring command to output failures only
-      - Config has optional max_iterations field (no limit if not set)
+    - id: verification-config
+      description: |
+        Store verification command in project config.
+      acceptance_criteria:
+        - Config has verification.command field (e.g., "npm test --onlyFailures")
+        - Command is provided manually by user during "utopia init"
+        - User is responsible for configuring command to output failures only
+        - Config has optional max_iterations field (no limit if not set)
 
-  - id: verification-runner
-    description: |
-      Run verification command and capture output.
-    acceptance_criteria:
-      - Runs verification command from config
-      - Captures stdout and stderr
-      - Returns pass/fail based on exit code
-      - Output is available for injection into next iteration prompt
-      - Output truncated to 2000 chars if needed (preserve tail)
+    - id: verification-runner
+      description: |
+        Run verification command and capture output.
+      acceptance_criteria:
+        - Runs verification command from config
+        - Captures stdout and stderr
+        - Returns pass/fail based on exit code
+        - Output is available for injection into next iteration prompt
+        - Output truncated to 2000 chars if needed (preserve tail)
 
-  - id: init-verification-prompt
-    description: |
-      Prompt user for verification command during "utopia init".
-    acceptance_criteria:
-      - Init asks "What command verifies your code? (e.g., npm test)"
-      - User input saved to config.verification.command
-      - Init asks "Max iterations per work item? (leave blank for unlimited)"
-      - User input saved to config.max_iterations (optional)
+    - id: init-verification-prompt
+      description: |
+        Prompt user for verification command during "utopia init".
+      acceptance_criteria:
+        - Init asks "What command verifies your code? (e.g., npm test)"
+        - User input saved to config.verification.command
+        - Init asks "Max iterations per work item? (leave blank for unlimited)"
+        - User input saved to config.max_iterations (optional)
+
+    - id: init-output
+      description: |
+        Specifies the output displayed after successful initialization.
+        The "Next steps" section guides users to valid current commands.
+      acceptance_criteria:
+        - Next steps section displays currently valid commands
+        - Shows "utopia cr" for creating change requests
+        - Shows "utopia status" for viewing project status
+        - Does not reference deprecated or renamed commands
