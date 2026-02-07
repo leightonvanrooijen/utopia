@@ -1,0 +1,17 @@
+id: verification-add-init-output
+type: feature
+title: Add init command output specification
+status: in-progress
+changes:
+    - operation: add
+      spec: verification
+      feature:
+        id: init-output
+        description: |
+            Specifies the output displayed after successful initialization.
+            The "Next steps" section guides users to valid current commands.
+        acceptance_criteria:
+            - Next steps section displays currently valid commands
+            - Shows "utopia cr" for creating change requests
+            - Shows "utopia status" for viewing project status
+            - Does not reference deprecated or renamed commands
