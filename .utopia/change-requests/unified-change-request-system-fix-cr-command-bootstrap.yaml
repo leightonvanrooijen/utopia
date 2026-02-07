@@ -1,0 +1,25 @@
+id: unified-change-request-system-fix-cr-command-bootstrap
+type: bugfix
+title: Fix CR command to allow creating specs via change requests
+status: in-progress
+tasks:
+    - id: fix-cr-system-prompt
+      description: |
+        Fix the CR command system prompt to match spec behavior.
+
+        Current behavior: System prompt says "Verify the target spec exists before
+        creating the CR" which causes Claude to create spec files directly when no
+        specs exist.
+
+        Expected behavior: CRs can target specs that don't exist yet. Feature CRs
+        with operation: add should create the new spec during merge, not during
+        CR creation. Claude should NEVER create spec files directly.
+      acceptance_criteria:
+        - System prompt explicitly states CRs can target non-existent specs
+        - System prompt removes "verify target spec exists" guidance
+        - System prompt instructs Claude to NEVER write to .utopia/specs/ directly
+        - System prompt explains that new specs are created during merge
+        - When targeting a new spec, CR format shows how to include spec metadata (id, title, description)
+        - Running "utopia cr" in a project with no specs results in a CR file, not a spec file
+      spec: unified-change-request-system
+      feature_id: cr-command

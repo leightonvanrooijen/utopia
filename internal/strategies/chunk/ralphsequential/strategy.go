@@ -56,7 +56,8 @@ func New(specLoader SpecLoader) *Strategy {
 
 // SetSpecLoader sets the spec loader for loading referenced specs during bugfix chunking.
 // This allows the spec loader to be set after strategy creation when the storage becomes available.
-func (s *Strategy) SetSpecLoader(loader SpecLoader) {
+// Note: Uses anonymous function type to match SpecLoaderConfigurable interface in execute.go.
+func (s *Strategy) SetSpecLoader(loader func(specID string) (*domain.Spec, error)) {
 	s.specLoader = loader
 }
 
