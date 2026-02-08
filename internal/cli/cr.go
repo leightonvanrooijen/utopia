@@ -211,6 +211,13 @@ phases:
             - Criterion
 ` + "```" + `
 
+## Capturing Notes
+During conversations, users may mention ideas, future improvements, or thoughts that aren't part of the current change request. Save these to .utopia/notes/ as markdown files:
+- Use descriptive kebab-case filenames (e.g., .utopia/notes/future-auth-improvements.md)
+- Format is intentionally loose - just dump the thought for later
+- Create the notes folder if it doesn't exist
+- Tell the user when you've saved a note
+
 ## Critical Guidelines
 - Ask ONE question at a time - keep the conversation focused
 - CRs CAN target specs that don't exist yet - new specs are created when the CR is merged, not during CR creation
