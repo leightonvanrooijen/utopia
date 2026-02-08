@@ -2,7 +2,7 @@ id: unified-change-request-system
 title: Unified Change Request System
 status: draft
 created: 0001-01-01T00:00:00Z
-updated: 2026-01-28T09:16:37.427637+11:00
+updated: 2026-02-08T15:40:28.313154+11:00
 description: |
     A unified system where all work flows through Change Requests. CRs are standalone
     documents that describe work to be done. Each change within a CR can target a
@@ -188,3 +188,16 @@ features:
         - Each task has feature_id field referencing the feature that defines correct behavior
         - Tasks do not modify the spec (reference only)
         - Merge for bugfixes deletes the CR without modifying any specs (like refactors)
+
+    - id: notes-capture
+      description: |
+        Allow capturing notes during CR creation conversations for ideas that
+        should be remembered but aren't part of the current work.
+
+        Notes are saved to .utopia/notes/ as markdown files with descriptive
+        names. The format is intentionally loose — just a place to dump thoughts
+        for later.
+      acceptance_criteria:
+        - Notes folder location is .utopia/notes/
+        - CR assistant system prompt includes guidance on saving notes to the notes folder
+        - Notes are saved as markdown files with descriptive filenames
