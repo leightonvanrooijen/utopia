@@ -1,0 +1,20 @@
+id: execution-ralph-add-batch-execution
+type: feature
+title: Add batch execution of all draft CRs
+status: in-progress
+changes:
+    - operation: add
+      spec: execution-ralph
+      feature:
+        id: batch-execution
+        description: |
+            Execute all draft CRs in sequence with a single command.
+            Instead of selecting one CR at a time, users can run all pending
+            CRs in one batch operation.
+        acceptance_criteria:
+            - Command "utopia execute --all" runs all CRs in .utopia/change-requests/
+            - CRs are executed in alphabetical order by filename
+            - Each CR goes through the full flow (chunk, execute, merge)
+            - If a CR fails, execution stops and reports which CR failed
+            - 'Progress shows "Executing CR N of M: <cr-title>"'
+            - Summary at end shows how many CRs completed successfully
