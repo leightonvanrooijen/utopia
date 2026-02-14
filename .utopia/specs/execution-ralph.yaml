@@ -2,7 +2,7 @@ id: execution-ralph
 title: Ralph Execution Loop
 status: draft
 created: 0001-01-01T00:00:00Z
-updated: 2026-01-28T12:26:32.861984+11:00
+updated: 2026-02-14T23:22:18.435205+11:00
 description: |
     The Ralph execution loop runs WorkItems produced by the chunker.
 
@@ -139,3 +139,16 @@ features:
         - Commit happens before moving to the next WorkItem
         - If commit fails, log warning but continue execution (don't block on commit failure)
         - Works for both regular CRs and initiative phases
+
+    - id: batch-execution
+      description: |
+        Execute all draft CRs in sequence with a single command.
+        Instead of selecting one CR at a time, users can run all pending
+        CRs in one batch operation.
+      acceptance_criteria:
+        - Command "utopia execute --all" runs all CRs in .utopia/change-requests/
+        - CRs are executed in alphabetical order by filename
+        - Each CR goes through the full flow (chunk, execute, merge)
+        - If a CR fails, execution stops and reports which CR failed
+        - 'Progress shows "Executing CR N of M: <cr-title>"'
+        - Summary at end shows how many CRs completed successfully
