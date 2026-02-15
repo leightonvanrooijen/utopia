@@ -19,7 +19,7 @@ phases:
                 - 'Commit message follows pattern "cr: create {cr-id}"'
                 - Commit SHA is available for linking in conversation metadata
     - type: feature
-      status: in-progress
+      status: complete
       changes:
         - operation: add
           spec: adr
@@ -38,6 +38,7 @@ phases:
                 - Metadata includes list of commits made during session
                 - Conversations marked as unprocessed until reviewed by /adr
     - type: feature
+      status: in-progress
       changes:
         - operation: add
           spec: adr
@@ -81,4 +82,4 @@ phases:
                 - ADRs can be marked deprecated with reason
                 - ADRs can be marked superseded with reference to replacement ADR
                 - Status changes are tracked with timestamp
-current_phase: 1
+current_phase: 2
