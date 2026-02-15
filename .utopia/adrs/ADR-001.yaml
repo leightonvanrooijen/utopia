@@ -1,0 +1,93 @@
+# Architecture Decision Record - ADR-001
+# Format: Nygard + Extensions (Options, Advice, Principles)
+
+id: ADR-001
+title: "ADR-001: Use YAML for Architecture Decision Records"
+status: accepted
+
+context: |
+  We need to document architectural decisions in a way that:
+  - Integrates with the existing Utopia tooling (specs, CRs, work-items all use YAML)
+  - Can be programmatically parsed for /adr command features
+  - Supports the structured fields we need (options, advice, principles)
+  - Allows for future tooling to cross-reference decisions with code
+
+  Technical forces:
+  - Existing .utopia directory uses YAML for all structured documents
+  - YAML is human-readable and git-friendly
+  - Markdown is more common for ADRs but harder to parse programmatically
+
+  Social forces:
+  - Team familiarity with YAML from existing Utopia workflows
+  - Desire for consistency across the .utopia directory
+
+decision: |
+  We will use YAML format for ADRs, stored in .utopia/adrs/ as individual files.
+
+  ADRs will follow the Nygard format with extensions:
+  - id: Sequential identifier (ADR-001, ADR-002, etc.)
+  - title: ID + decision statement
+  - status: draft | proposed | accepted | deprecated | superseded
+  - context: Forces at play (technical, political, social)
+  - decision: Active voice, "We will..."
+  - options_considered: Alternatives with pros/cons
+  - consequences: Positive, negative, and neutral outcomes
+  - advice: Who was consulted and when
+  - principles: Architectural principles that apply or conflict
+
+options_considered:
+  - option: Markdown files with YAML frontmatter
+    pros:
+      - More traditional ADR format
+      - Rich text support for decision body
+    cons:
+      - Harder to parse programmatically
+      - Inconsistent with other .utopia documents
+  - option: Pure YAML
+    pros:
+      - Consistent with specs, CRs, work-items
+      - Easy to parse for tooling
+      - Structured fields are explicit
+    cons:
+      - Multiline text requires YAML block scalars
+      - Less familiar to teams used to markdown ADRs
+  - option: JSON
+    pros:
+      - Easy to parse
+      - Universal format
+    cons:
+      - Poor human readability
+      - Not git-diff friendly
+      - Inconsistent with existing .utopia format
+
+consequences:
+  positive:
+    - Tooling can easily parse ADRs for cross-referencing
+    - Consistent format across all .utopia documents
+    - /adr command can manipulate ADRs programmatically
+  negative:
+    - Learning curve for teams familiar with markdown ADRs
+    - Multiline text is slightly less readable than markdown
+  neutral:
+    - ADR files will have .yaml extension instead of .md
+
+advice:
+  - consulted: Leighton
+    when: 2026-02-16
+    input: Reviewed Nygard format and Utopia integration requirements
+
+principles:
+  - name: Consistency
+    alignment: supports
+    notes: Aligns with existing YAML-first approach in .utopia directory
+  - name: Toolability
+    alignment: supports
+    notes: Structured format enables programmatic ADR discovery and analysis
+  - name: Human Readability
+    alignment: partial
+    notes: YAML is readable but markdown would be more natural for long-form text
+
+# Metadata for lifecycle tracking
+created: 2026-02-16
+updated: 2026-02-16
+superseded_by: null
