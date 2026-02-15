@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+
+	"golang.org/x/term"
 )
 
 // PermissionMode controls how Claude handles permission prompts
@@ -273,4 +275,130 @@ func (c *CLI) StreamSession(ctx context.Context, systemPrompt string, onOutput f
 func (c *CLI) RalphLoop(ctx context.Context, prompt string, completionPromise string, maxIterations int) error {
 	// Future: invoke /ralph-loop command or set up the loop manually
 	return fmt.Errorf("RalphLoop not yet implemented")
+}
+
+// SessionWithCapture runs an interactive Claude session and captures the full transcript.
+// Uses a pseudo-terminal to preserve interactive behavior while capturing all I/O.
+// The transcript is always returned, even if the session fails or is interrupted.
+func (c *CLI) SessionWithCapture(ctx context.Context, systemPrompt string) (transcript string, err error) {
+	args := c.baseArgs()
+
+	if systemPrompt != "" {
+		args = append(args, "--system-prompt", systemPrompt)
+	}
+
+	cmd := exec.CommandContext(ctx, c.binaryPath, args...)
+
+	// Create pipes for capturing I/O
+	stdinPipe, err := cmd.StdinPipe()
+	if err != nil {
+		return "", fmt.Errorf("failed to create stdin pipe: %w", err)
+	}
+
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", fmt.Errorf("failed to create stdout pipe: %w", err)
+	}
+
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		return "", fmt.Errorf("failed to create stderr pipe: %w", err)
+	}
+
+	// Start the command
+	if err := cmd.Start(); err != nil {
+		return "", fmt.Errorf("failed to start claude: %w", err)
+	}
+
+	// Transcript builder with mutex for thread safety
+	var transcriptBuilder strings.Builder
+	var mu sync.Mutex
+
+	writeToTranscript := func(data string) {
+		mu.Lock()
+		transcriptBuilder.WriteString(data)
+		mu.Unlock()
+	}
+
+	// Set terminal to raw mode to pass through all input
+	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
+	if err != nil {
+		// If we can't set raw mode (not a terminal), fall back to line-based
+		oldState = nil
+	}
+
+	// Ensure we restore terminal state on exit
+	defer func() {
+		if oldState != nil {
+			term.Restore(int(os.Stdin.Fd()), oldState)
+		}
+		// Always capture transcript even on panic/error
+		transcript = transcriptBuilder.String()
+	}()
+
+	var wg sync.WaitGroup
+
+	// Forward stdin to claude and capture it
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer stdinPipe.Close()
+
+		buf := make([]byte, 1024)
+		for {
+			n, readErr := os.Stdin.Read(buf)
+			if n > 0 {
+				data := buf[:n]
+				writeToTranscript(string(data))
+				stdinPipe.Write(data)
+			}
+			if readErr != nil {
+				break
+			}
+		}
+	}()
+
+	// Forward stdout from claude and capture it
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		buf := make([]byte, 4096)
+		for {
+			n, readErr := stdoutPipe.Read(buf)
+			if n > 0 {
+				data := buf[:n]
+				writeToTranscript(string(data))
+				os.Stdout.Write(data)
+			}
+			if readErr != nil {
+				break
+			}
+		}
+	}()
+
+	// Forward stderr from claude (don't capture - it's debug info)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		buf := make([]byte, 4096)
+		for {
+			n, readErr := stderrPipe.Read(buf)
+			if n > 0 {
+				os.Stderr.Write(buf[:n])
+			}
+			if readErr != nil {
+				break
+			}
+		}
+	}()
+
+	// Wait for command to complete
+	cmdErr := cmd.Wait()
+
+	// Wait for I/O goroutines to finish
+	wg.Wait()
+
+	return transcriptBuilder.String(), cmdErr
 }

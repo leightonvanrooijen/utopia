@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 	"github.com/leightonvanrooijen/utopia/internal/infra/claude"
@@ -290,17 +291,23 @@ func runCR(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  watch -n 1 'ls -la %s'\n", changeRequestsDir)
 	fmt.Println()
 
-	// Run interactive Claude session
+	// Run interactive Claude session with transcript capture
 	ctx := context.Background()
 	cli := claude.NewCLI()
 
-	_, err = cli.Session(ctx, systemPrompt)
-	if err != nil {
-		return fmt.Errorf("claude session failed: %w", err)
-	}
+	// Get git branch for metadata before session
+	branch := getGitBranch(absPath)
+	sessionStart := time.Now()
+
+	// Capture transcript - this persists even on Ctrl+C due to defer in SessionWithCapture
+	transcript, sessionErr := cli.SessionWithCapture(ctx, systemPrompt)
 
 	fmt.Println()
 	fmt.Println("Session ended. Validating change requests...")
+
+	// Track CRs and commits for conversation metadata
+	var crsCreated []domain.CRCommit
+	var commits []string
 
 	// Validate all change requests
 	crValidationErr := validateChangeRequests(store)
@@ -312,9 +319,12 @@ func runCR(cmd *cobra.Command, args []string) error {
 		fmt.Println()
 
 		fixPrompt := fmt.Sprintf(crFixSystemPrompt, utopiaDir, crValidationErr)
-		_, err = cli.Session(ctx, fixPrompt)
-		if err != nil {
-			return fmt.Errorf("claude fix session failed: %w", err)
+		fixTranscript, fixErr := cli.SessionWithCapture(ctx, fixPrompt)
+		transcript += "\n\n--- Fix Session ---\n\n" + fixTranscript
+		if fixErr != nil {
+			// Save conversation before returning error
+			saveConversation(store, sessionStart, branch, transcript, crsCreated, commits)
+			return fmt.Errorf("claude fix session failed: %w", fixErr)
 		}
 
 		// Re-validate after fix session
@@ -322,27 +332,41 @@ func runCR(cmd *cobra.Command, args []string) error {
 		if crValidationErr != nil {
 			fmt.Println()
 			fmt.Printf("✗ Change request validation still failed:\n%s\n", crValidationErr)
+			// Save conversation before returning error
+			saveConversation(store, sessionStart, branch, transcript, crsCreated, commits)
 			return fmt.Errorf("change request validation failed after fix attempt")
 		}
 	}
 
 	fmt.Println("✓ All change requests are valid")
 
-	// Auto-commit valid CRs
+	// Auto-commit valid CRs and track commits
 	crs, err := store.ListChangeRequests()
 	if err != nil {
+		saveConversation(store, sessionStart, branch, transcript, crsCreated, commits)
 		return fmt.Errorf("failed to list change requests for commit: %w", err)
 	}
 
 	for _, cr := range crs {
-		sha, err := GitCommitCR(absPath, cr.ID)
-		if err != nil {
-			fmt.Printf("⚠ Failed to commit CR %s: %v\n", cr.ID, err)
+		sha, commitErr := GitCommitCR(absPath, cr.ID)
+		if commitErr != nil {
+			fmt.Printf("⚠ Failed to commit CR %s: %v\n", cr.ID, commitErr)
 			continue
 		}
 		if sha != "" {
 			fmt.Printf("✓ Committed CR: %s (%s)\n", cr.ID, sha[:8])
+			crsCreated = append(crsCreated, domain.CRCommit{CRID: cr.ID, CommitSHA: sha})
+			commits = append(commits, sha)
 		}
+	}
+
+	// Save the conversation transcript with metadata
+	convID := saveConversation(store, sessionStart, branch, transcript, crsCreated, commits)
+	fmt.Printf("✓ Conversation saved: %s\n", convID)
+
+	// Return session error if there was one (transcript still saved above)
+	if sessionErr != nil {
+		return fmt.Errorf("claude session failed: %w", sessionErr)
 	}
 
 	return nil
@@ -541,4 +565,40 @@ func GitCommitCR(projectDir, crID string) (string, error) {
 	}
 
 	return strings.TrimSpace(shaOut.String()), nil
+}
+
+// getGitBranch returns the current git branch name
+func getGitBranch(projectDir string) string {
+	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
+	cmd.Dir = projectDir
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	if err := cmd.Run(); err != nil {
+		return "unknown"
+	}
+	return strings.TrimSpace(out.String())
+}
+
+// saveConversation persists a conversation transcript with metadata
+// Returns the conversation ID
+func saveConversation(store *storage.YAMLStore, sessionStart time.Time, branch, transcript string, crsCreated []domain.CRCommit, commits []string) string {
+	// Generate ID from timestamp: cr-session-YYYYMMDD-HHMMSS
+	convID := fmt.Sprintf("cr-session-%s", sessionStart.Format("20060102-150405"))
+
+	conv := &domain.Conversation{
+		ID:         convID,
+		Timestamp:  sessionStart,
+		Branch:     branch,
+		Status:     domain.ConversationUnprocessed,
+		CRsCreated: crsCreated,
+		Commits:    commits,
+		Transcript: transcript,
+	}
+
+	if err := store.SaveConversation(conv); err != nil {
+		fmt.Printf("⚠ Failed to save conversation: %v\n", err)
+		return ""
+	}
+
+	return convID
 }

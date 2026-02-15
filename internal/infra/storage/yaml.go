@@ -359,3 +359,72 @@ func (s *YAMLStore) readYAML(path string, dest interface{}) error {
 
 	return nil
 }
+
+// SaveConversation writes a conversation to .utopia/conversations/{id}.yaml
+func (s *YAMLStore) SaveConversation(conv *domain.Conversation) error {
+	dir := filepath.Join(s.baseDir, "conversations")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create conversations directory: %w", err)
+	}
+
+	path := filepath.Join(dir, conv.ID+".yaml")
+	return s.writeYAML(path, conv)
+}
+
+// LoadConversation reads a conversation from .utopia/conversations/{id}.yaml
+func (s *YAMLStore) LoadConversation(id string) (*domain.Conversation, error) {
+	path := filepath.Join(s.baseDir, "conversations", id+".yaml")
+
+	var conv domain.Conversation
+	if err := s.readYAML(path, &conv); err != nil {
+		return nil, err
+	}
+
+	return &conv, nil
+}
+
+// ListConversations returns all conversations in the conversations directory
+func (s *YAMLStore) ListConversations() ([]*domain.Conversation, error) {
+	dir := filepath.Join(s.baseDir, "conversations")
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []*domain.Conversation{}, nil
+		}
+		return nil, fmt.Errorf("failed to read conversations directory: %w", err)
+	}
+
+	var convs []*domain.Conversation
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
+			continue
+		}
+
+		id := strings.TrimSuffix(entry.Name(), ".yaml")
+		conv, err := s.LoadConversation(id)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load conversation %s: %w", id, err)
+		}
+		convs = append(convs, conv)
+	}
+
+	return convs, nil
+}
+
+// ListUnprocessedConversations returns conversations with status "unprocessed"
+func (s *YAMLStore) ListUnprocessedConversations() ([]*domain.Conversation, error) {
+	all, err := s.ListConversations()
+	if err != nil {
+		return nil, err
+	}
+
+	var unprocessed []*domain.Conversation
+	for _, conv := range all {
+		if conv.Status == domain.ConversationUnprocessed {
+			unprocessed = append(unprocessed, conv)
+		}
+	}
+
+	return unprocessed, nil
+}

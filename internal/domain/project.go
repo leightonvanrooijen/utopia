@@ -73,3 +73,8 @@ func (p *Project) RefactorsDir() string {
 func (p *Project) ChangeRequestsDir() string {
 	return filepath.Join(p.UtopiaDir(), "change-requests")
 }
+
+// ConversationsDir returns the conversations directory path
+func (p *Project) ConversationsDir() string {
+	return filepath.Join(p.UtopiaDir(), "conversations")
+}

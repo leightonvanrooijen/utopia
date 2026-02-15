@@ -702,3 +702,34 @@ type CRValidationError struct {
 func (e *CRValidationError) Error() string {
 	return "change request validation failed:\n  - " + strings.Join(e.Errors, "\n  - ")
 }
+
+// ConversationStatus represents the processing state of a conversation
+type ConversationStatus string
+
+const (
+	ConversationUnprocessed ConversationStatus = "unprocessed"
+	ConversationProcessed   ConversationStatus = "processed"
+)
+
+// CRCommit represents a CR that was created and committed during a session
+type CRCommit struct {
+	CRID      string `yaml:"cr_id"`
+	CommitSHA string `yaml:"commit_sha"`
+}
+
+// Conversation represents a captured session transcript with metadata
+type Conversation struct {
+	ID        string             `yaml:"id"`
+	Timestamp time.Time          `yaml:"timestamp"`
+	Branch    string             `yaml:"branch"`
+	Status    ConversationStatus `yaml:"status"`
+
+	// CRs created during this session (with their commit SHAs)
+	CRsCreated []CRCommit `yaml:"crs_created,omitempty"`
+
+	// All commits made during this session
+	Commits []string `yaml:"commits,omitempty"`
+
+	// The full transcript content
+	Transcript string `yaml:"transcript"`
+}
