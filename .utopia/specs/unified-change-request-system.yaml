@@ -2,7 +2,7 @@ id: unified-change-request-system
 title: Unified Change Request System
 status: draft
 created: 0001-01-01T00:00:00Z
-updated: 2026-02-08T15:40:28.313154+11:00
+updated: 2026-02-16T08:42:20.081866+11:00
 description: |
     A unified system where all work flows through Change Requests. CRs are standalone
     documents that describe work to be done. Each change within a CR can target a
@@ -144,7 +144,9 @@ features:
 
     - id: cr-lifecycle
       description: |
-        Define the status lifecycle for change requests.
+        Extend CR lifecycle to auto-commit on validation.
+        When a CR passes YAML validation, it is immediately git-committed.
+        This provides a commit SHA that can be referenced by conversation capture.
       acceptance_criteria:
         - CRs are created in draft status
         - Status transitions are draft → in-progress → complete
@@ -153,6 +155,9 @@ features:
         - Completed CRs are deleted after successful merge
         - Deletion includes the CR file and its work-items directory
         - Refactor CRs follow same lifecycle (deleted after merge, no spec changes)
+        - CR is git-committed immediately after passing validation
+        - 'Commit message follows pattern "cr: create {cr-id}"'
+        - Commit SHA is available for linking in conversation metadata
 
     - id: cr-command
       description: |
