@@ -733,3 +733,43 @@ type Conversation struct {
 	// The full transcript content
 	Transcript string `yaml:"transcript"`
 }
+
+// ADRStatus represents the lifecycle state of an ADR
+type ADRStatus string
+
+const (
+	ADRStatusDraft      ADRStatus = "draft"
+	ADRStatusProposed   ADRStatus = "proposed"
+	ADRStatusAccepted   ADRStatus = "accepted"
+	ADRStatusDeprecated ADRStatus = "deprecated"
+	ADRStatusSuperseded ADRStatus = "superseded"
+)
+
+// ADROption represents an alternative that was considered
+type ADROption struct {
+	Option string   `yaml:"option"`
+	Pros   []string `yaml:"pros,omitempty"`
+	Cons   []string `yaml:"cons,omitempty"`
+}
+
+// ADRConsequences captures the outcomes of a decision
+type ADRConsequences struct {
+	Positive []string `yaml:"positive,omitempty"`
+	Negative []string `yaml:"negative,omitempty"`
+	Neutral  []string `yaml:"neutral,omitempty"`
+}
+
+// ADR represents an Architecture Decision Record
+type ADR struct {
+	ID                  string          `yaml:"id"`
+	Title               string          `yaml:"title"`
+	Status              ADRStatus       `yaml:"status"`
+	Date                string          `yaml:"date"`
+	Context             string          `yaml:"context"`
+	Decision            string          `yaml:"decision"`
+	OptionsConsidered   []ADROption     `yaml:"options_considered,omitempty"`
+	Consequences        ADRConsequences `yaml:"consequences,omitempty"`
+	Advice              []string        `yaml:"advice,omitempty"`
+	Principles          []string        `yaml:"principles,omitempty"`
+	SourceConversations []string        `yaml:"source_conversations,omitempty"`
+}

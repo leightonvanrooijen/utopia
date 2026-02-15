@@ -428,3 +428,55 @@ func (s *YAMLStore) ListUnprocessedConversations() ([]*domain.Conversation, erro
 
 	return unprocessed, nil
 }
+
+// SaveADR writes an ADR to .utopia/adrs/{id}.yaml
+func (s *YAMLStore) SaveADR(adr *domain.ADR) error {
+	dir := filepath.Join(s.baseDir, "adrs")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create adrs directory: %w", err)
+	}
+
+	path := filepath.Join(dir, adr.ID+".yaml")
+	return s.writeYAML(path, adr)
+}
+
+// LoadADR reads an ADR from .utopia/adrs/{id}.yaml
+func (s *YAMLStore) LoadADR(id string) (*domain.ADR, error) {
+	path := filepath.Join(s.baseDir, "adrs", id+".yaml")
+
+	var adr domain.ADR
+	if err := s.readYAML(path, &adr); err != nil {
+		return nil, err
+	}
+
+	return &adr, nil
+}
+
+// ListADRs returns all ADRs in the adrs directory
+func (s *YAMLStore) ListADRs() ([]*domain.ADR, error) {
+	dir := filepath.Join(s.baseDir, "adrs")
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []*domain.ADR{}, nil
+		}
+		return nil, fmt.Errorf("failed to read adrs directory: %w", err)
+	}
+
+	var adrs []*domain.ADR
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
+			continue
+		}
+
+		id := strings.TrimSuffix(entry.Name(), ".yaml")
+		adr, err := s.LoadADR(id)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load ADR %s: %w", id, err)
+		}
+		adrs = append(adrs, adr)
+	}
+
+	return adrs, nil
+}
