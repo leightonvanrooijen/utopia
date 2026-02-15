@@ -97,7 +97,6 @@ func TestFormat_SpecLikeYAML(t *testing.T) {
 	// Test with a realistic Utopia spec structure
 	input := `id: yaml-formatting
 title: YAML Formatting System
-status: draft
 description: |
   A standardized YAML formatting package.
 

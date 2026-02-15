@@ -95,7 +95,6 @@ When the user is ready, generate the spec in this YAML format:
 ` + "```yaml" + `
 id: kebab-case-identifier
 title: Human Readable Title
-status: draft
 description: |
   Brief description of what this system does.
 
