@@ -1,6 +1,5 @@
 id: yaml-formatting
 title: YAML Formatting System
-status: draft
 description: |
   A standardized YAML formatting package that ensures consistent output across
   all YAML files in the Utopia project.

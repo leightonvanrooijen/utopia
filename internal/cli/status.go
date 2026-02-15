@@ -54,8 +54,8 @@ func runStatus(cmd *cobra.Command, args []string) error {
 			for _, f := range spec.Features {
 				criteriaCount += len(f.AcceptanceCriteria)
 			}
-			fmt.Printf("  [%s] %s\n", spec.Status, spec.Title)
-			fmt.Printf("         %d features, %d acceptance criteria\n", featureCount, criteriaCount)
+			fmt.Printf("  %s\n", spec.Title)
+			fmt.Printf("    %d features, %d acceptance criteria\n", featureCount, criteriaCount)
 		}
 	}
 	fmt.Println()

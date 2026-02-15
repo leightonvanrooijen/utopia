@@ -417,7 +417,6 @@ func buildSpecsSummary(specs []*domain.Spec) string {
 	for _, spec := range specs {
 		sb.WriteString(fmt.Sprintf("### %s\n", spec.ID))
 		sb.WriteString(fmt.Sprintf("**Title:** %s\n", spec.Title))
-		sb.WriteString(fmt.Sprintf("**Status:** %s\n", spec.Status))
 
 		// Truncate description if too long
 		desc := strings.TrimSpace(spec.Description)

@@ -806,7 +806,6 @@ func TestApplyRemoveChange_FeatureAndDomainKnowledge(t *testing.T) {
 
 func TestApplyChanges_SingleAddOperation(t *testing.T) {
 	spec := NewSpec("test-spec", "Test Spec")
-	spec.Status = StatusApproved
 
 	cr := &ChangeRequest{
 		ID:         "cr-1",
@@ -835,16 +834,10 @@ func TestApplyChanges_SingleAddOperation(t *testing.T) {
 	if spec.Features[0].ID != "new-feature" {
 		t.Errorf("expected feature ID 'new-feature', got %q", spec.Features[0].ID)
 	}
-
-	// Status should be preserved
-	if spec.Status != StatusApproved {
-		t.Errorf("expected status 'approved', got %q", spec.Status)
-	}
 }
 
 func TestApplyChanges_MultipleOperations(t *testing.T) {
 	spec := NewSpec("test-spec", "Test Spec")
-	spec.Status = StatusReview
 	spec.AddFeature(Feature{
 		ID:                 "existing-feature",
 		Description:        "Original description",
@@ -909,16 +902,10 @@ func TestApplyChanges_MultipleOperations(t *testing.T) {
 	if len(existingFeature.AcceptanceCriteria) != 2 {
 		t.Errorf("expected 2 criteria, got %d", len(existingFeature.AcceptanceCriteria))
 	}
-
-	// Status should be preserved
-	if spec.Status != StatusReview {
-		t.Errorf("expected status 'review', got %q", spec.Status)
-	}
 }
 
 func TestApplyChanges_AllOperationTypes(t *testing.T) {
 	spec := NewSpec("test-spec", "Test Spec")
-	spec.Status = StatusDraft
 	spec.AddFeature(Feature{
 		ID:          "feature-to-modify",
 		Description: "Original",
@@ -988,11 +975,6 @@ func TestApplyChanges_AllOperationTypes(t *testing.T) {
 			t.Errorf("expected description 'Modified', got %q", f.Description)
 		}
 	}
-
-	// Status preserved
-	if spec.Status != StatusDraft {
-		t.Errorf("expected status 'draft', got %q", spec.Status)
-	}
 }
 
 func TestApplyChanges_FailsOnInvalidOperation(t *testing.T) {
@@ -1056,7 +1038,6 @@ func TestApplyChanges_FailsOnSecondChange(t *testing.T) {
 
 func TestApplyChanges_EmptyChanges(t *testing.T) {
 	spec := NewSpec("test-spec", "Test Spec")
-	spec.Status = StatusApproved
 
 	cr := &ChangeRequest{
 		ID:         "cr-1",
@@ -1067,51 +1048,6 @@ func TestApplyChanges_EmptyChanges(t *testing.T) {
 	err := cr.ApplyChanges(spec)
 	if err != nil {
 		t.Fatalf("ApplyChanges with empty changes failed: %v", err)
-	}
-
-	// Status should still be preserved
-	if spec.Status != StatusApproved {
-		t.Errorf("expected status 'approved', got %q", spec.Status)
-	}
-}
-
-func TestApplyChanges_PreservesStatusThroughMultipleUpdates(t *testing.T) {
-	spec := NewSpec("test-spec", "Test Spec")
-	spec.Status = StatusApproved
-
-	cr := &ChangeRequest{
-		ID:         "cr-1",
-		ParentSpec: "test-spec",
-		Changes: []Change{
-			{
-				Operation: "add",
-				Feature: &Feature{
-					ID:          "feature-1",
-					Description: "First",
-				},
-			},
-			{
-				Operation: "add",
-				Feature: &Feature{
-					ID:          "feature-2",
-					Description: "Second",
-				},
-			},
-			{
-				Operation: "add",
-				DomainKnowledge: []string{"Knowledge 1", "Knowledge 2"},
-			},
-		},
-	}
-
-	err := cr.ApplyChanges(spec)
-	if err != nil {
-		t.Fatalf("ApplyChanges failed: %v", err)
-	}
-
-	// Status must be preserved despite multiple updates
-	if spec.Status != StatusApproved {
-		t.Errorf("expected status 'approved', got %q", spec.Status)
 	}
 }
 

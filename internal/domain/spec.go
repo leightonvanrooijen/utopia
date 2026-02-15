@@ -8,20 +8,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Status represents the lifecycle state of a spec
-type Status string
-
-const (
-	StatusDraft    Status = "draft"
-	StatusReview   Status = "review"
-	StatusApproved Status = "approved"
-)
-
 // Spec represents a living specification document
 type Spec struct {
 	ID          string    `yaml:"id"`
 	Title       string    `yaml:"title"`
-	Status      Status    `yaml:"status"`
 	Created     time.Time `yaml:"created"`
 	Updated     time.Time `yaml:"updated"`
 	Description string    `yaml:"description"`
@@ -90,7 +80,6 @@ func NewSpec(id, title string) *Spec {
 	return &Spec{
 		ID:       id,
 		Title:    title,
-		Status:   StatusDraft,
 		Created:  now,
 		Updated:  now,
 		Features: []Feature{},
@@ -516,10 +505,8 @@ func (cr *ChangeRequest) AllPhasesComplete() bool {
 // ApplyChanges applies all changes from the change request to the given spec.
 // Changes are applied in order. If any change fails, the error is returned
 // and the spec may be in a partially modified state.
-// Note: The spec's Status is preserved (not modified by this operation).
 // Note: delete-spec operations are skipped here - they are handled at the merge level.
 func (cr *ChangeRequest) ApplyChanges(spec *Spec) error {
-	originalStatus := spec.Status
 	for i, change := range cr.Changes {
 		var err error
 		switch change.Operation {
@@ -539,8 +526,6 @@ func (cr *ChangeRequest) ApplyChanges(spec *Spec) error {
 			return fmt.Errorf("failed to apply change %d: %w", i, err)
 		}
 	}
-	// Restore original status - merge should not change spec status
-	spec.Status = originalStatus
 	return nil
 }
 
