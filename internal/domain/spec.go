@@ -745,6 +745,14 @@ const (
 	ADRStatusSuperseded ADRStatus = "superseded"
 )
 
+// ADRStatusChange records a status transition with timestamp
+type ADRStatusChange struct {
+	From      ADRStatus `yaml:"from"`
+	To        ADRStatus `yaml:"to"`
+	Timestamp time.Time `yaml:"timestamp"`
+	Reason    string    `yaml:"reason,omitempty"`
+}
+
 // ADROption represents an alternative that was considered
 type ADROption struct {
 	Option string   `yaml:"option"`
@@ -772,4 +780,79 @@ type ADR struct {
 	Advice              []string        `yaml:"advice,omitempty"`
 	Principles          []string        `yaml:"principles,omitempty"`
 	SourceConversations []string        `yaml:"source_conversations,omitempty"`
+
+	// Status transition tracking
+	DeprecationReason string            `yaml:"deprecation_reason,omitempty"`
+	SupersededBy      string            `yaml:"superseded_by,omitempty"`
+	StatusHistory     []ADRStatusChange `yaml:"status_history,omitempty"`
+}
+
+// TransitionToProposed moves an ADR from draft to proposed status.
+// Returns an error if the current status is not draft.
+func (a *ADR) TransitionToProposed() error {
+	if a.Status != ADRStatusDraft {
+		return fmt.Errorf("cannot transition to proposed: ADR is in %q status (must be draft)", a.Status)
+	}
+
+	a.recordStatusChange(ADRStatusProposed, "")
+	a.Status = ADRStatusProposed
+	return nil
+}
+
+// TransitionToAccepted moves an ADR from proposed to accepted status.
+// Returns an error if the current status is not proposed.
+func (a *ADR) TransitionToAccepted() error {
+	if a.Status != ADRStatusProposed {
+		return fmt.Errorf("cannot transition to accepted: ADR is in %q status (must be proposed)", a.Status)
+	}
+
+	a.recordStatusChange(ADRStatusAccepted, "")
+	a.Status = ADRStatusAccepted
+	return nil
+}
+
+// MarkDeprecated marks an ADR as deprecated with a required reason.
+// Can only be applied to accepted ADRs.
+// Returns an error if the current status is not accepted or if reason is empty.
+func (a *ADR) MarkDeprecated(reason string) error {
+	if a.Status != ADRStatusAccepted {
+		return fmt.Errorf("cannot deprecate: ADR is in %q status (must be accepted)", a.Status)
+	}
+	if reason == "" {
+		return fmt.Errorf("deprecation reason is required")
+	}
+
+	a.recordStatusChange(ADRStatusDeprecated, reason)
+	a.Status = ADRStatusDeprecated
+	a.DeprecationReason = reason
+	return nil
+}
+
+// MarkSuperseded marks an ADR as superseded by another ADR.
+// Can only be applied to accepted ADRs.
+// Returns an error if the current status is not accepted or if replacementADRID is empty.
+func (a *ADR) MarkSuperseded(replacementADRID string) error {
+	if a.Status != ADRStatusAccepted {
+		return fmt.Errorf("cannot supersede: ADR is in %q status (must be accepted)", a.Status)
+	}
+	if replacementADRID == "" {
+		return fmt.Errorf("replacement ADR ID is required")
+	}
+
+	reason := fmt.Sprintf("Superseded by %s", replacementADRID)
+	a.recordStatusChange(ADRStatusSuperseded, reason)
+	a.Status = ADRStatusSuperseded
+	a.SupersededBy = replacementADRID
+	return nil
+}
+
+// recordStatusChange appends a status change to the history
+func (a *ADR) recordStatusChange(newStatus ADRStatus, reason string) {
+	change := ADRStatusChange{
+		From:      a.Status,
+		To:        newStatus,
+		Timestamp: time.Now(),
+		Reason:    reason,
+	}
+	a.StatusHistory = append(a.StatusHistory, change)
 }
