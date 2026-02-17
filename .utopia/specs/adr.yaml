@@ -1,13 +1,14 @@
 id: adr
 title: adr
 created: 2026-02-16T08:42:20.081533+11:00
-updated: 2026-02-16T08:42:20.081866+11:00
+updated: 2026-02-17T18:50:03.711171+11:00
 description: ""
 features:
     - id: conversation-persistence
       description: |
-        Automatically persist session transcripts at Utopia level.
-        Captures full context needed for later ADR discovery.
+        Enhanced transcript capture to read from Claude's native session storage
+        instead of capturing raw PTY output. This eliminates ANSI escape codes
+        and terminal redraw sequences from saved conversations.
       acceptance_criteria:
         - Utopia captures full transcript at session end
         - Capture happens at Utopia level (not Claude hooks) for reliability
@@ -17,6 +18,11 @@ features:
         - Metadata includes list of CRs created during session (with commit SHAs)
         - Metadata includes list of commits made during session
         - Conversations marked as unprocessed until reviewed by /adr
+        - Transcripts are read from Claude's session storage (~/.claude/projects/)
+        - ANSI escape codes are not present in saved transcripts
+        - User and assistant messages are clearly separated
+        - Tool calls are captured with their names
+        - Full TUI experience is preserved during interactive sessions
 
     - id: adr-discovery
       description: |
