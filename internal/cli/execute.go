@@ -2,9 +2,11 @@ package cli
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"sort"
@@ -150,7 +152,7 @@ func runExecute(cmd *cobra.Command, args []string) error {
 
 	// If no work items exist, chunk the CR first
 	if len(items) == 0 {
-		items, err = chunkCR(cr, crID, store, config, executeChunkRegistry)
+		items, err = chunkCR(cr, crID, store, config, executeChunkRegistry, absPath)
 		if err != nil {
 			return err
 		}
@@ -297,7 +299,7 @@ type SpecLoaderConfigurable interface {
 }
 
 // chunkCR invokes the chunking strategy to produce work items from a change request.
-func chunkCR(cr *domain.ChangeRequest, crID string, store *storage.YAMLStore, config *domain.Config, registry *chunkStrategy.Registry) ([]*domain.WorkItem, error) {
+func chunkCR(cr *domain.ChangeRequest, crID string, store *storage.YAMLStore, config *domain.Config, registry *chunkStrategy.Registry, projectDir string) ([]*domain.WorkItem, error) {
 	fmt.Printf("Chunking change request: %s\n", cr.Title)
 
 	// Update CR status to in-progress when chunking begins
@@ -343,6 +345,14 @@ func chunkCR(cr *domain.ChangeRequest, crID string, store *storage.YAMLStore, co
 
 	fmt.Printf("Created %d work item(s)\n\n", len(workItems))
 
+	// Commit work items to git
+	if err := gitCommitChunk(projectDir, crID); err != nil {
+		// Log but don't fail - work items are saved, commit is non-critical
+		fmt.Printf("⚠ Git commit warning: %s\n", err)
+	} else {
+		fmt.Printf("✓ Committed work items for %s\n", crID)
+	}
+
 	// Print summary
 	fmt.Println("Work items:")
 	for _, item := range workItems {
@@ -354,7 +364,7 @@ func chunkCR(cr *domain.ChangeRequest, crID string, store *storage.YAMLStore, co
 }
 
 // chunkPhase invokes the chunking strategy to produce work items for a single phase of an initiative.
-func chunkPhase(crID string, phaseIndex int, phase *domain.Phase, store *storage.YAMLStore, config *domain.Config, registry *chunkStrategy.Registry) ([]*domain.WorkItem, error) {
+func chunkPhase(crID string, phaseIndex int, phase *domain.Phase, store *storage.YAMLStore, config *domain.Config, registry *chunkStrategy.Registry, projectDir string) ([]*domain.WorkItem, error) {
 	fmt.Printf("Chunking phase %d (type: %s)\n", phaseIndex+1, phase.Type)
 
 	// Determine which chunking strategy to use
@@ -394,6 +404,14 @@ func chunkPhase(crID string, phaseIndex int, phase *domain.Phase, store *storage
 	}
 
 	fmt.Printf("Created %d work item(s)\n\n", len(workItems))
+
+	// Commit work items to git
+	if err := gitCommitChunk(projectDir, crID); err != nil {
+		// Log but don't fail - work items are saved, commit is non-critical
+		fmt.Printf("⚠ Git commit warning: %s\n", err)
+	} else {
+		fmt.Printf("✓ Committed work items for %s phase %d\n", crID, phaseIndex+1)
+	}
 
 	// Print summary
 	fmt.Println("Work items:")
@@ -478,7 +496,7 @@ func executeInitiative(cmd *cobra.Command, cr *domain.ChangeRequest, store *stor
 				return fmt.Errorf("failed to update CR status: %w", err)
 			}
 
-			items, err = chunkPhase(cr.ID, phaseIndex, &phase, store, config, chunkReg)
+			items, err = chunkPhase(cr.ID, phaseIndex, &phase, store, config, chunkReg, projectDir)
 			if err != nil {
 				return err
 			}
@@ -565,6 +583,81 @@ func executeInitiative(cmd *cobra.Command, cr *domain.ChangeRequest, store *stor
 	return nil
 }
 
+// gitCommitChunk creates a git commit for newly generated work items.
+// Only stages and commits the work items for this specific CR, not pre-existing items.
+func gitCommitChunk(projectDir, crID string) error {
+	// Stage only the work items for this CR
+	workItemsDir := filepath.Join(projectDir, ".utopia", "work-items", crID)
+	addCmd := exec.Command("git", "add", workItemsDir)
+	addCmd.Dir = projectDir
+	var addStderr bytes.Buffer
+	addCmd.Stderr = &addStderr
+	if err := addCmd.Run(); err != nil {
+		return fmt.Errorf("git add failed: %w (%s)", err, addStderr.String())
+	}
+
+	// Check if there are changes to commit
+	diffCmd := exec.Command("git", "diff", "--cached", "--quiet")
+	diffCmd.Dir = projectDir
+	if err := diffCmd.Run(); err == nil {
+		// No changes to commit (exit code 0 means no diff)
+		return nil
+	}
+
+	// Commit with chunk message format
+	msg := fmt.Sprintf("chunk: %s", crID)
+	commitCmd := exec.Command("git", "commit", "-m", msg)
+	commitCmd.Dir = projectDir
+	var commitStderr bytes.Buffer
+	commitCmd.Stderr = &commitStderr
+	if err := commitCmd.Run(); err != nil {
+		return fmt.Errorf("git commit failed: %w (%s)", err, commitStderr.String())
+	}
+
+	return nil
+}
+
+// gitCommitCleanup creates a git commit for the removal of CR and work items after merge.
+// Stages removal of .utopia/work-items/<cr-id>/ and .utopia/change-requests/<cr-id>.yaml
+func gitCommitCleanup(projectDir, crID, utopiaDir string) error {
+	// Stage removal of work items directory
+	workItemsDir := filepath.Join(utopiaDir, "work-items", crID)
+	addWorkItemsCmd := exec.Command("git", "add", workItemsDir)
+	addWorkItemsCmd.Dir = projectDir
+	// Ignore errors - directory may not exist or may already be staged
+
+	var addStderr bytes.Buffer
+	addWorkItemsCmd.Stderr = &addStderr
+	addWorkItemsCmd.Run() // Best effort
+
+	// Stage removal of CR file
+	crFile := filepath.Join(utopiaDir, "change-requests", crID+".yaml")
+	addCRCmd := exec.Command("git", "add", crFile)
+	addCRCmd.Dir = projectDir
+	addCRCmd.Stderr = &addStderr
+	addCRCmd.Run() // Best effort
+
+	// Check if there are changes to commit
+	diffCmd := exec.Command("git", "diff", "--cached", "--quiet")
+	diffCmd.Dir = projectDir
+	if err := diffCmd.Run(); err == nil {
+		// No changes to commit (exit code 0 means no diff)
+		return nil
+	}
+
+	// Commit with cleanup message format
+	msg := fmt.Sprintf("cleanup: complete %s", crID)
+	commitCmd := exec.Command("git", "commit", "-m", msg)
+	commitCmd.Dir = projectDir
+	var commitStderr bytes.Buffer
+	commitCmd.Stderr = &commitStderr
+	if err := commitCmd.Run(); err != nil {
+		return fmt.Errorf("git commit failed: %w (%s)", err, commitStderr.String())
+	}
+
+	return nil
+}
+
 // autoMergeCR performs the merge after all work items complete successfully.
 // It applies CR changes to specs, creates a git commit, then cleans up CR/work items.
 // On failure, work item completion state is preserved for manual retry.
@@ -599,6 +692,13 @@ func autoMergeCR(cr *domain.ChangeRequest, crID string, store *storage.YAMLStore
 		fmt.Printf("⚠ Cleanup warning: %s\n", err)
 	} else {
 		fmt.Printf("✓ Cleaned up CR and work items\n")
+
+		// Step 4: Create cleanup commit for removed CR and work items
+		if err := gitCommitCleanup(projectDir, crID, utopiaDir); err != nil {
+			fmt.Printf("⚠ Cleanup commit warning: %s\n", err)
+		} else {
+			fmt.Printf("✓ Created cleanup commit\n")
+		}
 	}
 
 	fmt.Printf("\nSuccessfully merged: %s\n", cr.Title)
@@ -732,7 +832,7 @@ func executeSingleCR(ctx context.Context, cr *domain.ChangeRequest, store *stora
 
 	// If no work items exist, chunk the CR first
 	if len(items) == 0 {
-		items, err = chunkCR(cr, crID, store, config, executeChunkRegistry)
+		items, err = chunkCR(cr, crID, store, config, executeChunkRegistry, projectDir)
 		if err != nil {
 			return err
 		}
@@ -849,7 +949,7 @@ func executeSingleInitiative(ctx context.Context, cr *domain.ChangeRequest, stor
 				return fmt.Errorf("failed to update CR status: %w", err)
 			}
 
-			items, err = chunkPhase(cr.ID, phaseIndex, &phase, store, config, executeChunkRegistry)
+			items, err = chunkPhase(cr.ID, phaseIndex, &phase, store, config, executeChunkRegistry, projectDir)
 			if err != nil {
 				return err
 			}
