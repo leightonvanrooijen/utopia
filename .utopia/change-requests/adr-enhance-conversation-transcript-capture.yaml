@@ -1,21 +1,21 @@
 id: adr-enhance-conversation-transcript-capture
 type: enhancement
 title: Use Claude's session storage for clean conversation transcripts
-status: draft
+status: in-progress
 changes:
-  - operation: modify
-    spec: adr
-    feature_id: conversation-persistence
-    description: |
-      Enhanced transcript capture to read from Claude's native session storage
-      instead of capturing raw PTY output. This eliminates ANSI escape codes
-      and terminal redraw sequences from saved conversations.
-    criteria:
-      add:
-        - Transcripts are read from Claude's session storage (~/.claude/projects/)
-        - ANSI escape codes are not present in saved transcripts
-        - User and assistant messages are clearly separated
-        - Tool calls are captured with their names
-        - Full TUI experience is preserved during interactive sessions
-      remove:
-        - Raw PTY output is captured and stored in transcript
+    - operation: modify
+      spec: adr
+      feature_id: conversation-persistence
+      description: |
+        Enhanced transcript capture to read from Claude's native session storage
+        instead of capturing raw PTY output. This eliminates ANSI escape codes
+        and terminal redraw sequences from saved conversations.
+      criteria:
+        add:
+            - Transcripts are read from Claude's session storage (~/.claude/projects/)
+            - ANSI escape codes are not present in saved transcripts
+            - User and assistant messages are clearly separated
+            - Tool calls are captured with their names
+            - Full TUI experience is preserved during interactive sessions
+        remove:
+            - Raw PTY output is captured and stored in transcript
