@@ -261,3 +261,141 @@ func TestCLI_VerboseOutputBuilder(t *testing.T) {
 		t.Errorf("builder result = %q, want %q", result, expected)
 	}
 }
+
+func TestParseSessionJSONL(t *testing.T) {
+	// Sample JSONL data mimicking Claude's session storage format
+	jsonl := `{"type":"summary","summary":"Test Session"}
+{"type":"user","message":{"role":"user","content":"Hello Claude"}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Hello! How can I help you today?"}]}}
+{"type":"user","message":{"role":"user","content":"Read a file please"}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Read","input":{"file_path":"/test/file.txt"}}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Here is the file content."}]}}
+`
+
+	transcript, err := parseSessionJSONL(strings.NewReader(jsonl))
+	if err != nil {
+		t.Fatalf("parseSessionJSONL failed: %v", err)
+	}
+
+	// Verify user messages are captured
+	if !strings.Contains(transcript, "## User") {
+		t.Error("transcript should contain '## User' headers")
+	}
+
+	if !strings.Contains(transcript, "Hello Claude") {
+		t.Error("transcript should contain user message 'Hello Claude'")
+	}
+
+	// Verify assistant messages are captured
+	if !strings.Contains(transcript, "## Assistant") {
+		t.Error("transcript should contain '## Assistant' headers")
+	}
+
+	if !strings.Contains(transcript, "Hello! How can I help you today?") {
+		t.Error("transcript should contain assistant response")
+	}
+
+	// Verify tool calls are captured
+	if !strings.Contains(transcript, "[Tool: Read]") {
+		t.Error("transcript should contain tool call '[Tool: Read]'")
+	}
+
+	// Verify no ANSI codes are present
+	if strings.Contains(transcript, "\x1b[") || strings.Contains(transcript, "\033[") {
+		t.Error("transcript should not contain ANSI escape codes")
+	}
+}
+
+func TestParseSessionJSONL_EmptyInput(t *testing.T) {
+	transcript, err := parseSessionJSONL(strings.NewReader(""))
+	if err != nil {
+		t.Fatalf("parseSessionJSONL failed on empty input: %v", err)
+	}
+
+	if transcript != "" {
+		t.Errorf("expected empty transcript, got %q", transcript)
+	}
+}
+
+func TestParseSessionJSONL_SkipsNonMessageTypes(t *testing.T) {
+	// Include queue-operation and summary types that should be skipped
+	jsonl := `{"type":"queue-operation","operation":"enqueue"}
+{"type":"summary","summary":"Test"}
+{"type":"user","message":{"role":"user","content":"Hello"}}
+`
+
+	transcript, err := parseSessionJSONL(strings.NewReader(jsonl))
+	if err != nil {
+		t.Fatalf("parseSessionJSONL failed: %v", err)
+	}
+
+	if !strings.Contains(transcript, "Hello") {
+		t.Error("transcript should contain user message")
+	}
+
+	if strings.Contains(transcript, "queue-operation") || strings.Contains(transcript, "enqueue") {
+		t.Error("transcript should not contain queue-operation data")
+	}
+}
+
+func TestExtractUserContent_StringContent(t *testing.T) {
+	raw := []byte(`"Hello world"`)
+	content := extractUserContent(raw)
+
+	if content != "Hello world" {
+		t.Errorf("expected 'Hello world', got %q", content)
+	}
+}
+
+func TestExtractUserContent_NestedJSON(t *testing.T) {
+	// This is the format when system prompt injection wraps the message
+	raw := []byte(`"{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"Actual message\"}}\n"`)
+	content := extractUserContent(raw)
+
+	if content != "Actual message" {
+		t.Errorf("expected 'Actual message', got %q", content)
+	}
+}
+
+func TestExtractAssistantContent_TextBlocks(t *testing.T) {
+	raw := []byte(`[{"type":"text","text":"Hello"},{"type":"text","text":"World"}]`)
+	blocks := extractAssistantContent(raw)
+
+	if len(blocks) != 2 {
+		t.Fatalf("expected 2 blocks, got %d", len(blocks))
+	}
+
+	if blocks[0] != "Hello" || blocks[1] != "World" {
+		t.Errorf("unexpected blocks: %v", blocks)
+	}
+}
+
+func TestExtractAssistantContent_ToolUse(t *testing.T) {
+	raw := []byte(`[{"type":"tool_use","name":"Bash","input":{"command":"ls"}}]`)
+	blocks := extractAssistantContent(raw)
+
+	if len(blocks) != 1 {
+		t.Fatalf("expected 1 block, got %d", len(blocks))
+	}
+
+	if blocks[0] != "[Tool: Bash]" {
+		t.Errorf("expected '[Tool: Bash]', got %q", blocks[0])
+	}
+}
+
+func TestExtractAssistantContent_MixedContent(t *testing.T) {
+	raw := []byte(`[{"type":"text","text":"Let me read that file"},{"type":"tool_use","name":"Read","input":{"file_path":"/test"}}]`)
+	blocks := extractAssistantContent(raw)
+
+	if len(blocks) != 2 {
+		t.Fatalf("expected 2 blocks, got %d", len(blocks))
+	}
+
+	if blocks[0] != "Let me read that file" {
+		t.Errorf("expected text content, got %q", blocks[0])
+	}
+
+	if blocks[1] != "[Tool: Read]" {
+		t.Errorf("expected tool use, got %q", blocks[1])
+	}
+}

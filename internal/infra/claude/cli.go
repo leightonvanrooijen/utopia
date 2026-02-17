@@ -3,14 +3,16 @@ package claude
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 
-	"golang.org/x/term"
+	"github.com/google/uuid"
 )
 
 // PermissionMode controls how Claude handles permission prompts
@@ -278,10 +280,14 @@ func (c *CLI) RalphLoop(ctx context.Context, prompt string, completionPromise st
 }
 
 // SessionWithCapture runs an interactive Claude session and captures the full transcript.
-// Uses a pseudo-terminal to preserve interactive behavior while capturing all I/O.
+// Reads from Claude's native session storage to get clean transcripts without ANSI codes.
 // The transcript is always returned, even if the session fails or is interrupted.
 func (c *CLI) SessionWithCapture(ctx context.Context, systemPrompt string) (transcript string, err error) {
+	// Generate a unique session ID so we can find the transcript file after
+	sessionID := uuid.New().String()
+
 	args := c.baseArgs()
+	args = append(args, "--session-id", sessionID)
 
 	if systemPrompt != "" {
 		args = append(args, "--system-prompt", systemPrompt)
@@ -289,116 +295,185 @@ func (c *CLI) SessionWithCapture(ctx context.Context, systemPrompt string) (tran
 
 	cmd := exec.CommandContext(ctx, c.binaryPath, args...)
 
-	// Create pipes for capturing I/O
-	stdinPipe, err := cmd.StdinPipe()
+	// Connect stdin/stdout/stderr directly for full TUI experience
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	// Run the interactive session
+	cmdErr := cmd.Run()
+
+	// After session ends, read transcript from Claude's session storage
+	transcript, readErr := c.readSessionTranscript(sessionID)
+	if readErr != nil {
+		// If we can't read the transcript, return empty string with the session error
+		return "", cmdErr
+	}
+
+	return transcript, cmdErr
+}
+
+// readSessionTranscript reads and formats a transcript from Claude's session storage.
+// Returns a clean transcript with user/assistant messages separated and tool calls captured.
+func (c *CLI) readSessionTranscript(sessionID string) (string, error) {
+	// Claude stores sessions in ~/.claude/projects/{project-path-encoded}/{session-id}.jsonl
+	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return "", fmt.Errorf("failed to create stdin pipe: %w", err)
+		return "", fmt.Errorf("failed to get home directory: %w", err)
 	}
 
-	stdoutPipe, err := cmd.StdoutPipe()
+	// Get current working directory to find the project folder
+	cwd, err := os.Getwd()
 	if err != nil {
-		return "", fmt.Errorf("failed to create stdout pipe: %w", err)
+		return "", fmt.Errorf("failed to get working directory: %w", err)
 	}
 
-	stderrPipe, err := cmd.StderrPipe()
+	// Encode path: replace path separators with dashes
+	encodedPath := strings.ReplaceAll(cwd, "/", "-")
+	if strings.HasPrefix(encodedPath, "-") {
+		// Keep the leading dash for absolute paths
+	}
+
+	sessionFile := filepath.Join(homeDir, ".claude", "projects", encodedPath, sessionID+".jsonl")
+
+	file, err := os.Open(sessionFile)
 	if err != nil {
-		return "", fmt.Errorf("failed to create stderr pipe: %w", err)
+		return "", fmt.Errorf("failed to open session file %s: %w", sessionFile, err)
 	}
+	defer file.Close()
 
-	// Start the command
-	if err := cmd.Start(); err != nil {
-		return "", fmt.Errorf("failed to start claude: %w", err)
-	}
+	return parseSessionJSONL(file)
+}
 
-	// Transcript builder with mutex for thread safety
-	var transcriptBuilder strings.Builder
-	var mu sync.Mutex
+// sessionMessage represents a message from Claude's session storage
+type sessionMessage struct {
+	Type    string `json:"type"`
+	Message struct {
+		Role    string          `json:"role"`
+		Content json.RawMessage `json:"content"` // Can be string or array
+	} `json:"message"`
+	Timestamp string `json:"timestamp"`
+}
 
-	writeToTranscript := func(data string) {
-		mu.Lock()
-		transcriptBuilder.WriteString(data)
-		mu.Unlock()
-	}
+// contentBlock represents a content block in an assistant message
+type contentBlock struct {
+	Type  string          `json:"type"`
+	Text  string          `json:"text,omitempty"`
+	Name  string          `json:"name,omitempty"`  // For tool_use
+	Input json.RawMessage `json:"input,omitempty"` // For tool_use
+}
 
-	// Set terminal to raw mode to pass through all input
-	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
-	if err != nil {
-		// If we can't set raw mode (not a terminal), fall back to line-based
-		oldState = nil
-	}
+// parseSessionJSONL parses a Claude session JSONL file and returns a formatted transcript
+func parseSessionJSONL(r io.Reader) (string, error) {
+	var transcript strings.Builder
+	scanner := bufio.NewScanner(r)
 
-	// Ensure we restore terminal state on exit
-	defer func() {
-		if oldState != nil {
-			term.Restore(int(os.Stdin.Fd()), oldState)
+	// Increase scanner buffer size for long lines
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, 1024*1024)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			continue
 		}
-		// Always capture transcript even on panic/error
-		transcript = transcriptBuilder.String()
-	}()
 
-	var wg sync.WaitGroup
-
-	// Forward stdin to claude and capture it
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		defer stdinPipe.Close()
-
-		buf := make([]byte, 1024)
-		for {
-			n, readErr := os.Stdin.Read(buf)
-			if n > 0 {
-				data := buf[:n]
-				writeToTranscript(string(data))
-				stdinPipe.Write(data)
-			}
-			if readErr != nil {
-				break
-			}
+		var msg sessionMessage
+		if err := json.Unmarshal([]byte(line), &msg); err != nil {
+			// Skip lines we can't parse (summary, queue-operation, etc.)
+			continue
 		}
-	}()
 
-	// Forward stdout from claude and capture it
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+		// Only process user and assistant messages
+		if msg.Type != "user" && msg.Type != "assistant" {
+			continue
+		}
 
-		buf := make([]byte, 4096)
-		for {
-			n, readErr := stdoutPipe.Read(buf)
-			if n > 0 {
-				data := buf[:n]
-				writeToTranscript(string(data))
-				os.Stdout.Write(data)
+		if msg.Type == "user" {
+			content := extractUserContent(msg.Message.Content)
+			if content != "" {
+				transcript.WriteString("\n## User\n\n")
+				transcript.WriteString(content)
+				transcript.WriteString("\n")
 			}
-			if readErr != nil {
-				break
+		} else if msg.Type == "assistant" {
+			blocks := extractAssistantContent(msg.Message.Content)
+			if len(blocks) > 0 {
+				transcript.WriteString("\n## Assistant\n\n")
+				for _, block := range blocks {
+					transcript.WriteString(block)
+					transcript.WriteString("\n")
+				}
 			}
 		}
-	}()
+	}
 
-	// Forward stderr from claude (don't capture - it's debug info)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	if err := scanner.Err(); err != nil {
+		return transcript.String(), fmt.Errorf("error scanning session file: %w", err)
+	}
 
-		buf := make([]byte, 4096)
-		for {
-			n, readErr := stderrPipe.Read(buf)
-			if n > 0 {
-				os.Stderr.Write(buf[:n])
-			}
-			if readErr != nil {
-				break
+	return transcript.String(), nil
+}
+
+// extractUserContent extracts text content from a user message
+func extractUserContent(raw json.RawMessage) string {
+	// Try as string first
+	var strContent string
+	if err := json.Unmarshal(raw, &strContent); err == nil {
+		// Check if it's a JSON-encoded message (from system prompt injection)
+		var innerMsg struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		}
+		if err := json.Unmarshal([]byte(strContent), &innerMsg); err == nil && innerMsg.Message.Content != "" {
+			return innerMsg.Message.Content
+		}
+		return strContent
+	}
+
+	// Try as array of content blocks
+	var blocks []contentBlock
+	if err := json.Unmarshal(raw, &blocks); err == nil {
+		var texts []string
+		for _, block := range blocks {
+			if block.Type == "text" && block.Text != "" {
+				texts = append(texts, block.Text)
 			}
 		}
-	}()
+		return strings.Join(texts, "\n")
+	}
 
-	// Wait for command to complete
-	cmdErr := cmd.Wait()
+	return ""
+}
 
-	// Wait for I/O goroutines to finish
-	wg.Wait()
+// extractAssistantContent extracts text and tool calls from an assistant message
+func extractAssistantContent(raw json.RawMessage) []string {
+	var results []string
 
-	return transcriptBuilder.String(), cmdErr
+	// Try as array of content blocks (normal case for assistant)
+	var blocks []contentBlock
+	if err := json.Unmarshal(raw, &blocks); err == nil {
+		for _, block := range blocks {
+			switch block.Type {
+			case "text":
+				if block.Text != "" {
+					results = append(results, block.Text)
+				}
+			case "tool_use":
+				// Format tool call for readability
+				toolCall := fmt.Sprintf("[Tool: %s]", block.Name)
+				results = append(results, toolCall)
+			}
+		}
+		return results
+	}
+
+	// Fallback: try as string
+	var strContent string
+	if err := json.Unmarshal(raw, &strContent); err == nil && strContent != "" {
+		results = append(results, strContent)
+	}
+
+	return results
 }
