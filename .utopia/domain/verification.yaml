@@ -1,0 +1,62 @@
+id: verification
+title: Verification System
+description: |
+  Validates work by running user-provided commands after each execution iteration.
+  Exit code determines pass/fail, with failure output fed back to the next iteration.
+  Ensures work meets acceptance criteria before marking complete.
+
+terms:
+  - term: VerificationConfig
+    definition: Configuration specifying the verification command and optional max_iterations limit
+    aliases:
+      - verification settings
+      - config
+
+  - term: VerificationCommand
+    definition: User-provided shell command executed to verify work (e.g., "go test ./...", "npm test")
+    aliases:
+      - test command
+      - verification script
+      - command
+
+  - term: VerificationResult
+    definition: Outcome of running the verification command - pass (exit code 0) or fail (non-zero exit code)
+    aliases:
+      - result
+      - test result
+      - verification outcome
+
+  - term: Output Truncation
+    definition: Verification output is truncated to preserve the tail (last ~2000 chars), as most recent failures are most relevant
+    aliases:
+      - truncation
+      - output limit
+
+  - term: max_iterations
+    definition: Safety limit on retry attempts before marking a work item as failed, preventing infinite loops
+    aliases:
+      - iteration limit
+      - retry limit
+      - max retries
+
+entities:
+  - name: VerificationConfig
+    relationships:
+      - type: contains
+        target: VerificationCommand
+      - type: defines
+        target: max_iterations
+
+  - name: VerificationResult
+    relationships:
+      - type: produced-by
+        target: VerificationCommand
+      - type: determines
+        target: WorkItemStatus
+      - type: feeds
+        target: LastFailureOutput
+
+  - name: VerificationCommand
+    relationships:
+      - type: validates
+        target: WorkItem

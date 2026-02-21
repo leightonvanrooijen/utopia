@@ -1,0 +1,81 @@
+id: adrs
+title: Architecture Decision Records
+description: |
+  Documents significant architectural decisions with context, options considered, and consequences.
+  ADRs are discovered from conversations and capture the reasoning behind technical choices.
+  They provide institutional memory for future developers.
+
+terms:
+  - term: ADR
+    definition: Architecture Decision Record - a document capturing ID, Title, Status, Date, Context, Decision, Options Considered, and Consequences
+    aliases:
+      - architecture decision record
+      - decision record
+      - architectural decision
+
+  - term: ADRStatus
+    definition: Lifecycle state of an ADR - draft (being written), proposed (awaiting review), accepted (in effect), deprecated (no longer recommended), superseded (replaced by newer ADR)
+    aliases:
+      - status
+      - decision status
+
+  - term: ADROption
+    definition: An alternative considered during the decision process, documented with pros and cons
+    aliases:
+      - option
+      - alternative
+      - considered option
+
+  - term: ADRConsequences
+    definition: Outcomes of the decision - categorized as positive, negative, and neutral impacts
+    aliases:
+      - consequences
+      - impacts
+      - outcomes
+
+  - term: StatusHistory
+    definition: Audit trail tracking ADR status changes with timestamps and reasons
+    aliases:
+      - history
+      - status changes
+      - timeline
+
+  - term: SourceConversation
+    definition: Reference to the conversation where the architectural decision was discussed and made
+    aliases:
+      - source
+      - origin conversation
+      - decision context
+
+  - term: Supersedes
+    definition: Reference indicating this ADR replaces an older, deprecated ADR
+    aliases:
+      - replaces
+      - superseded by
+
+entities:
+  - name: ADR
+    relationships:
+      - type: references
+        target: SourceConversation
+      - type: supersedes
+        target: ADR
+      - type: contains
+        target: ADROption
+      - type: contains
+        target: ADRConsequences
+
+  - name: ADROption
+    relationships:
+      - type: belongs-to
+        target: ADR
+
+  - name: ADRConsequences
+    relationships:
+      - type: describes
+        target: ADR
+
+  - name: StatusHistory
+    relationships:
+      - type: tracks
+        target: ADR

@@ -1,0 +1,93 @@
+id: change-requests
+title: Change Request System
+description: |
+  The unified system where all work flows through Change Requests (CRs).
+  CRs are standalone documents that target different specs, enabling cross-cutting changes.
+  They describe intended work, not current state (which is captured in specs).
+
+terms:
+  - term: Change Request
+    definition: Core document describing intended work with ID, Type, Title, Status, and Changes/Tasks/Phases
+    aliases:
+      - CR
+      - change request
+      - work request
+
+  - term: CRType
+    definition: Classification of change request - feature (new capability), enhancement (modify existing), refactor (behavior-preserving), removal (delete capability), initiative (multi-phase), bugfix (correct to match spec)
+    aliases:
+      - CR type
+      - change request type
+      - type
+
+  - term: ChangeRequestStatus
+    definition: Lifecycle state of a CR - draft (being defined), in-progress (being executed), complete (merged)
+    aliases:
+      - CR status
+      - status
+
+  - term: Change
+    definition: A single operation within a CR that modifies a spec - add (new feature/knowledge), modify (existing feature), remove (feature/knowledge), delete-spec (entire spec)
+    aliases:
+      - spec change
+      - feature change
+
+  - term: Task
+    definition: A unit of work for refactor/bugfix CRs that has no spec impact - contains description and acceptance criteria
+    aliases:
+      - refactor task
+      - bugfix task
+
+  - term: Phase
+    definition: An ordered stage within an initiative CR, containing tasks or changes with execution dependencies
+    aliases:
+      - initiative phase
+      - execution phase
+
+  - term: spec_ref
+    definition: Field identifying the target specification that a change applies to
+    aliases:
+      - spec
+      - spec reference
+      - target spec
+
+  - term: Initiative
+    definition: A complex CR type with ordered phases and dependencies, used for large cross-cutting work
+    aliases:
+      - initiative CR
+      - multi-phase CR
+
+entities:
+  - name: ChangeRequest
+    relationships:
+      - type: targets
+        target: Spec
+      - type: produces
+        target: WorkItem
+      - type: contains
+        target: Change
+      - type: contains
+        target: Task
+      - type: contains
+        target: Phase
+
+  - name: Change
+    relationships:
+      - type: targets
+        target: Spec
+      - type: modifies
+        target: Feature
+
+  - name: Task
+    relationships:
+      - type: references
+        target: Spec
+
+  - name: Phase
+    relationships:
+      - type: contains
+        target: Change
+      - type: contains
+        target: Task
+      - type: depends-on
+        target: Phase

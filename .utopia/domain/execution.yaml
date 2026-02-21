@@ -1,0 +1,93 @@
+id: execution
+title: Execution System (Ralph)
+description: |
+  Executes WorkItems through iterative Claude interactions using the Ralph Wiggum loop.
+  Each iteration gets fresh context, with verification feedback driving retries.
+  Named after the "Ralph Wiggum" pattern of persistent, iterative attempts.
+
+terms:
+  - term: WorkItem
+    definition: Discrete unit of executable work with ID, SpecRef, Title, Status, Prompt, Constraints, Order, Dependencies, and Complexity
+    aliases:
+      - work item
+      - task
+      - execution unit
+
+  - term: WorkItemStatus
+    definition: Execution state of a work item - pending (not started), in_progress (executing), completed (verified), failed (max iterations exceeded)
+    aliases:
+      - status
+      - execution status
+
+  - term: Complexity
+    definition: Estimated effort level for a work item - low, medium, high - affects iteration limits
+    aliases:
+      - work complexity
+      - effort level
+
+  - term: Iteration
+    definition: A single pass through Claude with fresh context, including the work item prompt and any failure feedback
+    aliases:
+      - execution iteration
+      - attempt
+      - try
+
+  - term: IterationCount
+    definition: Number of retry attempts made for a work item, tracked to enforce max_iterations limit
+    aliases:
+      - retry count
+      - attempt count
+
+  - term: LastFailureOutput
+    definition: Verification failure message from the previous iteration, injected into the next iteration's context (not accumulated)
+    aliases:
+      - failure output
+      - error feedback
+      - verification failure
+
+  - term: COMPLETE token
+    definition: Special marker (<COMPLETE>) that Claude outputs to signal intentional completion, distinguishing from step-limit exits
+    aliases:
+      - completion token
+      - done marker
+
+  - term: Ralph Wiggum Loop
+    definition: The iterative execution pattern where work items are retried with fresh context and failure feedback until verification passes or max iterations reached
+    aliases:
+      - ralph loop
+      - execution loop
+      - retry loop
+
+  - term: Fresh Context
+    definition: Each iteration starts with a clean context containing only the work item prompt, constraints, and last failure output - no accumulated history
+    aliases:
+      - clean context
+      - reset context
+
+entities:
+  - name: WorkItem
+    relationships:
+      - type: derived-from
+        target: ChangeRequest
+      - type: references
+        target: Spec
+      - type: verified-by
+        target: VerificationResult
+      - type: depends-on
+        target: WorkItem
+
+  - name: Iteration
+    relationships:
+      - type: executes
+        target: WorkItem
+      - type: produces
+        target: VerificationResult
+      - type: receives
+        target: LastFailureOutput
+
+  - name: ExecutionLoop
+    relationships:
+      - type: processes
+        target: WorkItem
+      - type: uses
+        target: VerificationCommand

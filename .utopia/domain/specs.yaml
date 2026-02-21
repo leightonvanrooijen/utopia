@@ -1,0 +1,70 @@
+id: specs
+title: Specification System
+description: |
+  Living documentation of what the system does now.
+  Specs are derived artifacts - they are updated when CRs are merged, not manually edited.
+  They capture features, acceptance criteria, and domain knowledge.
+
+terms:
+  - term: Spec
+    definition: A specification document with ID, Title, Description, Created/Updated timestamps, containing features and domain knowledge
+    aliases:
+      - specification
+      - spec document
+      - feature spec
+
+  - term: Feature
+    definition: A capability within a spec, identified by unique ID, with description and acceptance criteria
+    aliases:
+      - capability
+      - spec feature
+
+  - term: AcceptanceCriteria
+    definition: Conditions that must be met for a feature to be considered complete and correct
+    aliases:
+      - AC
+      - criteria
+      - acceptance conditions
+
+  - term: DomainKnowledge
+    definition: Array of strings capturing domain understanding that informs implementation but isn't a testable feature
+    aliases:
+      - domain info
+      - context
+      - background knowledge
+
+  - term: Spec Operations
+    definition: Changes that can be applied to specs - add (new feature/knowledge), modify (existing feature), remove (feature/knowledge), delete-spec (entire spec)
+    aliases:
+      - operations
+      - spec changes
+
+  - term: Living Documentation
+    definition: Specs are continuously updated as CRs merge, always reflecting current system state rather than historical intent
+    aliases:
+      - living docs
+      - current state docs
+
+entities:
+  - name: Spec
+    relationships:
+      - type: contains
+        target: Feature
+      - type: contains
+        target: DomainKnowledge
+      - type: updated-by
+        target: ChangeRequest
+
+  - name: Feature
+    relationships:
+      - type: belongs-to
+        target: Spec
+      - type: contains
+        target: AcceptanceCriteria
+      - type: modified-by
+        target: Change
+
+  - name: DomainKnowledge
+    relationships:
+      - type: belongs-to
+        target: Spec
