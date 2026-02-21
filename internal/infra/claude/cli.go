@@ -328,11 +328,10 @@ func (c *CLI) readSessionTranscript(sessionID string) (string, error) {
 		return "", fmt.Errorf("failed to get working directory: %w", err)
 	}
 
-	// Encode path: replace path separators with dashes
+	// Encode path: replace special characters with dashes to match Claude CLI's encoding
+	// Claude replaces "/" and "." with "-"
 	encodedPath := strings.ReplaceAll(cwd, "/", "-")
-	if strings.HasPrefix(encodedPath, "-") {
-		// Keep the leading dash for absolute paths
-	}
+	encodedPath = strings.ReplaceAll(encodedPath, ".", "-")
 
 	sessionFile := filepath.Join(homeDir, ".claude", "projects", encodedPath, sessionID+".jsonl")
 
