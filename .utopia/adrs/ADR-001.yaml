@@ -1,93 +1,89 @@
-# Architecture Decision Record - ADR-001
-# Format: Nygard + Extensions (Options, Advice, Principles)
-
 id: ADR-001
-title: "ADR-001: Use YAML for Architecture Decision Records"
+title: "Use Claude's Native Session Storage for Transcript Capture"
 status: accepted
-
+date: 2026-02-17
 context: |
-  We need to document architectural decisions in a way that:
-  - Integrates with the existing Utopia tooling (specs, CRs, work-items all use YAML)
-  - Can be programmatically parsed for /adr command features
-  - Supports the structured fields we need (options, advice, principles)
-  - Allows for future tooling to cross-reference decisions with code
+  Utopia needs to capture conversation transcripts from Claude CLI sessions
+  for later analysis (e.g., extracting ADRs, reviewing decisions).
 
-  Technical forces:
-  - Existing .utopia directory uses YAML for all structured documents
-  - YAML is human-readable and git-friendly
-  - Markdown is more common for ADRs but harder to parse programmatically
+  The original approach used PTY (pseudo-terminal) output capture, which
+  captured the raw terminal output during Claude sessions. This resulted in
+  transcripts polluted with:
+  - ANSI escape codes for colors and formatting
+  - Terminal redraw sequences from Claude's TUI
+  - Cursor positioning commands
+  - Other terminal control characters
 
-  Social forces:
-  - Team familiarity with YAML from existing Utopia workflows
-  - Desire for consistency across the .utopia directory
+  These artifacts made transcripts difficult to parse and analyze programmatically.
+  The team needed a cleaner source of conversation data.
 
 decision: |
-  We will use YAML format for ADRs, stored in .utopia/adrs/ as individual files.
+  We will read transcripts from Claude's native session storage at
+  ~/.claude/projects/{encoded-path}/ instead of capturing PTY output.
 
-  ADRs will follow the Nygard format with extensions:
-  - id: Sequential identifier (ADR-001, ADR-002, etc.)
-  - title: ID + decision statement
-  - status: draft | proposed | accepted | deprecated | superseded
-  - context: Forces at play (technical, political, social)
-  - decision: Active voice, "We will..."
-  - options_considered: Alternatives with pros/cons
-  - consequences: Positive, negative, and neutral outcomes
-  - advice: Who was consulted and when
-  - principles: Architectural principles that apply or conflict
+  Implementation approach:
+  - Generate a unique session ID before starting Claude
+  - Pass the session ID to Claude CLI via --session-id flag
+  - After the session ends, read the JSONL transcript file from Claude's storage
+  - Parse user/assistant messages with clear separation
+  - Capture tool calls by name (e.g., "[Tool: Read]")
 
 options_considered:
-  - option: Markdown files with YAML frontmatter
+  - option: "PTY output capture"
     pros:
-      - More traditional ADR format
-      - Rich text support for decision body
+      - No dependency on Claude's internal storage format
+      - Works regardless of Claude CLI version or storage changes
+      - Captures exactly what the user saw
     cons:
-      - Harder to parse programmatically
-      - Inconsistent with other .utopia documents
-  - option: Pure YAML
+      - Output contains ANSI escape codes and terminal artifacts
+      - Requires complex parsing to extract clean text
+      - Terminal redraw sequences create duplicate/corrupted content
+      - Brittle to changes in Claude's TUI rendering
+
+  - option: "Claude's native session storage (chosen)"
     pros:
-      - Consistent with specs, CRs, work-items
-      - Easy to parse for tooling
-      - Structured fields are explicit
+      - Clean, structured JSONL format
+      - No ANSI codes or terminal artifacts
+      - Clear separation of user/assistant messages
+      - Tool calls are explicitly labeled
+      - Format is designed for programmatic access
     cons:
-      - Multiline text requires YAML block scalars
-      - Less familiar to teams used to markdown ADRs
-  - option: JSON
+      - Depends on Claude CLI's --session-id flag existing
+      - Depends on Claude's storage path encoding scheme
+      - Coupling to Claude's internal implementation details
+      - Storage format could change between Claude versions
+
+  - option: "Pipe capture (non-TTY mode)"
     pros:
-      - Easy to parse
-      - Universal format
+      - Simpler than PTY capture
+      - No terminal escape codes in non-TTY mode
     cons:
-      - Poor human readability
-      - Not git-diff friendly
-      - Inconsistent with existing .utopia format
+      - Loses the full TUI experience during interactive sessions
+      - User cannot see Claude's rich output while working
+      - Poor developer experience
 
 consequences:
   positive:
-    - Tooling can easily parse ADRs for cross-referencing
-    - Consistent format across all .utopia documents
-    - /adr command can manipulate ADRs programmatically
+    - Transcripts are clean and immediately parseable
+    - Eliminated entire category of ANSI parsing complexity
+    - Reliable extraction of conversation structure
+    - Full TUI experience preserved (direct stdin/stdout connection)
   negative:
-    - Learning curve for teams familiar with markdown ADRs
-    - Multiline text is slightly less readable than markdown
+    - Coupled to Claude CLI's session storage implementation
+    - Must understand and match Claude's path encoding scheme
+    - Bug discovered: path encoding mismatch caused empty transcripts (ADR-fix-transcript-path-encoding)
   neutral:
-    - ADR files will have .yaml extension instead of .md
+    - Requires generating and tracking session IDs
+    - Reading happens after session ends (not real-time)
 
 advice:
-  - consulted: Leighton
-    when: 2026-02-16
-    input: Reviewed Nygard format and Utopia integration requirements
+  - Understanding of Claude CLI's --session-id flag behavior
+  - Analysis of Claude's JSONL storage format at ~/.claude/projects/
 
 principles:
-  - name: Consistency
-    alignment: supports
-    notes: Aligns with existing YAML-first approach in .utopia directory
-  - name: Toolability
-    alignment: supports
-    notes: Structured format enables programmatic ADR discovery and analysis
-  - name: Human Readability
-    alignment: partial
-    notes: YAML is readable but markdown would be more natural for long-form text
+  - Prefer structured data over parsing unstructured output
+  - Accept coupling when it significantly reduces complexity
+  - Preserve user experience (TUI) while improving machine readability
 
-# Metadata for lifecycle tracking
-created: 2026-02-16
-updated: 2026-02-16
-superseded_by: null
+source_conversations:
+  - cr-session-20260217-190956
