@@ -1,0 +1,29 @@
+id: adr-fix-transcript-path-encoding
+type: bugfix
+title: Fix transcript capture path encoding to match Claude's encoding scheme
+status: in-progress
+tasks:
+    - id: fix-path-encoding
+      description: |
+        Fix readSessionTranscript to match Claude CLI's actual path encoding.
+
+        Current behavior: Only replaces "/" with "-" when encoding the project path
+        to find Claude's session storage at ~/.claude/projects/{encoded-path}/
+
+        Expected behavior: Should match Claude's encoding which replaces multiple
+        special characters with dashes, including "/" and "."
+
+        Example:
+          Actual path: /Users/leighton.vanrooijen/IdeaProjects/utopia
+          Claude encodes as: -Users-leighton-vanrooijen-IdeaProjects-utopia
+          Utopia currently produces: -Users-leighton.vanrooijen-IdeaProjects-utopia
+
+        The mismatch causes readSessionTranscript to look for session files in a
+        non-existent directory, resulting in empty transcripts being saved.
+      acceptance_criteria:
+        - Transcripts are read from Claude's session storage (~/.claude/projects/)
+        - Path encoding matches Claude CLI's actual encoding scheme
+        - Conversations stored in .utopia/conversations/ contain non-empty transcripts
+        - User and assistant messages are clearly separated in saved transcripts
+      spec: adr
+      feature_id: conversation-persistence
