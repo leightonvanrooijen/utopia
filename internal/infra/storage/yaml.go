@@ -532,3 +532,95 @@ func (s *YAMLStore) ListDomainDocs() ([]*domain.DomainDoc, error) {
 
 	return docs, nil
 }
+
+// SaveConceptDoc writes a concept doc to .utopia/concepts/{id}.md
+// Concepts use Markdown with YAML frontmatter for readability and sharing.
+func (s *YAMLStore) SaveConceptDoc(doc *domain.ConceptDoc) error {
+	dir := filepath.Join(s.baseDir, "concepts")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create concepts directory: %w", err)
+	}
+
+	// Build YAML frontmatter
+	frontmatter, err := yaml.Marshal(doc)
+	if err != nil {
+		return fmt.Errorf("failed to marshal concept frontmatter: %w", err)
+	}
+
+	// Combine frontmatter and content
+	content := fmt.Sprintf("---\n%s---\n\n%s", string(frontmatter), doc.Content)
+
+	path := filepath.Join(dir, doc.ID+".md")
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		return fmt.Errorf("failed to write concept file %s: %w", path, err)
+	}
+
+	return nil
+}
+
+// LoadConceptDoc reads a concept doc from .utopia/concepts/{id}.md
+func (s *YAMLStore) LoadConceptDoc(id string) (*domain.ConceptDoc, error) {
+	path := filepath.Join(s.baseDir, "concepts", id+".md")
+
+	bytes, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read concept file %s: %w", path, err)
+	}
+
+	content := string(bytes)
+
+	// Parse frontmatter (between --- markers)
+	if !strings.HasPrefix(content, "---\n") {
+		return nil, fmt.Errorf("concept file %s missing YAML frontmatter", path)
+	}
+
+	// Find the closing ---
+	endMarker := strings.Index(content[4:], "\n---")
+	if endMarker == -1 {
+		return nil, fmt.Errorf("concept file %s has unclosed YAML frontmatter", path)
+	}
+
+	frontmatterStr := content[4 : 4+endMarker]
+	bodyStart := 4 + endMarker + 4 // Skip past "\n---"
+
+	var doc domain.ConceptDoc
+	if err := yaml.Unmarshal([]byte(frontmatterStr), &doc); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal concept frontmatter from %s: %w", path, err)
+	}
+
+	// Extract body content (skip leading newlines)
+	if bodyStart < len(content) {
+		doc.Content = strings.TrimPrefix(content[bodyStart:], "\n")
+	}
+
+	return &doc, nil
+}
+
+// ListConceptDocs returns all concept docs in the concepts directory
+func (s *YAMLStore) ListConceptDocs() ([]*domain.ConceptDoc, error) {
+	dir := filepath.Join(s.baseDir, "concepts")
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []*domain.ConceptDoc{}, nil
+		}
+		return nil, fmt.Errorf("failed to read concepts directory: %w", err)
+	}
+
+	var docs []*domain.ConceptDoc
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
+			continue
+		}
+
+		id := strings.TrimSuffix(entry.Name(), ".md")
+		doc, err := s.LoadConceptDoc(id)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load concept doc %s: %w", id, err)
+		}
+		docs = append(docs, doc)
+	}
+
+	return docs, nil
+}

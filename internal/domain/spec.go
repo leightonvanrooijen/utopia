@@ -871,3 +871,25 @@ func (a *ADR) recordStatusChange(newStatus ADRStatus, reason string) {
 	}
 	a.StatusHistory = append(a.StatusHistory, change)
 }
+
+// ConceptStatus represents the lifecycle state of a concept document
+type ConceptStatus string
+
+const (
+	ConceptStatusDraft     ConceptStatus = "draft"
+	ConceptStatusPublished ConceptStatus = "published"
+)
+
+// ConceptDoc represents an educational trade-off explanation document.
+// Unlike other docs, concepts are stored as Markdown with YAML frontmatter
+// for readability and external sharing.
+type ConceptDoc struct {
+	ID                  string        `yaml:"id"`
+	Title               string        `yaml:"title"`
+	Status              ConceptStatus `yaml:"status"`
+	RelatedSpecs        []string      `yaml:"related_specs,omitempty"`
+	RelatedADRs         []string      `yaml:"related_adrs,omitempty"`
+	SourceConversations []string      `yaml:"source_conversations,omitempty"`
+	// Content is the markdown body (not stored in frontmatter)
+	Content string `yaml:"-"`
+}
