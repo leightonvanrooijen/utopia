@@ -113,7 +113,7 @@ func TestBuildPromptWithConstraints(t *testing.T) {
 		"No network calls",
 	}
 
-	prompt := BuildPromptWithConstraints(feature, customConstraints, nil, nil)
+	prompt := BuildPromptWithConstraints(feature, customConstraints, nil, nil, "")
 
 	// Should contain custom constraints
 	if !strings.Contains(prompt, "Use only standard library") {
@@ -134,7 +134,7 @@ func TestBuildPromptWithConstraints_AndFailures(t *testing.T) {
 	constraints := []string{"Constraint A"}
 	failures := []string{"Test failed: got nil"}
 
-	prompt := BuildPromptWithConstraints(feature, constraints, failures, nil)
+	prompt := BuildPromptWithConstraints(feature, constraints, failures, nil, "")
 
 	// Should have both constraints and failures
 	if !strings.Contains(prompt, "Constraint A") {
@@ -419,5 +419,49 @@ func TestBuildPrompt_SpecialCharactersInCriteria(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "<html>") {
 		t.Error("angle brackets should be preserved")
+	}
+}
+
+func TestBuildPromptWithConstraints_WithDomainContext(t *testing.T) {
+	feature := domain.Feature{
+		ID:                 "domain-test",
+		Description:        "Test with domain context",
+		AcceptanceCriteria: []string{"Uses correct terminology"},
+	}
+
+	domainContext := "## Domain Language Guide\n\n- Use **Spec** (not \"specification\")"
+
+	prompt := BuildPromptWithConstraints(feature, DefaultConstraints, nil, nil, domainContext)
+
+	// Should contain domain context at the start
+	if !strings.Contains(prompt, "## Domain Language Guide") {
+		t.Error("prompt should contain domain context")
+	}
+
+	// Should contain the term guidance
+	if !strings.Contains(prompt, "Use **Spec**") {
+		t.Error("prompt should contain term guidance from domain context")
+	}
+
+	// Domain context should appear before TASK
+	taskIndex := strings.Index(prompt, "## TASK")
+	domainIndex := strings.Index(prompt, "## Domain Language Guide")
+	if domainIndex > taskIndex {
+		t.Error("domain context should appear before TASK section")
+	}
+}
+
+func TestBuildPromptWithConstraints_EmptyDomainContext(t *testing.T) {
+	feature := domain.Feature{
+		ID:                 "no-domain",
+		Description:        "Test without domain context",
+		AcceptanceCriteria: []string{"Works"},
+	}
+
+	prompt := BuildPromptWithConstraints(feature, DefaultConstraints, nil, nil, "")
+
+	// Should start with TASK section when no domain context
+	if !strings.HasPrefix(strings.TrimSpace(prompt), "## TASK") {
+		t.Error("prompt should start with TASK when no domain context")
 	}
 }
