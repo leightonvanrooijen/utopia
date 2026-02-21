@@ -1,0 +1,44 @@
+id: domain
+title: domain
+created: 2026-02-21T16:10:20.049527+10:00
+updated: 2026-02-21T16:10:20.049532+10:00
+description: ""
+features:
+    - id: domain-discovery
+      description: |
+        /domain command that scans persisted conversations for domain
+        terminology and entity discussions, guiding domain doc creation or updates.
+      acceptance_criteria:
+        - /domain command scans .utopia/conversations/ for unprocessed conversations
+        - Analyzes conversations for domain signals (term definitions, entity discussions, relationship clarifications)
+        - Signal detection is strict - only surfaces clear domain knowledge, not general discussion
+        - Before suggesting a new domain doc, checks existing docs in .utopia/domain/
+        - If related bounded context exists, suggests updating it instead of creating new
+        - Guides user through domain doc creation/update conversationally
+        - Marks conversations as processed after review
+
+    - id: domain-template
+      description: |
+        YAML-based domain document structure organized by bounded context,
+        optimized for Claude context injection.
+      acceptance_criteria:
+        - Domain docs stored in .utopia/domain/ as YAML files
+        - One file per bounded context (e.g., execution.yaml, change-requests.yaml)
+        - File includes id, title, description fields
+        - Terms section contains array of term/definition pairs
+        - Each term has term field (the canonical name) and definition field
+        - Terms can optionally include aliases array (other names Claude might see)
+        - Entities section contains array of entity definitions
+        - Each entity has name and relationships array
+        - Relationships specify type (contains, produces, targets, etc.) and target entity
+
+    - id: domain-context-injection
+      description: |
+        Domain docs are loaded and injected into Claude's context for
+        consistent terminology usage.
+      acceptance_criteria:
+        - All domain docs from .utopia/domain/ are loaded at session start
+        - Domain terms are formatted for Claude context injection
+        - Claude receives ubiquitous language guidance (use X not Y)
+        - Claude receives entity relationship context
+        - Domain context appears in system prompt alongside spec summaries
