@@ -1,62 +1,47 @@
 id: concepts-add-concept-docs
 type: feature
 title: Add Concept documentation system for educational trade-off explanations
-status: draft
+status: in-progress
 changes:
-  - operation: add
-    spec: concepts
-    spec_metadata:
-      title: Concept Documentation System
-      description: |
-        Educational documents that explain trade-offs and design choices in an
-        accessible way. Concepts are shareable with non-technical stakeholders
-        (product, leadership) to help them understand why the system works the
-        way it does.
-
-        Key characteristics:
-        - Markdown format for universal readability
-        - Focus on building intuition, not just recording decisions
-        - Strict discovery to avoid overwhelming with suggestions
-        - Update existing concepts rather than creating duplicates
-    feature:
-      id: concept-discovery
-      description: |
-        /concept command that scans persisted conversations for educational
-        trade-off discussions and guides concept creation or updates.
-      acceptance_criteria:
-        - /concept command scans .utopia/conversations/ for unprocessed conversations
-        - Analyzes conversations for trade-off signals (comparisons, "why we chose", explaining reasoning)
-        - Signal detection is strict - only surfaces clear educational moments, not every discussion
-        - Before suggesting a new concept, checks existing concepts in .utopia/concepts/
-        - If related concept exists, suggests updating it instead of creating new
-        - Guides user through concept creation/update conversationally
-        - Marks conversations as processed after review
-
-  - operation: add
-    spec: concepts
-    feature:
-      id: concept-template
-      description: |
-        Markdown-based concept document structure optimized for educational
-        content and external sharing.
-      acceptance_criteria:
-        - Concepts stored in .utopia/concepts/ as markdown files
-        - Filename format is kebab-case ID (e.g., agri-council-vs-wilson.md)
-        - YAML frontmatter includes id, title, status fields
-        - Frontmatter optionally includes related_specs and related_adrs arrays
-        - Body is freeform markdown optimized for prose and readability
-        - Template suggests sections but does not enforce rigid structure
-        - Suggested sections include context, approaches/trade-offs, our choice, when to reconsider
-
-  - operation: add
-    spec: concepts
-    feature:
-      id: concept-lifecycle
-      description: |
-        Simple two-state lifecycle for concept documents.
-      acceptance_criteria:
-        - Concepts have status field in frontmatter
-        - Supported statuses are draft and published
-        - New concepts start in draft status
-        - Status transitions from draft to published when ready to share
-        - No superseded/deprecated status (concepts are updated in place or deleted)
+    - operation: add
+      spec: concepts
+      feature:
+        id: concept-discovery
+        description: |
+            /concept command that scans persisted conversations for educational
+            trade-off discussions and guides concept creation or updates.
+        acceptance_criteria:
+            - /concept command scans .utopia/conversations/ for unprocessed conversations
+            - Analyzes conversations for trade-off signals (comparisons, "why we chose", explaining reasoning)
+            - Signal detection is strict - only surfaces clear educational moments, not every discussion
+            - Before suggesting a new concept, checks existing concepts in .utopia/concepts/
+            - If related concept exists, suggests updating it instead of creating new
+            - Guides user through concept creation/update conversationally
+            - Marks conversations as processed after review
+    - operation: add
+      spec: concepts
+      feature:
+        id: concept-template
+        description: |
+            Markdown-based concept document structure optimized for educational
+            content and external sharing.
+        acceptance_criteria:
+            - Concepts stored in .utopia/concepts/ as markdown files
+            - Filename format is kebab-case ID (e.g., agri-council-vs-wilson.md)
+            - YAML frontmatter includes id, title, status fields
+            - Frontmatter optionally includes related_specs and related_adrs arrays
+            - Body is freeform markdown optimized for prose and readability
+            - Template suggests sections but does not enforce rigid structure
+            - Suggested sections include context, approaches/trade-offs, our choice, when to reconsider
+    - operation: add
+      spec: concepts
+      feature:
+        id: concept-lifecycle
+        description: |
+            Simple two-state lifecycle for concept documents.
+        acceptance_criteria:
+            - Concepts have status field in frontmatter
+            - Supported statuses are draft and published
+            - New concepts start in draft status
+            - Status transitions from draft to published when ready to share
+            - No superseded/deprecated status (concepts are updated in place or deleted)
