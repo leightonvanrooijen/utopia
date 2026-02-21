@@ -480,3 +480,55 @@ func (s *YAMLStore) ListADRs() ([]*domain.ADR, error) {
 
 	return adrs, nil
 }
+
+// SaveDomainDoc writes a domain doc to .utopia/domain/{id}.yaml
+func (s *YAMLStore) SaveDomainDoc(doc *domain.DomainDoc) error {
+	dir := filepath.Join(s.baseDir, "domain")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create domain directory: %w", err)
+	}
+
+	path := filepath.Join(dir, doc.ID+".yaml")
+	return s.writeYAML(path, doc)
+}
+
+// LoadDomainDoc reads a domain doc from .utopia/domain/{id}.yaml
+func (s *YAMLStore) LoadDomainDoc(id string) (*domain.DomainDoc, error) {
+	path := filepath.Join(s.baseDir, "domain", id+".yaml")
+
+	var doc domain.DomainDoc
+	if err := s.readYAML(path, &doc); err != nil {
+		return nil, err
+	}
+
+	return &doc, nil
+}
+
+// ListDomainDocs returns all domain docs in the domain directory
+func (s *YAMLStore) ListDomainDocs() ([]*domain.DomainDoc, error) {
+	dir := filepath.Join(s.baseDir, "domain")
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []*domain.DomainDoc{}, nil
+		}
+		return nil, fmt.Errorf("failed to read domain directory: %w", err)
+	}
+
+	var docs []*domain.DomainDoc
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
+			continue
+		}
+
+		id := strings.TrimSuffix(entry.Name(), ".yaml")
+		doc, err := s.LoadDomainDoc(id)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load domain doc %s: %w", id, err)
+		}
+		docs = append(docs, doc)
+	}
+
+	return docs, nil
+}

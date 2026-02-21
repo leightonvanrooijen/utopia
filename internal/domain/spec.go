@@ -738,6 +738,36 @@ type ADRStatusChange struct {
 	Reason    string    `yaml:"reason,omitempty"`
 }
 
+// DomainTerm represents a term within a bounded context
+type DomainTerm struct {
+	Term       string   `yaml:"term"`
+	Definition string   `yaml:"definition"`
+	Aliases    []string `yaml:"aliases,omitempty"`
+}
+
+// DomainEntity represents an entity within a bounded context
+type DomainEntity struct {
+	Name          string               `yaml:"name"`
+	Description   string               `yaml:"description,omitempty"`
+	Relationships []EntityRelationship `yaml:"relationships,omitempty"`
+}
+
+// EntityRelationship represents a relationship between entities
+type EntityRelationship struct {
+	Type   string `yaml:"type"`   // e.g., "contains", "produces", "references"
+	Target string `yaml:"target"` // The related entity name
+}
+
+// DomainDoc represents domain terminology documentation for a bounded context
+type DomainDoc struct {
+	ID                  string         `yaml:"id"`
+	Title               string         `yaml:"title"`
+	Description         string         `yaml:"description"`
+	Terms               []DomainTerm   `yaml:"terms,omitempty"`
+	Entities            []DomainEntity `yaml:"entities,omitempty"`
+	SourceConversations []string       `yaml:"source_conversations,omitempty"`
+}
+
 // ADROption represents an alternative that was considered
 type ADROption struct {
 	Option string   `yaml:"option"`
