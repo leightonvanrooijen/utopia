@@ -893,3 +893,73 @@ type ConceptDoc struct {
 	// Content is the markdown body (not stored in frontmatter)
 	Content string `yaml:"-"`
 }
+
+// SignalType represents the type of documentation signal detected
+type SignalType string
+
+const (
+	SignalTypeADR     SignalType = "adr"
+	SignalTypeConcept SignalType = "concept"
+	SignalTypeDomain  SignalType = "domain"
+)
+
+// SignalConfidence represents the confidence level of a detected signal
+type SignalConfidence string
+
+const (
+	SignalConfidenceHigh   SignalConfidence = "high"
+	SignalConfidenceMedium SignalConfidence = "medium"
+	SignalConfidenceLow    SignalConfidence = "low"
+)
+
+// SignalLocation tracks where a signal was found in a conversation
+type SignalLocation struct {
+	ConversationID string `yaml:"conversation_id"`
+	// MessageRange indicates the approximate location within the transcript.
+	// Format: "start-end" where start/end are approximate line numbers or message indices.
+	// Examples: "15-25", "early", "mid", "late" for less precise locations.
+	MessageRange string `yaml:"message_range,omitempty"`
+}
+
+// HarvestSignal represents a documentation opportunity detected in a conversation
+type HarvestSignal struct {
+	// ID is a unique identifier for referencing this signal (e.g., "adr-1", "concept-2")
+	ID string `yaml:"id"`
+	// Type indicates what kind of documentation this signal suggests
+	Type SignalType `yaml:"type"`
+	// Title is a brief description of the signal
+	Title string `yaml:"title"`
+	// Description provides more detail about what was detected
+	Description string `yaml:"description,omitempty"`
+	// Confidence indicates how certain we are this is a valid signal
+	Confidence SignalConfidence `yaml:"confidence"`
+	// Location tracks where in the conversation this was found
+	Location SignalLocation `yaml:"location"`
+	// RelatedSignals lists IDs of signals that are related to this one
+	// (e.g., an ADR decision may have a related Concept explaining trade-offs)
+	RelatedSignals []string `yaml:"related_signals,omitempty"`
+	// PotentialDuplicate indicates this may overlap with existing documentation
+	PotentialDuplicate string `yaml:"potential_duplicate,omitempty"`
+}
+
+// HarvestResult aggregates all signals detected across conversations
+type HarvestResult struct {
+	// Signals contains all detected signals, grouped by type
+	ADRSignals     []HarvestSignal `yaml:"adr_signals,omitempty"`
+	ConceptSignals []HarvestSignal `yaml:"concept_signals,omitempty"`
+	DomainSignals  []HarvestSignal `yaml:"domain_signals,omitempty"`
+}
+
+// TotalSignals returns the total count of all signals
+func (h *HarvestResult) TotalSignals() int {
+	return len(h.ADRSignals) + len(h.ConceptSignals) + len(h.DomainSignals)
+}
+
+// AllSignals returns all signals as a flat slice
+func (h *HarvestResult) AllSignals() []HarvestSignal {
+	all := make([]HarvestSignal, 0, h.TotalSignals())
+	all = append(all, h.ADRSignals...)
+	all = append(all, h.ConceptSignals...)
+	all = append(all, h.DomainSignals...)
+	return all
+}

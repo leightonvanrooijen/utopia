@@ -94,39 +94,63 @@ Analyze ALL unprocessed conversations for signals across all types. Be STRICT - 
 - "X relates to Y by..." / Relationship definitions
 - Technical terms being explained or clarified
 
-For EACH signal found, note:
-- Signal type (ADR/Concept/Domain)
-- Brief description
-- Confidence level (high/medium)
-- Source conversation ID
-- Related signals (e.g., an ADR decision may have a related Concept explaining the trade-offs)
+For EACH signal found, capture:
+- **ID**: Unique identifier (adr-1, concept-1, domain-1, etc.)
+- **Type**: adr, concept, or domain
+- **Title**: Brief description (1 line)
+- **Confidence**: high, medium, or low
+  - HIGH: Explicit signal language ("we decided", "the trade-off is", "X is defined as")
+  - MEDIUM: Implied signal (discussion of alternatives, clarification of terms)
+  - LOW: Weak signal (might be relevant, needs confirmation)
+- **Location**: Source conversation ID + message range (e.g., "lines 15-30", "early", "mid", "late")
+- **Related Signals**: IDs of related signals (e.g., adr-1 may link to concept-1)
+- **Potential Duplicate**: If similar to existing doc, note which one
 
 ### PHASE 2: PRESENT FINDINGS
-Present a SUMMARY of all signals found, grouped by type:
+Present a STRUCTURED SUMMARY of all signals found, grouped by type.
 
-Example format:
+**Required format:**
 ` + "```" + `
 ## Harvest Results
 
-**2 ADR signals, 1 Concept signal, 3 Domain signals**
+**Summary: X ADR signals, Y Concept signals, Z Domain signals**
 
 ### ADR Signals
-1. [HIGH] Decision to use YAML for conversation storage (cr-session-20260217)
-   - Related: Concept about YAML vs JSON trade-offs
-2. [MEDIUM] Choice of Cobra for CLI framework (cr-session-20260216)
+| ID | Confidence | Title | Source | Message Range | Related |
+|----|------------|-------|--------|---------------|---------|
+| adr-1 | HIGH | Decision to use YAML for storage | cr-session-20260217 | lines 45-62 | concept-1 |
+| adr-2 | MEDIUM | Choice of Cobra for CLI | cr-session-20260216 | mid | - |
 
 ### Concept Signals
-1. [HIGH] Trade-off discussion: YAML vs JSON for config files (cr-session-20260217)
-   - Related: ADR about YAML choice
+| ID | Confidence | Title | Source | Message Range | Related |
+|----|------------|-------|--------|---------------|---------|
+| concept-1 | HIGH | YAML vs JSON trade-offs | cr-session-20260217 | lines 50-75 | adr-1 |
 
 ### Domain Signals
-1. [HIGH] Definition of "Conversation" entity (cr-session-20260217)
-2. [HIGH] Definition of "unprocessed" status (cr-session-20260217)
-3. [MEDIUM] "Bounded context" term explanation (cr-session-20260216)
+| ID | Confidence | Title | Source | Message Range | Related |
+|----|------------|-------|--------|---------------|---------|
+| domain-1 | HIGH | "Conversation" entity definition | cr-session-20260217 | early | - |
+| domain-2 | HIGH | "unprocessed" status meaning | cr-session-20260217 | lines 20-25 | domain-1 |
+| domain-3 | MEDIUM | "Bounded context" term | cr-session-20260216 | late | - |
+
+### Cross-References
+- adr-1 ↔ concept-1: The ADR records the YAML decision; the Concept explains the trade-off reasoning
+- domain-1 ↔ domain-2: The Conversation entity has an "unprocessed" status
+
+### Potential Duplicates
+- adr-2: Similar to existing ADR-003 (CLI framework choice)
 ` + "```" + `
 
-If signals might duplicate existing docs, note: "[POTENTIAL DUPLICATE: Similar to existing ADR-001]"
-If signals are related to each other, note the relationship.
+**Message Range Guidelines:**
+- Use line numbers when transcript has clear structure: "lines 15-30"
+- Use approximate positions otherwise: "early" (first third), "mid" (middle third), "late" (final third)
+- Be as specific as possible - this helps users find the source discussion
+
+**Cross-Reference Guidelines:**
+- Link signals that discuss the same topic from different angles
+- An ADR decision often has a related Concept explaining WHY
+- Domain signals may cluster around a single entity/bounded context
+- Note the relationship type in the Cross-References section
 
 If no signals found: "No documentation signals found. Conversations can be marked as processed."
 
