@@ -1,0 +1,51 @@
+id: harvest-add-unified-command
+type: feature
+title: Add unified /harvest command for documentation extraction
+status: in-progress
+changes:
+    - operation: add
+      spec: harvest
+      feature:
+        id: harvest-command
+        description: |
+            /harvest command that performs single-pass analysis of unprocessed
+            conversations, detecting signals for all documentation types and
+            guiding creation with context flowing between doc types.
+        acceptance_criteria:
+            - /harvest command scans .utopia/conversations/ for unprocessed conversations
+            - Single pass detects ADR signals, Concept signals, and Domain signals
+            - Results grouped by type with confidence indicators
+            - Shows count of signals found per type (e.g., "2 ADR signals, 1 Concept signal")
+            - Cross-references existing docs to avoid suggesting duplicates
+            - User can select which docs to create (individual, multiple, or all)
+            - Context flows between creations (ADR created first is known when creating Concept)
+            - Created docs can reference each other (e.g., Concept links to related ADR)
+            - Conversation marked processed only after user completes or exits harvest
+            - Skipped signals can be revisited in future harvests
+    - operation: add
+      spec: harvest
+      feature:
+        id: signal-detection
+        description: |
+            Unified signal detection that identifies documentation opportunities
+            across all types in a single conversation scan.
+        acceptance_criteria:
+            - ADR signals detected (decision language, "we chose", "decided to", alternatives discussed)
+            - Concept signals detected (trade-off explanations, "why we chose", teaching moments)
+            - Domain signals detected (term definitions, entity relationships, "X means Y")
+            - Each signal includes source location (conversation ID, approximate message range)
+            - Signals tagged with confidence level (high/medium/low)
+            - Related signals linked (e.g., decision + its explanation + new terms it introduces)
+    - operation: add
+      spec: harvest
+      feature:
+        id: duplicate-detection
+        description: |
+            Check existing documentation before suggesting new docs to avoid
+            duplication and suggest updates instead.
+        acceptance_criteria:
+            - Scans existing ADRs in .utopia/adrs/ before suggesting new ADR
+            - Scans existing Concepts in .utopia/concepts/ before suggesting new Concept
+            - Scans existing Domain docs in .utopia/domain/ before suggesting new terms
+            - If related doc exists, suggests "update existing" instead of "create new"
+            - Shows which existing doc would be updated
