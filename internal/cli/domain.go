@@ -72,7 +72,7 @@ These conversations haven't been reviewed for domain knowledge yet:
 %s
 
 ## Existing Domain Docs
-These domain docs already exist (check for related bounded contexts before creating new ones):
+**CRITICAL: ALWAYS check existing domain docs before suggesting new ones. If a signal relates to an existing bounded context, suggest UPDATING that doc instead of creating a new one.**
 
 %s
 
@@ -91,8 +91,9 @@ If no clear signals are found, state: "No clear domain signals found in this con
 
 ### PHASE 2: CHECK EXISTING
 Before suggesting a new domain doc:
-- Review existing domain docs for related bounded contexts
-- If a related context exists, suggest UPDATING it instead of creating new
+- **Scan existing domain docs above** for related bounded contexts
+- If a related context exists, suggest **UPDATING it** instead of creating new
+- Show: "This relates to existing domain doc '{id}' ({title}). Suggest: UPDATE existing at .utopia/domain/{id}.yaml vs CREATE new?"
 - Ask ONE question at a time about whether to proceed
 
 ### PHASE 3: CREATE OR UPDATE
@@ -158,8 +159,8 @@ After reviewing a conversation (whether or not it produced domain docs), update 
 ## Critical Guidelines
 - Ask ONE question at a time - keep the conversation focused
 - Be STRICT about signal detection - only surface CLEAR domain knowledge
-- ALWAYS check existing domain docs before creating new ones
-- Prefer UPDATING existing bounded contexts over creating new ones
+- **ALWAYS scan existing domain docs BEFORE suggesting new ones - prefer UPDATE over CREATE**
+- When suggesting an update, show: "UPDATE existing {id}" with the file path .utopia/domain/{id}.yaml
 - It's okay if a conversation has no domain signals - not every conversation contains domain knowledge
 - ALWAYS mark conversations as processed after review, even if no domain docs were created/updated
 - Include the source conversation ID in the domain doc for traceability

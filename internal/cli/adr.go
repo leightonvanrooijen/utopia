@@ -52,7 +52,7 @@ These conversations haven't been reviewed for ADRs yet:
 %s
 
 ## Existing ADRs
-These ADRs already exist (avoid duplicates):
+**CRITICAL: ALWAYS check existing ADRs before suggesting new ones. If a decision relates to an existing ADR, suggest UPDATING that ADR instead of creating a new one.**
 
 %s
 
@@ -73,7 +73,12 @@ For each unprocessed conversation:
 
 Present your findings: "I found [N] potential architectural decisions in the conversation from [DATE]. Here's what I identified..."
 
-### PHASE 2: PRIORITIZE
+### PHASE 2: CHECK EXISTING & PRIORITIZE
+Before suggesting a new ADR:
+- **Scan existing ADRs above** for related decisions
+- If a related ADR exists, suggest **UPDATING it** instead of creating new
+- Show: "This relates to existing ADR-XXX ({title}). Suggest: UPDATE existing vs CREATE new?"
+
 Help the user decide which decisions warrant formal ADRs:
 - Not every decision needs an ADR
 - Focus on decisions that future developers would need to understand
@@ -140,6 +145,8 @@ After reviewing a conversation (whether or not it produced ADRs), update its sta
 
 ## Critical Guidelines
 - Ask ONE question at a time - keep the conversation focused
+- **ALWAYS scan existing ADRs BEFORE suggesting new ones - prefer UPDATE over CREATE**
+- When suggesting an update, show: "UPDATE existing ADR-XXX" with the file path
 - The next ADR ID is: %s
 - Only create ADRs for genuinely significant architectural decisions
 - It's okay if a conversation has no ADRs - not every conversation contains architectural decisions

@@ -62,7 +62,9 @@ This unified approach is more efficient than running separate /adr, /concept, /d
 
 ## Existing Documentation
 
-### ADRs (avoid duplicates)
+**CRITICAL: ALWAYS check existing docs before suggesting new ones. If a signal relates to an existing doc, suggest UPDATING that doc instead of creating a new one.**
+
+### ADRs (check for related decisions)
 %s
 
 ### Concepts (check for related topics)
@@ -104,7 +106,7 @@ For EACH signal found, capture:
   - LOW: Weak signal (might be relevant, needs confirmation)
 - **Location**: Source conversation ID + message range (e.g., "lines 15-30", "early", "mid", "late")
 - **Related Signals**: IDs of related signals (e.g., adr-1 may link to concept-1)
-- **Potential Duplicate**: If similar to existing doc, note which one
+- **Potential Duplicate / Update**: If similar to existing doc, note which one AND whether this should UPDATE that doc instead of creating new
 
 ### PHASE 2: PRESENT FINDINGS
 Present a STRUCTURED SUMMARY of all signals found, grouped by type.
@@ -137,8 +139,10 @@ Present a STRUCTURED SUMMARY of all signals found, grouped by type.
 - adr-1 ↔ concept-1: The ADR records the YAML decision; the Concept explains the trade-off reasoning
 - domain-1 ↔ domain-2: The Conversation entity has an "unprocessed" status
 
-### Potential Duplicates
-- adr-2: Similar to existing ADR-003 (CLI framework choice)
+### Potential Duplicates / Updates to Existing Docs
+- adr-2: **UPDATE existing ADR-003** (CLI framework choice) - new context extends existing decision
+- concept-1: **UPDATE existing yaml-vs-markdown-concepts** - additional trade-off discussion
+- domain-2: **UPDATE existing adrs.yaml** - add new term "unprocessed" to existing bounded context
 ` + "```" + `
 
 **Message Range Guidelines:**
@@ -152,14 +156,25 @@ Present a STRUCTURED SUMMARY of all signals found, grouped by type.
 - Domain signals may cluster around a single entity/bounded context
 - Note the relationship type in the Cross-References section
 
+**Update vs Create Guidelines:**
+- ALWAYS scan existing docs section above BEFORE suggesting a new document
+- If a signal adds context to an existing ADR → suggest "UPDATE existing ADR-XXX"
+- If a signal extends an existing concept → suggest "UPDATE existing concept-id"
+- If a signal adds terms/entities to an existing bounded context → suggest "UPDATE existing domain-id"
+- Only suggest "CREATE new" when no related existing doc covers the topic
+- In "Potential Duplicates / Updates" section, explicitly show: "UPDATE existing {doc-id}" with the file path
+
 If no signals found: "No documentation signals found. Conversations can be marked as processed."
 
 ### PHASE 3: USER SELECTION
-Ask the user which documents they want to create:
-- "all" - Create all identified documents
-- "ADR 1, Concept 1" - Create specific numbered items
+Ask the user which documents they want to create or update:
+- "all" - Create/update all identified documents
+- "ADR 1, Concept 1" - Create/update specific numbered items
 - "skip" - Mark conversations as processed without creating docs
 - Individual selection one at a time
+
+**For updates**: Clearly state "This will UPDATE {existing-doc-id} at {file-path}"
+**For creates**: Clearly state "This will CREATE new {doc-type} at {file-path}"
 
 Ask ONE question at a time. Wait for user input before proceeding.
 
@@ -287,7 +302,8 @@ After harvest completion (whether or not docs were created):
 ## Critical Guidelines
 - Ask ONE question at a time
 - Be STRICT about signal detection - quality over quantity
-- ALWAYS check existing docs to avoid duplicates
+- **ALWAYS scan existing docs BEFORE suggesting new ones - prefer UPDATE over CREATE**
+- When suggesting an update, show: "UPDATE existing {id}" with the file path
 - The next ADR ID is: %s
 - Cross-reference related signals explicitly
 - Created docs SHOULD reference each other when relevant

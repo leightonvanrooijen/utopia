@@ -73,7 +73,7 @@ These conversations haven't been reviewed for concept documentation yet:
 %s
 
 ## Existing Concepts
-These concepts already exist (check for related topics before creating new ones):
+**CRITICAL: ALWAYS check existing concepts before suggesting new ones. If a signal relates to an existing concept, suggest UPDATING that concept instead of creating a new one.**
 
 %s
 
@@ -92,8 +92,9 @@ If no clear signals are found, state: "No clear trade-off discussions found in t
 
 ### PHASE 2: CHECK EXISTING
 Before suggesting a new concept:
-- Review existing concepts for related topics
-- If a related concept exists, suggest UPDATING it instead of creating new
+- **Scan existing concepts above** for related topics
+- If a related concept exists, suggest **UPDATING it** instead of creating new
+- Show: "This relates to existing concept '{id}' ({title}). Suggest: UPDATE existing at .utopia/concepts/{id}.md vs CREATE new?"
 - Ask ONE question at a time about whether to proceed
 
 ### PHASE 3: CREATE OR UPDATE
@@ -161,8 +162,8 @@ After reviewing a conversation (whether or not it produced concepts), update its
 ## Critical Guidelines
 - Ask ONE question at a time - keep the conversation focused
 - Be STRICT about signal detection - only surface CLEAR trade-off discussions
-- ALWAYS check existing concepts before creating new ones
-- Prefer UPDATING existing concepts over creating new ones
+- **ALWAYS scan existing concepts BEFORE suggesting new ones - prefer UPDATE over CREATE**
+- When suggesting an update, show: "UPDATE existing {id}" with the file path .utopia/concepts/{id}.md
 - It's okay if a conversation has no trade-off signals - not every conversation contains educational content
 - ALWAYS mark conversations as processed after review, even if no concepts were created/updated
 - Include the source conversation ID in the concept for traceability
