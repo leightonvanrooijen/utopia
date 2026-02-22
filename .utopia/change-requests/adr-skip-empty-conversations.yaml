@@ -1,0 +1,11 @@
+id: adr-skip-empty-conversations
+type: enhancement
+title: Skip persisting empty conversation files
+status: draft
+changes:
+  - operation: modify
+    spec: adr
+    feature_id: conversation-persistence
+    criteria:
+      add:
+        - Conversations with no meaningful content are not persisted (empty transcript AND no CRs created AND no commits)
