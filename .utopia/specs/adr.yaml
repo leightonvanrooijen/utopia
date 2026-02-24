@@ -1,7 +1,7 @@
 id: adr
 title: adr
 created: 2026-02-16T08:42:20.081533+11:00
-updated: 2026-02-17T18:50:03.711171+11:00
+updated: 2026-02-24T22:37:28.323427+11:00
 description: ""
 features:
     - id: conversation-persistence
@@ -23,6 +23,7 @@ features:
         - User and assistant messages are clearly separated
         - Tool calls are captured with their names
         - Full TUI experience is preserved during interactive sessions
+        - Conversations with no meaningful content are not persisted (empty transcript AND no CRs created AND no commits)
 
     - id: adr-discovery
       description: |
