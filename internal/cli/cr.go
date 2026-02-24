@@ -370,9 +370,11 @@ func runCR(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Save the conversation transcript with metadata
+	// Save the conversation transcript with metadata (skips empty conversations)
 	convID := saveConversation(store, sessionStart, branch, transcript, crsCreated, commits)
-	fmt.Printf("✓ Conversation saved: %s\n", convID)
+	if convID != "" {
+		fmt.Printf("✓ Conversation saved: %s\n", convID)
+	}
 
 	// Return session error if there was one (transcript still saved above)
 	if sessionErr != nil {
@@ -589,8 +591,13 @@ func getGitBranch(projectDir string) string {
 }
 
 // saveConversation persists a conversation transcript with metadata
-// Returns the conversation ID
+// Returns the conversation ID, or empty string if conversation has no meaningful content
 func saveConversation(store *storage.YAMLStore, sessionStart time.Time, branch, transcript string, crsCreated []domain.CRCommit, commits []string) string {
+	// Skip persisting empty conversations (no transcript, no CRs, no commits)
+	if strings.TrimSpace(transcript) == "" && len(crsCreated) == 0 && len(commits) == 0 {
+		return ""
+	}
+
 	// Generate ID from timestamp: cr-session-YYYYMMDD-HHMMSS
 	convID := fmt.Sprintf("cr-session-%s", sessionStart.Format("20060102-150405"))
 
