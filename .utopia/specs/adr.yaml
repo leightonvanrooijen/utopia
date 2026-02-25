@@ -4,27 +4,6 @@ created: 2026-02-16T08:42:20.081533+11:00
 updated: 2026-02-24T22:37:28.323427+11:00
 description: ""
 features:
-    - id: conversation-persistence
-      description: |
-        Enhanced transcript capture to read from Claude's native session storage
-        instead of capturing raw PTY output. This eliminates ANSI escape codes
-        and terminal redraw sequences from saved conversations.
-      acceptance_criteria:
-        - Utopia captures full transcript at session end
-        - Capture happens at Utopia level (not Claude hooks) for reliability
-        - Cannot be bypassed via Ctrl+C
-        - Conversations stored in .utopia/conversations/
-        - Metadata includes session timestamp and branch name
-        - Metadata includes list of CRs created during session (with commit SHAs)
-        - Metadata includes list of commits made during session
-        - Conversations marked as unprocessed until reviewed by /adr
-        - Transcripts are read from Claude's session storage (~/.claude/projects/)
-        - ANSI escape codes are not present in saved transcripts
-        - User and assistant messages are clearly separated
-        - Tool calls are captured with their names
-        - Full TUI experience is preserved during interactive sessions
-        - Conversations with no meaningful content are not persisted (empty transcript AND no CRs created AND no commits)
-
     - id: adr-discovery
       description: |
         /adr command that scans persisted conversations for architectural
