@@ -1,0 +1,174 @@
+id: knowledge-artifacts-consolidation
+type: feature
+title: Consolidate ADR, concepts, and domain specs into unified knowledge-artifacts spec
+status: draft
+changes:
+  - operation: add
+    spec: knowledge-artifacts
+    spec_metadata:
+      title: Knowledge Artifacts
+      description: |
+        Unified spec for all documentation types extracted from conversations
+        by the harvest system. Each artifact type follows the same pattern:
+        discovery, template, and lifecycle management.
+
+        Artifact types:
+        - ADRs: Architecture Decision Records capturing significant decisions
+        - Concepts: Educational content about trade-offs and patterns
+        - Domain: Ubiquitous language and entity relationships
+
+        All artifacts are outputs of the harvest process, which analyzes
+        conversations to identify documentation opportunities.
+    feature:
+      id: adr-template
+      description: |
+        ADR document structure based on Nygard format with extensions.
+      acceptance_criteria:
+        - ADRs stored in .utopia/adrs/ as YAML files
+        - ADR ID format is sequential (ADR-001, ADR-002, etc.)
+        - Template includes Title field (ID + decision statement)
+        - Template includes Status field (draft, proposed, accepted, deprecated, superseded)
+        - Template includes Context field (forces at play - technical, political, social)
+        - Template includes Decision field (active voice, "We will...")
+        - Template includes Options Considered field (alternatives with pros/cons)
+        - Template includes Consequences field (positive, negative, and neutral outcomes)
+        - Template includes Advice field (who was consulted, when)
+        - Template includes Principles field (architectural principles that apply or conflict)
+
+  - operation: add
+    spec: knowledge-artifacts
+    feature:
+      id: adr-lifecycle
+      description: |
+        Manage ADR status transitions over time.
+      acceptance_criteria:
+        - ADRs can transition from draft to proposed
+        - ADRs can transition from proposed to accepted
+        - ADRs can be marked deprecated with reason
+        - ADRs can be marked superseded with reference to replacement ADR
+        - Status changes are tracked with timestamp
+
+  - operation: add
+    spec: knowledge-artifacts
+    feature:
+      id: adr-discovery
+      description: |
+        /adr command that scans persisted conversations for architectural
+        decisions and guides the user through ADR creation conversationally.
+      acceptance_criteria:
+        - /adr command scans .utopia/conversations/ for unprocessed conversations
+        - Analyzes each conversation for architectural decision signals
+        - Cross-references with commits and spec changes for context
+        - Guides user through ADR creation conversationally (like /cr)
+        - Marks conversations as processed after review
+
+  - operation: add
+    spec: knowledge-artifacts
+    feature:
+      id: concept-template
+      description: |
+        Markdown-based concept document structure optimized for educational
+        content and external sharing.
+      acceptance_criteria:
+        - Concepts stored in .utopia/concepts/ as markdown files
+        - Filename format is kebab-case ID (e.g., agri-council-vs-wilson.md)
+        - YAML frontmatter includes id, title, status fields
+        - Frontmatter optionally includes related_specs and related_adrs arrays
+        - Body is freeform markdown optimized for prose and readability
+        - Template suggests sections but does not enforce rigid structure
+        - Suggested sections include context, approaches/trade-offs, our choice, when to reconsider
+
+  - operation: add
+    spec: knowledge-artifacts
+    feature:
+      id: concept-lifecycle
+      description: |
+        Simple two-state lifecycle for concept documents.
+      acceptance_criteria:
+        - Concepts have status field in frontmatter
+        - Supported statuses are draft and published
+        - New concepts start in draft status
+        - Status transitions from draft to published when ready to share
+        - No superseded/deprecated status (concepts are updated in place or deleted)
+
+  - operation: add
+    spec: knowledge-artifacts
+    feature:
+      id: concept-discovery
+      description: |
+        /concept command that scans persisted conversations for educational
+        trade-off discussions and guides concept creation or updates.
+      acceptance_criteria:
+        - /concept command scans .utopia/conversations/ for unprocessed conversations
+        - Analyzes conversations for trade-off signals (comparisons, "why we chose", explaining reasoning)
+        - Signal detection is strict - only surfaces clear educational moments, not every discussion
+        - Before suggesting a new concept, checks existing concepts in .utopia/concepts/
+        - If related concept exists, suggests updating it instead of creating new
+        - Guides user through concept creation/update conversationally
+        - Marks conversations as processed after review
+
+  - operation: add
+    spec: knowledge-artifacts
+    feature:
+      id: domain-template
+      description: |
+        YAML-based domain document structure organized by bounded context,
+        optimized for Claude context injection.
+      acceptance_criteria:
+        - Domain docs stored in .utopia/domain/ as YAML files
+        - One file per bounded context (e.g., execution.yaml, change-requests.yaml)
+        - File includes id, title, description fields
+        - Terms section contains array of term/definition pairs
+        - Each term has term field (the canonical name) and definition field
+        - Terms can optionally include aliases array (other names Claude might see)
+        - Entities section contains array of entity definitions
+        - Each entity has name and relationships array
+        - Relationships specify type (contains, produces, targets, etc.) and target entity
+
+  - operation: add
+    spec: knowledge-artifacts
+    feature:
+      id: domain-context-injection
+      description: |
+        Domain docs are loaded and injected into Claude's context for
+        consistent terminology usage.
+      acceptance_criteria:
+        - All domain docs from .utopia/domain/ are loaded at session start
+        - Domain terms are formatted for Claude context injection
+        - Claude receives ubiquitous language guidance (use X not Y)
+        - Claude receives entity relationship context
+        - Domain context appears in system prompt alongside spec summaries
+
+  - operation: add
+    spec: knowledge-artifacts
+    feature:
+      id: domain-discovery
+      description: |
+        /domain command that scans persisted conversations for domain
+        terminology and entity discussions, guiding domain doc creation or updates.
+      acceptance_criteria:
+        - /domain command scans .utopia/conversations/ for unprocessed conversations
+        - Analyzes conversations for domain signals (term definitions, entity discussions, relationship clarifications)
+        - Signal detection is strict - only surfaces clear domain knowledge, not general discussion
+        - Before suggesting a new domain doc, checks existing docs in .utopia/domain/
+        - If related bounded context exists, suggests updating it instead of creating new
+        - Guides user through domain doc creation/update conversationally
+        - Marks conversations as processed after review
+
+  - operation: delete-spec
+    spec: adr
+    reason: |
+      Consolidated into knowledge-artifacts spec. conversation-persistence
+      moved to conversations spec. ADR-specific features moved here.
+
+  - operation: delete-spec
+    spec: concepts
+    reason: |
+      Consolidated into knowledge-artifacts spec. All concept features
+      moved here alongside ADR and domain features.
+
+  - operation: delete-spec
+    spec: domain
+    reason: |
+      Consolidated into knowledge-artifacts spec. All domain features
+      moved here alongside ADR and concept features.
