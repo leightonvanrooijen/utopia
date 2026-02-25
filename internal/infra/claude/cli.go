@@ -281,7 +281,7 @@ func (c *CLI) RalphLoop(ctx context.Context, prompt string, completionPromise st
 
 // SessionWithCapture runs an interactive Claude session and captures the full transcript.
 // Reads from Claude's native session storage to get clean transcripts without ANSI codes.
-// The transcript is always returned, even if the session fails or is interrupted.
+// The transcript is always returned, even if the session fails or is interrupted (Ctrl+C).
 func (c *CLI) SessionWithCapture(ctx context.Context, systemPrompt string) (transcript string, err error) {
 	// Generate a unique session ID so we can find the transcript file after
 	sessionID := uuid.New().String()
@@ -300,17 +300,20 @@ func (c *CLI) SessionWithCapture(ctx context.Context, systemPrompt string) (tran
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
+	// Use defer to ensure transcript is always captured, even on Ctrl+C or other interrupts.
+	// The defer runs after cmd.Run() returns (or panics), capturing whatever was written
+	// to Claude's session storage before the interruption.
+	defer func() {
+		readTranscript, readErr := c.readSessionTranscript(sessionID)
+		if readErr == nil {
+			transcript = readTranscript
+		}
+		// If we can't read the transcript, transcript remains empty string
+	}()
+
 	// Run the interactive session
-	cmdErr := cmd.Run()
-
-	// After session ends, read transcript from Claude's session storage
-	transcript, readErr := c.readSessionTranscript(sessionID)
-	if readErr != nil {
-		// If we can't read the transcript, return empty string with the session error
-		return "", cmdErr
-	}
-
-	return transcript, cmdErr
+	err = cmd.Run()
+	return transcript, err
 }
 
 // readSessionTranscript reads and formats a transcript from Claude's session storage.
