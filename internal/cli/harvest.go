@@ -623,3 +623,19 @@ func buildHarvestDomainDocsSummary(docs []*domain.DomainDoc) string {
 
 	return sb.String()
 }
+
+// getNextADRID determines the next sequential ADR ID
+func getNextADRID(existingADRs []*domain.ADR) string {
+	maxNum := 0
+	for _, adr := range existingADRs {
+		// Parse ADR-NNN format
+		if strings.HasPrefix(adr.ID, "ADR-") {
+			var num int
+			_, err := fmt.Sscanf(adr.ID, "ADR-%d", &num)
+			if err == nil && num > maxNum {
+				maxNum = num
+			}
+		}
+	}
+	return fmt.Sprintf("ADR-%03d", maxNum+1)
+}
