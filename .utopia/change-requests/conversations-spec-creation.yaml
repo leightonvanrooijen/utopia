@@ -1,0 +1,95 @@
+id: conversations-spec-creation
+type: feature
+title: Create conversations spec as foundational layer for knowledge harvesting
+status: draft
+changes:
+  - operation: add
+    spec: conversations
+    spec_metadata:
+      title: Conversations
+      description: |
+        Foundational system for capturing and tracking AI conversations.
+        Conversations are the raw material that feeds the harvest system,
+        which extracts ADRs, concepts, and domain knowledge.
+
+        Key characteristics:
+        - Conversations capture transcripts from Claude sessions
+        - Conversations track their relationship to CRs and execution
+        - Conversations have a lifecycle that gates harvestability
+        - Exploratory conversations (no CR) are distinguished from
+          system-truth conversations (CR executed)
+    feature:
+      id: conversation-persistence
+      description: |
+        Capture full transcript at session end from Claude's native session
+        storage. Eliminates ANSI escape codes and terminal artifacts.
+      acceptance_criteria:
+        - Utopia captures full transcript at session end
+        - Capture happens at Utopia level (not Claude hooks) for reliability
+        - Cannot be bypassed via Ctrl+C
+        - Conversations stored in .utopia/conversations/
+        - Metadata includes session timestamp and branch name
+        - Metadata includes list of CRs created during session (with commit SHAs)
+        - Metadata includes list of commits made during session
+        - Transcripts are read from Claude's session storage (~/.claude/projects/)
+        - ANSI escape codes are not present in saved transcripts
+        - User and assistant messages are clearly separated
+        - Tool calls are captured with their names
+        - Full TUI experience is preserved during interactive sessions
+
+  - operation: add
+    spec: conversations
+    feature:
+      id: conversation-lifecycle
+      description: |
+        Conversations have a lifecycle that determines their harvestability.
+        Conversations with CRs wait for execution before becoming harvestable,
+        ensuring they represent actual system state changes.
+      acceptance_criteria:
+        - Conversations without CRs are created with status unprocessed
+        - Conversations with CRs are created with status pending-execution
+        - Status transitions from pending-execution to unprocessed when execution completes
+        - Status transitions from unprocessed to processed after harvest review
+        - Only unprocessed conversations appear in harvest scans
+        - pending-execution conversations are NOT harvestable (wait for execution)
+
+  - operation: add
+    spec: conversations
+    feature:
+      id: execution-log-capture
+      description: |
+        Track which WorkItems were executed against a conversation's CR.
+        Links the conversation to the specific spec changes that resulted,
+        enabling harvest to correlate discussion with implementation.
+      acceptance_criteria:
+        - Conversation has execution_log array field
+        - Each entry has workitem_id identifying the executed WorkItem
+        - Each entry has spec_ref linking to the target spec.feature
+        - Each entry has operation type (add, modify, remove, refactor)
+        - Each entry has completed_at timestamp
+        - Execution log is populated during utopia execute when WorkItems complete
+        - Execution log updates conversation status from pending-execution to unprocessed
+        - Conversation is loaded by CR ID during execution to append log entries
+
+  - operation: add
+    spec: conversations
+    feature:
+      id: exploratory-vs-system-truth
+      description: |
+        Distinguish between exploratory conversations (no CR, informational only)
+        and system-truth conversations (CR executed, represents actual state).
+        This helps harvest prioritize and contextualize signals.
+      acceptance_criteria:
+        - Conversations have has_cr boolean field (or inferred from cr_id presence)
+        - Conversations have execution_completed boolean field
+        - Harvest command can filter by conversation type
+        - System-truth conversations (has_cr AND execution_completed) are prioritized for ADR signals
+        - Exploratory conversations are still harvestable for concepts and domain knowledge
+        - Harvest output indicates conversation type in signal display
+
+  - operation: remove
+    spec: adr
+    feature_id: conversation-persistence
+    reason: |
+      Moving to new conversations spec. Conversation persistence is foundational
+      and used by all knowledge artifact types, not just ADRs.
