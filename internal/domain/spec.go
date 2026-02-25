@@ -703,6 +703,15 @@ type CRCommit struct {
 	CommitSHA string `yaml:"commit_sha"`
 }
 
+// ExecutionLogEntry records a WorkItem execution result for a conversation.
+// Links the conversation to specific spec changes that resulted from execution.
+type ExecutionLogEntry struct {
+	WorkItemID  string    `yaml:"workitem_id"`
+	SpecRef     string    `yaml:"spec_ref"`  // e.g., "spec-id.feature-id"
+	Operation   string    `yaml:"operation"` // add, modify, remove, refactor
+	CompletedAt time.Time `yaml:"completed_at"`
+}
+
 // Conversation represents a captured session transcript with metadata
 type Conversation struct {
 	ID        string             `yaml:"id"`
@@ -715,6 +724,9 @@ type Conversation struct {
 
 	// All commits made during this session
 	Commits []string `yaml:"commits,omitempty"`
+
+	// ExecutionLog tracks WorkItems executed against this conversation's CRs
+	ExecutionLog []ExecutionLogEntry `yaml:"execution_log,omitempty"`
 
 	// The full transcript content
 	Transcript string `yaml:"transcript"`

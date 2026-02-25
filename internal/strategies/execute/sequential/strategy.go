@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 	"github.com/leightonvanrooijen/utopia/internal/infra/claude"
@@ -109,11 +110,13 @@ func (s *Strategy) executeWorkItem(
 	maxIterations := config.Verification.MaxIterations
 	verifyCommand := config.Verification.Command
 
-	// Load CR title for commit message
+	// Load CR title for commit message and operation type for execution log
 	crID := extractCRID(specID)
 	crTitle := ""
+	operationType := "refactor" // default for refactor CRs
 	if cr, err := store.LoadChangeRequest(crID); err == nil {
 		crTitle = cr.Title
+		operationType = deriveOperationType(cr, item.SpecRef)
 	}
 
 	for {
@@ -175,6 +178,7 @@ func (s *Strategy) executeWorkItem(
 			if err := store.SaveWorkItemForSpec(specID, item); err != nil {
 				return err
 			}
+			logExecutionEntry(store, crID, item, operationType)
 			gitCommitWorkItem(projectDir, item, crTitle)
 			return nil
 		}
@@ -191,6 +195,7 @@ func (s *Strategy) executeWorkItem(
 			if err := store.SaveWorkItemForSpec(specID, item); err != nil {
 				return err
 			}
+			logExecutionEntry(store, crID, item, operationType)
 			gitCommitWorkItem(projectDir, item, crTitle)
 			return nil
 		}
@@ -225,6 +230,53 @@ func extractCRID(specID string) string {
 		return specID[:idx]
 	}
 	return specID
+}
+
+// deriveOperationType determines the operation type for a work item from its CR.
+// Returns "add", "modify", "remove" for feature/enhancement/removal CRs,
+// or "refactor" for refactor/bugfix CRs.
+func deriveOperationType(cr *domain.ChangeRequest, specRef string) string {
+	// For refactor or bugfix CRs, use "refactor"
+	if cr.Type == domain.CRTypeRefactor || cr.Type == domain.CRTypeBugfix {
+		return "refactor"
+	}
+
+	// For feature/enhancement/removal CRs, find the matching change by spec ref
+	// SpecRef format is "spec-id.feature-id"
+	for _, change := range cr.Changes {
+		// Check if this change matches the work item's spec ref
+		if change.Feature != nil && change.Spec+"."+change.Feature.ID == specRef {
+			return change.Operation
+		}
+		if change.FeatureID != "" && change.Spec+"."+change.FeatureID == specRef {
+			return change.Operation
+		}
+	}
+
+	// Default based on CR type
+	switch cr.Type {
+	case domain.CRTypeFeature:
+		return "add"
+	case domain.CRTypeEnhancement:
+		return "modify"
+	case domain.CRTypeRemoval:
+		return "remove"
+	default:
+		return "refactor"
+	}
+}
+
+// logExecutionEntry appends an execution log entry to conversations that reference the CR.
+func logExecutionEntry(store *storage.YAMLStore, crID string, item *domain.WorkItem, operation string) {
+	entry := domain.ExecutionLogEntry{
+		WorkItemID:  item.ID,
+		SpecRef:     item.SpecRef,
+		Operation:   operation,
+		CompletedAt: time.Now(),
+	}
+	if err := store.AppendExecutionLogEntry(crID, entry); err != nil {
+		fmt.Printf("  ⚠ failed to log execution entry: %v\n", err)
+	}
 }
 
 // gitCommitWorkItem creates a git commit after a work item passes verification.

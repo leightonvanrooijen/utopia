@@ -457,6 +457,49 @@ func (s *YAMLStore) MarkConversationsReadyForHarvest(crID string) error {
 	return nil
 }
 
+// LoadConversationsByCRID returns all conversations that reference the given CR ID.
+// This is used during execution to append log entries to conversations.
+func (s *YAMLStore) LoadConversationsByCRID(crID string) ([]*domain.Conversation, error) {
+	all, err := s.ListConversations()
+	if err != nil {
+		return nil, err
+	}
+
+	var matching []*domain.Conversation
+	for _, conv := range all {
+		for _, crCommit := range conv.CRsCreated {
+			if crCommit.CRID == crID {
+				matching = append(matching, conv)
+				break
+			}
+		}
+	}
+
+	return matching, nil
+}
+
+// AppendExecutionLogEntry adds a log entry to all conversations that reference the given CR.
+// Also updates conversation status from pending-execution to unprocessed.
+func (s *YAMLStore) AppendExecutionLogEntry(crID string, entry domain.ExecutionLogEntry) error {
+	convs, err := s.LoadConversationsByCRID(crID)
+	if err != nil {
+		return err
+	}
+
+	for _, conv := range convs {
+		conv.ExecutionLog = append(conv.ExecutionLog, entry)
+		// Update status from pending-execution to unprocessed
+		if conv.Status == domain.ConversationPendingExecution {
+			conv.Status = domain.ConversationUnprocessed
+		}
+		if err := s.SaveConversation(conv); err != nil {
+			return fmt.Errorf("failed to update conversation %s: %w", conv.ID, err)
+		}
+	}
+
+	return nil
+}
+
 // SaveADR writes an ADR to .utopia/adrs/{id}.yaml
 func (s *YAMLStore) SaveADR(adr *domain.ADR) error {
 	dir := filepath.Join(s.baseDir, "adrs")
