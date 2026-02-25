@@ -57,6 +57,23 @@ Review persisted conversations to identify signals for ALL documentation types i
 
 This unified approach is more efficient than running separate /adr, /concept, /domain commands and allows signals to be cross-referenced.
 
+## Conversation Types
+
+Conversations are classified by type based on whether they produced executed Change Requests:
+
+**System-Truth Conversations** (has CR + execution completed):
+- These represent ACTUAL system state - decisions were implemented and verified
+- PRIORITIZE these for ADR signals (higher confidence - the decision was actually made)
+- ADR signals from system-truth conversations should generally be HIGH confidence
+- These conversations show what was actually built, not just discussed
+
+**Exploratory Conversations** (no CR):
+- These are informational/research discussions without implementation
+- Still valuable for Concept signals (trade-off discussions, "why we chose X")
+- Still valuable for Domain signals (terminology definitions)
+- ADR signals should be MEDIUM or LOW confidence (decision discussed but not implemented)
+- May represent rejected approaches or future considerations
+
 ## Unprocessed Conversations
 %s
 
@@ -102,8 +119,11 @@ For EACH signal found, capture:
 - **Title**: Brief description (1 line)
 - **Confidence**: high, medium, or low
   - HIGH: Explicit signal language ("we decided", "the trade-off is", "X is defined as")
+    - For ADRs: boost to HIGH if from system-truth conversation (decision was implemented)
   - MEDIUM: Implied signal (discussion of alternatives, clarification of terms)
+    - For ADRs from exploratory conversations: cap at MEDIUM (discussed but not implemented)
   - LOW: Weak signal (might be relevant, needs confirmation)
+- **Conversation Type**: system-truth or exploratory (shown in source)
 - **Location**: Source conversation ID + message range (e.g., "lines 15-30", "early", "mid", "late")
 - **Related Signals**: IDs of related signals (e.g., adr-1 may link to concept-1)
 - **Potential Duplicate / Update**: If similar to existing doc, note which one AND whether this should UPDATE that doc instead of creating new
@@ -116,24 +136,25 @@ Present a STRUCTURED SUMMARY of all signals found, grouped by type.
 ## Harvest Results
 
 **Summary: X ADR signals, Y Concept signals, Z Domain signals**
+**Conversations: N system-truth, M exploratory**
 
 ### ADR Signals
-| ID | Confidence | Title | Source | Message Range | Related |
-|----|------------|-------|--------|---------------|---------|
-| adr-1 | HIGH | Decision to use YAML for storage | cr-session-20260217 | lines 45-62 | concept-1 |
-| adr-2 | MEDIUM | Choice of Cobra for CLI | cr-session-20260216 | mid | - |
+| ID | Confidence | Title | Source | Conv Type | Message Range | Related |
+|----|------------|-------|--------|-----------|---------------|---------|
+| adr-1 | HIGH | Decision to use YAML for storage | cr-session-20260217 | system-truth | lines 45-62 | concept-1 |
+| adr-2 | MEDIUM | Choice of Cobra for CLI | cr-session-20260216 | exploratory | mid | - |
 
 ### Concept Signals
-| ID | Confidence | Title | Source | Message Range | Related |
-|----|------------|-------|--------|---------------|---------|
-| concept-1 | HIGH | YAML vs JSON trade-offs | cr-session-20260217 | lines 50-75 | adr-1 |
+| ID | Confidence | Title | Source | Conv Type | Message Range | Related |
+|----|------------|-------|--------|-----------|---------------|---------|
+| concept-1 | HIGH | YAML vs JSON trade-offs | cr-session-20260217 | system-truth | lines 50-75 | adr-1 |
 
 ### Domain Signals
-| ID | Confidence | Title | Source | Message Range | Related |
-|----|------------|-------|--------|---------------|---------|
-| domain-1 | HIGH | "Conversation" entity definition | cr-session-20260217 | early | - |
-| domain-2 | HIGH | "unprocessed" status meaning | cr-session-20260217 | lines 20-25 | domain-1 |
-| domain-3 | MEDIUM | "Bounded context" term | cr-session-20260216 | late | - |
+| ID | Confidence | Title | Source | Conv Type | Message Range | Related |
+|----|------------|-------|--------|-----------|---------------|---------|
+| domain-1 | HIGH | "Conversation" entity definition | cr-session-20260217 | system-truth | early | - |
+| domain-2 | HIGH | "unprocessed" status meaning | cr-session-20260217 | system-truth | lines 20-25 | domain-1 |
+| domain-3 | MEDIUM | "Bounded context" term | cr-session-20260216 | exploratory | late | - |
 
 ### Cross-References
 - adr-1 ↔ concept-1: The ADR records the YAML decision; the Concept explains the trade-off reasoning
@@ -392,9 +413,21 @@ func runHarvest(cmd *cobra.Command, args []string) error {
 		nextADRID,
 	)
 
+	// Count conversations by type
+	var systemTruthCount, exploratoryCount int
+	for _, conv := range unprocessedConvs {
+		if conv.IsSystemTruth() {
+			systemTruthCount++
+		} else {
+			exploratoryCount++
+		}
+	}
+
 	// Display harvest summary
 	fmt.Println("Starting unified harvest session...")
-	fmt.Printf("Found %d unprocessed conversations\n", len(unprocessedConvs))
+	fmt.Printf("Found %d unprocessed conversations:\n", len(unprocessedConvs))
+	fmt.Printf("  - %d system-truth (has CR + executed)\n", systemTruthCount)
+	fmt.Printf("  - %d exploratory (no CR)\n", exploratoryCount)
 	fmt.Println()
 	fmt.Println("Existing documentation:")
 	fmt.Printf("  - %d ADRs\n", len(existingADRs))
@@ -427,58 +460,101 @@ func runHarvest(cmd *cobra.Command, args []string) error {
 }
 
 // buildHarvestConversationsSummary creates a detailed summary of unprocessed conversations
-// Includes full transcript for comprehensive signal detection across all types
+// Includes full transcript for comprehensive signal detection across all types.
+// System-truth conversations (with executed CRs) are listed first as they represent actual state.
 func buildHarvestConversationsSummary(convs []*domain.Conversation) string {
 	if len(convs) == 0 {
 		return "(No unprocessed conversations found)"
 	}
 
-	// Sort by timestamp (newest first)
-	sort.Slice(convs, func(i, j int) bool {
-		return convs[i].Timestamp.After(convs[j].Timestamp)
+	// Separate by type: system-truth first, then exploratory
+	var systemTruth, exploratory []*domain.Conversation
+	for _, conv := range convs {
+		if conv.IsSystemTruth() {
+			systemTruth = append(systemTruth, conv)
+		} else {
+			exploratory = append(exploratory, conv)
+		}
+	}
+
+	// Sort each group by timestamp (newest first)
+	sort.Slice(systemTruth, func(i, j int) bool {
+		return systemTruth[i].Timestamp.After(systemTruth[j].Timestamp)
+	})
+	sort.Slice(exploratory, func(i, j int) bool {
+		return exploratory[i].Timestamp.After(exploratory[j].Timestamp)
 	})
 
 	var sb strings.Builder
-	for _, conv := range convs {
-		sb.WriteString(fmt.Sprintf("### %s\n", conv.ID))
-		sb.WriteString(fmt.Sprintf("**Date:** %s\n", conv.Timestamp.Format("2006-01-02 15:04")))
-		sb.WriteString(fmt.Sprintf("**Branch:** %s\n", conv.Branch))
 
-		if len(conv.CRsCreated) > 0 {
-			crIDs := make([]string, len(conv.CRsCreated))
-			for i, cr := range conv.CRsCreated {
-				crIDs[i] = cr.CRID
-			}
-			sb.WriteString(fmt.Sprintf("**CRs Created:** %s\n", strings.Join(crIDs, ", ")))
-		}
+	// Summary line showing counts by type
+	sb.WriteString(fmt.Sprintf("**Total: %d conversations (%d system-truth, %d exploratory)**\n\n",
+		len(convs), len(systemTruth), len(exploratory)))
 
-		if len(conv.Commits) > 0 {
-			abbrevCommits := make([]string, len(conv.Commits))
-			for i, sha := range conv.Commits {
-				if len(sha) >= 8 {
-					abbrevCommits[i] = sha[:8]
-				} else {
-					abbrevCommits[i] = sha
-				}
-			}
-			sb.WriteString(fmt.Sprintf("**Commits:** %s\n", strings.Join(abbrevCommits, ", ")))
+	// System-truth conversations first (prioritized for ADR signals)
+	if len(systemTruth) > 0 {
+		sb.WriteString("## System-Truth Conversations (has CR + executed)\n")
+		sb.WriteString("*These represent actual system state - prioritize for ADR signals.*\n\n")
+		for _, conv := range systemTruth {
+			writeConversationSummary(&sb, conv)
 		}
+	}
 
-		// For harvest, include more of the transcript for comprehensive analysis
-		// But cap at reasonable size to avoid context overflow
-		transcript := strings.TrimSpace(conv.Transcript)
-		if len(transcript) > 2000 {
-			transcript = transcript[:2000] + "\n... [transcript truncated for length]"
+	// Exploratory conversations second (still valuable for concepts/domain)
+	if len(exploratory) > 0 {
+		sb.WriteString("## Exploratory Conversations (no CR)\n")
+		sb.WriteString("*Informational only - still valuable for concept and domain signals.*\n\n")
+		for _, conv := range exploratory {
+			writeConversationSummary(&sb, conv)
 		}
-		if transcript != "" {
-			sb.WriteString(fmt.Sprintf("**Transcript:**\n```\n%s\n```\n", transcript))
-		} else {
-			sb.WriteString("**Transcript:** (empty)\n")
-		}
-		sb.WriteString("\n")
 	}
 
 	return sb.String()
+}
+
+// writeConversationSummary writes a single conversation's details to the builder
+func writeConversationSummary(sb *strings.Builder, conv *domain.Conversation) {
+	sb.WriteString(fmt.Sprintf("### %s\n", conv.ID))
+	sb.WriteString(fmt.Sprintf("**Type:** %s\n", conv.Type()))
+	sb.WriteString(fmt.Sprintf("**Date:** %s\n", conv.Timestamp.Format("2006-01-02 15:04")))
+	sb.WriteString(fmt.Sprintf("**Branch:** %s\n", conv.Branch))
+
+	if len(conv.CRsCreated) > 0 {
+		crIDs := make([]string, len(conv.CRsCreated))
+		for i, cr := range conv.CRsCreated {
+			crIDs[i] = cr.CRID
+		}
+		sb.WriteString(fmt.Sprintf("**CRs Created:** %s\n", strings.Join(crIDs, ", ")))
+	}
+
+	if len(conv.ExecutionLog) > 0 {
+		sb.WriteString(fmt.Sprintf("**Executed WorkItems:** %d\n", len(conv.ExecutionLog)))
+	}
+
+	if len(conv.Commits) > 0 {
+		abbrevCommits := make([]string, len(conv.Commits))
+		for i, sha := range conv.Commits {
+			if len(sha) >= 8 {
+				abbrevCommits[i] = sha[:8]
+			} else {
+				abbrevCommits[i] = sha
+			}
+		}
+		sb.WriteString(fmt.Sprintf("**Commits:** %s\n", strings.Join(abbrevCommits, ", ")))
+	}
+
+	// For harvest, include more of the transcript for comprehensive analysis
+	// But cap at reasonable size to avoid context overflow
+	transcript := strings.TrimSpace(conv.Transcript)
+	if len(transcript) > 2000 {
+		transcript = transcript[:2000] + "\n... [transcript truncated for length]"
+	}
+	if transcript != "" {
+		sb.WriteString(fmt.Sprintf("**Transcript:**\n```\n%s\n```\n", transcript))
+	} else {
+		sb.WriteString("**Transcript:** (empty)\n")
+	}
+	sb.WriteString("\n")
 }
 
 // buildHarvestADRsSummary creates a summary of existing ADRs for duplicate detection

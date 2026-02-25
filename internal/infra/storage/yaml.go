@@ -429,6 +429,25 @@ func (s *YAMLStore) ListUnprocessedConversations() ([]*domain.Conversation, erro
 	return unprocessed, nil
 }
 
+// ListUnprocessedConversationsByType returns unprocessed conversations filtered by type.
+// Use domain.ConversationSystemTruth for conversations with executed CRs.
+// Use domain.ConversationExploratory for conversations without CRs.
+func (s *YAMLStore) ListUnprocessedConversationsByType(convType domain.ConversationType) ([]*domain.Conversation, error) {
+	unprocessed, err := s.ListUnprocessedConversations()
+	if err != nil {
+		return nil, err
+	}
+
+	var filtered []*domain.Conversation
+	for _, conv := range unprocessed {
+		if conv.Type() == convType {
+			filtered = append(filtered, conv)
+		}
+	}
+
+	return filtered, nil
+}
+
 // MarkConversationsReadyForHarvest transitions conversations that reference the given CR
 // from pending-execution to unprocessed status, making them eligible for harvest.
 func (s *YAMLStore) MarkConversationsReadyForHarvest(crID string) error {

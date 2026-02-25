@@ -712,6 +712,18 @@ type ExecutionLogEntry struct {
 	CompletedAt time.Time `yaml:"completed_at"`
 }
 
+// ConversationType distinguishes exploratory conversations from system-truth conversations.
+// Exploratory conversations have no CR and are informational only.
+// System-truth conversations have an executed CR and represent actual system state.
+type ConversationType string
+
+const (
+	// ConversationExploratory indicates a conversation with no CR - informational only
+	ConversationExploratory ConversationType = "exploratory"
+	// ConversationSystemTruth indicates a conversation with an executed CR - represents actual state
+	ConversationSystemTruth ConversationType = "system-truth"
+)
+
 // Conversation represents a captured session transcript with metadata
 type Conversation struct {
 	ID        string             `yaml:"id"`
@@ -730,6 +742,32 @@ type Conversation struct {
 
 	// The full transcript content
 	Transcript string `yaml:"transcript"`
+}
+
+// HasCR returns true if this conversation created any Change Requests.
+func (c *Conversation) HasCR() bool {
+	return len(c.CRsCreated) > 0
+}
+
+// ExecutionCompleted returns true if any WorkItems have been executed for this conversation.
+func (c *Conversation) ExecutionCompleted() bool {
+	return len(c.ExecutionLog) > 0
+}
+
+// Type returns the ConversationType based on CR presence and execution status.
+// System-truth: has CR AND execution completed (represents actual system state).
+// Exploratory: no CR (informational only, but still valuable for concepts/domain knowledge).
+func (c *Conversation) Type() ConversationType {
+	if c.HasCR() && c.ExecutionCompleted() {
+		return ConversationSystemTruth
+	}
+	return ConversationExploratory
+}
+
+// IsSystemTruth returns true if this conversation represents actual system state
+// (has CR and execution completed).
+func (c *Conversation) IsSystemTruth() bool {
+	return c.Type() == ConversationSystemTruth
 }
 
 // ADRStatus represents the lifecycle state of an ADR
