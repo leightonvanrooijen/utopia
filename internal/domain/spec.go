@@ -692,8 +692,9 @@ func (e *CRValidationError) Error() string {
 type ConversationStatus string
 
 const (
-	ConversationUnprocessed ConversationStatus = "unprocessed"
-	ConversationProcessed   ConversationStatus = "processed"
+	ConversationUnprocessed      ConversationStatus = "unprocessed"
+	ConversationProcessed        ConversationStatus = "processed"
+	ConversationPendingExecution ConversationStatus = "pending-execution"
 )
 
 // CRCommit represents a CR that was created and committed during a session

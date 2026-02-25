@@ -429,6 +429,34 @@ func (s *YAMLStore) ListUnprocessedConversations() ([]*domain.Conversation, erro
 	return unprocessed, nil
 }
 
+// MarkConversationsReadyForHarvest transitions conversations that reference the given CR
+// from pending-execution to unprocessed status, making them eligible for harvest.
+func (s *YAMLStore) MarkConversationsReadyForHarvest(crID string) error {
+	all, err := s.ListConversations()
+	if err != nil {
+		return err
+	}
+
+	for _, conv := range all {
+		if conv.Status != domain.ConversationPendingExecution {
+			continue
+		}
+
+		// Check if this conversation references the executed CR
+		for _, crCommit := range conv.CRsCreated {
+			if crCommit.CRID == crID {
+				conv.Status = domain.ConversationUnprocessed
+				if err := s.SaveConversation(conv); err != nil {
+					return fmt.Errorf("failed to update conversation %s: %w", conv.ID, err)
+				}
+				break
+			}
+		}
+	}
+
+	return nil
+}
+
 // SaveADR writes an ADR to .utopia/adrs/{id}.yaml
 func (s *YAMLStore) SaveADR(adr *domain.ADR) error {
 	dir := filepath.Join(s.baseDir, "adrs")

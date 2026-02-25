@@ -601,11 +601,18 @@ func saveConversation(store *storage.YAMLStore, sessionStart time.Time, branch, 
 	// Generate ID from timestamp: cr-session-YYYYMMDD-HHMMSS
 	convID := fmt.Sprintf("cr-session-%s", sessionStart.Format("20060102-150405"))
 
+	// Conversations with CRs start as pending-execution (wait for execution before harvest)
+	// Conversations without CRs are immediately harvestable as unprocessed
+	status := domain.ConversationUnprocessed
+	if len(crsCreated) > 0 {
+		status = domain.ConversationPendingExecution
+	}
+
 	conv := &domain.Conversation{
 		ID:         convID,
 		Timestamp:  sessionStart,
 		Branch:     branch,
-		Status:     domain.ConversationUnprocessed,
+		Status:     status,
 		CRsCreated: crsCreated,
 		Commits:    commits,
 		Transcript: transcript,

@@ -723,6 +723,12 @@ func autoMergeCR(cr *domain.ChangeRequest, crID string, store *storage.YAMLStore
 		}
 	}
 
+	// Step 5: Mark conversations that reference this CR as ready for harvest
+	// Transitions pending-execution → unprocessed so harvest can find them
+	if err := store.MarkConversationsReadyForHarvest(crID); err != nil {
+		fmt.Printf("⚠ Failed to update conversation status: %s\n", err)
+	}
+
 	fmt.Printf("\nSuccessfully merged: %s\n", cr.Title)
 	return nil
 }
