@@ -1,7 +1,7 @@
 id: knowledge-artifacts
 title: knowledge-artifacts
 created: 2026-03-02T16:01:45.410811+11:00
-updated: 2026-03-02T21:36:19.137114+11:00
+updated: 2026-03-02T21:48:39.97442+11:00
 description: ""
 features:
     - id: adr-template
@@ -86,8 +86,8 @@ features:
 
     - id: concept-template
       description: |
-        Markdown-based concept document structure optimized for educational
-        content and external sharing.
+        Add required fields that reinforce the Explanation documentation type
+        and ensure concepts meet qualification criteria.
       acceptance_criteria:
         - Concepts stored in .utopia/concepts/ as markdown files
         - Filename format is kebab-case ID (e.g., agri-council-vs-wilson.md)
@@ -98,6 +98,9 @@ features:
         - Template includes documentation_type field with value 'explanation' (per Diátaxis)
         - Body is freeform markdown optimized for prose and readability
         - Template suggests sections (Context, Approaches, Trade-offs, Our Perspective, When to Reconsider) but allows flexibility for explanation flow
+        - Template includes required audience field describing who benefits from this understanding
+        - Template includes required lasting_value field explaining why this matters long-term
+        - Template includes documentation_type field with value 'explanation' (per Diátaxis)
 
     - id: concept-lifecycle
       description: |
@@ -111,16 +114,22 @@ features:
 
     - id: concept-discovery
       description: |
-        /concept command that scans persisted conversations for educational
-        trade-off discussions and guides concept creation or updates.
+        Replace signal-based detection with qualification-based detection.
+        Instead of looking for phrases, apply a qualification test to determine
+        if content is truly explanation-worthy.
       acceptance_criteria:
         - /concept command scans .utopia/conversations/ for unprocessed conversations
-        - Analyzes conversations for trade-off signals (comparisons, "why we chose", explaining reasoning)
         - Signal detection is strict - only surfaces clear educational moments, not every discussion
         - Before suggesting a new concept, checks existing concepts in .utopia/concepts/
         - If related concept exists, suggests updating it instead of creating new
         - Guides user through concept creation/update conversationally
         - Marks conversations as processed after review
+        - Applies Concept qualification test before suggesting Concept creation
+        - 'Qualification requires answering: is this understanding-oriented, not task-oriented?'
+        - 'Qualification requires answering: does this have lasting educational value?'
+        - 'Qualification requires answering: is this independent of a specific binding decision?'
+        - Checks disqualification criteria before suggesting Concept creation
+        - Only suggests Concept creation when qualification test passes
 
     - id: domain-template
       description: |
