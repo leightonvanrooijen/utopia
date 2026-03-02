@@ -93,9 +93,11 @@ features:
         - Filename format is kebab-case ID (e.g., agri-council-vs-wilson.md)
         - YAML frontmatter includes id, title, status fields
         - Frontmatter optionally includes related_specs and related_adrs arrays
+        - Template includes required audience field describing who benefits from this understanding
+        - Template includes required lasting_value field explaining why this matters long-term
+        - Template includes documentation_type field with value 'explanation' (per Diátaxis)
         - Body is freeform markdown optimized for prose and readability
-        - Template suggests sections but does not enforce rigid structure
-        - Suggested sections include context, approaches/trade-offs, our choice, when to reconsider
+        - Template suggests sections (Context, Approaches, Trade-offs, Our Perspective, When to Reconsider) but allows flexibility for explanation flow
 
     - id: concept-lifecycle
       description: |
