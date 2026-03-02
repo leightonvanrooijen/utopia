@@ -1057,3 +1057,127 @@ func TestApplyChanges_EmptyChanges(t *testing.T) {
 		t.Fatalf("ApplyChanges with empty changes failed: %v", err)
 	}
 }
+
+// Tests for ADRCategory.IsValid
+
+func TestADRCategory_IsValid_Structure(t *testing.T) {
+	if !ADRCategoryStructure.IsValid() {
+		t.Error("structure category should be valid")
+	}
+}
+
+func TestADRCategory_IsValid_NFR(t *testing.T) {
+	if !ADRCategoryNFR.IsValid() {
+		t.Error("nfr category should be valid")
+	}
+}
+
+func TestADRCategory_IsValid_Dependencies(t *testing.T) {
+	if !ADRCategoryDependencies.IsValid() {
+		t.Error("dependencies category should be valid")
+	}
+}
+
+func TestADRCategory_IsValid_Interfaces(t *testing.T) {
+	if !ADRCategoryInterfaces.IsValid() {
+		t.Error("interfaces category should be valid")
+	}
+}
+
+func TestADRCategory_IsValid_Construction(t *testing.T) {
+	if !ADRCategoryConstruction.IsValid() {
+		t.Error("construction category should be valid")
+	}
+}
+
+func TestADRCategory_IsValid_EmptyString(t *testing.T) {
+	var empty ADRCategory = ""
+	if empty.IsValid() {
+		t.Error("empty string category should be invalid")
+	}
+}
+
+func TestADRCategory_IsValid_InvalidCategory(t *testing.T) {
+	invalid := ADRCategory("not-a-category")
+	if invalid.IsValid() {
+		t.Error("arbitrary string category should be invalid")
+	}
+}
+
+// Tests for ADR.Validate
+
+func TestADR_Validate_ValidCategory(t *testing.T) {
+	adr := &ADR{
+		ID:       "ADR-001",
+		Title:    "Test ADR",
+		Category: ADRCategoryStructure,
+		Status:   ADRStatusDraft,
+	}
+
+	err := adr.Validate()
+	if err != nil {
+		t.Errorf("ADR with valid category should pass validation, got: %v", err)
+	}
+}
+
+func TestADR_Validate_AllValidCategories(t *testing.T) {
+	categories := []ADRCategory{
+		ADRCategoryStructure,
+		ADRCategoryNFR,
+		ADRCategoryDependencies,
+		ADRCategoryInterfaces,
+		ADRCategoryConstruction,
+	}
+
+	for _, cat := range categories {
+		t.Run(string(cat), func(t *testing.T) {
+			adr := &ADR{
+				ID:       "ADR-001",
+				Title:    "Test ADR",
+				Category: cat,
+				Status:   ADRStatusDraft,
+			}
+
+			err := adr.Validate()
+			if err != nil {
+				t.Errorf("ADR with category %q should pass validation, got: %v", cat, err)
+			}
+		})
+	}
+}
+
+func TestADR_Validate_InvalidCategory(t *testing.T) {
+	adr := &ADR{
+		ID:       "ADR-001",
+		Title:    "Test ADR",
+		Category: ADRCategory("invalid"),
+		Status:   ADRStatusDraft,
+	}
+
+	err := adr.Validate()
+	if err == nil {
+		t.Fatal("ADR with invalid category should fail validation")
+	}
+
+	if !strings.Contains(err.Error(), "invalid ADR category") {
+		t.Errorf("error should mention 'invalid ADR category', got: %v", err)
+	}
+}
+
+func TestADR_Validate_EmptyCategory(t *testing.T) {
+	adr := &ADR{
+		ID:       "ADR-001",
+		Title:    "Test ADR",
+		Category: "",
+		Status:   ADRStatusDraft,
+	}
+
+	err := adr.Validate()
+	if err == nil {
+		t.Fatal("ADR with empty category should fail validation")
+	}
+
+	if !strings.Contains(err.Error(), "invalid ADR category") {
+		t.Errorf("error should mention 'invalid ADR category', got: %v", err)
+	}
+}

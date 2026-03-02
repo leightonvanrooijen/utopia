@@ -516,7 +516,12 @@ func (s *YAMLStore) AppendExecutionLogEntry(crID string, entry domain.ExecutionL
 }
 
 // SaveADR writes an ADR to .utopia/adrs/{id}.yaml
+// Returns an error if the ADR fails validation (e.g., invalid category).
 func (s *YAMLStore) SaveADR(adr *domain.ADR) error {
+	if err := adr.Validate(); err != nil {
+		return fmt.Errorf("ADR validation failed: %w", err)
+	}
+
 	dir := filepath.Join(s.baseDir, "adrs")
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("failed to create adrs directory: %w", err)

@@ -811,6 +811,18 @@ const (
 	ADRCategoryConstruction ADRCategory = "construction"
 )
 
+// IsValid returns true if the category is one of the five valid AWS architectural categories.
+// A decision that doesn't fit any category is not architecturally significant.
+func (c ADRCategory) IsValid() bool {
+	switch c {
+	case ADRCategoryStructure, ADRCategoryNFR, ADRCategoryDependencies,
+		ADRCategoryInterfaces, ADRCategoryConstruction:
+		return true
+	default:
+		return false
+	}
+}
+
 // ADRStatusChange records a status transition with timestamp
 type ADRStatusChange struct {
 	From      ADRStatus `yaml:"from"`
@@ -884,6 +896,15 @@ type ADR struct {
 	DeprecationReason string            `yaml:"deprecation_reason,omitempty"`
 	SupersededBy      string            `yaml:"superseded_by,omitempty"`
 	StatusHistory     []ADRStatusChange `yaml:"status_history,omitempty"`
+}
+
+// Validate checks that the ADR has all required fields and valid values.
+// Returns an error if validation fails.
+func (a *ADR) Validate() error {
+	if !a.Category.IsValid() {
+		return fmt.Errorf("invalid ADR category %q: must be one of structure, nfr, dependencies, interfaces, or construction", a.Category)
+	}
+	return nil
 }
 
 // TransitionToProposed moves an ADR from draft to proposed status.

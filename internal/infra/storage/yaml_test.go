@@ -511,3 +511,123 @@ func TestMergeWorkflow_FullScenario(t *testing.T) {
 		}
 	}
 }
+
+// Tests for ADR storage validation
+
+func TestSaveADR_ValidCategory(t *testing.T) {
+	dir, cleanup := setupTestDir(t)
+	defer cleanup()
+
+	store := NewYAMLStore(dir)
+
+	adr := &domain.ADR{
+		ID:       "ADR-001",
+		Title:    "Test Decision",
+		Status:   domain.ADRStatusDraft,
+		Category: domain.ADRCategoryStructure,
+		Context:  "Test context",
+		Decision: "We decided to test",
+	}
+
+	err := store.SaveADR(adr)
+	if err != nil {
+		t.Errorf("SaveADR should succeed with valid category, got: %v", err)
+	}
+
+	// Verify it was saved
+	loaded, err := store.LoadADR("ADR-001")
+	if err != nil {
+		t.Fatalf("failed to load saved ADR: %v", err)
+	}
+
+	if loaded.Category != domain.ADRCategoryStructure {
+		t.Errorf("loaded ADR should have structure category, got %q", loaded.Category)
+	}
+}
+
+func TestSaveADR_InvalidCategory_Rejected(t *testing.T) {
+	dir, cleanup := setupTestDir(t)
+	defer cleanup()
+
+	store := NewYAMLStore(dir)
+
+	adr := &domain.ADR{
+		ID:       "ADR-002",
+		Title:    "Test Decision",
+		Status:   domain.ADRStatusDraft,
+		Category: domain.ADRCategory("invalid-category"),
+		Context:  "Test context",
+		Decision: "We decided something",
+	}
+
+	err := store.SaveADR(adr)
+	if err == nil {
+		t.Fatal("SaveADR should reject ADR with invalid category")
+	}
+
+	if !strings.Contains(err.Error(), "ADR validation failed") {
+		t.Errorf("error should mention 'ADR validation failed', got: %v", err)
+	}
+
+	if !strings.Contains(err.Error(), "invalid ADR category") {
+		t.Errorf("error should mention 'invalid ADR category', got: %v", err)
+	}
+}
+
+func TestSaveADR_EmptyCategory_Rejected(t *testing.T) {
+	dir, cleanup := setupTestDir(t)
+	defer cleanup()
+
+	store := NewYAMLStore(dir)
+
+	adr := &domain.ADR{
+		ID:       "ADR-003",
+		Title:    "Test Decision",
+		Status:   domain.ADRStatusDraft,
+		Category: "",
+		Context:  "Test context",
+		Decision: "We decided something",
+	}
+
+	err := store.SaveADR(adr)
+	if err == nil {
+		t.Fatal("SaveADR should reject ADR with empty category")
+	}
+
+	if !strings.Contains(err.Error(), "ADR validation failed") {
+		t.Errorf("error should mention 'ADR validation failed', got: %v", err)
+	}
+}
+
+func TestSaveADR_AllValidCategories(t *testing.T) {
+	dir, cleanup := setupTestDir(t)
+	defer cleanup()
+
+	store := NewYAMLStore(dir)
+
+	categories := []domain.ADRCategory{
+		domain.ADRCategoryStructure,
+		domain.ADRCategoryNFR,
+		domain.ADRCategoryDependencies,
+		domain.ADRCategoryInterfaces,
+		domain.ADRCategoryConstruction,
+	}
+
+	for i, cat := range categories {
+		t.Run(string(cat), func(t *testing.T) {
+			adr := &domain.ADR{
+				ID:       "ADR-" + string(rune('A'+i)),
+				Title:    "Test Decision for " + string(cat),
+				Status:   domain.ADRStatusDraft,
+				Category: cat,
+				Context:  "Test context",
+				Decision: "We decided to use " + string(cat),
+			}
+
+			err := store.SaveADR(adr)
+			if err != nil {
+				t.Errorf("SaveADR should succeed with %q category, got: %v", cat, err)
+			}
+		})
+	}
+}
