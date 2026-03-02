@@ -871,7 +871,7 @@ type EntityRelationship struct {
 type DomainDoc struct {
 	ID                  string         `yaml:"id"`
 	Title               string         `yaml:"title"`
-	BoundedContext      string         `yaml:"bounded_context"`              // Which context owns this vocabulary - context boundaries should be explicit and intentional
+	BoundedContext      string         `yaml:"bounded_context"` // Which context owns this vocabulary - context boundaries should be explicit and intentional
 	Description         string         `yaml:"description"`
 	Terms               []DomainTerm   `yaml:"terms,omitempty"`
 	Entities            []DomainEntity `yaml:"entities,omitempty"`
