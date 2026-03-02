@@ -11,8 +11,7 @@ import (
 
 // PromptTemplate is the minimal template for Ralph execution.
 // It uses {{handlebars}} style syntax.
-const PromptTemplate = `{{if .DomainContext}}{{.DomainContext}}
-{{end}}## TASK
+const PromptTemplate = `## TASK
 
 {{.Task}}
 {{if .Reference}}
@@ -43,7 +42,6 @@ When complete, commit your changes and output: <COMPLETE>`
 
 // PromptData holds the data for rendering the prompt template.
 type PromptData struct {
-	DomainContext    string // Optional: ubiquitous language guidance from domain docs
 	Task             string
 	Reference        string // Optional: for bugfix items, the referenced spec feature content
 	Constraints      []string
@@ -54,19 +52,17 @@ type PromptData struct {
 // For first iteration, pass nil for failures.
 // For retry iterations, pass the extracted failure output.
 func BuildPrompt(feature domain.Feature, failures []string) string {
-	return BuildPromptWithConstraints(feature, DefaultConstraints, failures, nil, "")
+	return BuildPromptWithConstraints(feature, DefaultConstraints, failures, nil)
 }
 
 // BuildPromptWithConstraints creates a prompt with custom constraints.
 // For bugfix items, refFeature contains the spec feature that defines correct behavior.
-// domainContext contains ubiquitous language guidance from domain docs.
-func BuildPromptWithConstraints(feature domain.Feature, constraints []string, failures []string, refFeature *domain.Feature, domainContext string) string {
+func BuildPromptWithConstraints(feature domain.Feature, constraints []string, failures []string, refFeature *domain.Feature) string {
 	task := buildTaskWithCriteria(feature)
 
 	data := PromptData{
-		DomainContext: domainContext,
-		Task:          task,
-		Constraints:   constraints,
+		Task:        task,
+		Constraints: constraints,
 	}
 
 	// For bugfix items, include the referenced feature content
@@ -99,10 +95,10 @@ func buildReferenceSection(feature *domain.Feature) string {
 }
 
 // RebuildPromptWithFailures updates a work item's prompt to include failure output.
-// Note: This rebuilds without the reference feature or domain context. For bugfix items that need
+// Note: This rebuilds without the reference feature. For bugfix items that need
 // the reference feature on retry, caller should use BuildPromptWithConstraints directly.
 func RebuildPromptWithFailures(workItem *domain.WorkItem, feature domain.Feature, failures []string) {
-	workItem.Prompt = BuildPromptWithConstraints(feature, workItem.Constraints, failures, nil, "")
+	workItem.Prompt = BuildPromptWithConstraints(feature, workItem.Constraints, failures, nil)
 }
 
 // buildTaskWithCriteria merges feature description with acceptance criteria
@@ -128,7 +124,6 @@ func buildTaskWithCriteria(feature domain.Feature) string {
 // renderTemplate executes the prompt template with the given data.
 func renderTemplate(data PromptData) string {
 	// Escape any template syntax in user content
-	data.DomainContext = escapeTemplateContent(data.DomainContext)
 	data.Task = escapeTemplateContent(data.Task)
 	data.Reference = escapeTemplateContent(data.Reference)
 	data.PreviousFailures = escapeTemplateContent(data.PreviousFailures)

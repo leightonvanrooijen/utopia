@@ -46,10 +46,8 @@ func init() {
 }
 
 // crSystemPrompt guides Claude through change request creation
-// Use fmt.Sprintf to inject: domainContext, specsSummary, existingCRsSummary, changeRequestsDir
+// Use fmt.Sprintf to inject: specsSummary, existingCRsSummary, changeRequestsDir
 const crSystemPrompt = `You are a Change Request Claude - an AI assistant that helps users create structured change requests.
-
-%s
 
 ## Your Role
 Guide users through a natural conversation to create change requests. CRs can target existing specs OR define new specs (which get created when the CR is merged).
@@ -276,20 +274,12 @@ func runCR(cmd *cobra.Command, args []string) error {
 		existingCRs = []*domain.ChangeRequest{}
 	}
 
-	// Load domain docs for ubiquitous language context
-	domainDocs, err := store.ListDomainDocs()
-	if err != nil {
-		// Non-fatal - continue with empty domain docs
-		domainDocs = []*domain.DomainDoc{}
-	}
-
 	// Build summaries for Claude
-	domainContext := buildDomainContext(domainDocs)
 	specsSummary := buildSpecsSummary(existingSpecs)
 	crsSummary := buildCRsSummary(existingCRs)
 
 	// Inject summaries and path into the system prompt
-	systemPrompt := fmt.Sprintf(crSystemPrompt, domainContext, specsSummary, crsSummary, changeRequestsDir, changeRequestsDir)
+	systemPrompt := fmt.Sprintf(crSystemPrompt, specsSummary, crsSummary, changeRequestsDir, changeRequestsDir)
 
 	fmt.Println("Starting change request creation session...")
 	fmt.Printf("Found %d existing specs\n", len(existingSpecs))

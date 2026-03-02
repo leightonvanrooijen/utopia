@@ -298,12 +298,6 @@ type SpecLoaderConfigurable interface {
 	SetSpecLoader(loader func(specID string) (*domain.Spec, error))
 }
 
-// DomainContextConfigurable is an optional interface that chunking strategies can implement
-// to receive domain context (ubiquitous language guidance) for injection into work item prompts.
-type DomainContextConfigurable interface {
-	SetDomainContext(context string)
-}
-
 // chunkCR invokes the chunking strategy to produce work items from a change request.
 func chunkCR(cr *domain.ChangeRequest, crID string, store *storage.YAMLStore, config *domain.Config, registry *chunkStrategy.Registry, projectDir string) ([]*domain.WorkItem, error) {
 	fmt.Printf("Chunking change request: %s\n", cr.Title)
@@ -332,14 +326,6 @@ func chunkCR(cr *domain.ChangeRequest, crID string, store *storage.YAMLStore, co
 	// Configure spec loader if the strategy supports it (needed for bugfix CRs)
 	if configurable, ok := strategy.(SpecLoaderConfigurable); ok {
 		configurable.SetSpecLoader(store.LoadSpec)
-	}
-
-	// Configure domain context if the strategy supports it
-	if configurable, ok := strategy.(DomainContextConfigurable); ok {
-		domainDocs, err := store.ListDomainDocs()
-		if err == nil && len(domainDocs) > 0 {
-			configurable.SetDomainContext(buildDomainContext(domainDocs))
-		}
 	}
 
 	fmt.Printf("Using '%s' chunk strategy: %s\n", strategy.Name(), strategy.Description())
@@ -399,14 +385,6 @@ func chunkPhase(crID string, phaseIndex int, phase *domain.Phase, store *storage
 	// Configure spec loader if the strategy supports it (needed for bugfix phases)
 	if configurable, ok := strategy.(SpecLoaderConfigurable); ok {
 		configurable.SetSpecLoader(store.LoadSpec)
-	}
-
-	// Configure domain context if the strategy supports it
-	if configurable, ok := strategy.(DomainContextConfigurable); ok {
-		domainDocs, err := store.ListDomainDocs()
-		if err == nil && len(domainDocs) > 0 {
-			configurable.SetDomainContext(buildDomainContext(domainDocs))
-		}
 	}
 
 	fmt.Printf("Using '%s' chunk strategy: %s\n", strategy.Name(), strategy.Description())

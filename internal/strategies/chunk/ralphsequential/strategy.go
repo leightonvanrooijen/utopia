@@ -46,8 +46,7 @@ type bugfixFeature struct {
 // Strategy implements the ralph-sequential chunking approach.
 // It creates one WorkItem per feature, executed in spec order.
 type Strategy struct {
-	specLoader    SpecLoader
-	domainContext string // Ubiquitous language guidance from domain docs
+	specLoader SpecLoader
 }
 
 // New creates a new ralph-sequential strategy.
@@ -61,12 +60,6 @@ func New(specLoader SpecLoader) *Strategy {
 // Note: Uses anonymous function type to match SpecLoaderConfigurable interface in execute.go.
 func (s *Strategy) SetSpecLoader(loader func(specID string) (*domain.Spec, error)) {
 	s.specLoader = loader
-}
-
-// SetDomainContext sets the ubiquitous language guidance from domain docs.
-// This context is injected into work item prompts to ensure Claude uses consistent terminology.
-func (s *Strategy) SetDomainContext(context string) {
-	s.domainContext = context
 }
 
 // Name returns the strategy identifier.
@@ -123,7 +116,7 @@ func (s *Strategy) Chunk(cr *domain.ChangeRequest) ([]*domain.WorkItem, error) {
 		if isBugfix && refFeatures != nil {
 			refFeature = refFeatures[feature.ID]
 		}
-		workItem.Prompt = BuildPromptWithConstraints(feature, workItem.Constraints, nil, refFeature, s.domainContext)
+		workItem.Prompt = BuildPromptWithConstraints(feature, workItem.Constraints, nil, refFeature)
 
 		workItems = append(workItems, workItem)
 	}
@@ -285,7 +278,7 @@ func (s *Strategy) ChunkPhase(crID string, phaseIndex int, phase *domain.Phase) 
 		if isBugfix && refFeatures != nil {
 			refFeature = refFeatures[feature.ID]
 		}
-		workItem.Prompt = BuildPromptWithConstraints(feature, workItem.Constraints, nil, refFeature, s.domainContext)
+		workItem.Prompt = BuildPromptWithConstraints(feature, workItem.Constraints, nil, refFeature)
 
 		workItems = append(workItems, workItem)
 	}
