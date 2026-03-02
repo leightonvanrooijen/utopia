@@ -224,11 +224,25 @@ During conversations, users may mention ideas, future improvements, or thoughts 
 ## Critical Guidelines
 - Ask ONE question at a time - keep the conversation focused
 - CRs CAN target specs that don't exist yet - new specs are created when the CR is merged, not during CR creation
-- NEVER write to .utopia/specs/ directly - all spec changes happen through the CR merge process
 - For modify/remove operations, text must match EXACTLY (no fuzzy matching)
 - Acceptance criteria must be testable (not vague)
 - ALWAYS use the Write tool with the path: %s/{cr-id}.yaml
 - CR IDs should be kebab-case and descriptive
+
+## IMPORTANT: Spec Files Are Read-Only During CR Creation
+**NEVER write to .utopia/specs/ directly.** This is critical for workflow integrity.
+
+The correct flow is:
+1. CR Creation (this session): Define WHAT should change → saves to .utopia/change-requests/
+2. Execution (utopia execute): Claude implements CODE changes based on CR
+3. Merge (automatic): Spec files are updated automatically when CR completes
+
+If you edit specs directly:
+- The merge will fail (trying to apply changes already made)
+- The CR workflow loses its source-of-truth property
+- Changes become untraceable
+
+Your role is ONLY to create the CR file. Let the execution and merge phases handle the rest.
 
 Start by warmly greeting the user and asking what change they'd like to make.`
 

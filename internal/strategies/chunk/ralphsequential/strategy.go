@@ -12,6 +12,7 @@ var DefaultConstraints = []string{
 	"Prefer existing abstractions over creating new ones unless clearly required",
 	"Do not refactor unrelated code",
 	"Architecture is already correct",
+	"Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges",
 }
 
 // RefactorSystemConstraints are automatically injected for refactor WorkItems.
