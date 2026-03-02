@@ -19,6 +19,11 @@ notes: |
   - ADR = "What binding decision did we make?" (point-in-time commitment)
   - Concept = "Why is this approach valuable in certain contexts?" (timeless understanding)
 
+  The litmus test for Concept vs ADR:
+  "Would this be useful to someone at a different company facing a similar choice?"
+  - YES → Concept (explains the decision SPACE)
+  - NO (specific to our context) → ADR (records OUR decision) or nothing
+
 changes:
   - operation: add
     spec: knowledge-artifacts
@@ -35,6 +40,10 @@ changes:
         - "Qualification: content is independent of any specific binding decision"
         - "Qualification: multiple valid approaches exist with genuine trade-offs worth explaining"
         - "Qualification: content would benefit someone learning the problem space"
+        - "Qualification: content explains trade-offs applicable BEYOND this specific project"
+        - "Qualification: content would help someone at a different company facing a similar choice"
+        - "Distinction from ADR: ADRs record OUR specific binding decision; Concepts explain the decision SPACE"
+        - "Litmus test: 'Would this be useful to someone at a different company?' YES = Concept, NO = probably ADR"
         - Qualification test is applied before suggesting Concept creation
 
   - operation: add
@@ -45,12 +54,12 @@ changes:
         Criteria that disqualify content from being a Concept document,
         even if it superficially discusses trade-offs or choices.
       acceptance_criteria:
-        - "Disqualified: content is a binding decision record (that's an ADR)"
+        - "Disqualified: content records a specific binding decision we made (that's an ADR, not a Concept)"
+        - "Disqualified: content is only useful in our specific project context (lacks generalizable insight)"
         - "Disqualified: content is a term or entity definition (that's Domain knowledge)"
         - "Disqualified: content is step-by-step instructions (that's a tutorial/how-to)"
         - "Disqualified: content is technical reference material (that's reference docs)"
         - "Disqualified: content is ephemeral discussion that won't matter in 6 months"
-        - "Disqualified: content is specific to one project without generalizable insight"
         - Disqualification criteria are checked before suggesting Concept creation
 
   - operation: add

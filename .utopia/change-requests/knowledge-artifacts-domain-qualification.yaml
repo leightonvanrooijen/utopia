@@ -1,0 +1,123 @@
+id: knowledge-artifacts-domain-qualification
+type: enhancement
+title: Define domain documentation qualification using DDD Ubiquitous Language model
+status: draft
+notes: |
+  Research sources:
+  - Martin Fowler on Ubiquitous Language: https://martinfowler.com/bliki/UbiquitousLanguage.html
+  - DDD Practitioners: https://ddd-practitioners.com/home/glossary/ubiquitous-language/
+  - LinkedIn on Bounded Contexts: https://www.linkedin.com/advice/0/what-challenges-using-ubiquitous-language
+
+  Problem: Current signal-based detection ("X means...", "X is defined as...")
+  is too heuristic. A Domain term should establish canonical vocabulary that
+  prevents ambiguity, not just any definition mentioned in conversation.
+
+  Solution: Adopt Domain-Driven Design's Ubiquitous Language as the qualification
+  framework. Domain docs capture the shared vocabulary between developers and
+  domain experts within a specific bounded context.
+
+  Key distinction from ADR and Concept:
+  - ADR = "What binding decision did we make?" (point-in-time commitment)
+  - Concept = "Why is this approach valuable?" (timeless educational understanding)
+  - Domain = "What do we call this thing?" (consistent vocabulary within a bounded context)
+
+  The litmus test for Domain documentation:
+  "Would ambiguity arise if we didn't have a canonical definition for this term?"
+  - YES → Document it
+  - NO (term is obvious or already standard) → Don't document
+
+changes:
+  - operation: add
+    spec: knowledge-artifacts
+    feature:
+      id: domain-qualification-criteria
+      description: |
+        Criteria that define what qualifies as Domain documentation, based on
+        Domain-Driven Design's Ubiquitous Language concept. Domain docs capture
+        canonical vocabulary within a bounded context.
+      acceptance_criteria:
+        - "Qualification: term is specific to this project's domain, not general programming"
+        - "Qualification: term has a precise meaning that could be misunderstood without definition"
+        - "Qualification: term should be used consistently across code, docs, and communication"
+        - "Qualification: domain experts would recognize and validate this term"
+        - "Qualification: ambiguity would arise without a canonical definition"
+        - "Qualification: term appears in code (class names, methods, variables) or should"
+        - "Litmus test: 'Would ambiguity arise without this definition?' YES = Document"
+        - Qualification test is applied before suggesting Domain doc creation
+
+  - operation: add
+    spec: knowledge-artifacts
+    feature:
+      id: domain-disqualification-criteria
+      description: |
+        Criteria that disqualify content from being Domain documentation,
+        even if it superficially defines a term.
+      acceptance_criteria:
+        - "Disqualified: term is general programming knowledge (e.g., 'function', 'class', 'API')"
+        - "Disqualified: term is a standard industry term used in its standard way"
+        - "Disqualified: term is temporary or experimental (prototype names, working titles)"
+        - "Disqualified: term is an implementation detail not representing a domain concept"
+        - "Disqualified: term is already well-defined in external documentation we reference"
+        - "Disqualified: definition is a one-off explanation, not canonical vocabulary"
+        - Disqualification criteria are checked before suggesting Domain doc creation
+
+  - operation: add
+    spec: knowledge-artifacts
+    feature:
+      id: domain-bounded-context
+      description: |
+        Domain documentation is organized by bounded context per DDD principles.
+        The same term can have different meanings in different contexts.
+      acceptance_criteria:
+        - Each Domain doc belongs to exactly one bounded context
+        - Bounded context is identified by a clear scope (e.g., "execution", "change-requests", "verification")
+        - Terms are precise within their bounded context, not globally
+        - "When the same word means different things in different contexts, create separate terms in each context's Domain doc"
+        - Cross-context term usage should be explicitly noted when relevant
+
+  - operation: add
+    spec: knowledge-artifacts
+    feature:
+      id: domain-code-alignment
+      description: |
+        Domain terms must align with code naming. If a term is documented,
+        the code should use that exact term. If code uses a term, it should
+        be documented.
+      acceptance_criteria:
+        - Documented terms should appear in code (class names, method names, variable names)
+        - Code naming should match documented canonical terms, not synonyms
+        - Aliases capture alternative names that might appear but canonical term is preferred
+        - "Misalignment between code and docs is a signal to update one or the other"
+
+  - operation: modify
+    spec: knowledge-artifacts
+    feature_id: domain-discovery
+    description: |
+      Replace signal-based detection with qualification-based detection.
+      Instead of looking for phrases like "X means...", apply a qualification
+      test to determine if a term truly needs canonical documentation.
+    criteria:
+      remove:
+        - "Analyzes conversations for domain signals (term definitions, entity discussions, relationship clarifications)"
+      add:
+        - Applies Domain qualification test before suggesting Domain doc creation
+        - "Qualification requires answering: is this term specific to our domain?"
+        - "Qualification requires answering: would ambiguity arise without this definition?"
+        - "Qualification requires answering: should this term appear consistently in code?"
+        - Checks disqualification criteria before suggesting Domain doc creation
+        - Only suggests Domain doc creation when qualification test passes
+
+  - operation: modify
+    spec: knowledge-artifacts
+    feature_id: domain-template
+    description: |
+      Add required fields that reinforce the Ubiquitous Language model
+      and ensure terms meet qualification criteria.
+    criteria:
+      add:
+        - Template includes required bounded_context field identifying which context owns this vocabulary
+        - Template includes required code_usage field showing where this term appears in code (or should)
+        - "Each term includes required canonical field indicating this is THE name to use"
+      edit:
+        - old: "One file per bounded context (e.g., execution.yaml, change-requests.yaml)"
+          new: "One file per bounded context (e.g., execution.yaml, change-requests.yaml) - context boundaries should be explicit and intentional"
