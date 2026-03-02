@@ -846,9 +846,12 @@ type ADRStatusChange struct {
 
 // DomainTerm represents a term within a bounded context
 type DomainTerm struct {
-	Term       string   `yaml:"term"`
-	Definition string   `yaml:"definition"`
-	Aliases    []string `yaml:"aliases,omitempty"`
+	Term             string   `yaml:"term"`
+	Definition       string   `yaml:"definition"`
+	Canonical        bool     `yaml:"canonical"`                    // Indicates this is THE name to use in code and communication
+	CodeUsage        string   `yaml:"code_usage"`                   // Where this term appears in code (or should)
+	Aliases          []string `yaml:"aliases,omitempty"`            // Alternative names that map to this canonical term
+	CrossContextNote string   `yaml:"cross_context_note,omitempty"` // Notes about how this term differs in other contexts
 }
 
 // DomainEntity represents an entity within a bounded context
@@ -868,6 +871,7 @@ type EntityRelationship struct {
 type DomainDoc struct {
 	ID                  string         `yaml:"id"`
 	Title               string         `yaml:"title"`
+	BoundedContext      string         `yaml:"bounded_context"`              // Which context owns this vocabulary - context boundaries should be explicit and intentional
 	Description         string         `yaml:"description"`
 	Terms               []DomainTerm   `yaml:"terms,omitempty"`
 	Entities            []DomainEntity `yaml:"entities,omitempty"`

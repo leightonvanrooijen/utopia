@@ -13,6 +13,8 @@ description: |
 
 terms:
   - term: Spec
+    canonical: true
+    code_usage: "internal/domain/spec.go - Spec struct; .utopia/specs/*.yaml files"
     definition: A specification document with ID, Title, Description, Created/Updated timestamps, containing features and domain knowledge
     aliases:
       - specification
@@ -20,12 +22,16 @@ terms:
       - feature spec
 
   - term: Feature
+    canonical: true
+    code_usage: "internal/domain/spec.go - Feature struct; nested within Spec.Features array"
     definition: A capability within a spec, identified by unique ID, with description and acceptance criteria
     aliases:
       - capability
       - spec feature
 
   - term: AcceptanceCriteria
+    canonical: true
+    code_usage: "internal/domain/spec.go - Feature.AcceptanceCriteria field ([]string)"
     definition: Conditions that must be met for a feature to be considered complete and correct
     aliases:
       - AC
@@ -33,6 +39,8 @@ terms:
       - acceptance conditions
 
   - term: DomainKnowledge
+    canonical: true
+    code_usage: "internal/domain/spec.go - Spec.DomainKnowledge field ([]string)"
     definition: Array of strings capturing domain understanding that informs implementation but isn't a testable feature
     aliases:
       - domain info
@@ -40,12 +48,16 @@ terms:
       - background knowledge
 
   - term: Spec Operations
+    canonical: true
+    code_usage: "internal/domain/spec.go - ChangeOperation type; used in Change.Operation field"
     definition: Changes that can be applied to specs - add (new feature/knowledge), modify (existing feature), remove (feature/knowledge), delete-spec (entire spec)
     aliases:
       - operations
       - spec changes
 
   - term: Living Documentation
+    canonical: true
+    code_usage: "Conceptual pattern - specs auto-update when CRs merge via /complete command"
     definition: Specs are continuously updated as CRs merge, always reflecting current system state rather than historical intent
     aliases:
       - living docs

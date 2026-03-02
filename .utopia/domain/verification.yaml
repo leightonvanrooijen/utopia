@@ -13,12 +13,16 @@ description: |
 
 terms:
   - term: VerificationConfig
+    canonical: true
+    code_usage: "internal/domain/spec.go - VerificationConfig struct; .utopia/config.yaml"
     definition: Configuration specifying the verification command and optional max_iterations limit
     aliases:
       - verification settings
       - config
 
   - term: VerificationCommand
+    canonical: true
+    code_usage: "internal/domain/spec.go - VerificationConfig.Command field"
     definition: User-provided shell command executed to verify work (e.g., "go test ./...", "npm test")
     aliases:
       - test command
@@ -26,6 +30,8 @@ terms:
       - command
 
   - term: VerificationResult
+    canonical: true
+    code_usage: "internal/ralph/ package - verification result determines iteration outcome"
     definition: Outcome of running the verification command - pass (exit code 0) or fail (non-zero exit code)
     aliases:
       - result
@@ -33,12 +39,16 @@ terms:
       - verification outcome
 
   - term: Output Truncation
+    canonical: true
+    code_usage: "internal/ralph/ package - truncates verification output to tail before injecting into context"
     definition: Verification output is truncated to preserve the tail (last ~2000 chars), as most recent failures are most relevant
     aliases:
       - truncation
       - output limit
 
   - term: max_iterations
+    canonical: true
+    code_usage: "internal/domain/spec.go - VerificationConfig.MaxIterations field"
     definition: Safety limit on retry attempts before marking a work item as failed, preventing infinite loops
     aliases:
       - iteration limit

@@ -13,6 +13,8 @@ description: |
 
 terms:
   - term: WorkItem
+    canonical: true
+    code_usage: "internal/domain/spec.go - WorkItem struct; internal/workitem/ package"
     definition: Discrete unit of executable work with ID, SpecRef, Title, Status, Prompt, Constraints, Order, Dependencies, and Complexity
     aliases:
       - work item
@@ -24,6 +26,8 @@ terms:
       work that has no spec impact. When discussing "tasks", clarify context.
 
   - term: WorkItemStatus
+    canonical: true
+    code_usage: "internal/domain/spec.go - WorkItemStatus type; used in WorkItem.Status field"
     definition: Execution state of a work item - pending (not started), in_progress (executing), completed (verified), failed (max iterations exceeded)
     aliases:
       - status
@@ -34,12 +38,16 @@ terms:
       ADRStatus (adrs) with different lifecycle states.
 
   - term: Complexity
+    canonical: true
+    code_usage: "internal/domain/spec.go - Complexity type; used in WorkItem.Complexity field"
     definition: Estimated effort level for a work item - low, medium, high - affects iteration limits
     aliases:
       - work complexity
       - effort level
 
   - term: Iteration
+    canonical: true
+    code_usage: "internal/ralph/ package - iteration loop logic; WorkItem.IterationCount tracks count"
     definition: A single pass through Claude with fresh context, including the work item prompt and any failure feedback
     aliases:
       - execution iteration
@@ -47,12 +55,16 @@ terms:
       - try
 
   - term: IterationCount
+    canonical: true
+    code_usage: "internal/domain/spec.go - WorkItem.IterationCount field"
     definition: Number of retry attempts made for a work item, tracked to enforce max_iterations limit
     aliases:
       - retry count
       - attempt count
 
   - term: LastFailureOutput
+    canonical: true
+    code_usage: "internal/domain/spec.go - WorkItem.LastFailureOutput field; injected into iteration context"
     definition: Verification failure message from the previous iteration, injected into the next iteration's context (not accumulated)
     aliases:
       - failure output
@@ -60,12 +72,16 @@ terms:
       - verification failure
 
   - term: COMPLETE token
+    canonical: true
+    code_usage: "Work item prompts instruct Claude to output <COMPLETE>; detected by execution loop"
     definition: Special marker (<COMPLETE>) that Claude outputs to signal intentional completion, distinguishing from step-limit exits
     aliases:
       - completion token
       - done marker
 
   - term: Ralph Wiggum Loop
+    canonical: true
+    code_usage: "internal/ralph/ package - RalphWiggum command implementation"
     definition: The iterative execution pattern where work items are retried with fresh context and failure feedback until verification passes or max iterations reached
     aliases:
       - ralph loop
@@ -73,6 +89,8 @@ terms:
       - retry loop
 
   - term: Fresh Context
+    canonical: true
+    code_usage: "internal/ralph/ package - each iteration spawns new Claude session without history"
     definition: Each iteration starts with a clean context containing only the work item prompt, constraints, and last failure output - no accumulated history
     aliases:
       - clean context

@@ -13,6 +13,8 @@ description: |
 
 terms:
   - term: ADR
+    canonical: true
+    code_usage: "internal/domain/spec.go - ADR struct; .utopia/adrs/*.yaml files"
     definition: Architecture Decision Record - a document capturing ID, Title, Status, Date, Context, Decision, Options Considered, and Consequences
     aliases:
       - architecture decision record
@@ -20,6 +22,8 @@ terms:
       - architectural decision
 
   - term: ADRStatus
+    canonical: true
+    code_usage: "internal/domain/spec.go - ADRStatus type; used in ADR.Status field"
     definition: Lifecycle state of an ADR - draft (being written), proposed (awaiting review), accepted (in effect), deprecated (no longer recommended), superseded (replaced by newer ADR)
     aliases:
       - status
@@ -30,6 +34,8 @@ terms:
       (change-requests) with different lifecycle states.
 
   - term: ADROption
+    canonical: true
+    code_usage: "internal/domain/spec.go - ADROption struct; used in ADR.OptionsConsidered array"
     definition: An alternative considered during the decision process, documented with pros and cons
     aliases:
       - option
@@ -37,6 +43,8 @@ terms:
       - considered option
 
   - term: ADRConsequences
+    canonical: true
+    code_usage: "internal/domain/spec.go - ADRConsequences struct; used in ADR.Consequences field"
     definition: Outcomes of the decision - categorized as positive, negative, and neutral impacts
     aliases:
       - consequences
@@ -44,6 +52,8 @@ terms:
       - outcomes
 
   - term: StatusHistory
+    canonical: true
+    code_usage: "internal/domain/spec.go - ADRStatusChange struct; used in ADR.StatusHistory array"
     definition: Audit trail tracking ADR status changes with timestamps and reasons
     aliases:
       - history
@@ -51,6 +61,8 @@ terms:
       - timeline
 
   - term: SourceConversation
+    canonical: true
+    code_usage: "internal/domain/spec.go - ADR.SourceConversations field ([]string)"
     definition: Reference to the conversation where the architectural decision was discussed and made
     aliases:
       - source
@@ -58,6 +70,8 @@ terms:
       - decision context
 
   - term: Supersedes
+    canonical: true
+    code_usage: "internal/domain/spec.go - ADR.Supersedes field"
     definition: Reference indicating this ADR replaces an older, deprecated ADR
     aliases:
       - replaces

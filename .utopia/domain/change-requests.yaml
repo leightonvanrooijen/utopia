@@ -13,6 +13,8 @@ description: |
 
 terms:
   - term: Change Request
+    canonical: true
+    code_usage: "internal/domain/spec.go - ChangeRequest struct; .utopia/change-requests/*.yaml files"
     definition: Core document describing intended work with ID, Type, Title, Status, and Changes/Tasks/Phases
     aliases:
       - CR
@@ -20,6 +22,8 @@ terms:
       - work request
 
   - term: CRType
+    canonical: true
+    code_usage: "internal/domain/spec.go - CRType type; used in ChangeRequest.Type field"
     definition: Classification of change request - feature (new capability), enhancement (modify existing), refactor (behavior-preserving), removal (delete capability), initiative (multi-phase), bugfix (correct to match spec)
     aliases:
       - CR type
@@ -27,6 +31,8 @@ terms:
       - type
 
   - term: ChangeRequestStatus
+    canonical: true
+    code_usage: "internal/domain/spec.go - ChangeRequestStatus type; used in ChangeRequest.Status field"
     definition: Lifecycle state of a CR - draft (being defined), in-progress (being executed), complete (merged)
     aliases:
       - CR status
@@ -37,12 +43,16 @@ terms:
       different lifecycle states.
 
   - term: Change
+    canonical: true
+    code_usage: "internal/domain/spec.go - Change struct; used in ChangeRequest.Changes array"
     definition: A single operation within a CR that modifies a spec - add (new feature/knowledge), modify (existing feature), remove (feature/knowledge), delete-spec (entire spec)
     aliases:
       - spec change
       - feature change
 
   - term: Task
+    canonical: true
+    code_usage: "internal/domain/spec.go - Task struct; used in ChangeRequest.Tasks array"
     definition: A unit of work for refactor/bugfix CRs that has no spec impact - contains description and acceptance criteria
     aliases:
       - refactor task
@@ -53,12 +63,16 @@ terms:
       (any executable work unit). When discussing "tasks", clarify context.
 
   - term: Phase
+    canonical: true
+    code_usage: "internal/domain/spec.go - Phase struct; used in ChangeRequest.Phases array"
     definition: An ordered stage within an initiative CR, containing tasks or changes with execution dependencies
     aliases:
       - initiative phase
       - execution phase
 
   - term: spec_ref
+    canonical: true
+    code_usage: "internal/domain/spec.go - Change.SpecRef and WorkItem.SpecRef fields"
     definition: Field identifying the target specification that a change applies to
     aliases:
       - spec
@@ -66,6 +80,8 @@ terms:
       - target spec
 
   - term: Initiative
+    canonical: true
+    code_usage: "internal/domain/spec.go - CRType 'initiative'; ChangeRequest with Phases array"
     definition: A complex CR type with ordered phases and dependencies, used for large cross-cutting work
     aliases:
       - initiative CR
