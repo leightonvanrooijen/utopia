@@ -1,0 +1,65 @@
+id: knowledge-artifacts-adr-category-enforcement
+type: enhancement
+title: Enforce ADR qualification through required category selection
+status: in-progress
+changes:
+    - operation: modify
+      spec: knowledge-artifacts
+      feature_id: adr-template
+      description: |
+        Add required category field and significance justification to ADR template.
+        Category must be one of the AWS architectural decision categories.
+      criteria:
+        add:
+            - Template includes required category field with enum values (structure, nfr, dependencies, interfaces, construction)
+            - Template includes required significance field explaining why this qualifies as architectural
+            - Template includes required reversal_cost field explaining cost of changing this decision
+            - Category field has inline documentation explaining each category
+        edit:
+            - old: Template includes Context field (forces at play - technical, political, social)
+              new: Template includes Context field (forces at play - technical, political, social, project constraints)
+    - operation: modify
+      spec: knowledge-artifacts
+      feature_id: adr-discovery
+      description: |
+        Replace signal-based detection with qualification-based detection.
+        Instead of looking for phrases, apply a qualification test to determine
+        if something is truly an architectural decision.
+      criteria:
+        add:
+            - Applies ADR qualification test before suggesting ADR creation
+            - 'Qualification requires answering: which AWS category does this fall into?'
+            - 'Qualification requires answering: is this costly to reverse?'
+            - Disqualifies temporary workarounds, implementation details, and already-documented decisions
+            - Only suggests ADR creation when qualification test passes
+        remove:
+            - Analyzes each conversation for architectural decision signals
+    - operation: add
+      spec: knowledge-artifacts
+      feature:
+        id: adr-categories
+        description: |
+            The five AWS categories that define what qualifies as an architectural decision.
+            An ADR must fall into at least one category to be valid.
+        acceptance_criteria:
+            - 'Category: structure - architectural patterns, layers, component organization (e.g., microservices, monolith, event-driven)'
+            - 'Category: nfr - non-functional requirements affecting architecture (e.g., security, high availability, fault tolerance, performance)'
+            - 'Category: dependencies - component coupling and external service choices (e.g., database selection, third-party integrations)'
+            - 'Category: interfaces - APIs, published contracts, integration points (e.g., REST vs GraphQL, event schemas)'
+            - 'Category: construction - libraries, frameworks, tools, build processes (e.g., framework choice, CI/CD approach)'
+            - A decision that doesn't fit any category is not architecturally significant
+            - ADR validation rejects ADRs without a valid category
+    - operation: add
+      spec: knowledge-artifacts
+      feature:
+        id: adr-disqualification-criteria
+        description: |
+            Criteria that disqualify a decision from being recorded as an ADR,
+            even if it superficially resembles an architectural decision.
+        acceptance_criteria:
+            - Temporary workarounds or experiments are not ADRs
+            - Implementation details (how, not what) are not ADRs
+            - Decisions already covered by existing standards or policies are not ADRs
+            - Localized decisions affecting only a single developer or component are not ADRs
+            - Configuration or deployment specifics are not ADRs unless they constrain architecture
+            - Disqualification criteria are checked before suggesting ADR creation

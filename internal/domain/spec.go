@@ -165,9 +165,9 @@ type ChangeRequest struct {
 	ParentSpec   string              `yaml:"parent_spec,omitempty"`
 	Title        string              `yaml:"title"`
 	Status       ChangeRequestStatus `yaml:"status"`
-	Changes      []Change            `yaml:"changes,omitempty"`      // For feature/enhancement/removal types
-	Tasks        []Task              `yaml:"tasks,omitempty"`        // For refactor type
-	Phases       []Phase             `yaml:"phases,omitempty"`       // For initiative type
+	Changes      []Change            `yaml:"changes,omitempty"`       // For feature/enhancement/removal types
+	Tasks        []Task              `yaml:"tasks,omitempty"`         // For refactor type
+	Phases       []Phase             `yaml:"phases,omitempty"`        // For initiative type
 	CurrentPhase int                 `yaml:"current_phase,omitempty"` // For initiative: 0-indexed current phase (0 = first phase)
 }
 
@@ -193,7 +193,7 @@ type DomainKnowledgeModify struct {
 
 // Change represents a single operation in a change request
 type Change struct {
-	Operation       string   `yaml:"operation"` // "add", "modify", "remove", "delete-spec"
+	Operation       string   `yaml:"operation"`      // "add", "modify", "remove", "delete-spec"
 	Spec            string   `yaml:"spec,omitempty"` // Target spec ID (required for feature/enhancement/removal/delete-spec)
 	Feature         *Feature `yaml:"feature,omitempty"`
 	DomainKnowledge []string `yaml:"domain_knowledge,omitempty"`
