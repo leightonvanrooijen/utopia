@@ -170,12 +170,16 @@ func runMerge(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Validate delete-spec targets exist before proceeding
+	// Filter out delete-spec targets that no longer exist (idempotent merge)
+	var validDeleteSpecs []domain.Change
 	for _, change := range deleteSpecChanges {
 		if _, err := store.LoadSpec(change.Spec); err != nil {
-			return fmt.Errorf("cannot delete spec %q: spec not found", change.Spec)
+			fmt.Printf("⚠ Spec %q not found (already deleted?), skipping\n", change.Spec)
+			continue
 		}
+		validDeleteSpecs = append(validDeleteSpecs, change)
 	}
+	deleteSpecChanges = validDeleteSpecs
 
 	// Load all specs for regular operations (or create for add-only operations)
 	specs := make(map[string]*domain.Spec)
@@ -208,7 +212,7 @@ func runMerge(cmd *cobra.Command, args []string) error {
 	// Save all modified specs (atomic commit phase)
 	for _, specID := range specIDs {
 		if err := store.SaveSpec(specs[specID]); err != nil {
-			return fmt.Errorf("failed to save spec %s: %w\n\nSome specs may have been saved. Manual cleanup may be required.", specID, err)
+			return fmt.Errorf("failed to save spec %s: %w - some specs may have been saved, manual cleanup may be required", specID, err)
 		}
 		if createdSpecs[specID] {
 			fmt.Printf("✓ Created spec: %s\n", specID)
@@ -383,12 +387,16 @@ func mergeInitiative(cr *domain.ChangeRequest, changeRequestID, utopiaDir string
 			return nil
 		}
 
-		// Validate delete-spec targets exist before proceeding
+		// Filter out delete-spec targets that no longer exist (idempotent merge)
+		var validDeleteSpecs []domain.Change
 		for _, change := range deleteSpecChanges {
 			if _, err := store.LoadSpec(change.Spec); err != nil {
-				return fmt.Errorf("cannot delete spec %q: spec not found", change.Spec)
+				fmt.Printf("⚠ Spec %q not found (already deleted?), skipping\n", change.Spec)
+				continue
 			}
+			validDeleteSpecs = append(validDeleteSpecs, change)
 		}
+		deleteSpecChanges = validDeleteSpecs
 
 		// Load all specs for regular operations (or create for add-only operations)
 		specs := make(map[string]*domain.Spec)
@@ -573,12 +581,16 @@ func performMergeChanges(changes []domain.Change, store *storage.YAMLStore) (*Me
 	changesBySpec := groupChangesBySpec(regularChanges)
 	specIDs := sortedSpecIDs(changesBySpec)
 
-	// Validate delete-spec targets exist before proceeding
+	// Filter out delete-spec targets that no longer exist (idempotent merge)
+	var validDeleteSpecs []domain.Change
 	for _, change := range deleteSpecChanges {
 		if _, err := store.LoadSpec(change.Spec); err != nil {
-			return nil, fmt.Errorf("cannot delete spec %q: spec not found", change.Spec)
+			fmt.Printf("⚠ Spec %q not found (already deleted?), skipping\n", change.Spec)
+			continue
 		}
+		validDeleteSpecs = append(validDeleteSpecs, change)
 	}
+	deleteSpecChanges = validDeleteSpecs
 
 	// Load all specs for regular operations (or create for add-only operations)
 	specs := make(map[string]*domain.Spec)

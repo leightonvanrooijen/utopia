@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/leightonvanrooijen/utopia/internal/domain"
@@ -300,9 +299,6 @@ func (s *YAMLStore) writeYAML(path string, data interface{}) error {
 
 	return nil
 }
-
-// featurePattern matches the start of a feature in YAML (indented "- id:")
-var featurePattern = regexp.MustCompile(`(?m)^(\s+- id:)`)
 
 // addFeatureSpacing inserts blank lines between features in YAML output
 // This makes the output more readable by separating feature blocks

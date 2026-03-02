@@ -198,9 +198,7 @@ func (s *Strategy) extractFeatures(cr *domain.ChangeRequest) ([]domain.Feature, 
 				var criteria []string
 
 				if change.Criteria != nil {
-					for _, add := range change.Criteria.Add {
-						criteria = append(criteria, add)
-					}
+					criteria = append(criteria, change.Criteria.Add...)
 					for _, remove := range change.Criteria.Remove {
 						criteria = append(criteria, fmt.Sprintf("Remove/undo: %s", remove))
 					}
@@ -358,9 +356,7 @@ func (s *Strategy) extractFeaturesFromPhase(phase *domain.Phase) ([]domain.Featu
 
 				var criteria []string
 				if change.Criteria != nil {
-					for _, add := range change.Criteria.Add {
-						criteria = append(criteria, add)
-					}
+					criteria = append(criteria, change.Criteria.Add...)
 					for _, remove := range change.Criteria.Remove {
 						criteria = append(criteria, fmt.Sprintf("Remove/undo: %s", remove))
 					}

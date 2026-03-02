@@ -4,5 +4,5 @@ strategies:
   execute: sequential
 
 verification:
-  command: "go test ./..."
+  command: "./scripts/verify.sh"
   max_iterations: 6
