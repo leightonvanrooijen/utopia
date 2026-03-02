@@ -448,7 +448,8 @@ func (s *Spec) ApplyRemoveChange(change Change) error {
 	return nil
 }
 
-// removeFeature removes a feature by ID from the spec
+// removeFeature removes a feature by ID from the spec.
+// Idempotent: returns nil if the feature doesn't exist (already removed).
 func (s *Spec) removeFeature(featureID string) error {
 	for i, f := range s.Features {
 		if f.ID == featureID {
@@ -457,10 +458,12 @@ func (s *Spec) removeFeature(featureID string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("feature with ID '%s' not found in spec", featureID)
+	// Feature not found - already in desired state, succeed silently
+	return nil
 }
 
-// removeDomainKnowledge removes an exact domain knowledge string from the spec
+// removeDomainKnowledge removes an exact domain knowledge string from the spec.
+// Idempotent: returns nil if the knowledge doesn't exist (already removed).
 func (s *Spec) removeDomainKnowledge(knowledge string) error {
 	for i, dk := range s.DomainKnowledge {
 		if dk == knowledge {
@@ -469,7 +472,8 @@ func (s *Spec) removeDomainKnowledge(knowledge string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("domain knowledge not found: %s", knowledge)
+	// Knowledge not found - already in desired state, succeed silently
+	return nil
 }
 
 // GetCurrentPhase returns the current phase index for an initiative CR.

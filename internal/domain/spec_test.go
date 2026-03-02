@@ -627,7 +627,7 @@ func TestApplyRemoveChange_Feature(t *testing.T) {
 	}
 }
 
-func TestApplyRemoveChange_FeatureNotFound(t *testing.T) {
+func TestApplyRemoveChange_FeatureNotFound_Idempotent(t *testing.T) {
 	spec := NewSpec("test-spec", "Test Spec")
 	spec.AddFeature(Feature{
 		ID:          "existing-feature",
@@ -639,13 +639,15 @@ func TestApplyRemoveChange_FeatureNotFound(t *testing.T) {
 		FeatureID: "nonexistent-feature",
 	}
 
+	// Idempotent: removing a nonexistent feature should succeed
 	err := spec.ApplyRemoveChange(change)
-	if err == nil {
-		t.Fatal("expected error for nonexistent feature, got nil")
+	if err != nil {
+		t.Fatalf("expected idempotent success for nonexistent feature, got: %v", err)
 	}
 
-	if !strings.Contains(err.Error(), "not found") {
-		t.Errorf("error should mention 'not found', got: %v", err)
+	// Existing feature should be untouched
+	if len(spec.Features) != 1 {
+		t.Errorf("expected 1 feature to remain, got %d", len(spec.Features))
 	}
 }
 
@@ -721,7 +723,7 @@ func TestApplyRemoveChange_DomainKnowledgeMultiple(t *testing.T) {
 	}
 }
 
-func TestApplyRemoveChange_DomainKnowledgeNotFound(t *testing.T) {
+func TestApplyRemoveChange_DomainKnowledgeNotFound_Idempotent(t *testing.T) {
 	spec := NewSpec("test-spec", "Test Spec")
 	spec.AddDomainKnowledge("Existing knowledge")
 
@@ -730,13 +732,15 @@ func TestApplyRemoveChange_DomainKnowledgeNotFound(t *testing.T) {
 		DomainKnowledge: []string{"Nonexistent knowledge"},
 	}
 
+	// Idempotent: removing nonexistent knowledge should succeed
 	err := spec.ApplyRemoveChange(change)
-	if err == nil {
-		t.Fatal("expected error for nonexistent domain knowledge, got nil")
+	if err != nil {
+		t.Fatalf("expected idempotent success for nonexistent knowledge, got: %v", err)
 	}
 
-	if !strings.Contains(err.Error(), "not found") {
-		t.Errorf("error should mention 'not found', got: %v", err)
+	// Existing knowledge should be untouched
+	if len(spec.DomainKnowledge) != 1 {
+		t.Errorf("expected 1 knowledge item to remain, got %d", len(spec.DomainKnowledge))
 	}
 }
 
@@ -744,18 +748,19 @@ func TestApplyRemoveChange_DomainKnowledgeExactMatch(t *testing.T) {
 	spec := NewSpec("test-spec", "Test Spec")
 	spec.AddDomainKnowledge("Exact string to match")
 
-	// Try with slightly different string (extra space)
+	// Try with slightly different string (extra space) - should succeed but not remove anything
 	change := Change{
 		Operation:       "remove",
 		DomainKnowledge: []string{"Exact string to match "},
 	}
 
+	// Idempotent: non-matching string succeeds (nothing to remove)
 	err := spec.ApplyRemoveChange(change)
-	if err == nil {
-		t.Fatal("expected error for non-exact match, got nil")
+	if err != nil {
+		t.Fatalf("expected idempotent success, got: %v", err)
 	}
 
-	// Verify original still exists
+	// Original should still exist (exact match required for actual removal)
 	if len(spec.DomainKnowledge) != 1 {
 		t.Errorf("original knowledge should still exist, got %d items", len(spec.DomainKnowledge))
 	}
@@ -1015,8 +1020,10 @@ func TestApplyChanges_FailsOnSecondChange(t *testing.T) {
 				},
 			},
 			{
-				Operation: "remove",
-				FeatureID: "nonexistent-feature",
+				// Modify on nonexistent feature should fail (modify is not idempotent)
+				Operation:   "modify",
+				FeatureID:   "nonexistent-feature",
+				Description: "Updated description",
 			},
 		},
 	}
