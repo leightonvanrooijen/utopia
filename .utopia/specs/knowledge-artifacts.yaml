@@ -1,7 +1,7 @@
 id: knowledge-artifacts
 title: knowledge-artifacts
 created: 2026-03-02T16:01:45.410811+11:00
-updated: 2026-03-02T21:48:39.97442+11:00
+updated: 2026-03-02T22:10:23.219686+11:00
 description: ""
 features:
     - id: adr-template
@@ -133,11 +133,11 @@ features:
 
     - id: domain-template
       description: |
-        YAML-based domain document structure organized by bounded context,
-        optimized for human documentation and team communication.
+        Add required fields that reinforce the Ubiquitous Language model
+        and ensure terms meet qualification criteria.
       acceptance_criteria:
         - Domain docs stored in .utopia/domain/ as YAML files
-        - One file per bounded context (e.g., execution.yaml, change-requests.yaml)
+        - One file per bounded context (e.g., execution.yaml, change-requests.yaml) - context boundaries should be explicit and intentional
         - File includes id, title, description fields
         - Terms section contains array of term/definition pairs
         - Each term has term field (the canonical name) and definition field
@@ -145,19 +145,28 @@ features:
         - Entities section contains array of entity definitions
         - Each entity has name and relationships array
         - Relationships specify type (contains, produces, targets, etc.) and target entity
+        - Template includes required bounded_context field identifying which context owns this vocabulary
+        - Template includes required code_usage field showing where this term appears in code (or should)
+        - Each term includes required canonical field indicating this is THE name to use
 
     - id: domain-discovery
       description: |
-        /domain command that scans persisted conversations for domain
-        terminology and entity discussions, guiding domain doc creation or updates.
+        Replace signal-based detection with qualification-based detection.
+        Instead of looking for phrases like "X means...", apply a qualification
+        test to determine if a term truly needs canonical documentation.
       acceptance_criteria:
         - /domain command scans .utopia/conversations/ for unprocessed conversations
-        - Analyzes conversations for domain signals (term definitions, entity discussions, relationship clarifications)
         - Signal detection is strict - only surfaces clear domain knowledge, not general discussion
         - Before suggesting a new domain doc, checks existing docs in .utopia/domain/
         - If related bounded context exists, suggests updating it instead of creating new
         - Guides user through domain doc creation/update conversationally
         - Marks conversations as processed after review
+        - Applies Domain qualification test before suggesting Domain doc creation
+        - 'Qualification requires answering: is this term specific to our domain?'
+        - 'Qualification requires answering: would ambiguity arise without this definition?'
+        - 'Qualification requires answering: should this term appear consistently in code?'
+        - Checks disqualification criteria before suggesting Domain doc creation
+        - Only suggests Domain doc creation when qualification test passes
 
     - id: concept-qualification-criteria
       description: |
@@ -203,3 +212,53 @@ features:
         - 'Explanation documentation characteristics: can include labeled opinions and perspectives'
         - 'Explanation documentation characteristics: makes connections across topics'
         - 'Explanation documentation characteristics: provides context, history, and background'
+
+    - id: domain-qualification-criteria
+      description: |
+        Criteria that define what qualifies as Domain documentation, based on
+        Domain-Driven Design's Ubiquitous Language concept. Domain docs capture
+        canonical vocabulary within a bounded context.
+      acceptance_criteria:
+        - 'Qualification: term is specific to this project''s domain, not general programming'
+        - 'Qualification: term has a precise meaning that could be misunderstood without definition'
+        - 'Qualification: term should be used consistently across code, docs, and communication'
+        - 'Qualification: domain experts would recognize and validate this term'
+        - 'Qualification: ambiguity would arise without a canonical definition'
+        - 'Qualification: term appears in code (class names, methods, variables) or should'
+        - 'Litmus test: ''Would ambiguity arise without this definition?'' YES = Document'
+        - Qualification test is applied before suggesting Domain doc creation
+
+    - id: domain-disqualification-criteria
+      description: |
+        Criteria that disqualify content from being Domain documentation,
+        even if it superficially defines a term.
+      acceptance_criteria:
+        - 'Disqualified: term is general programming knowledge (e.g., ''function'', ''class'', ''API'')'
+        - 'Disqualified: term is a standard industry term used in its standard way'
+        - 'Disqualified: term is temporary or experimental (prototype names, working titles)'
+        - 'Disqualified: term is an implementation detail not representing a domain concept'
+        - 'Disqualified: term is already well-defined in external documentation we reference'
+        - 'Disqualified: definition is a one-off explanation, not canonical vocabulary'
+        - Disqualification criteria are checked before suggesting Domain doc creation
+
+    - id: domain-bounded-context
+      description: |
+        Domain documentation is organized by bounded context per DDD principles.
+        The same term can have different meanings in different contexts.
+      acceptance_criteria:
+        - Each Domain doc belongs to exactly one bounded context
+        - Bounded context is identified by a clear scope (e.g., "execution", "change-requests", "verification")
+        - Terms are precise within their bounded context, not globally
+        - When the same word means different things in different contexts, create separate terms in each context's Domain doc
+        - Cross-context term usage should be explicitly noted when relevant
+
+    - id: domain-code-alignment
+      description: |
+        Domain terms must align with code naming. If a term is documented,
+        the code should use that exact term. If code uses a term, it should
+        be documented.
+      acceptance_criteria:
+        - Documented terms should appear in code (class names, method names, variable names)
+        - Code naming should match documented canonical terms, not synonyms
+        - Aliases capture alternative names that might appear but canonical term is preferred
+        - Misalignment between code and docs is a signal to update one or the other
