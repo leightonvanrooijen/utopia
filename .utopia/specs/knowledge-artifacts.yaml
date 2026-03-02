@@ -1,12 +1,13 @@
 id: knowledge-artifacts
 title: knowledge-artifacts
 created: 2026-03-02T16:01:45.410811+11:00
-updated: 2026-03-02T16:01:45.410845+11:00
+updated: 2026-03-02T21:36:19.137114+11:00
 description: ""
 features:
     - id: adr-template
       description: |
-        ADR document structure based on Nygard format with extensions.
+        Add required category field and significance justification to ADR template.
+        Category must be one of the AWS architectural decision categories.
       acceptance_criteria:
         - ADRs stored in .utopia/adrs/ as YAML files
         - ADR ID format is sequential (ADR-001, ADR-002, etc.)
@@ -22,6 +23,10 @@ features:
         - Template includes Consequences field (positive, negative, and neutral outcomes)
         - Template includes Advice field (who was consulted, when)
         - Template includes Principles field (architectural principles that apply or conflict)
+        - Template includes required category field with enum values (structure, nfr, dependencies, interfaces, construction)
+        - Template includes required significance field explaining why this qualifies as architectural
+        - Template includes required reversal_cost field explaining cost of changing this decision
+        - Category field has inline documentation explaining each category
 
     - id: adr-lifecycle
       description: |
@@ -35,8 +40,9 @@ features:
 
     - id: adr-discovery
       description: |
-        ADR discovery that scans persisted conversations and applies a qualification
-        test to determine if something is truly an architectural decision worth recording.
+        Replace signal-based detection with qualification-based detection.
+        Instead of looking for phrases, apply a qualification test to determine
+        if something is truly an architectural decision.
       acceptance_criteria:
         - Scans .utopia/conversations/ for unprocessed conversations
         - Applies ADR qualification test before suggesting ADR creation
@@ -47,6 +53,11 @@ features:
         - Cross-references with commits and spec changes for context
         - Guides user through ADR creation conversationally (like /cr)
         - Marks conversations as processed after review
+        - Applies ADR qualification test before suggesting ADR creation
+        - 'Qualification requires answering: which AWS category does this fall into?'
+        - 'Qualification requires answering: is this costly to reverse?'
+        - Disqualifies temporary workarounds, implementation details, and already-documented decisions
+        - Only suggests ADR creation when qualification test passes
 
     - id: adr-categories
       description: |

@@ -31,7 +31,7 @@ func TestApplyAddChange_Feature(t *testing.T) {
 	}
 }
 
-func TestApplyAddChange_DuplicateFeatureID(t *testing.T) {
+func TestApplyAddChange_DuplicateFeatureID_Idempotent(t *testing.T) {
 	spec := NewSpec("test-spec", "Test Spec")
 	spec.AddFeature(Feature{
 		ID:          "existing-feature",
@@ -46,13 +46,15 @@ func TestApplyAddChange_DuplicateFeatureID(t *testing.T) {
 		},
 	}
 
+	// Idempotent: adding duplicate feature ID should succeed
 	err := spec.ApplyAddChange(change)
-	if err == nil {
-		t.Fatal("expected error for duplicate feature ID, got nil")
+	if err != nil {
+		t.Fatalf("expected idempotent success for duplicate feature ID, got: %v", err)
 	}
 
-	if !strings.Contains(err.Error(), "already exists") {
-		t.Errorf("error should mention 'already exists', got: %v", err)
+	// Should still have only one feature (not duplicated)
+	if len(spec.Features) != 1 {
+		t.Errorf("expected 1 feature, got %d", len(spec.Features))
 	}
 }
 
@@ -77,7 +79,7 @@ func TestApplyAddChange_DomainKnowledge(t *testing.T) {
 	}
 }
 
-func TestApplyAddChange_DuplicateDomainKnowledge(t *testing.T) {
+func TestApplyAddChange_DuplicateDomainKnowledge_Idempotent(t *testing.T) {
 	spec := NewSpec("test-spec", "Test Spec")
 	spec.AddDomainKnowledge("Existing knowledge")
 
@@ -86,13 +88,15 @@ func TestApplyAddChange_DuplicateDomainKnowledge(t *testing.T) {
 		DomainKnowledge: []string{"Existing knowledge"},
 	}
 
+	// Idempotent: adding duplicate knowledge should succeed
 	err := spec.ApplyAddChange(change)
-	if err == nil {
-		t.Fatal("expected error for duplicate domain knowledge, got nil")
+	if err != nil {
+		t.Fatalf("expected idempotent success for duplicate knowledge, got: %v", err)
 	}
 
-	if !strings.Contains(err.Error(), "already exists") {
-		t.Errorf("error should mention 'already exists', got: %v", err)
+	// Should still have only one knowledge item (not duplicated)
+	if len(spec.DomainKnowledge) != 1 {
+		t.Errorf("expected 1 knowledge item, got %d", len(spec.DomainKnowledge))
 	}
 }
 
@@ -293,7 +297,7 @@ func TestApplyModifyChange_RemoveCriteria(t *testing.T) {
 	}
 }
 
-func TestApplyModifyChange_RemoveCriteriaNotFound(t *testing.T) {
+func TestApplyModifyChange_RemoveCriteriaNotFound_Idempotent(t *testing.T) {
 	spec := NewSpec("test-spec", "Test Spec")
 	spec.AddFeature(Feature{
 		ID:                 "my-feature",
@@ -309,13 +313,15 @@ func TestApplyModifyChange_RemoveCriteriaNotFound(t *testing.T) {
 		},
 	}
 
+	// Idempotent: removing nonexistent criterion should succeed
 	err := spec.ApplyModifyChange(change)
-	if err == nil {
-		t.Fatal("expected error for nonexistent criterion, got nil")
+	if err != nil {
+		t.Fatalf("expected idempotent success for nonexistent criterion, got: %v", err)
 	}
 
-	if !strings.Contains(err.Error(), "not found for removal") {
-		t.Errorf("error should mention 'not found for removal', got: %v", err)
+	// Existing criterion should be untouched
+	if len(spec.Features[0].AcceptanceCriteria) != 1 {
+		t.Errorf("expected 1 criterion to remain, got %d", len(spec.Features[0].AcceptanceCriteria))
 	}
 }
 
@@ -457,7 +463,7 @@ func TestApplyModifyChange_DomainKnowledgeRemove(t *testing.T) {
 	}
 }
 
-func TestApplyModifyChange_DomainKnowledgeRemoveNotFound(t *testing.T) {
+func TestApplyModifyChange_DomainKnowledgeRemoveNotFound_Idempotent(t *testing.T) {
 	spec := NewSpec("test-spec", "Test Spec")
 	spec.AddDomainKnowledge("Existing knowledge")
 
@@ -468,13 +474,15 @@ func TestApplyModifyChange_DomainKnowledgeRemoveNotFound(t *testing.T) {
 		},
 	}
 
+	// Idempotent: removing nonexistent knowledge should succeed
 	err := spec.ApplyModifyChange(change)
-	if err == nil {
-		t.Fatal("expected error for nonexistent domain knowledge, got nil")
+	if err != nil {
+		t.Fatalf("expected idempotent success for nonexistent knowledge, got: %v", err)
 	}
 
-	if !strings.Contains(err.Error(), "not found for removal") {
-		t.Errorf("error should mention 'not found for removal', got: %v", err)
+	// Existing knowledge should be untouched
+	if len(spec.DomainKnowledge) != 1 {
+		t.Errorf("expected 1 knowledge item to remain, got %d", len(spec.DomainKnowledge))
 	}
 }
 

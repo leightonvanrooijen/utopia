@@ -236,18 +236,21 @@ func (s *Spec) ApplyAddChange(change Change) error {
 func (s *Spec) addFeatureWithValidation(f Feature) error {
 	for _, existing := range s.Features {
 		if existing.ID == f.ID {
-			return fmt.Errorf("feature with ID '%s' already exists in spec", f.ID)
+			// Feature already exists - already in desired state
+			return nil
 		}
 	}
 	s.AddFeature(f)
 	return nil
 }
 
-// addDomainKnowledgeWithValidation adds domain knowledge only if not duplicate
+// addDomainKnowledgeWithValidation adds domain knowledge only if not duplicate.
+// Idempotent: if knowledge already exists, succeed silently (already in desired state).
 func (s *Spec) addDomainKnowledgeWithValidation(knowledge string) error {
 	for _, existing := range s.DomainKnowledge {
 		if existing == knowledge {
-			return fmt.Errorf("domain knowledge already exists: %s", knowledge)
+			// Knowledge already exists - already in desired state
+			return nil
 		}
 	}
 	s.AddDomainKnowledge(knowledge)
@@ -335,39 +338,44 @@ func (s *Spec) modifyFeature(change Change) error {
 	return nil
 }
 
-// modifyCriteria applies add/remove/edit operations to feature acceptance criteria
+// modifyCriteria applies add/remove/edit operations to feature acceptance criteria.
+// Idempotent: removals succeed if item already gone, edits succeed if new value already present.
 func (s *Spec) modifyCriteria(featureIdx int, criteria CriteriaModify) error {
 	// Process removals first (before adds to avoid removing newly added items)
+	// Idempotent: if item doesn't exist, it's already in desired state
 	for _, toRemove := range criteria.Remove {
-		found := false
 		for i, existing := range s.Features[featureIdx].AcceptanceCriteria {
 			if existing == toRemove {
 				s.Features[featureIdx].AcceptanceCriteria = append(
 					s.Features[featureIdx].AcceptanceCriteria[:i],
 					s.Features[featureIdx].AcceptanceCriteria[i+1:]...,
 				)
-				found = true
 				break
 			}
 		}
-		if !found {
-			return fmt.Errorf("criterion not found for removal: %s", toRemove)
-		}
+		// If not found, already in desired state - continue
 	}
 
 	// Process edits
+	// Idempotent: if OLD not found but NEW exists, already in desired state
 	for _, edit := range criteria.Edit {
-		found := false
+		foundOld := false
+		foundNew := false
 		for i, existing := range s.Features[featureIdx].AcceptanceCriteria {
 			if existing == edit.Old {
 				s.Features[featureIdx].AcceptanceCriteria[i] = edit.New
-				found = true
+				foundOld = true
 				break
 			}
+			if existing == edit.New {
+				foundNew = true
+			}
 		}
-		if !found {
-			return fmt.Errorf("criterion not found for edit: %s", edit.Old)
+		if !foundOld && !foundNew {
+			// Neither old nor new found - this is an error
+			return fmt.Errorf("criterion not found for edit (old: %q, new: %q not present)", edit.Old, edit.New)
 		}
+		// If foundNew but not foundOld, already in desired state - continue
 	}
 
 	// Process additions last
@@ -379,39 +387,44 @@ func (s *Spec) modifyCriteria(featureIdx int, criteria CriteriaModify) error {
 	return nil
 }
 
-// modifyDomainKnowledge applies add/remove/edit operations to domain knowledge
+// modifyDomainKnowledge applies add/remove/edit operations to domain knowledge.
+// Idempotent: removals succeed if item already gone, edits succeed if new value already present.
 func (s *Spec) modifyDomainKnowledge(mod DomainKnowledgeModify) error {
 	// Process removals first
+	// Idempotent: if item doesn't exist, it's already in desired state
 	for _, toRemove := range mod.Remove {
-		found := false
 		for i, existing := range s.DomainKnowledge {
 			if existing == toRemove {
 				s.DomainKnowledge = append(
 					s.DomainKnowledge[:i],
 					s.DomainKnowledge[i+1:]...,
 				)
-				found = true
 				break
 			}
 		}
-		if !found {
-			return fmt.Errorf("domain knowledge not found for removal: %s", toRemove)
-		}
+		// If not found, already in desired state - continue
 	}
 
 	// Process edits
+	// Idempotent: if OLD not found but NEW exists, already in desired state
 	for _, edit := range mod.Edit {
-		found := false
+		foundOld := false
+		foundNew := false
 		for i, existing := range s.DomainKnowledge {
 			if existing == edit.Old {
 				s.DomainKnowledge[i] = edit.New
-				found = true
+				foundOld = true
 				break
 			}
+			if existing == edit.New {
+				foundNew = true
+			}
 		}
-		if !found {
-			return fmt.Errorf("domain knowledge not found for edit: %s", edit.Old)
+		if !foundOld && !foundNew {
+			// Neither old nor new found - this is an error
+			return fmt.Errorf("domain knowledge not found for edit (old: %q, new: %q not present)", edit.Old, edit.New)
 		}
+		// If foundNew but not foundOld, already in desired state - continue
 	}
 
 	// Process additions last
