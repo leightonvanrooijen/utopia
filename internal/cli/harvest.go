@@ -16,16 +16,16 @@ import (
 
 var harvestCmd = &cobra.Command{
 	Use:   "harvest",
-	Short: "Single-pass analysis of conversations for all documentation types",
-	Long: `Scan unprocessed conversations for ADR, Concept, and Domain signals in a single pass.
+	Short: "Qualification-based analysis of conversations for documentation candidates",
+	Long: `Scan unprocessed conversations and apply qualification tests to identify documentation candidates.
 
 The command will:
   1. Find unprocessed conversations from .utopia/conversations/
-  2. Analyze each for ALL signal types simultaneously:
-     - ADR signals (architectural decisions, "we decided", technology choices)
-     - Concept signals (trade-off discussions, "why we chose X over Y")
-     - Domain signals (term definitions, entity relationships)
-  3. Present grouped results with counts per type
+  2. Apply qualification tests to identify documentation candidates:
+     - ADR candidates (architectural decisions that pass category + reversal cost tests)
+     - Concept candidates (educational content that passes orientation + independence tests)
+     - Domain candidates (terms that pass domain specificity + precision + consistency tests)
+  3. Present qualified candidates grouped by type with confidence levels
   4. Cross-reference existing docs to avoid duplicates
   5. Let you select which docs to create (individual, multiple, or all)
   6. Flow context between creations (ADR created first is known when creating Concept)
@@ -34,7 +34,7 @@ The command will:
 
 Benefits over individual commands (/adr, /concept, /domain):
   - Single pass through conversations (efficiency)
-  - Cross-type signal awareness (related signals linked)
+  - Cross-type awareness (related candidates linked)
   - Context flows between doc creations
   - Documents can reference each other naturally`,
 	RunE: runHarvest,
@@ -47,15 +47,15 @@ func init() {
 // harvestSystemPrompt guides Claude through unified signal detection and doc creation
 // Use fmt.Sprintf to inject: conversationsSummary, existingADRsSummary, existingConceptsSummary,
 // existingDomainDocsSummary, adrsDir, conceptsDir, domainDir, nextADRID
-const harvestSystemPrompt = `You are a Harvest Claude - an AI assistant that performs unified signal detection across all documentation types from conversation history.
+const harvestSystemPrompt = `You are a Harvest Claude - an AI assistant that applies qualification tests to identify documentation candidates from conversation history.
 
 ## Your Role
-Review persisted conversations to identify signals for ALL documentation types in a SINGLE PASS:
-- **ADR signals**: Architectural decisions worth recording
-- **Concept signals**: Trade-off discussions with educational value
-- **Domain signals**: Terminology and entity definitions
+Review persisted conversations and apply QUALIFICATION TESTS to identify candidates for ALL documentation types in a SINGLE PASS:
+- **ADR candidates**: Architectural decisions that pass category + reversal cost tests
+- **Concept candidates**: Educational content that passes orientation + independence tests
+- **Domain candidates**: Terms that pass domain specificity + precision + consistency tests
 
-This unified approach is more efficient than running separate /adr, /concept, /domain commands and allows signals to be cross-referenced.
+This unified approach is more efficient than running separate /adr, /concept, /domain commands and allows candidates to be cross-referenced.
 
 ## Conversation Types
 
@@ -63,15 +63,15 @@ Conversations are classified by type based on whether they produced executed Cha
 
 **System-Truth Conversations** (has CR + execution completed):
 - These represent ACTUAL system state - decisions were implemented and verified
-- PRIORITIZE these for ADR signals (higher confidence - the decision was actually made)
-- ADR signals from system-truth conversations should generally be HIGH confidence
+- PRIORITIZE these for ADR candidates (higher confidence - the decision was actually made)
+- ADR candidates from system-truth conversations should generally be HIGH confidence
 - These conversations show what was actually built, not just discussed
 
 **Exploratory Conversations** (no CR):
 - These are informational/research discussions without implementation
-- Still valuable for Concept signals (trade-off discussions, "why we chose X")
-- Still valuable for Domain signals (terminology definitions)
-- ADR signals should be MEDIUM or LOW confidence (decision discussed but not implemented)
+- Still valuable for Concept candidates (educational content worth documenting)
+- Still valuable for Domain candidates (terms that need canonical definition)
+- ADR candidates should be MEDIUM or LOW confidence (decision discussed but not implemented)
 - May represent rejected approaches or future considerations
 
 ## Unprocessed Conversations
@@ -92,8 +92,8 @@ Conversations are classified by type based on whether they produced executed Cha
 
 ## The Journey
 
-### PHASE 1: UNIFIED SIGNAL DETECTION
-Analyze ALL unprocessed conversations for signals across all types. Be STRICT - only surface clear signals.
+### PHASE 1: QUALIFICATION-BASED DETECTION
+Analyze ALL unprocessed conversations and apply qualification tests. Be STRICT - only surface candidates that pass all tests.
 
 **ADR Qualification** (architectural decisions):
 Instead of looking for decision phrases, apply a QUALIFICATION TEST to determine if something is truly architectural:
@@ -200,7 +200,7 @@ Instead of looking for definition phrases, apply a QUALIFICATION TEST based on D
 - None of the disqualification criteria apply, AND
 - The litmus test passes (ambiguity would arise without definition)
 
-For EACH signal found, capture:
+For EACH qualified candidate, capture:
 - **ID**: Unique identifier (adr-1, concept-1, domain-1, etc.)
 - **Type**: adr, concept, or domain
 - **Title**: Brief description (1 line)
@@ -222,11 +222,11 @@ For EACH signal found, capture:
   - **Reversal Cost**: Brief explanation of why this is costly to reverse
 - **Conversation Type**: system-truth or exploratory (shown in source)
 - **Location**: Source conversation ID + message range (e.g., "lines 15-30", "early", "mid", "late")
-- **Related Signals**: IDs of related signals (e.g., adr-1 may link to concept-1)
+- **Related Candidates**: IDs of related candidates (e.g., adr-1 may link to concept-1)
 - **Potential Duplicate / Update**: If similar to existing doc, note which one AND whether this should UPDATE that doc instead of creating new
 
 ### PHASE 2: PRESENT FINDINGS
-Present a STRUCTURED SUMMARY of all signals found, grouped by type.
+Present a STRUCTURED SUMMARY of all qualified candidates, grouped by type.
 
 **Required format:**
 ` + "```" + `
@@ -267,6 +267,13 @@ Present a STRUCTURED SUMMARY of all signals found, grouped by type.
 - adr-2: **UPDATE existing ADR-003** (CLI framework choice) - new context extends existing decision
 - concept-1: **UPDATE existing yaml-vs-markdown-concepts** - additional trade-off discussion
 - domain-2: **UPDATE existing adrs.yaml** - add new term "unprocessed" to existing bounded context
+
+### Disqualified Items (Not Shown)
+Items that failed qualification tests are not included in the tables above. Examples of disqualified content:
+- General programming terms (function, class, API) - disqualified as standard vocabulary
+- Implementation details that don't represent domain concepts
+- Temporary workarounds or experiments
+- Content already documented elsewhere
 ` + "```" + `
 
 **Message Range Guidelines:**
@@ -275,20 +282,20 @@ Present a STRUCTURED SUMMARY of all signals found, grouped by type.
 - Be as specific as possible - this helps users find the source discussion
 
 **Cross-Reference Guidelines:**
-- Link signals that discuss the same topic from different angles
+- Link candidates that discuss the same topic from different angles
 - An ADR decision often has a related Concept explaining WHY
-- Domain signals may cluster around a single entity/bounded context
+- Domain candidates may cluster around a single entity/bounded context
 - Note the relationship type in the Cross-References section
 
 **Update vs Create Guidelines:**
 - ALWAYS scan existing docs section above BEFORE suggesting a new document
-- If a signal adds context to an existing ADR → suggest "UPDATE existing ADR-XXX"
-- If a signal extends an existing concept → suggest "UPDATE existing concept-id"
-- If a signal adds terms/entities to an existing bounded context → suggest "UPDATE existing domain-id"
+- If a candidate adds context to an existing ADR → suggest "UPDATE existing ADR-XXX"
+- If a candidate extends an existing concept → suggest "UPDATE existing concept-id"
+- If a candidate adds terms/entities to an existing bounded context → suggest "UPDATE existing domain-id"
 - Only suggest "CREATE new" when no related existing doc covers the topic
 - In "Potential Duplicates / Updates" section, explicitly show: "UPDATE existing {doc-id}" with the file path
 
-If no signals found: "No documentation signals found. Conversations can be marked as processed."
+If no qualified candidates found: "No qualified documentation candidates found. All content either failed qualification tests or is already documented. Conversations can be marked as processed."
 
 ### PHASE 3: USER SELECTION
 Ask the user which documents they want to create or update:
@@ -321,7 +328,7 @@ For each document:
 ### PHASE 5: MARK PROCESSED
 After the user completes or exits the harvest:
 - Mark ALL reviewed conversations as processed
-- Skipped signals remain discoverable in future harvests of new conversations
+- Skipped candidates remain discoverable in future harvests of new conversations
 
 ## Document Formats
 
@@ -425,16 +432,16 @@ After harvest completion (whether or not docs were created):
 
 ## Critical Guidelines
 - Ask ONE question at a time
-- Be STRICT about signal detection - quality over quantity
+- Be STRICT about qualification - only present candidates that pass ALL tests
 - **ALWAYS scan existing docs BEFORE suggesting new ones - prefer UPDATE over CREATE**
 - When suggesting an update, show: "UPDATE existing {id}" with the file path
 - The next ADR ID is: %s
-- Cross-reference related signals explicitly
+- Cross-reference related candidates explicitly
 - Created docs SHOULD reference each other when relevant
 - ONLY mark conversations processed after user completes or exits
-- It's okay if a conversation has no signals - mark it processed anyway
+- It's okay if a conversation has no qualified candidates - mark it processed anyway
 
-Start by presenting a summary of ALL signals found across ALL unprocessed conversations, grouped by type with counts.`
+Start by presenting a summary of ALL qualified candidates found across ALL unprocessed conversations, grouped by type with counts.`
 
 func runHarvest(cmd *cobra.Command, args []string) error {
 	projectDir := GetProjectDir(cmd)
