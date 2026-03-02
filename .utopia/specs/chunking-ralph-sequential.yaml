@@ -1,7 +1,7 @@
 id: chunking-ralph-sequential
 title: Ralph Sequential Chunking Strategy
 created: 0001-01-01T00:00:00Z
-updated: 2026-01-28T09:16:37.427636+11:00
+updated: 2026-03-02T16:54:53.148114+11:00
 description: |
     The "ralph-sequential" chunking strategy transforms a structured specification into
     discrete WorkItems optimized for Ralph Wiggum loop execution.
@@ -81,7 +81,8 @@ features:
 
     - id: default-constraints
       description: |
-        Define default constraints applied to all WorkItems.
+        Soften the abstraction constraint language for general use, allowing legitimate
+        architectural work when needed. The strict version moves to refactor-specific constraints.
       acceptance_criteria:
         - Default constraints include "Prefer existing abstractions over creating new ones unless clearly required"
         - Default constraints include "Do not refactor unrelated code"
@@ -137,7 +138,8 @@ features:
 
     - id: refactor-constraint-injection
       description: |
-        Inject behavior-preservation constraints for refactor WorkItems.
+        Add strict abstraction constraint to refactor-specific constraints, ensuring
+        refactors cannot change structure.
       acceptance_criteria:
         - Refactor WorkItems include "This is a refactor. Existing behavior MUST be preserved."
         - Refactor WorkItems include "All existing tests must pass without modification"
@@ -146,6 +148,7 @@ features:
         - Constraint injection happens during prompt building
         - Behavior-preservation constraints are injected based on IsRefactor flag, not document type
         - CRs with type refactor receive behavior-preservation constraints on all work items
+        - Refactor WorkItems include "Do not introduce new abstractions, interfaces, or packages"
 
     - id: bugfix-constraint-injection
       description: |
