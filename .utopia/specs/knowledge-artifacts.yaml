@@ -48,6 +48,31 @@ features:
         - Guides user through ADR creation conversationally (like /cr)
         - Marks conversations as processed after review
 
+    - id: adr-categories
+      description: |
+        The five AWS categories that define what qualifies as an architectural decision.
+        An ADR must fall into at least one category to be valid.
+      acceptance_criteria:
+        - 'Category: structure - architectural patterns, layers, component organization (e.g., microservices, monolith, event-driven)'
+        - 'Category: nfr - non-functional requirements affecting architecture (e.g., security, high availability, fault tolerance, performance)'
+        - 'Category: dependencies - component coupling and external service choices (e.g., database selection, third-party integrations)'
+        - 'Category: interfaces - APIs, published contracts, integration points (e.g., REST vs GraphQL, event schemas)'
+        - 'Category: construction - libraries, frameworks, tools, build processes (e.g., framework choice, CI/CD approach)'
+        - A decision that doesn't fit any category is not architecturally significant
+        - ADR validation rejects ADRs without a valid category
+
+    - id: adr-disqualification-criteria
+      description: |
+        Criteria that disqualify a decision from being recorded as an ADR,
+        even if it superficially resembles an architectural decision.
+      acceptance_criteria:
+        - Temporary workarounds or experiments are not ADRs
+        - Implementation details (how, not what) are not ADRs
+        - Decisions already covered by existing standards or policies are not ADRs
+        - Localized decisions affecting only a single developer or component are not ADRs
+        - Configuration or deployment specifics are not ADRs unless they constrain architecture
+        - Disqualification criteria are checked before suggesting ADR creation
+
     - id: concept-template
       description: |
         Markdown-based concept document structure optimized for educational
