@@ -297,6 +297,7 @@ func TestRefactorSystemConstraints_RequiredText(t *testing.T) {
 	requiredPhrases := []string{
 		"This is a refactor. Existing behavior MUST be preserved.",
 		"All existing tests must pass without modification",
+		"Do not introduce new abstractions, interfaces, or packages",
 	}
 
 	for _, phrase := range requiredPhrases {
