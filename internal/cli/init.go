@@ -18,10 +18,16 @@ var initCmd = &cobra.Command{
 	Short: "Initialize a new Utopia project",
 	Long: `Initialize a new Utopia project in the current directory.
 
-This creates a .utopia directory with:
-  - config.yaml     Configuration for strategies
-  - specs/          Living specifications
-  - work-items/     Auto-chunked work items for Ralph`,
+This is the first step in the Utopia workflow. It creates a .utopia directory with:
+  - config.yaml       Project configuration (verification command, strategies)
+  - specs/            Living specifications (your system's source of truth)
+  - work-items/       Auto-chunked work items for Ralph execution
+
+You'll be prompted to configure:
+  - Verification command (e.g., "npm test", "go test ./...")
+  - Max iterations per work item (or unlimited)
+
+After init, run 'utopia cr' to create your first change request.`,
 	RunE: runInit,
 }
 
