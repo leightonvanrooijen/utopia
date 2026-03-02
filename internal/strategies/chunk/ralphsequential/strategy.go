@@ -9,7 +9,7 @@ import (
 
 // DefaultConstraints are applied to all work items unless overridden.
 var DefaultConstraints = []string{
-	"Do not introduce new abstractions, interfaces, or packages",
+	"Prefer existing abstractions over creating new ones unless clearly required",
 	"Do not refactor unrelated code",
 	"Architecture is already correct",
 }
@@ -19,6 +19,7 @@ var DefaultConstraints = []string{
 var RefactorSystemConstraints = []string{
 	"This is a refactor. Existing behavior MUST be preserved.",
 	"All existing tests must pass without modification",
+	"Do not introduce new abstractions, interfaces, or packages",
 }
 
 // BugfixSystemConstraints are automatically injected for bugfix WorkItems.
