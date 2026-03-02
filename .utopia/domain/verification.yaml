@@ -1,9 +1,15 @@
 id: verification
 title: Verification System
+bounded_context: verification
 description: |
   Validates work by running user-provided commands after each execution iteration.
   Exit code determines pass/fail, with failure output fed back to the next iteration.
   Ensures work meets acceptance criteria before marking complete.
+
+  Bounded Context Scope: This context owns validation logic - how work is verified,
+  what commands are run, and how results are interpreted. It does NOT own what
+  work is being done (that's execution) or what criteria define success (that's
+  specs).
 
 terms:
   - term: VerificationConfig

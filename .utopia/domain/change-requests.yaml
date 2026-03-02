@@ -1,9 +1,15 @@
 id: change-requests
 title: Change Request System
+bounded_context: change-requests
 description: |
   The unified system where all work flows through Change Requests (CRs).
   CRs are standalone documents that target different specs, enabling cross-cutting changes.
   They describe intended work, not current state (which is captured in specs).
+
+  Bounded Context Scope: This context owns work definition - what changes should be made,
+  how they're structured (Changes, Tasks, Phases), and their lifecycle from draft to
+  complete. It does NOT own how work is executed (that's execution) or what the final
+  state should look like (that's specs).
 
 terms:
   - term: Change Request
@@ -25,6 +31,10 @@ terms:
     aliases:
       - CR status
       - status
+    cross_context_note: |
+      "Status" in this context tracks CR lifecycle. Other contexts have their own
+      status concepts: WorkItemStatus (execution) and ADRStatus (adrs) with
+      different lifecycle states.
 
   - term: Change
     definition: A single operation within a CR that modifies a spec - add (new feature/knowledge), modify (existing feature), remove (feature/knowledge), delete-spec (entire spec)
@@ -37,6 +47,10 @@ terms:
     aliases:
       - refactor task
       - bugfix task
+    cross_context_note: |
+      Task in this context is a specific entity type for work that doesn't modify specs.
+      In the execution context, "task" is used informally as an alias for WorkItem
+      (any executable work unit). When discussing "tasks", clarify context.
 
   - term: Phase
     definition: An ordered stage within an initiative CR, containing tasks or changes with execution dependencies

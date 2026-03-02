@@ -1,9 +1,15 @@
 id: adrs
 title: Architecture Decision Records
+bounded_context: adrs
 description: |
   Documents significant architectural decisions with context, options considered, and consequences.
   ADRs are discovered from conversations and capture the reasoning behind technical choices.
   They provide institutional memory for future developers.
+
+  Bounded Context Scope: This context owns architectural decision documentation - what
+  decisions were made, why, and their consequences. It does NOT own what gets built
+  (that's specs/change-requests) or how decisions are explained conceptually (that's
+  concepts).
 
 terms:
   - term: ADR
@@ -18,6 +24,10 @@ terms:
     aliases:
       - status
       - decision status
+    cross_context_note: |
+      "Status" in this context tracks ADR lifecycle. Other contexts have their own
+      status concepts: WorkItemStatus (execution) and ChangeRequestStatus
+      (change-requests) with different lifecycle states.
 
   - term: ADROption
     definition: An alternative considered during the decision process, documented with pros and cons

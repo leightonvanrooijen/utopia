@@ -1,9 +1,15 @@
 id: specs
 title: Specification System
+bounded_context: specs
 description: |
   Living documentation of what the system does now.
   Specs are derived artifacts - they are updated when CRs are merged, not manually edited.
   They capture features, acceptance criteria, and domain knowledge.
+
+  Bounded Context Scope: This context owns the definition of current system state -
+  what features exist, their acceptance criteria, and domain knowledge. It does NOT
+  own how changes are proposed (that's change-requests) or how they're implemented
+  (that's execution).
 
 terms:
   - term: Spec

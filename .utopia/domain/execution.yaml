@@ -1,9 +1,15 @@
 id: execution
 title: Execution System (Ralph)
+bounded_context: execution
 description: |
   Executes WorkItems through iterative Claude interactions using the Ralph Wiggum loop.
   Each iteration gets fresh context, with verification feedback driving retries.
   Named after the "Ralph Wiggum" pattern of persistent, iterative attempts.
+
+  Bounded Context Scope: This context owns the execution lifecycle - how work items
+  are processed, iterated, retried, and verified. It does NOT own the definition
+  of what work should be done (that's change-requests) or what the work validates
+  against (that's specs).
 
 terms:
   - term: WorkItem
@@ -12,12 +18,20 @@ terms:
       - work item
       - task
       - execution unit
+    cross_context_note: |
+      The alias "task" in this context means any executable work unit. In the
+      change-requests context, Task is a distinct entity type for refactor/bugfix
+      work that has no spec impact. When discussing "tasks", clarify context.
 
   - term: WorkItemStatus
     definition: Execution state of a work item - pending (not started), in_progress (executing), completed (verified), failed (max iterations exceeded)
     aliases:
       - status
       - execution status
+    cross_context_note: |
+      "Status" in this context tracks execution lifecycle. Other contexts have
+      their own status concepts: ChangeRequestStatus (change-requests) and
+      ADRStatus (adrs) with different lifecycle states.
 
   - term: Complexity
     definition: Estimated effort level for a work item - low, medium, high - affects iteration limits
