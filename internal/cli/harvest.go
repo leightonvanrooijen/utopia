@@ -157,11 +157,48 @@ Instead of looking for trade-off phrases, apply a QUALIFICATION TEST to determin
 - None of the disqualification criteria apply, AND
 - The litmus test passes (useful beyond this project)
 
-**Domain Signals** (terminology):
-- "X means..." / "X is defined as..."
-- "An X is a type of..." / Entity definitions
-- "X relates to Y by..." / Relationship definitions
-- Technical terms being explained or clarified
+**Domain Qualification** (Ubiquitous Language):
+Instead of looking for definition phrases, apply a QUALIFICATION TEST based on Domain-Driven Design's Ubiquitous Language concept to determine if a term truly needs canonical documentation:
+
+1. **Domain Specificity Test** - Is this term specific to our project's domain?
+   - Does this term have meaning unique to THIS project, not general programming?
+   - Would a developer from another project understand it without explanation?
+   - Is this OUR vocabulary, not industry-standard terminology?
+
+2. **Precision Test** - Could this term be misunderstood without definition?
+   - Does the term have a precise meaning that differs from common usage?
+   - Are there multiple interpretations that could cause confusion?
+   - Would different team members interpret it differently?
+
+3. **Consistency Test** - Should this term be used consistently?
+   - Should this exact term appear in code (class names, methods, variables)?
+   - Should this exact term be used in docs and communication?
+   - Would domain experts recognize and validate this term?
+
+4. **Code Alignment Test** - Does/should this term appear in code?
+   - Is this term already used in class names, method names, or variables?
+   - If not, SHOULD it be? (Indicates code/domain misalignment to fix)
+   - Does the code use synonyms where this canonical term should appear?
+
+5. **Disqualification Checks** - Reject if ANY of these apply:
+   - **General programming term** - "function", "class", "API", "endpoint" (standard vocabulary)
+   - **Standard industry term** - Used in its standard way without project-specific meaning
+   - **Temporary/experimental** - Prototype names, working titles, placeholder terms
+   - **Implementation detail** - Internal naming not representing a domain concept
+   - **Already externally documented** - Term defined in external docs we reference
+   - **One-off explanation** - Not canonical vocabulary, just explaining something once
+
+**Litmus Test:** "Would ambiguity arise without this canonical definition?"
+- YES = Document this term
+- NO = Don't clutter the domain vocabulary
+
+**Only suggest Domain doc creation when:**
+- The term passes Domain Specificity (specific to our domain), AND
+- The term passes Precision Test (could be misunderstood), AND
+- The term passes Consistency Test (should be used consistently), AND
+- The term passes Code Alignment Test (appears or should appear in code), AND
+- None of the disqualification criteria apply, AND
+- The litmus test passes (ambiguity would arise without definition)
 
 For EACH signal found, capture:
 - **ID**: Unique identifier (adr-1, concept-1, domain-1, etc.)
@@ -177,9 +214,9 @@ For EACH signal found, capture:
     - MEDIUM: Passes qualification tests but litmus test is borderline (generalizable but narrowly)
     - LOW: Borderline qualification (may need user confirmation on educational value)
   - For Domain:
-    - HIGH: Explicit definition language ("X is defined as", "X means")
-    - MEDIUM: Implied definition (clarification of terms in context)
-    - LOW: Weak signal (might be relevant, needs confirmation)
+    - HIGH: Passes all qualification tests AND term already appears in code (strong code alignment)
+    - MEDIUM: Passes qualification tests but term not yet in code (should be added) OR ambiguity test is borderline
+    - LOW: Borderline qualification (may need user confirmation on domain specificity)
 - **For ADRs only**:
   - **Category**: Which AWS category (structure, nfr, dependencies, interfaces, construction)
   - **Reversal Cost**: Brief explanation of why this is costly to reverse
@@ -195,7 +232,7 @@ Present a STRUCTURED SUMMARY of all signals found, grouped by type.
 ` + "```" + `
 ## Harvest Results
 
-**Summary: X qualified ADR candidates, Y qualified Concept candidates, Z Domain signals**
+**Summary: X qualified ADR candidates, Y qualified Concept candidates, Z qualified Domain candidates**
 **Conversations: N system-truth, M exploratory**
 
 ### ADR Candidates (Qualified)
@@ -213,12 +250,14 @@ Present a STRUCTURED SUMMARY of all signals found, grouped by type.
 
 **Note:** Only content that passes all qualification tests (Orientation, Educational Value, Independence) and the litmus test appears here. Disqualified items are not shown.
 
-### Domain Signals
-| ID | Confidence | Title | Source | Conv Type | Message Range | Related |
-|----|------------|-------|--------|-----------|---------------|---------|
-| domain-1 | HIGH | "Conversation" entity definition | cr-session-20260217 | system-truth | early | - |
-| domain-2 | HIGH | "unprocessed" status meaning | cr-session-20260217 | system-truth | lines 20-25 | domain-1 |
-| domain-3 | MEDIUM | "Bounded context" term | cr-session-20260216 | exploratory | late | - |
+### Domain Candidates (Qualified)
+| ID | Confidence | Term | Code Usage | Ambiguity Test | Source | Conv Type | Related |
+|----|------------|------|------------|----------------|--------|-----------|---------|
+| domain-1 | HIGH | "WorkItem" | WorkItem struct, workitem.go | ✓ Would confuse without def | cr-session-20260217 | system-truth | - |
+| domain-2 | HIGH | "unprocessed" | ConversationUnprocessed const | ✓ Status vs adjective | cr-session-20260217 | system-truth | domain-1 |
+| domain-3 | MEDIUM | "bounded context" | Not in code yet (should be) | ✓ DDD term with local meaning | cr-session-20260216 | exploratory | - |
+
+**Note:** Only terms that pass all qualification tests (Domain Specificity, Precision, Consistency, Code Alignment) and the ambiguity litmus test appear here. Disqualified items are not shown.
 
 ### Cross-References
 - adr-1 ↔ concept-1: The ADR records the YAML decision; the Concept explains the trade-off reasoning
