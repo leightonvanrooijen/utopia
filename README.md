@@ -53,13 +53,29 @@ This creates a `.utopia/` directory with your project config.
 
 ### Configure Verification
 
-Edit `.utopia/config.yaml` to set your test command:
+Edit `.utopia/config.yaml` to set your verification command:
 
 ```yaml
 verification:
   command: "npm test" # or "pytest", "go test ./...", etc.
   max_iterations: 6
 ```
+
+Your verification command is the backpressure that guides AI execution. A good verification command:
+
+- **Runs your test suite** — The primary signal that code works
+- **Runs fast enough to iterate** — Executed after every work item
+- **Exits non-zero on failure** — So Utopia knows to retry or stop
+- **Optionally includes linting/type-checking** — Catches more issues early
+
+Example for a TypeScript project:
+
+```bash
+#!/bin/bash
+npm run typecheck && npm run lint && npm test
+```
+
+The `max_iterations` setting limits how many times the AI can retry a failing work item before giving up.
 
 ### The Loop
 
@@ -72,8 +88,19 @@ utopia cr
 Opens a conversation with Claude to define what you want to build. The conversation guides you through:
 
 1. Understanding what you want to change
-2. Classifying the change type (feature, enhancement, refactor, bugfix, removal, initiative)
+2. Classifying the change type
 3. Defining acceptance criteria
+
+**CR Types** — The key question is: "Does this change observable behavior?"
+
+| Type | When to use |
+|------|-------------|
+| **feature** | New capability that doesn't exist today |
+| **enhancement** | Modifying how an existing feature works |
+| **refactor** | Code improvement without behavior change |
+| **bugfix** | Correcting behavior to match the spec |
+| **removal** | Deleting an existing capability |
+| **initiative** | Multi-phase changes with ordered execution |
 
 When Claude has captured your intent, it writes the CR to `.utopia/change-requests/`. Press `Ctrl+C` to exit the conversation — Utopia validates the CR format. If validation fails, the errors are fed into a new Claude session that automatically fixes the issues.
 
@@ -98,15 +125,13 @@ Scans your conversations for architectural decisions, concepts, and domain termi
 Harvest extracts three types of documentation from your conversations:
 
 **ADRs (Architecture Decision Records)**
-Captures architectural decisions — technology choices, patterns adopted, approaches rejected. Signals: "we decided", "we chose X over Y", "the trade-off is". ADRs from executed CRs have higher confidence since the decision was actually implemented.
+Captures architectural decisions — technology choices, patterns adopted, approaches rejected. Signals: "we decided", "we chose X over Y", "the trade-off is".
 
 **Concepts**
 Captures trade-off discussions with educational value — why something works the way it does, design rationale, mental models. These help future-you (or teammates) understand the reasoning behind the system.
 
 **Domain**
 Captures terminology and entity definitions specific to your project — the ubiquitous language. When you define what a "workspace" or "verification loop" means in your system, that belongs here.
-
-These artifacts are injected into future Claude sessions, so the AI understands your project's decisions, concepts, and vocabulary.
 
 ## Project Structure
 
