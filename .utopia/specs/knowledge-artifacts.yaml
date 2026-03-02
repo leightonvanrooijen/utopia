@@ -12,7 +12,11 @@ features:
         - ADR ID format is sequential (ADR-001, ADR-002, etc.)
         - Template includes Title field (ID + decision statement)
         - Template includes Status field (draft, proposed, accepted, deprecated, superseded)
-        - Template includes Context field (forces at play - technical, political, social)
+        - Template includes required Category field with enum values (structure, nfr, dependencies, interfaces, construction)
+        - Category field has inline documentation explaining each category
+        - Template includes required Significance field explaining why this qualifies as architectural
+        - Template includes required ReversalCost field explaining cost of changing this decision
+        - Template includes Context field (forces at play - technical, political, social, project constraints)
         - Template includes Decision field (active voice, "We will...")
         - Template includes Options Considered field (alternatives with pros/cons)
         - Template includes Consequences field (positive, negative, and neutral outcomes)

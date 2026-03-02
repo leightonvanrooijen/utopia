@@ -785,6 +785,32 @@ const (
 	ADRStatusSuperseded ADRStatus = "superseded"
 )
 
+// ADRCategory classifies architectural decisions using AWS architectural decision categories.
+// Each category represents a distinct type of architectural concern.
+type ADRCategory string
+
+const (
+	// ADRCategoryStructure covers architectural patterns, layers, and component organization.
+	// Examples: microservices vs monolith, event-driven architecture, hexagonal architecture.
+	ADRCategoryStructure ADRCategory = "structure"
+
+	// ADRCategoryNFR covers non-functional requirements that affect architecture.
+	// Examples: security approach, high availability strategy, fault tolerance, performance targets.
+	ADRCategoryNFR ADRCategory = "nfr"
+
+	// ADRCategoryDependencies covers component coupling and external service choices.
+	// Examples: database selection, third-party integrations, internal service dependencies.
+	ADRCategoryDependencies ADRCategory = "dependencies"
+
+	// ADRCategoryInterfaces covers APIs, published contracts, and integration points.
+	// Examples: REST vs GraphQL, event schemas, internal API contracts, protocol choices.
+	ADRCategoryInterfaces ADRCategory = "interfaces"
+
+	// ADRCategoryConstruction covers libraries, frameworks, tools, and build processes.
+	// Examples: framework choice, CI/CD approach, testing strategy, deployment tooling.
+	ADRCategoryConstruction ADRCategory = "construction"
+)
+
 // ADRStatusChange records a status transition with timestamp
 type ADRStatusChange struct {
 	From      ADRStatus `yaml:"from"`
@@ -842,6 +868,9 @@ type ADR struct {
 	ID                  string          `yaml:"id"`
 	Title               string          `yaml:"title"`
 	Status              ADRStatus       `yaml:"status"`
+	Category            ADRCategory     `yaml:"category"`
+	Significance        string          `yaml:"significance"`
+	ReversalCost        string          `yaml:"reversal_cost"`
 	Date                string          `yaml:"date"`
 	Context             string          `yaml:"context"`
 	Decision            string          `yaml:"decision"`
