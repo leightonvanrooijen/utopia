@@ -178,3 +178,17 @@ features:
         - 'Disqualified: content is technical reference material (that''s reference docs)'
         - 'Disqualified: content is ephemeral discussion that won''t matter in 6 months'
         - Disqualification criteria are checked before suggesting Concept creation
+
+    - id: concept-documentation-type
+      description: |
+        Concept documents are classified as "Explanation" type documentation
+        per the Diátaxis framework. This classification guides both creation
+        and consumption of Concepts.
+      acceptance_criteria:
+        - Concepts are explicitly typed as Explanation documentation
+        - 'Explanation documentation characteristics: understanding-oriented, not task-oriented'
+        - 'Explanation documentation characteristics: answers ''why'' not ''how'''
+        - 'Explanation documentation characteristics: permits reflection away from active work'
+        - 'Explanation documentation characteristics: can include labeled opinions and perspectives'
+        - 'Explanation documentation characteristics: makes connections across topics'
+        - 'Explanation documentation characteristics: provides context, history, and background'
