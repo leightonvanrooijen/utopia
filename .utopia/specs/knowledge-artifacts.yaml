@@ -136,3 +136,21 @@ features:
         - If related bounded context exists, suggests updating it instead of creating new
         - Guides user through domain doc creation/update conversationally
         - Marks conversations as processed after review
+
+    - id: concept-qualification-criteria
+      description: |
+        Criteria that define what qualifies as a Concept document, based on
+        the Diátaxis framework's "Explanation" documentation type.
+        A Concept is understanding-oriented educational content.
+      acceptance_criteria:
+        - 'Qualification: content is understanding-oriented, not task-oriented'
+        - 'Qualification: content answers ''why'' questions about approaches or trade-offs'
+        - 'Qualification: content has lasting educational value for onboarding or learning'
+        - 'Qualification: content is independent of any specific binding decision'
+        - 'Qualification: multiple valid approaches exist with genuine trade-offs worth explaining'
+        - 'Qualification: content would benefit someone learning the problem space'
+        - 'Qualification: content explains trade-offs applicable BEYOND this specific project'
+        - 'Qualification: content would help someone at a different company facing a similar choice'
+        - 'Distinction from ADR: ADRs record OUR specific binding decision; Concepts explain the decision SPACE'
+        - 'Litmus test: ''Would this be useful to someone at a different company?'' YES = Concept, NO = probably ADR'
+        - Qualification test is applied before suggesting Concept creation
