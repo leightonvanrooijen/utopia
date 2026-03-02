@@ -165,3 +165,16 @@ features:
         - 'Distinction from ADR: ADRs record OUR specific binding decision; Concepts explain the decision SPACE'
         - 'Litmus test: ''Would this be useful to someone at a different company?'' YES = Concept, NO = probably ADR'
         - Qualification test is applied before suggesting Concept creation
+
+    - id: concept-disqualification-criteria
+      description: |
+        Criteria that disqualify content from being a Concept document,
+        even if it superficially discusses trade-offs or choices.
+      acceptance_criteria:
+        - 'Disqualified: content records a specific binding decision we made (that''s an ADR, not a Concept)'
+        - 'Disqualified: content is only useful in our specific project context (lacks generalizable insight)'
+        - 'Disqualified: content is a term or entity definition (that''s Domain knowledge)'
+        - 'Disqualified: content is step-by-step instructions (that''s a tutorial/how-to)'
+        - 'Disqualified: content is technical reference material (that''s reference docs)'
+        - 'Disqualified: content is ephemeral discussion that won''t matter in 6 months'
+        - Disqualification criteria are checked before suggesting Concept creation
