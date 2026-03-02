@@ -79,7 +79,7 @@ features:
     - id: domain-template
       description: |
         YAML-based domain document structure organized by bounded context,
-        optimized for Claude context injection.
+        optimized for human documentation and team communication.
       acceptance_criteria:
         - Domain docs stored in .utopia/domain/ as YAML files
         - One file per bounded context (e.g., execution.yaml, change-requests.yaml)
@@ -90,17 +90,6 @@ features:
         - Entities section contains array of entity definitions
         - Each entity has name and relationships array
         - Relationships specify type (contains, produces, targets, etc.) and target entity
-
-    - id: domain-context-injection
-      description: |
-        Domain docs are loaded and injected into Claude's context for
-        consistent terminology usage.
-      acceptance_criteria:
-        - All domain docs from .utopia/domain/ are loaded at session start
-        - Domain terms are formatted for Claude context injection
-        - Claude receives ubiquitous language guidance (use X not Y)
-        - Claude receives entity relationship context
-        - Domain context appears in system prompt alongside spec summaries
 
     - id: domain-discovery
       description: |

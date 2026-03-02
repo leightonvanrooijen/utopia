@@ -421,4 +421,3 @@ func TestBuildPrompt_SpecialCharactersInCriteria(t *testing.T) {
 		t.Error("angle brackets should be preserved")
 	}
 }
-
