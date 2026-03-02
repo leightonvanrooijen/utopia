@@ -95,11 +95,32 @@ Conversations are classified by type based on whether they produced executed Cha
 ### PHASE 1: UNIFIED SIGNAL DETECTION
 Analyze ALL unprocessed conversations for signals across all types. Be STRICT - only surface clear signals.
 
-**ADR Signals** (architectural decisions):
-- "We decided to..." / "We chose X over Y because..."
-- Technology or approach selections
-- API design decisions / Data model choices
-- Integration patterns / Performance trade-offs
+**ADR Qualification** (architectural decisions):
+Instead of looking for decision phrases, apply a QUALIFICATION TEST to determine if something is truly architectural:
+
+1. **Category Test** - Does the decision fall into one of these AWS architectural categories?
+   - **structure**: Architectural patterns, layers, component organization (e.g., microservices, monolith, event-driven)
+   - **nfr**: Non-functional requirements affecting architecture (e.g., security, high availability, fault tolerance, performance)
+   - **dependencies**: Component coupling and external service choices (e.g., database selection, third-party integrations)
+   - **interfaces**: APIs, published contracts, integration points (e.g., REST vs GraphQL, event schemas)
+   - **construction**: Libraries, frameworks, tools, build processes (e.g., framework choice, CI/CD approach)
+
+2. **Reversal Cost Test** - Is this decision costly to reverse?
+   - Would changing this require significant rework?
+   - Does it affect multiple components or teams?
+   - Are there data migrations, API contracts, or external dependencies at stake?
+
+3. **Disqualification Checks** - Reject if ANY of these apply:
+   - **Temporary workarounds or experiments** - "For now we'll..." / "As a workaround..."
+   - **Implementation details** - HOW something is coded, not WHAT is chosen
+   - **Already documented** - Covered by existing ADRs, standards, or policies
+   - **Localized decisions** - Only affects a single developer or component
+   - **Configuration/deployment specifics** - Unless they constrain architecture
+
+**Only suggest ADR creation when:**
+- The decision fits at least one AWS category, AND
+- The decision is costly to reverse, AND
+- None of the disqualification criteria apply
 
 **Concept Signals** (trade-off discussions):
 - "We chose X because..." / "The trade-off here is..."
@@ -118,11 +139,17 @@ For EACH signal found, capture:
 - **Type**: adr, concept, or domain
 - **Title**: Brief description (1 line)
 - **Confidence**: high, medium, or low
-  - HIGH: Explicit signal language ("we decided", "the trade-off is", "X is defined as")
-    - For ADRs: boost to HIGH if from system-truth conversation (decision was implemented)
-  - MEDIUM: Implied signal (discussion of alternatives, clarification of terms)
-    - For ADRs from exploratory conversations: cap at MEDIUM (discussed but not implemented)
-  - LOW: Weak signal (might be relevant, needs confirmation)
+  - For ADRs:
+    - HIGH: Passes all qualification tests AND from system-truth conversation (decision was implemented)
+    - MEDIUM: Passes qualification tests but from exploratory conversation OR reversal cost is moderate
+    - LOW: Borderline qualification (may need user confirmation)
+  - For Concepts/Domain:
+    - HIGH: Explicit signal language ("the trade-off is", "X is defined as")
+    - MEDIUM: Implied signal (discussion of alternatives, clarification of terms)
+    - LOW: Weak signal (might be relevant, needs confirmation)
+- **For ADRs only**:
+  - **Category**: Which AWS category (structure, nfr, dependencies, interfaces, construction)
+  - **Reversal Cost**: Brief explanation of why this is costly to reverse
 - **Conversation Type**: system-truth or exploratory (shown in source)
 - **Location**: Source conversation ID + message range (e.g., "lines 15-30", "early", "mid", "late")
 - **Related Signals**: IDs of related signals (e.g., adr-1 may link to concept-1)
@@ -135,14 +162,16 @@ Present a STRUCTURED SUMMARY of all signals found, grouped by type.
 ` + "```" + `
 ## Harvest Results
 
-**Summary: X ADR signals, Y Concept signals, Z Domain signals**
+**Summary: X qualified ADR candidates, Y Concept signals, Z Domain signals**
 **Conversations: N system-truth, M exploratory**
 
-### ADR Signals
-| ID | Confidence | Title | Source | Conv Type | Message Range | Related |
-|----|------------|-------|--------|-----------|---------------|---------|
-| adr-1 | HIGH | Decision to use YAML for storage | cr-session-20260217 | system-truth | lines 45-62 | concept-1 |
-| adr-2 | MEDIUM | Choice of Cobra for CLI | cr-session-20260216 | exploratory | mid | - |
+### ADR Candidates (Qualified)
+| ID | Confidence | Title | Category | Reversal Cost | Source | Conv Type |
+|----|------------|-------|----------|---------------|--------|-----------|
+| adr-1 | HIGH | Use YAML for storage | dependencies | Data migration, tooling changes | cr-session-20260217 | system-truth |
+| adr-2 | MEDIUM | Use Cobra for CLI | construction | All command handlers depend on it | cr-session-20260216 | exploratory |
+
+**Note:** Only decisions that pass all qualification tests appear here. Disqualified items are not shown.
 
 ### Concept Signals
 | ID | Confidence | Title | Source | Conv Type | Message Range | Related |

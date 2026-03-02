@@ -35,11 +35,15 @@ features:
 
     - id: adr-discovery
       description: |
-        /adr command that scans persisted conversations for architectural
-        decisions and guides the user through ADR creation conversationally.
+        ADR discovery that scans persisted conversations and applies a qualification
+        test to determine if something is truly an architectural decision worth recording.
       acceptance_criteria:
-        - /adr command scans .utopia/conversations/ for unprocessed conversations
-        - Analyzes each conversation for architectural decision signals
+        - Scans .utopia/conversations/ for unprocessed conversations
+        - Applies ADR qualification test before suggesting ADR creation
+        - 'Qualification requires answering: which AWS category does this fall into?'
+        - 'Qualification requires answering: is this costly to reverse?'
+        - Disqualifies temporary workarounds, implementation details, and already-documented decisions
+        - Only suggests ADR creation when qualification test passes
         - Cross-references with commits and spec changes for context
         - Guides user through ADR creation conversationally (like /cr)
         - Marks conversations as processed after review
