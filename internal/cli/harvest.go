@@ -122,11 +122,40 @@ Instead of looking for decision phrases, apply a QUALIFICATION TEST to determine
 - The decision is costly to reverse, AND
 - None of the disqualification criteria apply
 
-**Concept Signals** (trade-off discussions):
-- "We chose X because..." / "The trade-off here is..."
-- "Option A has [pros] but Option B has [cons]"
-- "Why we didn't use..." / Educational explanations
-- Comparisons between approaches with explicit reasoning
+**Concept Qualification** (educational explanations):
+Instead of looking for trade-off phrases, apply a QUALIFICATION TEST to determine if content is truly explanation-worthy:
+
+1. **Orientation Test** - Is this understanding-oriented, not task-oriented?
+   - Does it explain WHY rather than HOW?
+   - Does it illuminate the problem space, not just solve a problem?
+   - Would it help someone understand, not just complete a task?
+
+2. **Educational Value Test** - Does this have lasting educational value?
+   - Would this benefit someone onboarding or learning?
+   - Will this still matter in 6 months?
+   - Does it answer questions people repeatedly ask?
+
+3. **Independence Test** - Is this independent of a specific binding decision?
+   - Are multiple valid approaches being explained (not just our choice)?
+   - Would this help someone at a DIFFERENT company facing a similar choice?
+   - Does it explain the decision SPACE, not just record a decision?
+
+4. **Disqualification Checks** - Reject if ANY of these apply:
+   - **Records our binding decision** - "We decided to use X" (that's an ADR)
+   - **Project-specific only** - Only useful in our specific context (lacks generalizable insight)
+   - **Term/entity definition** - "X is defined as..." (that's Domain knowledge)
+   - **Step-by-step instructions** - Tutorial or how-to content
+   - **Technical reference** - API docs, config references
+   - **Ephemeral discussion** - Won't matter in 6 months
+
+**Litmus Test:** "Would this be useful to someone at a different company?"
+- YES = Concept candidate
+- NO = Probably an ADR or Domain doc
+
+**Only suggest Concept creation when:**
+- Content passes all three qualification tests (Orientation, Educational Value, Independence), AND
+- None of the disqualification criteria apply, AND
+- The litmus test passes (useful beyond this project)
 
 **Domain Signals** (terminology):
 - "X means..." / "X is defined as..."
@@ -143,9 +172,13 @@ For EACH signal found, capture:
     - HIGH: Passes all qualification tests AND from system-truth conversation (decision was implemented)
     - MEDIUM: Passes qualification tests but from exploratory conversation OR reversal cost is moderate
     - LOW: Borderline qualification (may need user confirmation)
-  - For Concepts/Domain:
-    - HIGH: Explicit signal language ("the trade-off is", "X is defined as")
-    - MEDIUM: Implied signal (discussion of alternatives, clarification of terms)
+  - For Concepts:
+    - HIGH: Passes all qualification tests AND litmus test clearly passes (useful to someone at different company)
+    - MEDIUM: Passes qualification tests but litmus test is borderline (generalizable but narrowly)
+    - LOW: Borderline qualification (may need user confirmation on educational value)
+  - For Domain:
+    - HIGH: Explicit definition language ("X is defined as", "X means")
+    - MEDIUM: Implied definition (clarification of terms in context)
     - LOW: Weak signal (might be relevant, needs confirmation)
 - **For ADRs only**:
   - **Category**: Which AWS category (structure, nfr, dependencies, interfaces, construction)
@@ -162,7 +195,7 @@ Present a STRUCTURED SUMMARY of all signals found, grouped by type.
 ` + "```" + `
 ## Harvest Results
 
-**Summary: X qualified ADR candidates, Y Concept signals, Z Domain signals**
+**Summary: X qualified ADR candidates, Y qualified Concept candidates, Z Domain signals**
 **Conversations: N system-truth, M exploratory**
 
 ### ADR Candidates (Qualified)
@@ -173,10 +206,12 @@ Present a STRUCTURED SUMMARY of all signals found, grouped by type.
 
 **Note:** Only decisions that pass all qualification tests appear here. Disqualified items are not shown.
 
-### Concept Signals
-| ID | Confidence | Title | Source | Conv Type | Message Range | Related |
-|----|------------|-------|--------|-----------|---------------|---------|
-| concept-1 | HIGH | YAML vs JSON trade-offs | cr-session-20260217 | system-truth | lines 50-75 | adr-1 |
+### Concept Candidates (Qualified)
+| ID | Confidence | Title | Litmus Test | Source | Conv Type | Related |
+|----|------------|-------|-------------|--------|-----------|---------|
+| concept-1 | HIGH | YAML vs JSON trade-offs | ✓ Useful to others | cr-session-20260217 | system-truth | adr-1 |
+
+**Note:** Only content that passes all qualification tests (Orientation, Educational Value, Independence) and the litmus test appears here. Disqualified items are not shown.
 
 ### Domain Signals
 | ID | Confidence | Title | Source | Conv Type | Message Range | Related |
