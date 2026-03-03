@@ -19,13 +19,12 @@ func TestMergeWorkflow_AddFeature(t *testing.T) {
 	// Create parent spec
 	parentSpec := domain.NewSpec("parent-spec", "Parent Spec")
 	parentSpec.Features = []domain.Feature{
-		{ID: "existing-feature", Description: "Already here", AcceptanceCriteria: []string{"Works"}},
+		testutil.NewTestFeature("existing-feature", "Already here", "Works"),
 	}
-	if err := store.SaveSpec(parentSpec); err != nil {
-		t.Fatalf("failed to save parent spec: %v", err)
-	}
+	testutil.AssertNoError(t, store.SaveSpec(parentSpec))
 
 	// Create change request that adds a feature
+	newFeature := testutil.NewTestFeature("new-feature", "Brand new", "It works")
 	cr := &domain.ChangeRequest{
 		ID:         "add-feature-cr",
 		Title:      "Add New Feature",
@@ -33,33 +32,21 @@ func TestMergeWorkflow_AddFeature(t *testing.T) {
 		Changes: []domain.Change{
 			{
 				Operation: "add",
-				Feature: &domain.Feature{
-					ID:                 "new-feature",
-					Description:        "Brand new",
-					AcceptanceCriteria: []string{"It works"},
-				},
+				Feature:   &newFeature,
 			},
 		},
 	}
-	if err := store.SaveChangeRequest(cr); err != nil {
-		t.Fatalf("failed to save change request: %v", err)
-	}
+	testutil.AssertNoError(t, store.SaveChangeRequest(cr))
 
 	// Apply changes (simulating merge)
-	if err := cr.ApplyChanges(parentSpec); err != nil {
-		t.Fatalf("ApplyChanges failed: %v", err)
-	}
+	testutil.AssertNoError(t, cr.ApplyChanges(parentSpec))
 
 	// Save updated spec
-	if err := store.SaveSpec(parentSpec); err != nil {
-		t.Fatalf("failed to save updated spec: %v", err)
-	}
+	testutil.AssertNoError(t, store.SaveSpec(parentSpec))
 
 	// Reload and verify
 	reloaded, err := store.LoadSpec("parent-spec")
-	if err != nil {
-		t.Fatalf("failed to reload spec: %v", err)
-	}
+	testutil.AssertNoError(t, err)
 
 	if len(reloaded.Features) != 2 {
 		t.Errorf("expected 2 features after merge, got %d", len(reloaded.Features))
@@ -80,11 +67,9 @@ func TestMergeWorkflow_ModifyFeature(t *testing.T) {
 	// Create parent spec
 	parentSpec := domain.NewSpec("parent-spec", "Parent Spec")
 	parentSpec.Features = []domain.Feature{
-		{ID: "my-feature", Description: "Original", AcceptanceCriteria: []string{"Old criterion"}},
+		testutil.NewTestFeature("my-feature", "Original", "Old criterion"),
 	}
-	if err := store.SaveSpec(parentSpec); err != nil {
-		t.Fatalf("failed to save parent spec: %v", err)
-	}
+	testutil.AssertNoError(t, store.SaveSpec(parentSpec))
 
 	// Create change request that modifies the feature
 	cr := &domain.ChangeRequest{
@@ -102,24 +87,16 @@ func TestMergeWorkflow_ModifyFeature(t *testing.T) {
 			},
 		},
 	}
-	if err := store.SaveChangeRequest(cr); err != nil {
-		t.Fatalf("failed to save change request: %v", err)
-	}
+	testutil.AssertNoError(t, store.SaveChangeRequest(cr))
 
 	// Apply changes
-	if err := cr.ApplyChanges(parentSpec); err != nil {
-		t.Fatalf("ApplyChanges failed: %v", err)
-	}
+	testutil.AssertNoError(t, cr.ApplyChanges(parentSpec))
 
 	// Save and reload
-	if err := store.SaveSpec(parentSpec); err != nil {
-		t.Fatalf("failed to save updated spec: %v", err)
-	}
+	testutil.AssertNoError(t, store.SaveSpec(parentSpec))
 
 	reloaded, err := store.LoadSpec("parent-spec")
-	if err != nil {
-		t.Fatalf("failed to reload spec: %v", err)
-	}
+	testutil.AssertNoError(t, err)
 
 	if reloaded.Features[0].Description != "Updated description" {
 		t.Errorf("expected updated description, got %q", reloaded.Features[0].Description)
@@ -137,12 +114,10 @@ func TestMergeWorkflow_RemoveFeature(t *testing.T) {
 	// Create parent spec with two features
 	parentSpec := domain.NewSpec("parent-spec", "Parent Spec")
 	parentSpec.Features = []domain.Feature{
-		{ID: "keep-feature", Description: "Keep this", AcceptanceCriteria: []string{"Works"}},
-		{ID: "remove-feature", Description: "Remove this", AcceptanceCriteria: []string{"Old"}},
+		testutil.NewTestFeature("keep-feature", "Keep this", "Works"),
+		testutil.NewTestFeature("remove-feature", "Remove this", "Old"),
 	}
-	if err := store.SaveSpec(parentSpec); err != nil {
-		t.Fatalf("failed to save parent spec: %v", err)
-	}
+	testutil.AssertNoError(t, store.SaveSpec(parentSpec))
 
 	// Create change request that removes a feature
 	cr := &domain.ChangeRequest{
@@ -157,24 +132,16 @@ func TestMergeWorkflow_RemoveFeature(t *testing.T) {
 			},
 		},
 	}
-	if err := store.SaveChangeRequest(cr); err != nil {
-		t.Fatalf("failed to save change request: %v", err)
-	}
+	testutil.AssertNoError(t, store.SaveChangeRequest(cr))
 
 	// Apply changes
-	if err := cr.ApplyChanges(parentSpec); err != nil {
-		t.Fatalf("ApplyChanges failed: %v", err)
-	}
+	testutil.AssertNoError(t, cr.ApplyChanges(parentSpec))
 
 	// Save and reload
-	if err := store.SaveSpec(parentSpec); err != nil {
-		t.Fatalf("failed to save updated spec: %v", err)
-	}
+	testutil.AssertNoError(t, store.SaveSpec(parentSpec))
 
 	reloaded, err := store.LoadSpec("parent-spec")
-	if err != nil {
-		t.Fatalf("failed to reload spec: %v", err)
-	}
+	testutil.AssertNoError(t, err)
 
 	if len(reloaded.Features) != 1 {
 		t.Errorf("expected 1 feature after merge, got %d", len(reloaded.Features))
@@ -194,11 +161,10 @@ func TestMergeWorkflow_DeleteChangeRequestAfterMerge(t *testing.T) {
 
 	// Create parent spec
 	parentSpec := domain.NewSpec("parent-spec", "Parent Spec")
-	if err := store.SaveSpec(parentSpec); err != nil {
-		t.Fatalf("failed to save parent spec: %v", err)
-	}
+	testutil.AssertNoError(t, store.SaveSpec(parentSpec))
 
 	// Create change request
+	newFeature := testutil.NewTestFeature("new-feature", "New", "Works")
 	cr := &domain.ChangeRequest{
 		ID:         "to-delete-cr",
 		Title:      "Will Be Deleted",
@@ -206,17 +172,11 @@ func TestMergeWorkflow_DeleteChangeRequestAfterMerge(t *testing.T) {
 		Changes: []domain.Change{
 			{
 				Operation: "add",
-				Feature: &domain.Feature{
-					ID:                 "new-feature",
-					Description:        "New",
-					AcceptanceCriteria: []string{"Works"},
-				},
+				Feature:   &newFeature,
 			},
 		},
 	}
-	if err := store.SaveChangeRequest(cr); err != nil {
-		t.Fatalf("failed to save change request: %v", err)
-	}
+	testutil.AssertNoError(t, store.SaveChangeRequest(cr))
 
 	// Verify it exists
 	_, err := store.LoadChangeRequest("to-delete-cr")
@@ -225,15 +185,9 @@ func TestMergeWorkflow_DeleteChangeRequestAfterMerge(t *testing.T) {
 	}
 
 	// Apply changes and delete
-	if err := cr.ApplyChanges(parentSpec); err != nil {
-		t.Fatalf("ApplyChanges failed: %v", err)
-	}
-	if err := store.SaveSpec(parentSpec); err != nil {
-		t.Fatalf("failed to save updated spec: %v", err)
-	}
-	if err := store.DeleteChangeRequest("to-delete-cr"); err != nil {
-		t.Fatalf("failed to delete change request: %v", err)
-	}
+	testutil.AssertNoError(t, cr.ApplyChanges(parentSpec))
+	testutil.AssertNoError(t, store.SaveSpec(parentSpec))
+	testutil.AssertNoError(t, store.DeleteChangeRequest("to-delete-cr"))
 
 	// Verify it's gone
 	_, err = store.LoadChangeRequest("to-delete-cr")
@@ -268,15 +222,11 @@ func TestYAMLFormatting_FeatureSpacing(t *testing.T) {
 		},
 	}
 
-	if err := store.SaveSpec(spec); err != nil {
-		t.Fatalf("failed to save spec: %v", err)
-	}
+	testutil.AssertNoError(t, store.SaveSpec(spec))
 
 	// Read the raw file to check formatting
 	content, err := os.ReadFile(filepath.Join(dir, "specs", "test-spec.yaml"))
-	if err != nil {
-		t.Fatalf("failed to read file: %v", err)
-	}
+	testutil.AssertNoError(t, err)
 
 	contentStr := string(content)
 
@@ -303,22 +253,14 @@ func TestYAMLFormatting_BlockStyleDescription(t *testing.T) {
 	// Create a spec with a multi-line description
 	spec := domain.NewSpec("block-test", "Block Style Test")
 	spec.Features = []domain.Feature{
-		{
-			ID:                 "multiline-feature",
-			Description:        "This is a longer description\nthat should use block style",
-			AcceptanceCriteria: []string{"Works"},
-		},
+		testutil.NewTestFeature("multiline-feature", "This is a longer description\nthat should use block style", "Works"),
 	}
 
-	if err := store.SaveSpec(spec); err != nil {
-		t.Fatalf("failed to save spec: %v", err)
-	}
+	testutil.AssertNoError(t, store.SaveSpec(spec))
 
 	// Read and verify
 	content, err := os.ReadFile(filepath.Join(dir, "specs", "block-test.yaml"))
-	if err != nil {
-		t.Fatalf("failed to read file: %v", err)
-	}
+	testutil.AssertNoError(t, err)
 
 	if !strings.Contains(string(content), "description: |") {
 		t.Errorf("expected block style for multi-line description, got:\n%s", string(content))
@@ -332,11 +274,9 @@ func TestDeleteSpec_Success(t *testing.T) {
 	// Create a spec
 	spec := domain.NewSpec("to-delete", "Spec To Delete")
 	spec.Features = []domain.Feature{
-		{ID: "feature-1", Description: "A feature", AcceptanceCriteria: []string{"Works"}},
+		testutil.NewTestFeature("feature-1", "A feature", "Works"),
 	}
-	if err := store.SaveSpec(spec); err != nil {
-		t.Fatalf("failed to save spec: %v", err)
-	}
+	testutil.AssertNoError(t, store.SaveSpec(spec))
 
 	// Verify it exists
 	_, err := store.LoadSpec("to-delete")
@@ -345,9 +285,7 @@ func TestDeleteSpec_Success(t *testing.T) {
 	}
 
 	// Delete it
-	if err := store.DeleteSpec("to-delete"); err != nil {
-		t.Fatalf("DeleteSpec failed: %v", err)
-	}
+	testutil.AssertNoError(t, store.DeleteSpec("to-delete"))
 
 	// Verify it's gone
 	_, err = store.LoadSpec("to-delete")
@@ -380,14 +318,13 @@ func TestMergeWorkflow_FullScenario(t *testing.T) {
 	parentSpec.Description = "The Ralph execution loop"
 	parentSpec.DomainKnowledge = []string{"Existing knowledge"}
 	parentSpec.Features = []domain.Feature{
-		{ID: "ralph-loop", Description: "Core loop", AcceptanceCriteria: []string{"Loops correctly"}},
-		{ID: "old-feature", Description: "To be removed", AcceptanceCriteria: []string{"Old"}},
+		testutil.NewTestFeature("ralph-loop", "Core loop", "Loops correctly"),
+		testutil.NewTestFeature("old-feature", "To be removed", "Old"),
 	}
-	if err := store.SaveSpec(parentSpec); err != nil {
-		t.Fatalf("failed to save parent spec: %v", err)
-	}
+	testutil.AssertNoError(t, store.SaveSpec(parentSpec))
 
 	// Create change request with all operation types
+	timeoutFeature := testutil.NewTestFeature("timeout-flag", "Add --timeout flag", "Flag accepts minutes", "Flag is optional")
 	cr := &domain.ChangeRequest{
 		ID:         "execution-ralph-add-timeout",
 		Title:      "Add timeout feature",
@@ -399,11 +336,7 @@ func TestMergeWorkflow_FullScenario(t *testing.T) {
 			},
 			{
 				Operation: "add",
-				Feature: &domain.Feature{
-					ID:                 "timeout-flag",
-					Description:        "Add --timeout flag",
-					AcceptanceCriteria: []string{"Flag accepts minutes", "Flag is optional"},
-				},
+				Feature:   &timeoutFeature,
 			},
 			{
 				Operation: "modify",
@@ -419,26 +352,16 @@ func TestMergeWorkflow_FullScenario(t *testing.T) {
 			},
 		},
 	}
-	if err := store.SaveChangeRequest(cr); err != nil {
-		t.Fatalf("failed to save change request: %v", err)
-	}
+	testutil.AssertNoError(t, store.SaveChangeRequest(cr))
 
 	// Simulate full merge workflow
-	if err := cr.ApplyChanges(parentSpec); err != nil {
-		t.Fatalf("ApplyChanges failed: %v", err)
-	}
-	if err := store.SaveSpec(parentSpec); err != nil {
-		t.Fatalf("failed to save updated spec: %v", err)
-	}
-	if err := store.DeleteChangeRequest("execution-ralph-add-timeout"); err != nil {
-		t.Fatalf("failed to delete change request: %v", err)
-	}
+	testutil.AssertNoError(t, cr.ApplyChanges(parentSpec))
+	testutil.AssertNoError(t, store.SaveSpec(parentSpec))
+	testutil.AssertNoError(t, store.DeleteChangeRequest("execution-ralph-add-timeout"))
 
 	// Reload and verify final state
 	final, err := store.LoadSpec("execution-ralph")
-	if err != nil {
-		t.Fatalf("failed to reload spec: %v", err)
-	}
+	testutil.AssertNoError(t, err)
 
 	// Check domain knowledge
 	if len(final.DomainKnowledge) != 2 {

@@ -43,17 +43,11 @@ func TestStrategy_Chunk_SingleFeature(t *testing.T) {
 	s := New(nil)
 
 	cr := testutil.CRWithFeatures("test-cr",
-		domain.Feature{
-			ID:                 "feature-1",
-			Description:        "First feature",
-			AcceptanceCriteria: []string{"Criterion A", "Criterion B"},
-		},
+		testutil.NewTestFeature("feature-1", "First feature", "Criterion A", "Criterion B"),
 	)
 
 	items, err := s.Chunk(cr)
-	if err != nil {
-		t.Fatalf("Chunk() error = %v", err)
-	}
+	testutil.AssertNoError(t, err)
 
 	if len(items) != 1 {
 		t.Fatalf("Chunk() returned %d items, want 1", len(items))
@@ -89,15 +83,13 @@ func TestStrategy_Chunk_MultipleFeatures(t *testing.T) {
 	s := New(nil)
 
 	cr := testutil.CRWithFeatures("multi-cr",
-		domain.Feature{ID: "f1", Description: "Feature 1", AcceptanceCriteria: []string{"C1"}},
-		domain.Feature{ID: "f2", Description: "Feature 2", AcceptanceCriteria: []string{"C2"}},
-		domain.Feature{ID: "f3", Description: "Feature 3", AcceptanceCriteria: []string{"C3"}},
+		testutil.NewTestFeature("f1", "Feature 1", "C1"),
+		testutil.NewTestFeature("f2", "Feature 2", "C2"),
+		testutil.NewTestFeature("f3", "Feature 3", "C3"),
 	)
 
 	items, err := s.Chunk(cr)
-	if err != nil {
-		t.Fatalf("Chunk() error = %v", err)
-	}
+	testutil.AssertNoError(t, err)
 
 	if len(items) != 3 {
 		t.Fatalf("Chunk() returned %d items, want 3", len(items))
@@ -138,6 +130,7 @@ func TestStrategy_Chunk_NoFeatures(t *testing.T) {
 func TestStrategy_Validate_NoAcceptanceCriteria(t *testing.T) {
 	s := New(nil)
 
+	// Use a Feature without acceptance criteria to test validation
 	cr := testutil.CRWithFeatures("invalid-cr",
 		domain.Feature{ID: "bad-feature", Description: "No criteria", AcceptanceCriteria: []string{}},
 	)
@@ -188,13 +181,11 @@ func TestStrategy_MergeConstraints_DefaultsOnly(t *testing.T) {
 	s := New(nil)
 
 	cr := testutil.CRWithFeatures("no-knowledge",
-		domain.Feature{ID: "f1", Description: "Test", AcceptanceCriteria: []string{"Works"}},
+		testutil.NewTestFeature("f1", "Test", "Works"),
 	)
 
 	items, err := s.Chunk(cr)
-	if err != nil {
-		t.Fatalf("Chunk() error = %v", err)
-	}
+	testutil.AssertNoError(t, err)
 
 	constraints := items[0].Constraints
 
@@ -357,17 +348,11 @@ func TestStrategy_Chunk_NonRefactorCR_NoRefactorConstraints(t *testing.T) {
 
 	// Create a feature change request (not a refactor)
 	cr := testutil.CRWithFeatures("regular-cr",
-		domain.Feature{
-			ID:                 "feature-1",
-			Description:        "Add new feature",
-			AcceptanceCriteria: []string{"Feature is added"},
-		},
+		testutil.NewTestFeature("feature-1", "Add new feature", "Feature is added"),
 	)
 
 	items, err := s.Chunk(cr)
-	if err != nil {
-		t.Fatalf("Chunk() error = %v", err)
-	}
+	testutil.AssertNoError(t, err)
 
 	item := items[0]
 

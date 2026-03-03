@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/leightonvanrooijen/utopia/internal/domain"
+	"github.com/leightonvanrooijen/utopia/internal/testutil"
 )
 
 func TestStrategy_Name(t *testing.T) {
@@ -40,10 +41,7 @@ func TestCompletionToken(t *testing.T) {
 func TestStrategy_BuildPrompt_NoFailures(t *testing.T) {
 	s := &Strategy{}
 
-	item := &domain.WorkItem{
-		ID:     "test-item",
-		Prompt: "## TASK\n\nImplement feature X\n\n## CONSTRAINTS\n\n- Keep it simple\n\n---\n\nWhen complete, output: <COMPLETE>",
-	}
+	item := testutil.NewTestWorkItem("test-item", "## TASK\n\nImplement feature X\n\n## CONSTRAINTS\n\n- Keep it simple\n\n---\n\nWhen complete, output: <COMPLETE>")
 
 	prompt := s.buildPrompt(item)
 
@@ -61,11 +59,8 @@ func TestStrategy_BuildPrompt_NoFailures(t *testing.T) {
 func TestStrategy_BuildPrompt_WithFailures(t *testing.T) {
 	s := &Strategy{}
 
-	item := &domain.WorkItem{
-		ID:                "test-item",
-		Prompt:            "## TASK\n\nImplement feature X\n\n## CONSTRAINTS\n\n- Keep it simple\n\n---\n\nWhen complete, output: <COMPLETE>",
-		LastFailureOutput: "Error: test failed\nExpected 1 but got 2",
-	}
+	item := testutil.NewTestWorkItem("test-item", "## TASK\n\nImplement feature X\n\n## CONSTRAINTS\n\n- Keep it simple\n\n---\n\nWhen complete, output: <COMPLETE>")
+	item.LastFailureOutput = "Error: test failed\nExpected 1 but got 2"
 
 	prompt := s.buildPrompt(item)
 
@@ -97,11 +92,8 @@ func TestStrategy_BuildPrompt_WithFailures(t *testing.T) {
 func TestStrategy_BuildPrompt_EmptyFailureOutput(t *testing.T) {
 	s := &Strategy{}
 
-	item := &domain.WorkItem{
-		ID:                "test-item",
-		Prompt:            "Original prompt",
-		LastFailureOutput: "", // Empty string, not nil
-	}
+	item := testutil.NewTestWorkItem("test-item", "Original prompt")
+	// LastFailureOutput defaults to empty string
 
 	prompt := s.buildPrompt(item)
 
@@ -131,11 +123,8 @@ Acceptance criteria:
 
 When complete, commit your changes and output: <COMPLETE>`
 
-	item := &domain.WorkItem{
-		ID:                "api-endpoint",
-		Prompt:            originalPrompt,
-		LastFailureOutput: "404 Not Found",
-	}
+	item := testutil.NewTestWorkItem("api-endpoint", originalPrompt)
+	item.LastFailureOutput = "404 Not Found"
 
 	prompt := s.buildPrompt(item)
 
@@ -153,11 +142,8 @@ When complete, commit your changes and output: <COMPLETE>`
 func TestStrategy_BuildPrompt_FailureInCodeBlock(t *testing.T) {
 	s := &Strategy{}
 
-	item := &domain.WorkItem{
-		ID:                "test-item",
-		Prompt:            "Original prompt",
-		LastFailureOutput: "some failure output",
-	}
+	item := testutil.NewTestWorkItem("test-item", "Original prompt")
+	item.LastFailureOutput = "some failure output"
 
 	prompt := s.buildPrompt(item)
 
@@ -220,11 +206,8 @@ func TestWorkItemStatusTransitions(t *testing.T) {
 
 // TestIterationCountTracking verifies iteration counting behavior
 func TestIterationCountTracking(t *testing.T) {
-	item := &domain.WorkItem{
-		ID:             "test-item",
-		Status:         domain.WorkItemPending,
-		IterationCount: 0,
-	}
+	item := testutil.NewTestWorkItem("test-item", "")
+	item.IterationCount = 0 // Ensure starting at 0
 
 	// Simulate multiple iterations
 	for i := 1; i <= 5; i++ {
