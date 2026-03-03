@@ -1,0 +1,96 @@
+id: ADR-003
+title: "Use Fresh Context Per Iteration (Ralph Wiggum Loop) for LLM Execution"
+status: accepted
+date: 2026-03-02
+context: |
+  Utopia needed an execution engine for running LLM-powered work items with
+  automatic verification and retry capabilities. The key challenge was how
+  to handle iteration when work items fail verification.
+
+  Two fundamental approaches exist:
+
+  1. Accumulated context: Keep conversation history across retries, letting
+     the LLM learn from previous failures within the same session
+  2. Fresh context: Start each iteration with a clean slate, relying on
+     external verification to determine success
+
+  The choice affects reliability, cost, context window usage, and the
+  ability to recover from LLM confusion or hallucination spirals.
+
+decision: |
+  We will use fresh context per iteration with external verification,
+  implemented as the "Ralph Wiggum Loop" pattern:
+
+  1. Each WorkItem gets a focused prompt for a single task
+  2. Claude executes in a fresh session (no prior conversation history)
+  3. External verification commands determine success/failure
+  4. On failure, a NEW session starts with the original prompt plus
+     failure context (not the full conversation history)
+  5. Loop continues until verification passes or max iterations reached
+
+  The pattern is named "Ralph Wiggum" as a playful reference, but the
+  principle is serious: fresh context prevents confusion spirals and
+  keeps each attempt independent.
+
+options_considered:
+  - option: "Accumulated context (conversation continuation)"
+    pros:
+      - LLM can learn from its mistakes within session
+      - No need to re-explain context each iteration
+      - Natural conversation flow
+    cons:
+      - Context window fills up with failed attempts
+      - LLM can get stuck in confusion spirals
+      - Errors compound rather than reset
+      - Expensive as conversation grows
+
+  - option: "Fresh context per iteration (chosen)"
+    pros:
+      - Each attempt starts clean, no inherited confusion
+      - Predictable context window usage
+      - External verification is the source of truth
+      - Failed attempts don't pollute future attempts
+      - Easier to reason about and debug
+    cons:
+      - Must re-provide all necessary context each iteration
+      - Cannot leverage "learning" within a session
+      - Requires good prompt engineering for context injection
+
+  - option: "Hybrid (selective context carry-forward)"
+    pros:
+      - Could get benefits of both approaches
+    cons:
+      - Complex to implement correctly
+      - Hard to decide what context to keep vs discard
+      - May inherit worst of both worlds
+
+consequences:
+  positive:
+    - Reliable execution that recovers from LLM confusion
+    - Predictable resource usage (context window, tokens)
+    - Clear separation between LLM execution and verification
+    - Easy to debug (each iteration is independent)
+    - COMPLETE token provides unambiguous success signal
+  negative:
+    - Must carefully craft prompts with all necessary context
+    - Cannot leverage within-session learning
+    - Requires robust external verification commands
+  neutral:
+    - Iteration count becomes a tunable parameter
+    - Failure output can be selectively included in next attempt
+
+advice:
+  - Experience with LLM confusion spirals in accumulated context
+  - Analysis of verification patterns and COMPLETE token usage
+
+principles:
+  - External verification over self-reported success
+  - Stateless iterations for reliability
+  - Fresh context prevents error accumulation
+  - Simple patterns over clever optimizations
+
+related_domain:
+  - execution  # Terms: WorkItem, Iteration, COMPLETE token, Ralph Wiggum Loop
+
+source_conversations:
+  - cr-session-20260302-163523

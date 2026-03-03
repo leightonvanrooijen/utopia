@@ -1,0 +1,88 @@
+id: ADR-002
+title: "Adopt Dependency Injection Architecture for Testability"
+status: accepted
+date: 2026-03-03
+context: |
+  The Utopia codebase showed signs of healthy organic growth but accumulated
+  coupling as features were added. Key issues identified:
+
+  - Direct `*storage.YAMLStore` dependency in 12+ places throughout the codebase
+  - Strategy implementations (e.g., `sequential/strategy.go`) created dependencies
+    internally via `claude.NewCLI()` instead of accepting them
+  - Package-level registries and global mutable state in CLI package
+  - 0% test coverage on CLI package (3,561 lines) due to tight coupling
+  - Duplicate code in `executeInitiative` and `executeSingleInitiative` (200 lines)
+
+  The core domain patterns were sound, making targeted refactoring low-risk,
+  but the lack of interfaces and dependency injection made unit testing
+  impossible without hitting real infrastructure.
+
+decision: |
+  We will adopt a dependency injection architecture across the codebase:
+
+  1. Define repository interfaces at domain boundaries (e.g., SpecRepository,
+     ChangeRequestRepository) instead of depending on concrete storage types
+  2. Inject strategy dependencies through constructors rather than creating
+     them internally
+  3. Remove global mutable state from CLI package, replacing with explicit
+     parameter passing
+  4. Extract testutil package for shared test infrastructure
+  5. Split large files (cli/execute.go at 1014 lines) into focused modules
+
+options_considered:
+  - option: "Continue with concrete dependencies"
+    pros:
+      - No refactoring effort required
+      - Simpler code paths without indirection
+    cons:
+      - Unit testing remains impossible
+      - Coupling increases as codebase grows
+      - Changes to storage ripple through entire codebase
+
+  - option: "Dependency injection with interfaces (chosen)"
+    pros:
+      - Enables unit testing with mock implementations
+      - Reduces coupling between layers
+      - Makes dependencies explicit and visible
+      - Supports future storage backend changes
+    cons:
+      - Requires upfront refactoring effort
+      - Adds indirection (interfaces)
+      - Must maintain interface/implementation consistency
+
+  - option: "Test via integration tests only"
+    pros:
+      - Tests real behavior end-to-end
+      - No refactoring needed
+    cons:
+      - Slow test execution
+      - Difficult to test edge cases
+      - Environment setup complexity
+      - Doesn't address coupling issues
+
+consequences:
+  positive:
+    - CLI package becomes testable (was 0% coverage)
+    - Storage backends can be swapped without touching business logic
+    - Dependencies are explicit in function signatures
+    - Smaller, focused modules are easier to understand
+  negative:
+    - One-time refactoring cost across multiple packages
+    - Interface definitions must be maintained
+    - Slight increase in code indirection
+  neutral:
+    - Establishes pattern for future development
+    - Requires discipline to maintain interface-based design
+
+advice:
+  - Analysis of existing coupling via agent exploration
+  - Go best practices for interface design (accept interfaces, return structs)
+
+principles:
+  - Depend on abstractions, not concretions
+  - Make dependencies explicit
+  - Design for testability from the start
+  - Prefer small, focused modules over large files
+
+source_conversations:
+  - cr-session-20260303-120656
