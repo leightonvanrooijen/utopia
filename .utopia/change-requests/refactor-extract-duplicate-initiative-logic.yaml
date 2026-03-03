@@ -1,41 +1,40 @@
 id: refactor-extract-duplicate-initiative-logic
 type: refactor
 title: Extract duplicate initiative execution logic (~200 lines)
-status: draft
+status: in-progress
 tasks:
-  - id: extract-initiative-core
-    description: |
-      Extract common logic from executeInitiative (lines 426-584) and
-      executeSingleInitiative (lines 904-1014) in cli/execute.go.
+    - id: extract-initiative-core
+      description: |
+        Extract common logic from executeInitiative (lines 426-584) and
+        executeSingleInitiative (lines 904-1014) in cli/execute.go.
 
-      These functions share ~90% identical code for:
-      - Phase management and iteration
-      - Chunking strategy invocation
-      - Work item execution loop
-      - Status updates and progress tracking
-      - Error handling patterns
+        These functions share ~90% identical code for:
+        - Phase management and iteration
+        - Chunking strategy invocation
+        - Work item execution loop
+        - Status updates and progress tracking
+        - Error handling patterns
 
-      Create a shared executeInitiativeCore function that both can call
-      with their respective contexts and configuration.
-    acceptance_criteria:
-      - New executeInitiativeCore function created with shared logic
-      - executeInitiative calls core function with its context setup
-      - executeSingleInitiative calls core function with its context setup
-      - Code duplication reduced by ~180 lines (90% reduction)
-      - All initiative execution scenarios still work correctly
-      - Both single CR and batch execution modes functional
+        Create a shared executeInitiativeCore function that both can call
+        with their respective contexts and configuration.
+      acceptance_criteria:
+        - New executeInitiativeCore function created with shared logic
+        - executeInitiative calls core function with its context setup
+        - executeSingleInitiative calls core function with its context setup
+        - Code duplication reduced by ~180 lines (90% reduction)
+        - All initiative execution scenarios still work correctly
+        - Both single CR and batch execution modes functional
+    - id: extract-feature-conversion-helpers
+      description: |
+        Extract duplicate feature extraction logic from
+        strategies/chunk/ralphsequential/strategy.go.
 
-  - id: extract-feature-conversion-helpers
-    description: |
-      Extract duplicate feature extraction logic from
-      strategies/chunk/ralphsequential/strategy.go.
-
-      Functions extractFeatures (lines 128-234) and extractFeaturesFromPhase
-      (lines 292-391) contain ~160 lines of nearly identical code for
-      converting tasks/changes to features.
-    acceptance_criteria:
-      - Helper function convertTaskToFeature(task) created
-      - Helper function convertChangeToFeature(change) created
-      - Both extraction functions use the shared helpers
-      - Code duplication reduced by ~140 lines (85% reduction)
-      - All chunking scenarios produce same output as before
+        Functions extractFeatures (lines 128-234) and extractFeaturesFromPhase
+        (lines 292-391) contain ~160 lines of nearly identical code for
+        converting tasks/changes to features.
+      acceptance_criteria:
+        - Helper function convertTaskToFeature(task) created
+        - Helper function convertChangeToFeature(change) created
+        - Both extraction functions use the shared helpers
+        - Code duplication reduced by ~140 lines (85% reduction)
+        - All chunking scenarios produce same output as before
