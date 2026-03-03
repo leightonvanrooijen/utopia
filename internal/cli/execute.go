@@ -1,14 +1,11 @@
 package cli
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
@@ -245,112 +242,4 @@ func runExecute(cmd *cobra.Command, args []string, execRegistry *executeStrategy
 	}
 
 	return nil
-}
-
-// selectChangeRequest lists available CRs and prompts the user to select one.
-func selectChangeRequest(store *storage.YAMLStore) (string, error) {
-	crs, err := store.ListChangeRequests()
-	if err != nil {
-		return "", fmt.Errorf("failed to list change requests: %w", err)
-	}
-
-	if len(crs) == 0 {
-		return "", fmt.Errorf("no change requests found in .utopia/change-requests/\n\nCreate one with: utopia cr")
-	}
-
-	fmt.Println("Available change requests:")
-	fmt.Println()
-	for i, cr := range crs {
-		fmt.Printf("  [%d] %s\n", i+1, cr.Title)
-	}
-	fmt.Println()
-
-	reader := bufio.NewReader(os.Stdin)
-	fmt.Print("Select a change request (number): ")
-	input, err := reader.ReadString('\n')
-	if err != nil {
-		return "", fmt.Errorf("failed to read input: %w", err)
-	}
-
-	input = strings.TrimSpace(input)
-	selection, err := strconv.Atoi(input)
-	if err != nil || selection < 1 || selection > len(crs) {
-		return "", fmt.Errorf("invalid selection: %s (enter a number between 1 and %d)", input, len(crs))
-	}
-
-	selectedCR := crs[selection-1]
-	fmt.Printf("\nSelected: %s\n\n", selectedCR.Title)
-
-	return selectedCR.ID, nil
-}
-
-// SpecLoaderConfigurable is an optional interface that chunking strategies can implement
-// to receive a spec loader for loading referenced specs during bugfix chunking.
-type SpecLoaderConfigurable interface {
-	SetSpecLoader(loader func(specID string) (*domain.Spec, error))
-}
-
-// chunkCR invokes the chunking strategy to produce work items from a change request.
-func chunkCR(cr *domain.ChangeRequest, crID string, store *storage.YAMLStore, config *domain.Config, registry *chunkStrategy.Registry, projectDir string) ([]*domain.WorkItem, error) {
-	fmt.Printf("Chunking change request: %s\n", cr.Title)
-
-	// Update CR status to in-progress when chunking begins
-	cr.Status = domain.ChangeRequestInProgress
-	if err := store.SaveChangeRequest(cr); err != nil {
-		return nil, fmt.Errorf("failed to update CR status: %w", err)
-	}
-
-	// Determine which chunking strategy to use
-	strategyName := executeChunkStrategyFlag
-	if strategyName == "" {
-		strategyName = config.Strategies.Chunk
-	}
-
-	strategy, ok := registry.Get(strategyName)
-	if !ok {
-		available := registry.List()
-		if len(available) == 0 {
-			return nil, fmt.Errorf("no chunking strategies registered")
-		}
-		return nil, fmt.Errorf("unknown chunk strategy %q (available: %v)", strategyName, available)
-	}
-
-	// Configure spec loader if the strategy supports it (needed for bugfix CRs)
-	if configurable, ok := strategy.(SpecLoaderConfigurable); ok {
-		configurable.SetSpecLoader(store.LoadSpec)
-	}
-
-	fmt.Printf("Using '%s' chunk strategy: %s\n", strategy.Name(), strategy.Description())
-
-	// Run the chunking strategy (includes validation)
-	workItems, err := strategy.Chunk(cr)
-	if err != nil {
-		return nil, fmt.Errorf("chunking failed: %w", err)
-	}
-
-	// Save work items to .utopia/work-items/<id>/
-	for _, item := range workItems {
-		if err := store.SaveWorkItemForSpec(crID, item); err != nil {
-			return nil, fmt.Errorf("failed to save work item %s: %w", item.ID, err)
-		}
-	}
-
-	fmt.Printf("Created %d work item(s)\n\n", len(workItems))
-
-	// Commit work items to git
-	if err := gitCommitChunk(projectDir, crID); err != nil {
-		// Log but don't fail - work items are saved, commit is non-critical
-		fmt.Printf("⚠ Git commit warning: %s\n", err)
-	} else {
-		fmt.Printf("✓ Committed work items for %s\n", crID)
-	}
-
-	// Print summary
-	fmt.Println("Work items:")
-	for _, item := range workItems {
-		fmt.Printf("  [%d] %s\n", item.Order, item.ID)
-	}
-	fmt.Println()
-
-	return workItems, nil
 }
