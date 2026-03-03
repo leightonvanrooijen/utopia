@@ -50,9 +50,17 @@ type Strategy struct {
 	specLoader SpecLoader
 }
 
-// New creates a new ralph-sequential strategy.
-// The specLoader is optional - if nil, use SetSpecLoader before chunking bugfix CRs.
-func New(specLoader SpecLoader) *Strategy {
+// New creates a new ralph-sequential strategy without pre-configured dependencies.
+// The specLoader is configured at runtime via SetSpecLoader when storage becomes available.
+// For testing with mock dependencies, use NewWithDeps().
+func New() *Strategy {
+	return &Strategy{}
+}
+
+// NewWithDeps creates a new ralph-sequential strategy with injected dependencies.
+// The specLoader is used to load referenced specs during bugfix chunking.
+// This constructor enables testing with mock dependencies.
+func NewWithDeps(specLoader SpecLoader) *Strategy {
 	return &Strategy{specLoader: specLoader}
 }
 
