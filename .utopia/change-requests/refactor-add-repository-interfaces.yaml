@@ -1,0 +1,33 @@
+id: refactor-add-repository-interfaces
+type: refactor
+title: Add repository interfaces to decouple domain from storage
+status: draft
+tasks:
+  - id: define-repository-interfaces
+    description: |
+      Create repository interfaces in internal/domain/repositories.go to abstract
+      storage operations. Currently 12+ places directly depend on *storage.YAMLStore,
+      creating tight coupling between business logic and infrastructure.
+
+      Interfaces to define:
+      - SpecRepository (LoadSpec, SaveSpec, ListSpecs, DeleteSpec)
+      - ChangeRequestRepository (LoadCR, SaveCR, ListCRs, DeleteCR, ListPendingCRs)
+      - WorkItemRepository (LoadWorkItems, SaveWorkItem, ListWorkItemsForSpec)
+      - ConversationRepository (LoadConversation, SaveConversation, ListConversations)
+      - ConfigRepository (LoadConfig, SaveConfig)
+    acceptance_criteria:
+      - Repository interfaces defined in internal/domain/repositories.go
+      - Each interface follows Interface Segregation Principle (small, focused)
+      - Interfaces use domain types only (no storage package imports in domain)
+      - YAMLStore updated to implement all repository interfaces
+      - Existing behavior preserved (all tests pass)
+
+  - id: update-yamlstore-implementation
+    description: |
+      Update YAMLStore to explicitly implement the new repository interfaces.
+      Add interface compliance checks to ensure compile-time verification.
+    acceptance_criteria:
+      - YAMLStore implements all repository interfaces
+      - Compile-time interface checks added (var _ SpecRepository = (*YAMLStore)(nil))
+      - No changes to existing method signatures
+      - All existing tests continue to pass
