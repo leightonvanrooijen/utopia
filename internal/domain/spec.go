@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"strings"
 	"time"
-
-	"gopkg.in/yaml.v3"
 )
 
 // Spec represents a living specification document
@@ -33,45 +31,6 @@ type Feature struct {
 	ID                 string   `yaml:"id"`
 	Description        string   `yaml:"description"`
 	AcceptanceCriteria []string `yaml:"acceptance_criteria"`
-}
-
-// MarshalYAML customizes YAML output for Feature to use block style
-// for multi-line descriptions.
-func (f Feature) MarshalYAML() (interface{}, error) {
-	// Create a node structure manually to control formatting
-	node := &yaml.Node{
-		Kind: yaml.MappingNode,
-	}
-
-	// Add id
-	node.Content = append(node.Content,
-		&yaml.Node{Kind: yaml.ScalarNode, Value: "id"},
-		&yaml.Node{Kind: yaml.ScalarNode, Value: f.ID},
-	)
-
-	// Add description with block style if multi-line
-	descNode := &yaml.Node{Kind: yaml.ScalarNode, Value: f.Description}
-	if strings.Contains(f.Description, "\n") || len(f.Description) > 60 {
-		descNode.Style = yaml.LiteralStyle // Forces | block style
-	}
-	node.Content = append(node.Content,
-		&yaml.Node{Kind: yaml.ScalarNode, Value: "description"},
-		descNode,
-	)
-
-	// Add acceptance_criteria
-	criteriaNode := &yaml.Node{Kind: yaml.SequenceNode}
-	for _, c := range f.AcceptanceCriteria {
-		criteriaNode.Content = append(criteriaNode.Content,
-			&yaml.Node{Kind: yaml.ScalarNode, Value: c},
-		)
-	}
-	node.Content = append(node.Content,
-		&yaml.Node{Kind: yaml.ScalarNode, Value: "acceptance_criteria"},
-		criteriaNode,
-	)
-
-	return node, nil
 }
 
 // NewSpec creates a new spec with sensible defaults

@@ -38,7 +38,25 @@ func (s *YAMLStore) SaveSpec(spec *domain.Spec) error {
 	}
 
 	path := filepath.Join(dir, spec.ID+".yaml")
-	return s.writeYAML(path, spec)
+	return s.writeSpecYAML(path, spec)
+}
+
+// writeSpecYAML marshals a spec using custom marshaling for features
+func (s *YAMLStore) writeSpecYAML(path string, spec *domain.Spec) error {
+	marshaler := newSpecMarshaler(spec)
+	bytes, err := yaml.Marshal(marshaler)
+	if err != nil {
+		return fmt.Errorf("failed to marshal YAML: %w", err)
+	}
+
+	// Post-process to add blank lines between features for readability
+	content := addFeatureSpacing(string(bytes))
+
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		return fmt.Errorf("failed to write file %s: %w", path, err)
+	}
+
+	return nil
 }
 
 // LoadSpec reads a spec from .utopia/specs/{id}.yaml
@@ -308,6 +326,83 @@ func (s *YAMLStore) writeYAML(path string, data interface{}) error {
 	}
 
 	return nil
+}
+
+// featureMarshaler wraps domain.Feature to provide custom YAML marshaling.
+// This keeps YAML-specific formatting logic in the storage layer rather than
+// polluting domain types with serialization concerns.
+type featureMarshaler struct {
+	Feature domain.Feature
+}
+
+// MarshalYAML customizes YAML output for Feature to use block style
+// for multi-line descriptions.
+func (f featureMarshaler) MarshalYAML() (interface{}, error) {
+	// Create a node structure manually to control formatting
+	node := &yaml.Node{
+		Kind: yaml.MappingNode,
+	}
+
+	// Add id
+	node.Content = append(node.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Value: "id"},
+		&yaml.Node{Kind: yaml.ScalarNode, Value: f.Feature.ID},
+	)
+
+	// Add description with block style if multi-line
+	descNode := &yaml.Node{Kind: yaml.ScalarNode, Value: f.Feature.Description}
+	if strings.Contains(f.Feature.Description, "\n") || len(f.Feature.Description) > 60 {
+		descNode.Style = yaml.LiteralStyle // Forces | block style
+	}
+	node.Content = append(node.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Value: "description"},
+		descNode,
+	)
+
+	// Add acceptance_criteria
+	criteriaNode := &yaml.Node{Kind: yaml.SequenceNode}
+	for _, c := range f.Feature.AcceptanceCriteria {
+		criteriaNode.Content = append(criteriaNode.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Value: c},
+		)
+	}
+	node.Content = append(node.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Value: "acceptance_criteria"},
+		criteriaNode,
+	)
+
+	return node, nil
+}
+
+// specMarshaler wraps domain.Spec for custom YAML marshaling that applies
+// featureMarshaler to all features while preserving the standard marshaling
+// for other fields.
+type specMarshaler struct {
+	ID              string             `yaml:"id"`
+	Title           string             `yaml:"title"`
+	Created         string             `yaml:"created"`
+	Updated         string             `yaml:"updated"`
+	Description     string             `yaml:"description"`
+	DomainKnowledge []string           `yaml:"domain_knowledge,omitempty"`
+	Features        []featureMarshaler `yaml:"features"`
+}
+
+// newSpecMarshaler creates a specMarshaler from a domain.Spec
+func newSpecMarshaler(spec *domain.Spec) specMarshaler {
+	features := make([]featureMarshaler, len(spec.Features))
+	for i, f := range spec.Features {
+		features[i] = featureMarshaler{Feature: f}
+	}
+
+	return specMarshaler{
+		ID:              spec.ID,
+		Title:           spec.Title,
+		Created:         spec.Created.Format("2006-01-02T15:04:05.999999999-07:00"),
+		Updated:         spec.Updated.Format("2006-01-02T15:04:05.999999999-07:00"),
+		Description:     spec.Description,
+		DomainKnowledge: spec.DomainKnowledge,
+		Features:        features,
+	}
 }
 
 // addFeatureSpacing inserts blank lines between features in YAML output
