@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/leightonvanrooijen/utopia/internal/domain"
+	"github.com/leightonvanrooijen/utopia/internal/testutil"
 )
 
 func TestNew(t *testing.T) {
@@ -38,26 +39,11 @@ func TestStrategy_Description(t *testing.T) {
 	}
 }
 
-// Helper function to create a CR with add operations for features
-func crWithFeatures(id string, features ...domain.Feature) *domain.ChangeRequest {
-	cr := &domain.ChangeRequest{
-		ID:    id,
-		Type:  domain.CRTypeFeature,
-		Title: "Test CR",
-	}
-	for _, f := range features {
-		cr.Changes = append(cr.Changes, domain.Change{
-			Operation: "add",
-			Feature:   &f,
-		})
-	}
-	return cr
-}
 
 func TestStrategy_Chunk_SingleFeature(t *testing.T) {
 	s := New(nil)
 
-	cr := crWithFeatures("test-cr",
+	cr := testutil.CRWithFeatures("test-cr",
 		domain.Feature{
 			ID:                 "feature-1",
 			Description:        "First feature",
@@ -103,7 +89,7 @@ func TestStrategy_Chunk_SingleFeature(t *testing.T) {
 func TestStrategy_Chunk_MultipleFeatures(t *testing.T) {
 	s := New(nil)
 
-	cr := crWithFeatures("multi-cr",
+	cr := testutil.CRWithFeatures("multi-cr",
 		domain.Feature{ID: "f1", Description: "Feature 1", AcceptanceCriteria: []string{"C1"}},
 		domain.Feature{ID: "f2", Description: "Feature 2", AcceptanceCriteria: []string{"C2"}},
 		domain.Feature{ID: "f3", Description: "Feature 3", AcceptanceCriteria: []string{"C3"}},
@@ -153,7 +139,7 @@ func TestStrategy_Chunk_NoFeatures(t *testing.T) {
 func TestStrategy_Validate_NoAcceptanceCriteria(t *testing.T) {
 	s := New(nil)
 
-	cr := crWithFeatures("invalid-cr",
+	cr := testutil.CRWithFeatures("invalid-cr",
 		domain.Feature{ID: "bad-feature", Description: "No criteria", AcceptanceCriteria: []string{}},
 	)
 
@@ -179,7 +165,7 @@ func TestStrategy_Validate_NoAcceptanceCriteria(t *testing.T) {
 func TestStrategy_Validate_MultipleEmptyCriteria(t *testing.T) {
 	s := New(nil)
 
-	cr := crWithFeatures("multi-error-cr",
+	cr := testutil.CRWithFeatures("multi-error-cr",
 		domain.Feature{ID: "f1", Description: "No criteria", AcceptanceCriteria: []string{}},
 		domain.Feature{ID: "f2", Description: "Also empty", AcceptanceCriteria: []string{}},
 	)
@@ -202,7 +188,7 @@ func TestStrategy_Validate_MultipleEmptyCriteria(t *testing.T) {
 func TestStrategy_MergeConstraints_DefaultsOnly(t *testing.T) {
 	s := New(nil)
 
-	cr := crWithFeatures("no-knowledge",
+	cr := testutil.CRWithFeatures("no-knowledge",
 		domain.Feature{ID: "f1", Description: "Test", AcceptanceCriteria: []string{"Works"}},
 	)
 
@@ -371,7 +357,7 @@ func TestStrategy_Chunk_NonRefactorCR_NoRefactorConstraints(t *testing.T) {
 	s := New(nil)
 
 	// Create a feature change request (not a refactor)
-	cr := crWithFeatures("regular-cr",
+	cr := testutil.CRWithFeatures("regular-cr",
 		domain.Feature{
 			ID:                 "feature-1",
 			Description:        "Add new feature",

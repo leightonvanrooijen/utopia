@@ -7,34 +7,13 @@ import (
 	"testing"
 
 	"github.com/leightonvanrooijen/utopia/internal/domain"
+	"github.com/leightonvanrooijen/utopia/internal/testutil"
 )
-
-func setupTestDir(t *testing.T) (string, func()) {
-	t.Helper()
-	dir, err := os.MkdirTemp("", "utopia-test-*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-
-	// Create necessary subdirectories
-	if err := os.MkdirAll(filepath.Join(dir, "specs"), 0755); err != nil {
-		t.Fatalf("failed to create specs subdir: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(dir, "change-requests"), 0755); err != nil {
-		t.Fatalf("failed to create change-requests subdir: %v", err)
-	}
-
-	cleanup := func() {
-		os.RemoveAll(dir)
-	}
-
-	return dir, cleanup
-}
 
 // Tests for merge workflow
 
 func TestMergeWorkflow_AddFeature(t *testing.T) {
-	dir, cleanup := setupTestDir(t)
+	dir, cleanup := testutil.SetupTestDir(t)
 	defer cleanup()
 
 	store := NewYAMLStore(dir)
@@ -97,7 +76,7 @@ func TestMergeWorkflow_AddFeature(t *testing.T) {
 }
 
 func TestMergeWorkflow_ModifyFeature(t *testing.T) {
-	dir, cleanup := setupTestDir(t)
+	dir, cleanup := testutil.SetupTestDir(t)
 	defer cleanup()
 
 	store := NewYAMLStore(dir)
@@ -156,7 +135,7 @@ func TestMergeWorkflow_ModifyFeature(t *testing.T) {
 }
 
 func TestMergeWorkflow_RemoveFeature(t *testing.T) {
-	dir, cleanup := setupTestDir(t)
+	dir, cleanup := testutil.SetupTestDir(t)
 	defer cleanup()
 
 	store := NewYAMLStore(dir)
@@ -216,7 +195,7 @@ func TestMergeWorkflow_RemoveFeature(t *testing.T) {
 }
 
 func TestMergeWorkflow_DeleteChangeRequestAfterMerge(t *testing.T) {
-	dir, cleanup := setupTestDir(t)
+	dir, cleanup := testutil.SetupTestDir(t)
 	defer cleanup()
 
 	store := NewYAMLStore(dir)
@@ -272,7 +251,7 @@ func TestMergeWorkflow_DeleteChangeRequestAfterMerge(t *testing.T) {
 }
 
 func TestYAMLFormatting_FeatureSpacing(t *testing.T) {
-	dir, cleanup := setupTestDir(t)
+	dir, cleanup := testutil.SetupTestDir(t)
 	defer cleanup()
 
 	store := NewYAMLStore(dir)
@@ -324,7 +303,7 @@ func TestYAMLFormatting_FeatureSpacing(t *testing.T) {
 }
 
 func TestYAMLFormatting_BlockStyleDescription(t *testing.T) {
-	dir, cleanup := setupTestDir(t)
+	dir, cleanup := testutil.SetupTestDir(t)
 	defer cleanup()
 
 	store := NewYAMLStore(dir)
@@ -355,7 +334,7 @@ func TestYAMLFormatting_BlockStyleDescription(t *testing.T) {
 }
 
 func TestDeleteSpec_Success(t *testing.T) {
-	dir, cleanup := setupTestDir(t)
+	dir, cleanup := testutil.SetupTestDir(t)
 	defer cleanup()
 
 	store := NewYAMLStore(dir)
@@ -388,7 +367,7 @@ func TestDeleteSpec_Success(t *testing.T) {
 }
 
 func TestDeleteSpec_NotFound(t *testing.T) {
-	dir, cleanup := setupTestDir(t)
+	dir, cleanup := testutil.SetupTestDir(t)
 	defer cleanup()
 
 	store := NewYAMLStore(dir)
@@ -405,7 +384,7 @@ func TestDeleteSpec_NotFound(t *testing.T) {
 }
 
 func TestMergeWorkflow_FullScenario(t *testing.T) {
-	dir, cleanup := setupTestDir(t)
+	dir, cleanup := testutil.SetupTestDir(t)
 	defer cleanup()
 
 	store := NewYAMLStore(dir)
@@ -515,7 +494,7 @@ func TestMergeWorkflow_FullScenario(t *testing.T) {
 // Tests for ADR storage validation
 
 func TestSaveADR_ValidCategory(t *testing.T) {
-	dir, cleanup := setupTestDir(t)
+	dir, cleanup := testutil.SetupTestDir(t)
 	defer cleanup()
 
 	store := NewYAMLStore(dir)
@@ -546,7 +525,7 @@ func TestSaveADR_ValidCategory(t *testing.T) {
 }
 
 func TestSaveADR_InvalidCategory_Rejected(t *testing.T) {
-	dir, cleanup := setupTestDir(t)
+	dir, cleanup := testutil.SetupTestDir(t)
 	defer cleanup()
 
 	store := NewYAMLStore(dir)
@@ -575,7 +554,7 @@ func TestSaveADR_InvalidCategory_Rejected(t *testing.T) {
 }
 
 func TestSaveADR_EmptyCategory_Rejected(t *testing.T) {
-	dir, cleanup := setupTestDir(t)
+	dir, cleanup := testutil.SetupTestDir(t)
 	defer cleanup()
 
 	store := NewYAMLStore(dir)
@@ -600,7 +579,7 @@ func TestSaveADR_EmptyCategory_Rejected(t *testing.T) {
 }
 
 func TestSaveADR_AllValidCategories(t *testing.T) {
-	dir, cleanup := setupTestDir(t)
+	dir, cleanup := testutil.SetupTestDir(t)
 	defer cleanup()
 
 	store := NewYAMLStore(dir)
