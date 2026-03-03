@@ -1,41 +1,39 @@
 id: refactor-inject-strategy-dependencies
 type: refactor
 title: Inject dependencies into strategies instead of hardcoding
-status: draft
+status: in-progress
 tasks:
-  - id: refactor-sequential-strategy-di
-    description: |
-      Refactor internal/strategies/execute/sequential/strategy.go to accept
-      dependencies via constructor instead of creating them inline.
+    - id: refactor-sequential-strategy-di
+      description: |
+        Refactor internal/strategies/execute/sequential/strategy.go to accept
+        dependencies via constructor instead of creating them inline.
 
-      Current problem (line 68):
-        cli := claude.NewCLI().WithVerbose(true)  // Created inside method
-        verifier := verification.NewRunner(projectDir)  // Created inside method
+        Current problem (line 68):
+          cli := claude.NewCLI().WithVerbose(true)  // Created inside method
+          verifier := verification.NewRunner(projectDir)  // Created inside method
 
-      This makes testing impossible without real Claude CLI and shell commands.
-    acceptance_criteria:
-      - Strategy struct holds claudeCLI and verifier as fields
-      - New() constructor accepts dependencies as parameters
-      - Execute method uses injected dependencies instead of creating new ones
-      - Existing behavior preserved when proper dependencies injected
-      - Strategy becomes testable with mock dependencies
-
-  - id: refactor-chunk-strategy-di
-    description: |
-      Ensure ralphsequential chunk strategy follows same DI pattern.
-      Currently it accepts specLoader function which is good, but verify
-      all dependencies are injectable.
-    acceptance_criteria:
-      - All external dependencies are injected via constructor
-      - No inline creation of infrastructure components
-      - Strategy testable with mocks
-
-  - id: update-main-wiring
-    description: |
-      Update cmd/utopia/main.go to properly wire dependencies when
-      registering strategies. Currently passes nil in some places:
-        cli.RegisterExecuteChunkStrategy(ralphsequential.New(nil))
-    acceptance_criteria:
-      - All strategies receive proper dependencies at registration
-      - No nil dependencies passed to constructors
-      - Application bootstraps correctly with all strategies functional
+        This makes testing impossible without real Claude CLI and shell commands.
+      acceptance_criteria:
+        - Strategy struct holds claudeCLI and verifier as fields
+        - New() constructor accepts dependencies as parameters
+        - Execute method uses injected dependencies instead of creating new ones
+        - Existing behavior preserved when proper dependencies injected
+        - Strategy becomes testable with mock dependencies
+    - id: refactor-chunk-strategy-di
+      description: |
+        Ensure ralphsequential chunk strategy follows same DI pattern.
+        Currently it accepts specLoader function which is good, but verify
+        all dependencies are injectable.
+      acceptance_criteria:
+        - All external dependencies are injected via constructor
+        - No inline creation of infrastructure components
+        - Strategy testable with mocks
+    - id: update-main-wiring
+      description: |
+        Update cmd/utopia/main.go to properly wire dependencies when
+        registering strategies. Currently passes nil in some places:
+          cli.RegisterExecuteChunkStrategy(ralphsequential.New(nil))
+      acceptance_criteria:
+        - All strategies receive proper dependencies at registration
+        - No nil dependencies passed to constructors
+        - Application bootstraps correctly with all strategies functional
