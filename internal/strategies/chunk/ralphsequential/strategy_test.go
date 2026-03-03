@@ -39,7 +39,6 @@ func TestStrategy_Description(t *testing.T) {
 	}
 }
 
-
 func TestStrategy_Chunk_SingleFeature(t *testing.T) {
 	s := New(nil)
 

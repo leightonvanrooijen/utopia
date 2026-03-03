@@ -1,53 +1,49 @@
 id: refactor-create-testutil-package
 type: refactor
 title: Create shared test utilities package
-status: draft
+status: in-progress
 tasks:
-  - id: create-testutil-package
-    description: |
-      Create internal/testutil/ package with shared test helpers.
-      Currently each test file creates its own fixtures and setup,
-      leading to duplication and inconsistency.
-    acceptance_criteria:
-      - internal/testutil/ package created
-      - Package only imported in *_test.go files
-
-  - id: extract-setup-helpers
-    description: |
-      Extract and generalize setupTestDir from yaml_test.go.
-      Create reusable project setup helpers.
-    acceptance_criteria:
-      - SetupTestProject(t) function creates temp .utopia structure
-      - SetupTestStore(t) function creates YAMLStore with temp dir
-      - Both return cleanup functions
-      - Helpers use t.Helper() for proper test output
-      - yaml_test.go updated to use shared helpers
-
-  - id: create-fixture-builders
-    description: |
-      Create test fixture builders for common domain types.
-      These reduce boilerplate and ensure consistent test data.
-    acceptance_criteria:
-      - NewTestFeature(id, desc string, criteria ...string) helper
-      - NewTestChangeRequest(id string, opts ...CROption) helper
-      - NewTestWorkItem(id, prompt string) helper
-      - NewTestSpec(id string, features ...Feature) helper
-      - Builders use functional options for flexibility
-
-  - id: create-assertion-helpers
-    description: |
-      Create common assertion helpers to reduce test verbosity.
-    acceptance_criteria:
-      - AssertNoError(t, err) helper
-      - AssertErrorContains(t, err, substring) helper
-      - AssertContains(t, haystack, needle) helper
-      - All helpers use t.Helper() for proper line reporting
-
-  - id: migrate-existing-tests
-    description: |
-      Update existing test files to use the new testutil package
-      where it reduces duplication.
-    acceptance_criteria:
-      - At least 3 test files updated to use testutil
-      - Duplicated fixture creation removed
-      - Tests still pass with same coverage
+    - id: create-testutil-package
+      description: |
+        Create internal/testutil/ package with shared test helpers.
+        Currently each test file creates its own fixtures and setup,
+        leading to duplication and inconsistency.
+      acceptance_criteria:
+        - internal/testutil/ package created
+        - Package only imported in *_test.go files
+    - id: extract-setup-helpers
+      description: |
+        Extract and generalize setupTestDir from yaml_test.go.
+        Create reusable project setup helpers.
+      acceptance_criteria:
+        - SetupTestProject(t) function creates temp .utopia structure
+        - SetupTestStore(t) function creates YAMLStore with temp dir
+        - Both return cleanup functions
+        - Helpers use t.Helper() for proper test output
+        - yaml_test.go updated to use shared helpers
+    - id: create-fixture-builders
+      description: |
+        Create test fixture builders for common domain types.
+        These reduce boilerplate and ensure consistent test data.
+      acceptance_criteria:
+        - NewTestFeature(id, desc string, criteria ...string) helper
+        - NewTestChangeRequest(id string, opts ...CROption) helper
+        - NewTestWorkItem(id, prompt string) helper
+        - NewTestSpec(id string, features ...Feature) helper
+        - Builders use functional options for flexibility
+    - id: create-assertion-helpers
+      description: |
+        Create common assertion helpers to reduce test verbosity.
+      acceptance_criteria:
+        - AssertNoError(t, err) helper
+        - AssertErrorContains(t, err, substring) helper
+        - AssertContains(t, haystack, needle) helper
+        - All helpers use t.Helper() for proper line reporting
+    - id: migrate-existing-tests
+      description: |
+        Update existing test files to use the new testutil package
+        where it reduces duplication.
+      acceptance_criteria:
+        - At least 3 test files updated to use testutil
+        - Duplicated fixture creation removed
+        - Tests still pass with same coverage
