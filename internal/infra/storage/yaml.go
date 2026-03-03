@@ -10,6 +10,16 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Compile-time interface assertions.
+// These ensure YAMLStore implements all repository interfaces from the domain package.
+var (
+	_ domain.SpecRepository          = (*YAMLStore)(nil)
+	_ domain.ChangeRequestRepository = (*YAMLStore)(nil)
+	_ domain.WorkItemRepository      = (*YAMLStore)(nil)
+	_ domain.ConversationRepository  = (*YAMLStore)(nil)
+	_ domain.ConfigRepository        = (*YAMLStore)(nil)
+)
+
 // YAMLStore handles reading and writing YAML files
 type YAMLStore struct {
 	baseDir string
