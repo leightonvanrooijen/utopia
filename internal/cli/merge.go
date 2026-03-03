@@ -12,14 +12,19 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	mergeDryRun bool
-)
+// Flag for merge command (package-level for Cobra compatibility)
+var mergeDryRunFlag bool
 
-var mergeCmd = &cobra.Command{
-	Use:   "merge <change-request-id>",
-	Short: "Merge a change request into target specs",
-	Long: `Merge a completed change request into its target specifications.
+func init() {
+	rootCmd.AddCommand(newMergeCmd())
+}
+
+// newMergeCmd creates the merge command with flag bindings.
+func newMergeCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "merge <change-request-id>",
+		Short: "Merge a change request into target specs",
+		Long: `Merge a completed change request into its target specifications.
 
 This command:
   1. Loads the change request from .utopia/change-requests/
@@ -30,18 +35,19 @@ This command:
   6. Deletes the change request and its work items
 
 Use --dry-run to preview changes without applying them.`,
-	Args: cobra.ExactArgs(1),
-	RunE: runMerge,
-}
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runMerge(cmd, args, mergeDryRunFlag)
+		},
+	}
 
-func init() {
-	rootCmd.AddCommand(mergeCmd)
-
-	mergeCmd.Flags().BoolVar(&mergeDryRun, "dry-run", false,
+	cmd.Flags().BoolVar(&mergeDryRunFlag, "dry-run", false,
 		"Preview changes without applying them")
+
+	return cmd
 }
 
-func runMerge(cmd *cobra.Command, args []string) error {
+func runMerge(cmd *cobra.Command, args []string, dryRun bool) error {
 	changeRequestID := args[0]
 	projectDir := GetProjectDir(cmd)
 
@@ -70,12 +76,12 @@ func runMerge(cmd *cobra.Command, args []string) error {
 
 	// Refactor and bugfix CRs don't modify specs - just delete the CR
 	if cr.Type == domain.CRTypeRefactor || cr.Type == domain.CRTypeBugfix {
-		return mergeRefactor(cr, changeRequestID, utopiaDir, store)
+		return mergeRefactor(cr, changeRequestID, utopiaDir, store, dryRun)
 	}
 
 	// Initiative CRs have phases that each need to be merged
 	if cr.Type == domain.CRTypeInitiative {
-		return mergeInitiative(cr, changeRequestID, utopiaDir, store)
+		return mergeInitiative(cr, changeRequestID, utopiaDir, store, dryRun)
 	}
 
 	// Feature/enhancement/removal CRs modify specs
@@ -163,7 +169,7 @@ func runMerge(cmd *cobra.Command, args []string) error {
 		fmt.Println()
 	}
 
-	if mergeDryRun {
+	if dryRun {
 		fmt.Println("Dry run mode - no changes applied")
 		fmt.Printf("\nWould merge %d add, %d modify, %d remove, %d delete-spec operation(s)\n",
 			totalAdd, totalModify, totalRemove, totalDeleteSpec)
@@ -309,7 +315,7 @@ func allAdds(changes []domain.Change) bool {
 // mergeInitiative handles merge for initiative CRs with multiple phases.
 // Each phase's changes are applied to their target specs in order.
 // Refactor phases don't modify specs (they only restructure code).
-func mergeInitiative(cr *domain.ChangeRequest, changeRequestID, utopiaDir string, store *storage.YAMLStore) error {
+func mergeInitiative(cr *domain.ChangeRequest, changeRequestID, utopiaDir string, store *storage.YAMLStore, dryRun bool) error {
 	fmt.Printf("Phases: %d total\n", len(cr.Phases))
 
 	// Check all phases are complete
@@ -380,7 +386,7 @@ func mergeInitiative(cr *domain.ChangeRequest, changeRequestID, utopiaDir string
 		}
 		fmt.Println()
 
-		if mergeDryRun {
+		if dryRun {
 			fmt.Println("Dry run mode - no changes applied")
 			fmt.Printf("\nWould merge %d add, %d modify, %d remove, %d delete-spec operation(s)\n",
 				totalAdd, totalModify, totalRemove, totalDeleteSpec)
@@ -445,7 +451,7 @@ func mergeInitiative(cr *domain.ChangeRequest, changeRequestID, utopiaDir string
 		}
 	}
 
-	if mergeDryRun {
+	if dryRun {
 		fmt.Println("Dry run mode - no changes applied")
 		return nil
 	}
@@ -488,7 +494,7 @@ func mergeInitiative(cr *domain.ChangeRequest, changeRequestID, utopiaDir string
 // mergeRefactor handles merge for refactor CRs, which don't modify specs.
 // Refactors only restructure code while preserving behavior, so merge
 // simply deletes the CR and its work items.
-func mergeRefactor(cr *domain.ChangeRequest, changeRequestID, utopiaDir string, store *storage.YAMLStore) error {
+func mergeRefactor(cr *domain.ChangeRequest, changeRequestID, utopiaDir string, store *storage.YAMLStore, dryRun bool) error {
 	fmt.Printf("Tasks completed: %d\n", len(cr.Tasks))
 	fmt.Println()
 
@@ -499,7 +505,7 @@ func mergeRefactor(cr *domain.ChangeRequest, changeRequestID, utopiaDir string, 
 	}
 	fmt.Println()
 
-	if mergeDryRun {
+	if dryRun {
 		fmt.Println("Dry run mode - no changes applied")
 		fmt.Printf("\nWould delete refactor CR: %s (no specs modified)\n", changeRequestID)
 		return nil

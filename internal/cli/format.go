@@ -11,25 +11,34 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var formatCheck bool
+// Flag for format command (package-level for Cobra compatibility)
+var formatCheckFlag bool
 
-var formatCmd = &cobra.Command{
-	Use:   "format",
-	Short: "Format YAML files in .utopia directory",
-	Long: `Format all YAML files in the .utopia directory using consistent styling.
+func init() {
+	rootCmd.AddCommand(newFormatCmd())
+}
+
+// newFormatCmd creates the format command with flag bindings.
+func newFormatCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "format",
+		Short: "Format YAML files in .utopia directory",
+		Long: `Format all YAML files in the .utopia directory using consistent styling.
 
 By default, formats all .yaml files in .utopia/ recursively, excluding config.yaml.
 
 Use --check to verify files are formatted without making changes (useful for CI).`,
-	RunE: runFormat,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runFormat(cmd, args, formatCheckFlag)
+		},
+	}
+
+	cmd.Flags().BoolVar(&formatCheckFlag, "check", false, "check if files are formatted (exit non-zero if changes needed)")
+
+	return cmd
 }
 
-func init() {
-	rootCmd.AddCommand(formatCmd)
-	formatCmd.Flags().BoolVar(&formatCheck, "check", false, "check if files are formatted (exit non-zero if changes needed)")
-}
-
-func runFormat(cmd *cobra.Command, args []string) error {
+func runFormat(cmd *cobra.Command, args []string, checkOnly bool) error {
 	projectDir := GetProjectDir(cmd)
 
 	absPath, err := filepath.Abs(projectDir)
@@ -90,7 +99,7 @@ func runFormat(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
-		if formatCheck {
+		if checkOnly {
 			wouldChangeCount++
 			relPath, _ := filepath.Rel(absPath, file)
 			fmt.Printf("Would reformat: %s\n", relPath)
@@ -104,7 +113,7 @@ func runFormat(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if formatCheck {
+	if checkOnly {
 		if wouldChangeCount > 0 {
 			fmt.Printf("\n%d file(s) would be reformatted\n", wouldChangeCount)
 			os.Exit(1)
