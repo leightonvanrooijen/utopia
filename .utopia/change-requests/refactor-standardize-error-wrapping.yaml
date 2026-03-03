@@ -1,35 +1,34 @@
 id: refactor-standardize-error-wrapping
 type: refactor
 title: Standardize error wrapping patterns across codebase
-status: draft
+status: in-progress
 tasks:
-  - id: define-error-types
-    description: |
-      Create domain error types in internal/domain/errors.go for consistent
-      error handling. Currently errors are wrapped inconsistently with mix of
-      %w and %s patterns, making programmatic error handling difficult.
+    - id: define-error-types
+      description: |
+        Create domain error types in internal/domain/errors.go for consistent
+        error handling. Currently errors are wrapped inconsistently with mix of
+        %w and %s patterns, making programmatic error handling difficult.
 
-      Error types to define:
-      - NotFoundError (resource, id)
-      - ValidationError (already exists, expand if needed)
-      - ExecutionError (phase, workItemID, iteration, cause)
-    acceptance_criteria:
-      - internal/domain/errors.go created with custom error types
-      - Each error type implements error interface
-      - Error types support errors.Is and errors.As for inspection
-      - Types have useful Error() string implementations
+        Error types to define:
+        - NotFoundError (resource, id)
+        - ValidationError (already exists, expand if needed)
+        - ExecutionError (phase, workItemID, iteration, cause)
+      acceptance_criteria:
+        - internal/domain/errors.go created with custom error types
+        - Each error type implements error interface
+        - Error types support errors.Is and errors.As for inspection
+        - Types have useful Error() string implementations
+    - id: standardize-wrapping-pattern
+      description: |
+        Update all fmt.Errorf calls to use consistent wrapping pattern:
+        - Always use %w (not %s) to preserve error chain
+        - Add context: "failed to [action]: %w"
+        - Use custom error types where appropriate
 
-  - id: standardize-wrapping-pattern
-    description: |
-      Update all fmt.Errorf calls to use consistent wrapping pattern:
-      - Always use %w (not %s) to preserve error chain
-      - Add context: "failed to [action]: %w"
-      - Use custom error types where appropriate
-
-      ~196 fmt.Errorf calls found across codebase.
-    acceptance_criteria:
-      - All error wrapping uses %w for cause preservation
-      - Consistent "failed to X" message pattern
-      - Error chains preserved (errors.Unwrap works)
-      - CLI can distinguish error types for better user messages
-      - No functional behavior changes
+        ~196 fmt.Errorf calls found across codebase.
+      acceptance_criteria:
+        - All error wrapping uses %w for cause preservation
+        - Consistent "failed to X" message pattern
+        - Error chains preserved (errors.Unwrap works)
+        - CLI can distinguish error types for better user messages
+        - No functional behavior changes
