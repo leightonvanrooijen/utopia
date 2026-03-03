@@ -133,101 +133,17 @@ func (s *Strategy) extractFeatures(cr *domain.ChangeRequest) ([]domain.Feature, 
 
 	// Convert tasks to features (supported on any CR type)
 	for _, task := range cr.Tasks {
-		feature := domain.Feature{
-			ID:                 task.ID,
-			Description:        task.Description,
-			AcceptanceCriteria: task.AcceptanceCriteria,
-		}
+		feature, ref := convertTaskToFeature(task)
 		features = append(features, feature)
-
-		// For bugfix tasks, track the spec/feature reference
-		if task.Spec != "" && task.FeatureID != "" {
-			bugfixRefs[task.ID] = bugfixFeature{
-				feature:   feature,
-				specRef:   task.Spec,
-				featureID: task.FeatureID,
-			}
+		if ref != nil {
+			bugfixRefs[task.ID] = *ref
 		}
 	}
 
 	// Convert changes to features
 	for _, change := range cr.Changes {
-		switch change.Operation {
-		case "add":
-			if change.Feature != nil {
-				features = append(features, *change.Feature)
-			}
-			// Ignore add operations with only domain knowledge
-
-		case "remove":
-			if change.FeatureID != "" {
-				feature := domain.Feature{
-					ID:          "remove-" + change.FeatureID,
-					Description: fmt.Sprintf("Remove the %s feature from the codebase", change.FeatureID),
-					AcceptanceCriteria: []string{
-						fmt.Sprintf("All code related to feature %q is removed", change.FeatureID),
-						fmt.Sprintf("All tests for feature %q are removed", change.FeatureID),
-						"No references to the removed feature remain in the codebase",
-					},
-				}
-				if change.Reason != "" {
-					feature.AcceptanceCriteria = append(feature.AcceptanceCriteria,
-						fmt.Sprintf("Removal reason: %s", change.Reason))
-				}
-				features = append(features, feature)
-			}
-
-		case "modify":
-			if change.FeatureID != "" {
-				feature := domain.Feature{
-					ID:          "modify-" + change.FeatureID,
-					Description: fmt.Sprintf("Modify the %s feature", change.FeatureID),
-				}
-
-				// Add description change if provided
-				if change.Description != "" {
-					feature.Description = fmt.Sprintf("Modify the %s feature: %s", change.FeatureID, change.Description)
-				}
-
-				// Build acceptance criteria from the deltas
-				var criteria []string
-
-				if change.Criteria != nil {
-					criteria = append(criteria, change.Criteria.Add...)
-					for _, remove := range change.Criteria.Remove {
-						criteria = append(criteria, fmt.Sprintf("Remove/undo: %s", remove))
-					}
-					for _, edit := range change.Criteria.Edit {
-						criteria = append(criteria, fmt.Sprintf("Change from %q to: %s", edit.Old, edit.New))
-					}
-				}
-
-				// Ensure at least one criterion exists
-				if len(criteria) == 0 {
-					criteria = append(criteria, fmt.Sprintf("Feature %q is updated as specified", change.FeatureID))
-				}
-
-				feature.AcceptanceCriteria = criteria
-				features = append(features, feature)
-			}
-
-		case "delete-spec":
-			if change.Spec != "" {
-				feature := domain.Feature{
-					ID:          "delete-spec-" + change.Spec,
-					Description: fmt.Sprintf("Delete the entire %s spec file", change.Spec),
-					AcceptanceCriteria: []string{
-						fmt.Sprintf("All code implementing features from spec %q is removed", change.Spec),
-						fmt.Sprintf("All tests for features from spec %q are removed", change.Spec),
-						fmt.Sprintf("The spec file .utopia/specs/%s.yaml is deleted", change.Spec),
-					},
-				}
-				if change.Reason != "" {
-					feature.AcceptanceCriteria = append(feature.AcceptanceCriteria,
-						fmt.Sprintf("Deletion reason: %s", change.Reason))
-				}
-				features = append(features, feature)
-			}
+		if feature := convertChangeToFeature(change); feature != nil {
+			features = append(features, *feature)
 		}
 	}
 
@@ -295,100 +211,130 @@ func (s *Strategy) extractFeaturesFromPhase(phase *domain.Phase) ([]domain.Featu
 
 	// Convert tasks to features (supported on any phase type)
 	for _, task := range phase.Tasks {
-		feature := domain.Feature{
-			ID:                 task.ID,
-			Description:        task.Description,
-			AcceptanceCriteria: task.AcceptanceCriteria,
-		}
+		feature, ref := convertTaskToFeature(task)
 		features = append(features, feature)
-
-		// For bugfix tasks, track the spec/feature reference
-		if task.Spec != "" && task.FeatureID != "" {
-			bugfixRefs[task.ID] = bugfixFeature{
-				feature:   feature,
-				specRef:   task.Spec,
-				featureID: task.FeatureID,
-			}
+		if ref != nil {
+			bugfixRefs[task.ID] = *ref
 		}
 	}
 
 	// Convert changes to features
 	for _, change := range phase.Changes {
-		switch change.Operation {
-		case "add":
-			if change.Feature != nil {
-				features = append(features, *change.Feature)
-			}
-
-		case "remove":
-			if change.FeatureID != "" {
-				feature := domain.Feature{
-					ID:          "remove-" + change.FeatureID,
-					Description: fmt.Sprintf("Remove the %s feature from the codebase", change.FeatureID),
-					AcceptanceCriteria: []string{
-						fmt.Sprintf("All code related to feature %q is removed", change.FeatureID),
-						fmt.Sprintf("All tests for feature %q are removed", change.FeatureID),
-						"No references to the removed feature remain in the codebase",
-					},
-				}
-				if change.Reason != "" {
-					feature.AcceptanceCriteria = append(feature.AcceptanceCriteria,
-						fmt.Sprintf("Removal reason: %s", change.Reason))
-				}
-				features = append(features, feature)
-			}
-
-		case "modify":
-			if change.FeatureID != "" {
-				feature := domain.Feature{
-					ID:          "modify-" + change.FeatureID,
-					Description: fmt.Sprintf("Modify the %s feature", change.FeatureID),
-				}
-
-				if change.Description != "" {
-					feature.Description = fmt.Sprintf("Modify the %s feature: %s", change.FeatureID, change.Description)
-				}
-
-				var criteria []string
-				if change.Criteria != nil {
-					criteria = append(criteria, change.Criteria.Add...)
-					for _, remove := range change.Criteria.Remove {
-						criteria = append(criteria, fmt.Sprintf("Remove/undo: %s", remove))
-					}
-					for _, edit := range change.Criteria.Edit {
-						criteria = append(criteria, fmt.Sprintf("Change from %q to: %s", edit.Old, edit.New))
-					}
-				}
-
-				if len(criteria) == 0 {
-					criteria = append(criteria, fmt.Sprintf("Feature %q is updated as specified", change.FeatureID))
-				}
-
-				feature.AcceptanceCriteria = criteria
-				features = append(features, feature)
-			}
-
-		case "delete-spec":
-			if change.Spec != "" {
-				feature := domain.Feature{
-					ID:          "delete-spec-" + change.Spec,
-					Description: fmt.Sprintf("Delete the entire %s spec file", change.Spec),
-					AcceptanceCriteria: []string{
-						fmt.Sprintf("All code implementing features from spec %q is removed", change.Spec),
-						fmt.Sprintf("All tests for features from spec %q are removed", change.Spec),
-						fmt.Sprintf("The spec file .utopia/specs/%s.yaml is deleted", change.Spec),
-					},
-				}
-				if change.Reason != "" {
-					feature.AcceptanceCriteria = append(feature.AcceptanceCriteria,
-						fmt.Sprintf("Deletion reason: %s", change.Reason))
-				}
-				features = append(features, feature)
-			}
+		if feature := convertChangeToFeature(change); feature != nil {
+			features = append(features, *feature)
 		}
 	}
 
 	return features, bugfixRefs
+}
+
+// convertTaskToFeature converts a Task to a Feature and optionally tracks bugfix references.
+// If the task has Spec and FeatureID set, it returns a bugfixFeature for reference loading.
+func convertTaskToFeature(task domain.Task) (domain.Feature, *bugfixFeature) {
+	feature := domain.Feature{
+		ID:                 task.ID,
+		Description:        task.Description,
+		AcceptanceCriteria: task.AcceptanceCriteria,
+	}
+
+	// For bugfix tasks, track the spec/feature reference
+	if task.Spec != "" && task.FeatureID != "" {
+		return feature, &bugfixFeature{
+			feature:   feature,
+			specRef:   task.Spec,
+			featureID: task.FeatureID,
+		}
+	}
+
+	return feature, nil
+}
+
+// convertChangeToFeature converts a Change to a Feature based on its operation type.
+// Returns nil if the change doesn't produce a feature (e.g., add without feature).
+func convertChangeToFeature(change domain.Change) *domain.Feature {
+	switch change.Operation {
+	case "add":
+		if change.Feature != nil {
+			return change.Feature
+		}
+		// Ignore add operations with only domain knowledge
+		return nil
+
+	case "remove":
+		if change.FeatureID == "" {
+			return nil
+		}
+		feature := domain.Feature{
+			ID:          "remove-" + change.FeatureID,
+			Description: fmt.Sprintf("Remove the %s feature from the codebase", change.FeatureID),
+			AcceptanceCriteria: []string{
+				fmt.Sprintf("All code related to feature %q is removed", change.FeatureID),
+				fmt.Sprintf("All tests for feature %q are removed", change.FeatureID),
+				"No references to the removed feature remain in the codebase",
+			},
+		}
+		if change.Reason != "" {
+			feature.AcceptanceCriteria = append(feature.AcceptanceCriteria,
+				fmt.Sprintf("Removal reason: %s", change.Reason))
+		}
+		return &feature
+
+	case "modify":
+		if change.FeatureID == "" {
+			return nil
+		}
+		feature := domain.Feature{
+			ID:          "modify-" + change.FeatureID,
+			Description: fmt.Sprintf("Modify the %s feature", change.FeatureID),
+		}
+
+		// Add description change if provided
+		if change.Description != "" {
+			feature.Description = fmt.Sprintf("Modify the %s feature: %s", change.FeatureID, change.Description)
+		}
+
+		// Build acceptance criteria from the deltas
+		var criteria []string
+
+		if change.Criteria != nil {
+			criteria = append(criteria, change.Criteria.Add...)
+			for _, remove := range change.Criteria.Remove {
+				criteria = append(criteria, fmt.Sprintf("Remove/undo: %s", remove))
+			}
+			for _, edit := range change.Criteria.Edit {
+				criteria = append(criteria, fmt.Sprintf("Change from %q to: %s", edit.Old, edit.New))
+			}
+		}
+
+		// Ensure at least one criterion exists
+		if len(criteria) == 0 {
+			criteria = append(criteria, fmt.Sprintf("Feature %q is updated as specified", change.FeatureID))
+		}
+
+		feature.AcceptanceCriteria = criteria
+		return &feature
+
+	case "delete-spec":
+		if change.Spec == "" {
+			return nil
+		}
+		feature := domain.Feature{
+			ID:          "delete-spec-" + change.Spec,
+			Description: fmt.Sprintf("Delete the entire %s spec file", change.Spec),
+			AcceptanceCriteria: []string{
+				fmt.Sprintf("All code implementing features from spec %q is removed", change.Spec),
+				fmt.Sprintf("All tests for features from spec %q are removed", change.Spec),
+				fmt.Sprintf("The spec file .utopia/specs/%s.yaml is deleted", change.Spec),
+			},
+		}
+		if change.Reason != "" {
+			feature.AcceptanceCriteria = append(feature.AcceptanceCriteria,
+				fmt.Sprintf("Deletion reason: %s", change.Reason))
+		}
+		return &feature
+	}
+
+	return nil
 }
 
 // validateFeatures checks that the features extracted from a CR are suitable for chunking.
