@@ -1,10 +1,8 @@
 package cli
 
 import (
-	"bytes"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 
 	"github.com/leightonvanrooijen/utopia/internal/domain"
@@ -721,56 +719,6 @@ func CleanupAfterMerge(cr *domain.ChangeRequest, crID, utopiaDir string, store *
 				return fmt.Errorf("failed to delete work items: %w", err)
 			}
 		}
-	}
-
-	return nil
-}
-
-// GitCommitSpecMerge creates a git commit for spec merge changes.
-// Returns nil if commit succeeds, or error describing the failure.
-func GitCommitSpecMerge(projectDir string, cr *domain.ChangeRequest, mergeResult *MergeResult) error {
-	// Build commit message
-	var msg string
-	if mergeResult.IsRefactor {
-		msg = fmt.Sprintf("spec: merge refactor CR '%s'\n\nNo spec modifications (refactor only).", cr.Title)
-	} else {
-		msg = fmt.Sprintf("spec: merge CR '%s'", cr.Title)
-		if len(mergeResult.SpecsModified) > 0 || len(mergeResult.SpecsDeleted) > 0 {
-			msg += "\n\nModified specs:"
-			for _, s := range mergeResult.SpecsModified {
-				msg += fmt.Sprintf("\n  - %s", s)
-			}
-			for _, s := range mergeResult.SpecsDeleted {
-				msg += fmt.Sprintf("\n  - %s (deleted)", s)
-			}
-		}
-	}
-
-	// Stage spec changes
-	specsDir := filepath.Join(projectDir, ".utopia", "specs")
-	addCmd := exec.Command("git", "add", specsDir)
-	addCmd.Dir = projectDir
-	var addStderr bytes.Buffer
-	addCmd.Stderr = &addStderr
-	if err := addCmd.Run(); err != nil {
-		return fmt.Errorf("git add failed: %w (%s)", err, addStderr.String())
-	}
-
-	// Check if there are changes to commit
-	diffCmd := exec.Command("git", "diff", "--cached", "--quiet")
-	diffCmd.Dir = projectDir
-	if err := diffCmd.Run(); err == nil {
-		// No changes to commit (exit code 0 means no diff)
-		return nil
-	}
-
-	// Commit
-	commitCmd := exec.Command("git", "commit", "-m", msg)
-	commitCmd.Dir = projectDir
-	var commitStderr bytes.Buffer
-	commitCmd.Stderr = &commitStderr
-	if err := commitCmd.Run(); err != nil {
-		return fmt.Errorf("git commit failed: %w (%s)", err, commitStderr.String())
 	}
 
 	return nil

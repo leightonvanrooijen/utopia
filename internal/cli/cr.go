@@ -1,11 +1,9 @@
 package cli
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -538,61 +536,6 @@ Fix the validation errors in the change request files. The CRs are located in: %
 - Save the fixed file
 
 Start by reading the file mentioned in the error and fixing it.`
-
-// GitCommitCR creates a git commit for a newly validated CR.
-// Returns the commit SHA on success, or error describing the failure.
-func GitCommitCR(projectDir, crID string) (string, error) {
-	// Stage the CR file
-	crFile := filepath.Join(projectDir, ".utopia", "change-requests", crID+".yaml")
-	addCmd := exec.Command("git", "add", crFile)
-	addCmd.Dir = projectDir
-	var addStderr bytes.Buffer
-	addCmd.Stderr = &addStderr
-	if err := addCmd.Run(); err != nil {
-		return "", fmt.Errorf("git add failed: %w (%s)", err, addStderr.String())
-	}
-
-	// Check if there are changes to commit
-	diffCmd := exec.Command("git", "diff", "--cached", "--quiet")
-	diffCmd.Dir = projectDir
-	if err := diffCmd.Run(); err == nil {
-		// No changes to commit (exit code 0 means no diff)
-		return "", nil
-	}
-
-	// Commit with standard message pattern
-	msg := fmt.Sprintf("cr: create %s", crID)
-	commitCmd := exec.Command("git", "commit", "-m", msg)
-	commitCmd.Dir = projectDir
-	var commitStderr bytes.Buffer
-	commitCmd.Stderr = &commitStderr
-	if err := commitCmd.Run(); err != nil {
-		return "", fmt.Errorf("git commit failed: %w (%s)", err, commitStderr.String())
-	}
-
-	// Get the commit SHA
-	shaCmd := exec.Command("git", "rev-parse", "HEAD")
-	shaCmd.Dir = projectDir
-	var shaOut bytes.Buffer
-	shaCmd.Stdout = &shaOut
-	if err := shaCmd.Run(); err != nil {
-		return "", fmt.Errorf("failed to get commit SHA: %w", err)
-	}
-
-	return strings.TrimSpace(shaOut.String()), nil
-}
-
-// getGitBranch returns the current git branch name
-func getGitBranch(projectDir string) string {
-	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
-	cmd.Dir = projectDir
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	if err := cmd.Run(); err != nil {
-		return "unknown"
-	}
-	return strings.TrimSpace(out.String())
-}
 
 // saveConversation persists a conversation transcript with metadata
 // Returns the conversation ID, or empty string if conversation has no meaningful content

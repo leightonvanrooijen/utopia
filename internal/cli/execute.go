@@ -2,11 +2,9 @@ package cli
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strconv"
@@ -355,81 +353,6 @@ func chunkCR(cr *domain.ChangeRequest, crID string, store *storage.YAMLStore, co
 	fmt.Println()
 
 	return workItems, nil
-}
-
-// gitCommitChunk creates a git commit for newly generated work items.
-// Only stages and commits the work items for this specific CR, not pre-existing items.
-func gitCommitChunk(projectDir, crID string) error {
-	// Stage only the work items for this CR
-	workItemsDir := filepath.Join(projectDir, ".utopia", "work-items", crID)
-	addCmd := exec.Command("git", "add", workItemsDir)
-	addCmd.Dir = projectDir
-	var addStderr bytes.Buffer
-	addCmd.Stderr = &addStderr
-	if err := addCmd.Run(); err != nil {
-		return fmt.Errorf("git add failed: %w (%s)", err, addStderr.String())
-	}
-
-	// Check if there are changes to commit
-	diffCmd := exec.Command("git", "diff", "--cached", "--quiet")
-	diffCmd.Dir = projectDir
-	if err := diffCmd.Run(); err == nil {
-		// No changes to commit (exit code 0 means no diff)
-		return nil
-	}
-
-	// Commit with chunk message format
-	msg := fmt.Sprintf("chunk: %s", crID)
-	commitCmd := exec.Command("git", "commit", "-m", msg)
-	commitCmd.Dir = projectDir
-	var commitStderr bytes.Buffer
-	commitCmd.Stderr = &commitStderr
-	if err := commitCmd.Run(); err != nil {
-		return fmt.Errorf("git commit failed: %w (%s)", err, commitStderr.String())
-	}
-
-	return nil
-}
-
-// gitCommitCleanup creates a git commit for the removal of CR and work items after merge.
-// Stages removal of .utopia/work-items/<cr-id>/ and .utopia/change-requests/<cr-id>.yaml
-func gitCommitCleanup(projectDir, crID, utopiaDir string) error {
-	// Stage removal of work items directory
-	workItemsDir := filepath.Join(utopiaDir, "work-items", crID)
-	addWorkItemsCmd := exec.Command("git", "add", workItemsDir)
-	addWorkItemsCmd.Dir = projectDir
-	// Ignore errors - directory may not exist or may already be staged
-
-	var addStderr bytes.Buffer
-	addWorkItemsCmd.Stderr = &addStderr
-	addWorkItemsCmd.Run() // Best effort
-
-	// Stage removal of CR file
-	crFile := filepath.Join(utopiaDir, "change-requests", crID+".yaml")
-	addCRCmd := exec.Command("git", "add", crFile)
-	addCRCmd.Dir = projectDir
-	addCRCmd.Stderr = &addStderr
-	addCRCmd.Run() // Best effort
-
-	// Check if there are changes to commit
-	diffCmd := exec.Command("git", "diff", "--cached", "--quiet")
-	diffCmd.Dir = projectDir
-	if err := diffCmd.Run(); err == nil {
-		// No changes to commit (exit code 0 means no diff)
-		return nil
-	}
-
-	// Commit with cleanup message format
-	msg := fmt.Sprintf("cleanup: complete %s", crID)
-	commitCmd := exec.Command("git", "commit", "-m", msg)
-	commitCmd.Dir = projectDir
-	var commitStderr bytes.Buffer
-	commitCmd.Stderr = &commitStderr
-	if err := commitCmd.Run(); err != nil {
-		return fmt.Errorf("git commit failed: %w (%s)", err, commitStderr.String())
-	}
-
-	return nil
 }
 
 // autoMergeCR performs the merge after all work items complete successfully.
