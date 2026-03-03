@@ -484,4 +484,3 @@ func autoMergeCR(cr *domain.ChangeRequest, crID string, store *storage.YAMLStore
 	fmt.Printf("\nSuccessfully merged: %s\n", cr.Title)
 	return nil
 }
-
