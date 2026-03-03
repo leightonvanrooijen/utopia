@@ -22,19 +22,27 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Flags for execute command (package-level for Cobra compatibility)
 var (
 	executeStrategyFlag      string
 	executeChunkStrategyFlag string
 	executeTimeoutFlag       int
 	executeAllFlag           bool
-	executeRegistry          *executeStrategy.Registry
-	executeChunkRegistry     *chunkStrategy.Registry
 )
 
-var executeCmd = &cobra.Command{
-	Use:   "execute [cr-id]",
-	Short: "Execute a change request using the Ralph loop",
-	Long: `Execute a change request (CR) or spec using the Ralph loop.
+// InitExecuteCmd creates and registers the execute command with the root command.
+// This is called from main to wire up the strategy registries.
+func InitExecuteCmd(execRegistry *executeStrategy.Registry, chunkRegistry *chunkStrategy.Registry) {
+	rootCmd.AddCommand(NewExecuteCmd(execRegistry, chunkRegistry))
+}
+
+// NewExecuteCmd creates the execute command with the given strategy registries.
+// This allows multiple command instances (useful for testing) and explicit dependency injection.
+func NewExecuteCmd(execRegistry *executeStrategy.Registry, chunkRegistry *chunkStrategy.Registry) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "execute [cr-id]",
+		Short: "Execute a change request using the Ralph loop",
+		Long: `Execute a change request (CR) or spec using the Ralph loop.
 
 This command handles the full workflow:
   1. Loads the change request from .utopia/change-requests/<cr-id>.yaml
@@ -54,38 +62,25 @@ The execution strategy determines how work items are processed:
 
 Press Ctrl+C to gracefully stop execution (current state will be saved).
 Run the command again to resume from where you left off.`,
-	Args: cobra.MaximumNArgs(1),
-	RunE: runExecute,
-}
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runExecute(cmd, args, execRegistry, chunkRegistry)
+		},
+	}
 
-func init() {
-	rootCmd.AddCommand(executeCmd)
-
-	executeCmd.Flags().StringVarP(&executeStrategyFlag, "strategy", "s", "",
+	cmd.Flags().StringVarP(&executeStrategyFlag, "strategy", "s", "",
 		"execution strategy (sequential)")
-	executeCmd.Flags().StringVar(&executeChunkStrategyFlag, "chunk-strategy", "",
+	cmd.Flags().StringVar(&executeChunkStrategyFlag, "chunk-strategy", "",
 		"chunking strategy (ralph-sequential)")
-	executeCmd.Flags().IntVarP(&executeTimeoutFlag, "timeout", "t", 0,
+	cmd.Flags().IntVarP(&executeTimeoutFlag, "timeout", "t", 0,
 		"timeout in minutes (0 means no timeout)")
-	executeCmd.Flags().BoolVar(&executeAllFlag, "all", false,
+	cmd.Flags().BoolVar(&executeAllFlag, "all", false,
 		"execute all CRs in .utopia/change-requests/ in alphabetical order")
 
-	// Initialize registries - strategies will be registered at startup
-	executeRegistry = executeStrategy.NewRegistry()
-	executeChunkRegistry = chunkStrategy.NewRegistry()
+	return cmd
 }
 
-// RegisterExecuteStrategy adds a strategy to the registry (called from main)
-func RegisterExecuteStrategy(s executeStrategy.Strategy) {
-	executeRegistry.Register(s)
-}
-
-// RegisterExecuteChunkStrategy adds a chunk strategy to the execute command's registry (called from main)
-func RegisterExecuteChunkStrategy(s chunkStrategy.Strategy) {
-	executeChunkRegistry.Register(s)
-}
-
-func runExecute(cmd *cobra.Command, args []string) error {
+func runExecute(cmd *cobra.Command, args []string, execRegistry *executeStrategy.Registry, chunkRegistry *chunkStrategy.Registry) error {
 	projectDir := GetProjectDir(cmd)
 
 	// Validate timeout flag
@@ -117,7 +112,7 @@ func runExecute(cmd *cobra.Command, args []string) error {
 		if len(args) > 0 {
 			return fmt.Errorf("cannot specify CR ID with --all flag")
 		}
-		return runExecuteAll(cmd, store, config, absPath, utopiaDir)
+		return runExecuteAll(cmd, store, config, absPath, utopiaDir, execRegistry, chunkRegistry)
 	}
 
 	// Get CR ID from args or interactive selection
@@ -141,7 +136,7 @@ func runExecute(cmd *cobra.Command, args []string) error {
 
 	// Check if this is an initiative CR (needs per-phase execution)
 	if cr.Type == domain.CRTypeInitiative {
-		return executeInitiative(cmd, cr, store, config, absPath, utopiaDir, executeRegistry, executeChunkRegistry)
+		return executeInitiative(cmd, cr, store, config, absPath, utopiaDir, execRegistry, chunkRegistry)
 	}
 
 	// Check if work items already exist for this CR
@@ -152,7 +147,7 @@ func runExecute(cmd *cobra.Command, args []string) error {
 
 	// If no work items exist, chunk the CR first
 	if len(items) == 0 {
-		items, err = chunkCR(cr, crID, store, config, executeChunkRegistry, absPath)
+		items, err = chunkCR(cr, crID, store, config, chunkRegistry, absPath)
 		if err != nil {
 			return err
 		}
@@ -166,9 +161,9 @@ func runExecute(cmd *cobra.Command, args []string) error {
 		strategyName = config.Strategies.Execute
 	}
 
-	strategy, ok := executeRegistry.Get(strategyName)
+	strategy, ok := execRegistry.Get(strategyName)
 	if !ok {
-		available := executeRegistry.List()
+		available := execRegistry.List()
 		if len(available) == 0 {
 			return fmt.Errorf("no execution strategies registered")
 		}
@@ -767,7 +762,7 @@ func autoMergeCR(cr *domain.ChangeRequest, crID string, store *storage.YAMLStore
 
 // runExecuteAll executes all CRs in .utopia/change-requests/ in alphabetical order.
 // If any CR fails, execution stops and reports which CR failed.
-func runExecuteAll(cmd *cobra.Command, store *storage.YAMLStore, config *domain.Config, projectDir, utopiaDir string) error {
+func runExecuteAll(cmd *cobra.Command, store *storage.YAMLStore, config *domain.Config, projectDir, utopiaDir string, execRegistry *executeStrategy.Registry, chunkRegistry *chunkStrategy.Registry) error {
 	// List all change requests
 	crs, err := store.ListChangeRequests()
 	if err != nil {
@@ -832,7 +827,7 @@ func runExecuteAll(cmd *cobra.Command, store *storage.YAMLStore, config *domain.
 		fmt.Printf("════════════════════════════════════════════════════════════════\n\n")
 
 		// Execute this CR using the shared context
-		if err := executeSingleCR(ctx, cr, store, config, projectDir, utopiaDir); err != nil {
+		if err := executeSingleCR(ctx, cr, store, config, projectDir, utopiaDir, execRegistry, chunkRegistry); err != nil {
 			// Check if it was a context cancellation
 			if ctx.Err() != nil {
 				if ctx.Err() == context.DeadlineExceeded {
@@ -876,12 +871,12 @@ func runExecuteAll(cmd *cobra.Command, store *storage.YAMLStore, config *domain.
 
 // executeSingleCR executes a single CR with the given context.
 // This is extracted from runExecute to allow reuse in batch execution.
-func executeSingleCR(ctx context.Context, cr *domain.ChangeRequest, store *storage.YAMLStore, config *domain.Config, projectDir, utopiaDir string) error {
+func executeSingleCR(ctx context.Context, cr *domain.ChangeRequest, store *storage.YAMLStore, config *domain.Config, projectDir, utopiaDir string, execRegistry *executeStrategy.Registry, chunkRegistry *chunkStrategy.Registry) error {
 	crID := cr.ID
 
 	// Check if this is an initiative CR (needs per-phase execution)
 	if cr.Type == domain.CRTypeInitiative {
-		return executeSingleInitiative(ctx, cr, store, config, projectDir, utopiaDir)
+		return executeSingleInitiative(ctx, cr, store, config, projectDir, utopiaDir, execRegistry, chunkRegistry)
 	}
 
 	// Check if work items already exist for this CR
@@ -892,7 +887,7 @@ func executeSingleCR(ctx context.Context, cr *domain.ChangeRequest, store *stora
 
 	// If no work items exist, chunk the CR first
 	if len(items) == 0 {
-		items, err = chunkCR(cr, crID, store, config, executeChunkRegistry, projectDir)
+		items, err = chunkCR(cr, crID, store, config, chunkRegistry, projectDir)
 		if err != nil {
 			return err
 		}
@@ -906,9 +901,9 @@ func executeSingleCR(ctx context.Context, cr *domain.ChangeRequest, store *stora
 		strategyName = config.Strategies.Execute
 	}
 
-	strategy, ok := executeRegistry.Get(strategyName)
+	strategy, ok := execRegistry.Get(strategyName)
 	if !ok {
-		available := executeRegistry.List()
+		available := execRegistry.List()
 		if len(available) == 0 {
 			return fmt.Errorf("no execution strategies registered")
 		}
@@ -957,7 +952,7 @@ func executeSingleCR(ctx context.Context, cr *domain.ChangeRequest, store *stora
 
 // executeSingleInitiative handles execution for initiative CRs within batch mode.
 // Similar to executeInitiative but uses the provided context.
-func executeSingleInitiative(ctx context.Context, cr *domain.ChangeRequest, store *storage.YAMLStore, config *domain.Config, projectDir, utopiaDir string) error {
+func executeSingleInitiative(ctx context.Context, cr *domain.ChangeRequest, store *storage.YAMLStore, config *domain.Config, projectDir, utopiaDir string, execRegistry *executeStrategy.Registry, chunkRegistry *chunkStrategy.Registry) error {
 	fmt.Printf("Executing initiative: %s\n", cr.Title)
 	fmt.Printf("Phases: %d total, current: %d\n", len(cr.Phases), cr.CurrentPhase+1)
 
@@ -973,9 +968,9 @@ func executeSingleInitiative(ctx context.Context, cr *domain.ChangeRequest, stor
 		strategyName = config.Strategies.Execute
 	}
 
-	strategy, ok := executeRegistry.Get(strategyName)
+	strategy, ok := execRegistry.Get(strategyName)
 	if !ok {
-		available := executeRegistry.List()
+		available := execRegistry.List()
 		if len(available) == 0 {
 			return fmt.Errorf("no execution strategies registered")
 		}
@@ -983,7 +978,7 @@ func executeSingleInitiative(ctx context.Context, cr *domain.ChangeRequest, stor
 	}
 
 	// Delegate to core function with batch-mode options
-	return executeInitiativeCore(ctx, cr, store, config, projectDir, utopiaDir, strategy, executeChunkRegistry, initiativeCoreOpts{
+	return executeInitiativeCore(ctx, cr, store, config, projectDir, utopiaDir, strategy, chunkRegistry, initiativeCoreOpts{
 		showTimeoutDetails: false,
 		showPhaseSummary:   false,
 		autoMerge:          true,
