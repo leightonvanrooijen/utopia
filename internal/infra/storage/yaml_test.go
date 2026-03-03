@@ -13,10 +13,8 @@ import (
 // Tests for merge workflow
 
 func TestMergeWorkflow_AddFeature(t *testing.T) {
-	dir, cleanup := testutil.SetupTestDir(t)
+	store, cleanup := SetupTestStore(t)
 	defer cleanup()
-
-	store := NewYAMLStore(dir)
 
 	// Create parent spec
 	parentSpec := domain.NewSpec("parent-spec", "Parent Spec")
@@ -76,10 +74,8 @@ func TestMergeWorkflow_AddFeature(t *testing.T) {
 }
 
 func TestMergeWorkflow_ModifyFeature(t *testing.T) {
-	dir, cleanup := testutil.SetupTestDir(t)
+	store, cleanup := SetupTestStore(t)
 	defer cleanup()
-
-	store := NewYAMLStore(dir)
 
 	// Create parent spec
 	parentSpec := domain.NewSpec("parent-spec", "Parent Spec")
@@ -135,10 +131,8 @@ func TestMergeWorkflow_ModifyFeature(t *testing.T) {
 }
 
 func TestMergeWorkflow_RemoveFeature(t *testing.T) {
-	dir, cleanup := testutil.SetupTestDir(t)
+	store, cleanup := SetupTestStore(t)
 	defer cleanup()
-
-	store := NewYAMLStore(dir)
 
 	// Create parent spec with two features
 	parentSpec := domain.NewSpec("parent-spec", "Parent Spec")
@@ -195,10 +189,8 @@ func TestMergeWorkflow_RemoveFeature(t *testing.T) {
 }
 
 func TestMergeWorkflow_DeleteChangeRequestAfterMerge(t *testing.T) {
-	dir, cleanup := testutil.SetupTestDir(t)
+	store, cleanup := SetupTestStore(t)
 	defer cleanup()
-
-	store := NewYAMLStore(dir)
 
 	// Create parent spec
 	parentSpec := domain.NewSpec("parent-spec", "Parent Spec")
@@ -251,7 +243,7 @@ func TestMergeWorkflow_DeleteChangeRequestAfterMerge(t *testing.T) {
 }
 
 func TestYAMLFormatting_FeatureSpacing(t *testing.T) {
-	dir, cleanup := testutil.SetupTestDir(t)
+	dir, cleanup := testutil.SetupTestProject(t)
 	defer cleanup()
 
 	store := NewYAMLStore(dir)
@@ -303,7 +295,7 @@ func TestYAMLFormatting_FeatureSpacing(t *testing.T) {
 }
 
 func TestYAMLFormatting_BlockStyleDescription(t *testing.T) {
-	dir, cleanup := testutil.SetupTestDir(t)
+	dir, cleanup := testutil.SetupTestProject(t)
 	defer cleanup()
 
 	store := NewYAMLStore(dir)
@@ -334,10 +326,8 @@ func TestYAMLFormatting_BlockStyleDescription(t *testing.T) {
 }
 
 func TestDeleteSpec_Success(t *testing.T) {
-	dir, cleanup := testutil.SetupTestDir(t)
+	store, cleanup := SetupTestStore(t)
 	defer cleanup()
-
-	store := NewYAMLStore(dir)
 
 	// Create a spec
 	spec := domain.NewSpec("to-delete", "Spec To Delete")
@@ -367,10 +357,8 @@ func TestDeleteSpec_Success(t *testing.T) {
 }
 
 func TestDeleteSpec_NotFound(t *testing.T) {
-	dir, cleanup := testutil.SetupTestDir(t)
+	store, cleanup := SetupTestStore(t)
 	defer cleanup()
-
-	store := NewYAMLStore(dir)
 
 	// Try to delete a non-existent spec
 	err := store.DeleteSpec("nonexistent")
@@ -384,10 +372,8 @@ func TestDeleteSpec_NotFound(t *testing.T) {
 }
 
 func TestMergeWorkflow_FullScenario(t *testing.T) {
-	dir, cleanup := testutil.SetupTestDir(t)
+	store, cleanup := SetupTestStore(t)
 	defer cleanup()
-
-	store := NewYAMLStore(dir)
 
 	// Create parent spec with existing content
 	parentSpec := domain.NewSpec("execution-ralph", "Ralph Execution Loop")
@@ -494,10 +480,8 @@ func TestMergeWorkflow_FullScenario(t *testing.T) {
 // Tests for ADR storage validation
 
 func TestSaveADR_ValidCategory(t *testing.T) {
-	dir, cleanup := testutil.SetupTestDir(t)
+	store, cleanup := SetupTestStore(t)
 	defer cleanup()
-
-	store := NewYAMLStore(dir)
 
 	adr := &domain.ADR{
 		ID:       "ADR-001",
@@ -525,10 +509,8 @@ func TestSaveADR_ValidCategory(t *testing.T) {
 }
 
 func TestSaveADR_InvalidCategory_Rejected(t *testing.T) {
-	dir, cleanup := testutil.SetupTestDir(t)
+	store, cleanup := SetupTestStore(t)
 	defer cleanup()
-
-	store := NewYAMLStore(dir)
 
 	adr := &domain.ADR{
 		ID:       "ADR-002",
@@ -554,10 +536,8 @@ func TestSaveADR_InvalidCategory_Rejected(t *testing.T) {
 }
 
 func TestSaveADR_EmptyCategory_Rejected(t *testing.T) {
-	dir, cleanup := testutil.SetupTestDir(t)
+	store, cleanup := SetupTestStore(t)
 	defer cleanup()
-
-	store := NewYAMLStore(dir)
 
 	adr := &domain.ADR{
 		ID:       "ADR-003",
@@ -579,10 +559,8 @@ func TestSaveADR_EmptyCategory_Rejected(t *testing.T) {
 }
 
 func TestSaveADR_AllValidCategories(t *testing.T) {
-	dir, cleanup := testutil.SetupTestDir(t)
+	store, cleanup := SetupTestStore(t)
 	defer cleanup()
-
-	store := NewYAMLStore(dir)
 
 	categories := []domain.ADRCategory{
 		domain.ADRCategoryStructure,

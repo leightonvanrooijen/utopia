@@ -6,9 +6,10 @@ import (
 	"testing"
 )
 
-// SetupTestDir creates a temporary directory with the necessary subdirectories
-// for testing YAML storage operations. Returns the directory path and a cleanup function.
-func SetupTestDir(t *testing.T) (string, func()) {
+// SetupTestProject creates a temporary directory with the necessary subdirectories
+// for testing YAML storage operations (.utopia structure with specs/ and change-requests/).
+// Returns the directory path and a cleanup function.
+func SetupTestProject(t *testing.T) (string, func()) {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "utopia-test-*")
 	if err != nil {
@@ -28,4 +29,13 @@ func SetupTestDir(t *testing.T) (string, func()) {
 	}
 
 	return dir, cleanup
+}
+
+// SetupTestDir creates a temporary directory with the necessary subdirectories
+// for testing YAML storage operations. Returns the directory path and a cleanup function.
+//
+// Deprecated: Use SetupTestProject instead.
+func SetupTestDir(t *testing.T) (string, func()) {
+	t.Helper()
+	return SetupTestProject(t)
 }
