@@ -22,11 +22,27 @@ const CompletionToken = "<COMPLETE>"
 // Strategy implements sequential work item execution.
 // It processes work items one at a time, in order, retrying until
 // verification passes or max iterations is reached.
-type Strategy struct{}
+type Strategy struct {
+	claudeCLI *claude.CLI
+	verifier  *verification.Runner
+}
 
-// New creates a new sequential execution strategy.
+// New creates a new sequential execution strategy without pre-configured dependencies.
+// Dependencies will be created during Execute with appropriate defaults.
+// For better testability with mock dependencies, use NewWithDeps().
 func New() *Strategy {
 	return &Strategy{}
+}
+
+// NewWithDeps creates a new sequential execution strategy with injected dependencies.
+// The claudeCLI and verifier are used for Claude invocation and verification command
+// execution respectively. If nil, defaults will be created during Execute.
+// This constructor enables testing with mock dependencies.
+func NewWithDeps(claudeCLI *claude.CLI, verifier *verification.Runner) *Strategy {
+	return &Strategy{
+		claudeCLI: claudeCLI,
+		verifier:  verifier,
+	}
 }
 
 // Name returns the strategy identifier.
@@ -64,11 +80,15 @@ func (s *Strategy) Execute(ctx context.Context, specID string, store *storage.YA
 		Total: len(items),
 	}
 
-	// Create Claude CLI wrapper with verbose streaming
-	cli := claude.NewCLI().WithVerbose(true)
-
-	// Create verification runner
-	verifier := verification.NewRunner(projectDir)
+	// Use injected dependencies or create defaults
+	cli := s.claudeCLI
+	if cli == nil {
+		cli = claude.NewCLI().WithVerbose(true)
+	}
+	verifier := s.verifier
+	if verifier == nil {
+		verifier = verification.NewRunner(projectDir)
+	}
 
 	// Execute each work item in order
 	for i, item := range items {
