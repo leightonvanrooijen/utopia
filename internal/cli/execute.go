@@ -125,7 +125,7 @@ func runExecute(cmd *cobra.Command, args []string, execRegistry *executeStrategy
 	// Load the change request
 	cr, crErr := store.LoadChangeRequest(crID)
 	if crErr != nil {
-		return fmt.Errorf("change request not found: %s\n\nCheck .utopia/change-requests/ for available change requests", crID)
+		return &domain.NotFoundError{Resource: "change request", ID: crID}
 	}
 
 	// Check if this is an initiative CR (needs per-phase execution)

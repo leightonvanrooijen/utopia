@@ -66,7 +66,7 @@ func runMerge(cmd *cobra.Command, args []string, dryRun bool) error {
 	// Load the change request
 	cr, err := store.LoadChangeRequest(changeRequestID)
 	if err != nil {
-		return fmt.Errorf("change request not found: %s\n\nCheck .utopia/change-requests/ for available change requests", changeRequestID)
+		return &domain.NotFoundError{Resource: "change request", ID: changeRequestID}
 	}
 
 	fmt.Printf("Change Request: %s\n", cr.Title)
@@ -197,7 +197,7 @@ func runMerge(cmd *cobra.Command, args []string, dryRun bool) error {
 				spec = domain.NewSpec(specID, specID)
 				createdSpecs[specID] = true
 			} else {
-				return fmt.Errorf("spec not found: %s\n\nThe change request references a spec that doesn't exist (non-add operations require existing spec)", specID)
+				return &domain.NotFoundError{Resource: "spec", ID: specID}
 			}
 		}
 		specs[specID] = spec
@@ -412,7 +412,7 @@ func mergeInitiative(cr *domain.ChangeRequest, changeRequestID, utopiaDir string
 					spec = domain.NewSpec(specID, specID)
 					createdSpecs[specID] = true
 				} else {
-					return fmt.Errorf("spec not found: %s\n\nThe change request references a spec that doesn't exist (non-add operations require existing spec)", specID)
+					return &domain.NotFoundError{Resource: "spec", ID: specID}
 				}
 			}
 			specs[specID] = spec
@@ -608,7 +608,7 @@ func performMergeChanges(changes []domain.Change, store *storage.YAMLStore) (*Me
 				spec = domain.NewSpec(specID, specID)
 				createdSpecs[specID] = true
 			} else {
-				return nil, fmt.Errorf("spec not found: %s (non-add operations require existing spec)", specID)
+				return nil, &domain.NotFoundError{Resource: "spec", ID: specID}
 			}
 		}
 		specs[specID] = spec

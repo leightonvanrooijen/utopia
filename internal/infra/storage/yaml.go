@@ -76,7 +76,7 @@ func (s *YAMLStore) DeleteSpec(id string) error {
 	path := filepath.Join(s.baseDir, "specs", id+".yaml")
 	if err := os.Remove(path); err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("spec not found: %s", id)
+			return &domain.NotFoundError{Resource: "spec", ID: id}
 		}
 		return fmt.Errorf("failed to delete spec %s: %w", id, err)
 	}
