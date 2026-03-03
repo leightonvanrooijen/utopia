@@ -154,7 +154,7 @@ func executeInitiativeCore(
 	if opts.autoMerge {
 		fmt.Println()
 		fmt.Println("Merging initiative CR into specs...")
-		if err := autoMergeCR(cr, cr.ID, store, projectDir, utopiaDir); err != nil {
+		if err := AutoMergeCR(cr, cr.ID, store, projectDir, utopiaDir); err != nil {
 			fmt.Printf("\n⚠ Merge failed: %s\n", err)
 			fmt.Printf("Work items remain completed. You can retry merge with: utopia merge %s\n", cr.ID)
 			return nil // Don't return error - work items completed successfully

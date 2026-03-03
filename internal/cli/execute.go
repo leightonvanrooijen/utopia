@@ -237,7 +237,7 @@ func runExecute(cmd *cobra.Command, args []string, execRegistry *executeStrategy
 	// Auto-merge: apply CR changes to specs and commit
 	fmt.Println()
 	fmt.Println("Merging CR into specs...")
-	if err := autoMergeCR(cr, crID, store, absPath, utopiaDir); err != nil {
+	if err := AutoMergeCR(cr, crID, store, absPath, utopiaDir); err != nil {
 		// Merge failed but work items are complete - preserve completion state
 		fmt.Printf("\n⚠ Merge failed: %s\n", err)
 		fmt.Printf("Work items remain completed. You can retry merge with: utopia merge %s\n", crID)
@@ -355,55 +355,3 @@ func chunkCR(cr *domain.ChangeRequest, crID string, store *storage.YAMLStore, co
 	return workItems, nil
 }
 
-// autoMergeCR performs the merge after all work items complete successfully.
-// It applies CR changes to specs, creates a git commit, then cleans up CR/work items.
-// On failure, work item completion state is preserved for manual retry.
-func autoMergeCR(cr *domain.ChangeRequest, crID string, store *storage.YAMLStore, projectDir, utopiaDir string) error {
-	// Step 1: Apply changes to specs (without deleting CR/work items)
-	mergeResult, err := PerformMerge(cr, store)
-	if err != nil {
-		return fmt.Errorf("failed to apply spec changes: %w", err)
-	}
-
-	// Print merge summary
-	if mergeResult.IsRefactor {
-		fmt.Println("Refactor CR - no spec modifications")
-	} else {
-		for _, specID := range mergeResult.SpecsModified {
-			fmt.Printf("✓ Updated spec: %s\n", specID)
-		}
-		for _, specID := range mergeResult.SpecsDeleted {
-			fmt.Printf("✓ Deleted spec: %s\n", specID)
-		}
-	}
-
-	// Step 2: Create git commit for spec changes
-	if err := GitCommitSpecMerge(projectDir, cr, mergeResult); err != nil {
-		return fmt.Errorf("failed to create git commit: %w", err)
-	}
-	fmt.Println("✓ Created git commit for spec merge")
-
-	// Step 3: Clean up CR and work items (now safe - commit exists for rollback)
-	if err := CleanupAfterMerge(cr, crID, utopiaDir, store); err != nil {
-		// Log but don't fail - commit succeeded, cleanup is non-critical
-		fmt.Printf("⚠ Cleanup warning: %s\n", err)
-	} else {
-		fmt.Printf("✓ Cleaned up CR and work items\n")
-
-		// Step 4: Create cleanup commit for removed CR and work items
-		if err := gitCommitCleanup(projectDir, crID, utopiaDir); err != nil {
-			fmt.Printf("⚠ Cleanup commit warning: %s\n", err)
-		} else {
-			fmt.Printf("✓ Created cleanup commit\n")
-		}
-	}
-
-	// Step 5: Mark conversations that reference this CR as ready for harvest
-	// Transitions pending-execution → unprocessed so harvest can find them
-	if err := store.MarkConversationsReadyForHarvest(crID); err != nil {
-		fmt.Printf("⚠ Failed to update conversation status: %s\n", err)
-	}
-
-	fmt.Printf("\nSuccessfully merged: %s\n", cr.Title)
-	return nil
-}

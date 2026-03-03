@@ -197,7 +197,7 @@ func executeSingleCR(ctx context.Context, cr *domain.ChangeRequest, store *stora
 	// Auto-merge
 	fmt.Println()
 	fmt.Println("Merging CR into specs...")
-	if err := autoMergeCR(cr, crID, store, projectDir, utopiaDir); err != nil {
+	if err := AutoMergeCR(cr, crID, store, projectDir, utopiaDir); err != nil {
 		fmt.Printf("\n⚠ Merge failed: %s\n", err)
 		fmt.Printf("Work items remain completed. You can retry merge with: utopia merge %s\n", crID)
 		return nil // Don't fail batch for merge errors - work is done
