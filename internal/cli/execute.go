@@ -354,4 +354,3 @@ func chunkCR(cr *domain.ChangeRequest, crID string, store *storage.YAMLStore, co
 
 	return workItems, nil
 }
-
