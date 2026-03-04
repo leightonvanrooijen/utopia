@@ -824,20 +824,20 @@ func (s *YAMLStore) ListConceptDocs() ([]*domain.ConceptDoc, error) {
 	return docs, nil
 }
 
-// SaveDraft writes a draft spec to .utopia/drafts/{id}.yaml
+// SaveDraft writes a draft spec to .utopia/drafts/specs/{id}.yaml
 func (s *YAMLStore) SaveDraft(draft *domain.DraftSpec) error {
-	dir := filepath.Join(s.baseDir, "drafts")
+	dir := filepath.Join(s.baseDir, "drafts", "specs")
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create drafts directory: %w", err)
+		return fmt.Errorf("failed to create drafts/specs directory: %w", err)
 	}
 
 	path := filepath.Join(dir, draft.ID+".yaml")
 	return s.writeYAML(path, draft)
 }
 
-// LoadDraft reads a draft spec from .utopia/drafts/{id}.yaml
+// LoadDraft reads a draft spec from .utopia/drafts/specs/{id}.yaml
 func (s *YAMLStore) LoadDraft(id string) (*domain.DraftSpec, error) {
-	path := filepath.Join(s.baseDir, "drafts", id+".yaml")
+	path := filepath.Join(s.baseDir, "drafts", "specs", id+".yaml")
 
 	var draft domain.DraftSpec
 	if err := s.readYAML(path, &draft); err != nil {
@@ -850,9 +850,9 @@ func (s *YAMLStore) LoadDraft(id string) (*domain.DraftSpec, error) {
 	return &draft, nil
 }
 
-// ListDrafts returns all draft specs in the drafts directory
+// ListDrafts returns all draft specs in the drafts/specs directory
 func (s *YAMLStore) ListDrafts() ([]*domain.DraftSpec, error) {
-	dir := filepath.Join(s.baseDir, "drafts")
+	dir := filepath.Join(s.baseDir, "drafts", "specs")
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -879,9 +879,9 @@ func (s *YAMLStore) ListDrafts() ([]*domain.DraftSpec, error) {
 	return drafts, nil
 }
 
-// DeleteDraft removes a draft spec file from .utopia/drafts/{id}.yaml
+// DeleteDraft removes a draft spec file from .utopia/drafts/specs/{id}.yaml
 func (s *YAMLStore) DeleteDraft(id string) error {
-	path := filepath.Join(s.baseDir, "drafts", id+".yaml")
+	path := filepath.Join(s.baseDir, "drafts", "specs", id+".yaml")
 	if err := os.Remove(path); err != nil {
 		if os.IsNotExist(err) {
 			return &domain.NotFoundError{Resource: "draft", ID: id}

@@ -14,10 +14,10 @@ import (
 var promoteCmd = &cobra.Command{
 	Use:   "promote [draft-id]",
 	Short: "Promote a validated draft to an official specification",
-	Long: `Promote a draft specification from .utopia/drafts/ to .utopia/specs/.
+	Long: `Promote a draft specification from .utopia/drafts/specs/ to .utopia/specs/.
 
 The promote command:
-  1. Loads the specified draft from .utopia/drafts/
+  1. Loads the specified draft from .utopia/drafts/specs/
   2. Creates a new spec with the draft's content
   3. Removes draft-specific fields (confidence, discovered_from, etc.)
   4. Saves the spec to .utopia/specs/
@@ -106,7 +106,7 @@ func runPromote(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  Features: %d\n", len(spec.Features))
 	fmt.Println()
 	fmt.Printf("Spec saved to: .utopia/specs/%s.yaml\n", spec.ID)
-	fmt.Printf("Draft removed: .utopia/drafts/%s.yaml\n", draft.ID)
+	fmt.Printf("Draft removed: .utopia/drafts/specs/%s.yaml\n", draft.ID)
 	fmt.Println()
 
 	return nil

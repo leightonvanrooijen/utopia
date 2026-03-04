@@ -25,7 +25,7 @@ The command will:
   1. Scan source code, tests, documentation, and comments
   2. Use Claude to analyze the codebase and identify features
   3. Generate draft specs with confidence levels based on evidence quality
-  4. Save drafts to .utopia/drafts/ for review
+  4. Save drafts to .utopia/drafts/specs/ for review
 
 Scoping discovery:
   By default, discover analyzes the entire codebase. For large codebases or to
@@ -194,10 +194,10 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 		lastRunTime = previousState.LastRun
 	}
 
-	// Ensure drafts directory exists
-	draftsDir := filepath.Join(utopiaDir, "drafts")
+	// Ensure drafts/specs directory exists
+	draftsDir := filepath.Join(utopiaDir, "drafts", "specs")
 	if err := os.MkdirAll(draftsDir, 0755); err != nil {
-		return fmt.Errorf("failed to create drafts directory: %w", err)
+		return fmt.Errorf("failed to create drafts/specs directory: %w", err)
 	}
 
 	// Build scope from flags

@@ -21,7 +21,7 @@ var shapeCmd = &cobra.Command{
 	Long: `Walk through draft specifications one at a time, validating and refining them.
 
 The command will:
-  1. Load all draft specs from .utopia/drafts/
+  1. Load all draft specs from .utopia/drafts/specs/
   2. Present drafts starting with lowest confidence (most uncertain)
   3. For each draft, guide you through validating:
      - Whether the proposed features match your intent
@@ -143,11 +143,11 @@ func runShape(cmd *cobra.Command, args []string) error {
 	}
 
 	store := storage.NewYAMLStore(utopiaDir)
-	draftsDir := filepath.Join(utopiaDir, "drafts")
+	draftsDir := filepath.Join(utopiaDir, "drafts", "specs")
 
-	// Ensure drafts directory exists
+	// Ensure drafts/specs directory exists
 	if err := os.MkdirAll(draftsDir, 0755); err != nil {
-		return fmt.Errorf("failed to create drafts directory: %w", err)
+		return fmt.Errorf("failed to create drafts/specs directory: %w", err)
 	}
 
 	// Load all drafts
