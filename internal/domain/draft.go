@@ -25,6 +25,10 @@ type DraftSpec struct {
 	Description string          `yaml:"description"`
 	Confidence  DraftConfidence `yaml:"confidence"`
 
+	// DiscoveredFrom lists the source files that were analyzed to create this draft.
+	// This provides traceability back to the codebase locations that informed the spec.
+	DiscoveredFrom []string `yaml:"discovered_from,omitempty"`
+
 	// UncertaintyNotes explains what's unclear about this draft (especially for low confidence)
 	UncertaintyNotes []string `yaml:"uncertainty_notes,omitempty"`
 
@@ -90,6 +94,11 @@ func (d *DraftSpec) AddDocEvidence(file string) {
 // AddCommentEvidence adds a comment to the evidence
 func (d *DraftSpec) AddCommentEvidence(comment string) {
 	d.Evidence.Comments = append(d.Evidence.Comments, comment)
+}
+
+// AddDiscoveredFrom adds a source file to the discovered_from list
+func (d *DraftSpec) AddDiscoveredFrom(file string) {
+	d.DiscoveredFrom = append(d.DiscoveredFrom, file)
 }
 
 // HasTests returns true if the draft has test file evidence

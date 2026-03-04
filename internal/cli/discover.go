@@ -92,6 +92,9 @@ drafts:
       Clear description of what this feature does.
       Include the business value and main use cases.
     confidence: high|medium|low
+    discovered_from:
+      - "path/to/source_file_analyzed.go"
+      - "path/to/another_source.go"
     uncertainty_notes:
       - "Note about what's unclear (only for low confidence)"
     evidence:
@@ -379,6 +382,7 @@ type draftOutput struct {
 	Title            string          `yaml:"title"`
 	Description      string          `yaml:"description"`
 	Confidence       string          `yaml:"confidence"`
+	DiscoveredFrom   []string        `yaml:"discovered_from,omitempty"`
 	UncertaintyNotes []string        `yaml:"uncertainty_notes,omitempty"`
 	Evidence         evidenceOutput  `yaml:"evidence"`
 	Features         []featureOutput `yaml:"features"`
@@ -429,6 +433,7 @@ func parseDraftsFromOutput(output string) ([]*domain.DraftSpec, error) {
 			Created:          now,
 			Description:      d.Description,
 			Confidence:       confidence,
+			DiscoveredFrom:   d.DiscoveredFrom,
 			UncertaintyNotes: d.UncertaintyNotes,
 			Evidence: domain.DraftEvidence{
 				CodeFiles: d.Evidence.CodeFiles,
