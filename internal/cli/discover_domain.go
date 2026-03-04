@@ -145,6 +145,13 @@ drafts:
           - "AlternativeName"
           - "OtherName"
         cross_context_note: "Optional note about how this term differs in other contexts"
+        evidence:
+          files:
+            - "path/to/file.go"
+            - "path/to/another.go"
+          lines:
+            - "type CanonicalTermName struct {"
+            - "func NewCanonicalTermName() *CanonicalTermName"
     entities:
       - name: EntityName
         description: "What this entity represents"

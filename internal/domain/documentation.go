@@ -178,14 +178,23 @@ func (a *ADR) recordStatusChange(newStatus ADRStatus, reason string) {
 	a.StatusHistory = append(a.StatusHistory, change)
 }
 
+// TermEvidence tracks where a specific term was found in code
+type TermEvidence struct {
+	// Files lists source files where this term was found
+	Files []string `yaml:"files,omitempty"`
+	// Lines captures specific code snippets or line references showing term usage
+	Lines []string `yaml:"lines,omitempty"`
+}
+
 // DomainTerm represents a term within a bounded context
 type DomainTerm struct {
-	Term             string   `yaml:"term"`
-	Definition       string   `yaml:"definition"`
-	Canonical        bool     `yaml:"canonical"`                    // Indicates this is THE name to use in code and communication
-	CodeUsage        string   `yaml:"code_usage"`                   // Where this term appears in code (or should)
-	Aliases          []string `yaml:"aliases,omitempty"`            // Alternative names that map to this canonical term
-	CrossContextNote string   `yaml:"cross_context_note,omitempty"` // Notes about how this term differs in other contexts
+	Term             string        `yaml:"term"`
+	Definition       string        `yaml:"definition"`
+	Canonical        bool          `yaml:"canonical"`                    // Indicates this is THE name to use in code and communication
+	CodeUsage        string        `yaml:"code_usage"`                   // Where this term appears in code (or should)
+	Aliases          []string      `yaml:"aliases,omitempty"`            // Alternative names that map to this canonical term
+	CrossContextNote string        `yaml:"cross_context_note,omitempty"` // Notes about how this term differs in other contexts
+	Evidence         *TermEvidence `yaml:"evidence,omitempty"`           // Where this term was found in code (for drafts)
 }
 
 // DomainEntity represents an entity within a bounded context
