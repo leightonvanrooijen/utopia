@@ -79,18 +79,18 @@ var genericTerms = map[string]bool{
 
 // Analyzer extracts type definitions from source files
 type Analyzer struct {
-	goStructRegex      *regexp.Regexp
-	goInterfaceRegex   *regexp.Regexp
-	goTypeAliasRegex   *regexp.Regexp
-	goFieldRegex       *regexp.Regexp
-	goEmbeddedRegex    *regexp.Regexp
-	goMethodRegex      *regexp.Regexp
-	tsInterfaceRegex   *regexp.Regexp
-	tsClassRegex       *regexp.Regexp
-	tsTypeRegex        *regexp.Regexp
-	tsFieldRegex       *regexp.Regexp
-	tsMethodRegex      *regexp.Regexp
-	tsExtendsRegex     *regexp.Regexp
+	goStructRegex    *regexp.Regexp
+	goInterfaceRegex *regexp.Regexp
+	goTypeAliasRegex *regexp.Regexp
+	goFieldRegex     *regexp.Regexp
+	goEmbeddedRegex  *regexp.Regexp
+	goMethodRegex    *regexp.Regexp
+	tsInterfaceRegex *regexp.Regexp
+	tsClassRegex     *regexp.Regexp
+	tsTypeRegex      *regexp.Regexp
+	tsFieldRegex     *regexp.Regexp
+	tsMethodRegex    *regexp.Regexp
+	tsExtendsRegex   *regexp.Regexp
 }
 
 // NewAnalyzer creates a new type definition analyzer
