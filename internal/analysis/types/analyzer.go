@@ -28,11 +28,11 @@ type DiscoveredField struct {
 
 // TermOccurrence tracks where a term appears across the codebase
 type TermOccurrence struct {
-	Term       string              // The domain term
-	Files      []string            // Files where this term appears
-	Lines      []string            // Specific code lines (file:line format)
-	Confidence TermConfidence      // Based on occurrence count and type
-	Types      []*DiscoveredType   // Types that use this term
+	Term       string            // The domain term
+	Files      []string          // Files where this term appears
+	Lines      []string          // Specific code lines (file:line format)
+	Confidence TermConfidence    // Based on occurrence count and type
+	Types      []*DiscoveredType // Types that use this term
 }
 
 // TermConfidence indicates how likely a term is to be domain vocabulary

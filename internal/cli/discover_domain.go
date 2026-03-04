@@ -581,12 +581,12 @@ type domainEvidenceOutput struct {
 }
 
 type domainTermOutput struct {
-	Term             string                  `yaml:"term"`
-	Canonical        bool                    `yaml:"canonical"`
-	CodeUsage        string                  `yaml:"code_usage"`
-	Definition       string                  `yaml:"definition"`
-	Aliases          []string                `yaml:"aliases,omitempty"`
-	CrossContextNote string                  `yaml:"cross_context_note,omitempty"`
+	Term             string                    `yaml:"term"`
+	Canonical        bool                      `yaml:"canonical"`
+	CodeUsage        string                    `yaml:"code_usage"`
+	Definition       string                    `yaml:"definition"`
+	Aliases          []string                  `yaml:"aliases,omitempty"`
+	CrossContextNote string                    `yaml:"cross_context_note,omitempty"`
 	Evidence         *domainTermEvidenceOutput `yaml:"evidence,omitempty"`
 }
 
