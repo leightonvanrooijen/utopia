@@ -11,6 +11,8 @@ import (
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 	"github.com/leightonvanrooijen/utopia/internal/infra/claude"
 	"github.com/leightonvanrooijen/utopia/internal/infra/storage"
+	"github.com/leightonvanrooijen/utopia/internal/strategies/readme"
+	"github.com/leightonvanrooijen/utopia/internal/strategies/readme/comparison"
 	"github.com/spf13/cobra"
 )
 
@@ -527,8 +529,9 @@ func runHarvest(cmd *cobra.Command, args []string) error {
 	domainDocsSummary := buildHarvestDomainDocsSummary(existingDomainDocs)
 	nextADRID := getNextADRID(existingADRs)
 
-	// Build README signals summary
-	readmeSignalsSummary := buildREADMESignalsSummary(absPath, store)
+	// Build README signals summary using the default strategy
+	readmeStrategy := getDefaultREADMEStrategy()
+	readmeSignalsSummary := buildREADMESignalsSummaryWithStrategy(absPath, store, readmeStrategy)
 
 	// Inject all summaries into the system prompt
 	systemPrompt := fmt.Sprintf(harvestSystemPrompt,
@@ -554,7 +557,7 @@ func runHarvest(cmd *cobra.Command, args []string) error {
 	}
 
 	// Count README signal candidates
-	readmeSignalCount := countREADMESignals(absPath, store)
+	readmeSignalCount := countREADMESignalsWithStrategy(absPath, store, readmeStrategy)
 
 	// Display harvest summary
 	fmt.Println("Starting unified harvest session...")
@@ -777,8 +780,9 @@ func getNextADRID(existingADRs []*domain.ADR) string {
 	return fmt.Sprintf("ADR-%03d", maxNum+1)
 }
 
-// buildREADMESignalsSummary scans specs against the README to find documentation candidates
-func buildREADMESignalsSummary(projectDir string, store *storage.YAMLStore) string {
+// buildREADMESignalsSummary scans specs against the README to find documentation candidates.
+// Uses the provided strategy for detection, allowing different detection approaches.
+func buildREADMESignalsSummaryWithStrategy(projectDir string, store *storage.YAMLStore, strategy readme.Strategy) string {
 	// Try to read README.md from project root
 	readmePath := filepath.Join(projectDir, "README.md")
 	readmeContent, err := os.ReadFile(readmePath)
@@ -795,14 +799,15 @@ func buildREADMESignalsSummary(projectDir string, store *storage.YAMLStore) stri
 		return "(Could not load specs - README signals skipped)"
 	}
 
-	// Scan specs for README candidates
-	candidates := ScanSpecsForREADMECandidates(specs, documented)
+	// Detect candidates using the strategy
+	candidates := strategy.Detect(specs, documented)
 
 	return BuildREADMESignalsSummary(candidates)
 }
 
-// countREADMESignals returns the count of README signal candidates
-func countREADMESignals(projectDir string, store *storage.YAMLStore) int {
+// countREADMESignalsWithStrategy returns the count of README signal candidates.
+// Uses the provided strategy for detection.
+func countREADMESignalsWithStrategy(projectDir string, store *storage.YAMLStore, strategy readme.Strategy) int {
 	readmePath := filepath.Join(projectDir, "README.md")
 	readmeContent, err := os.ReadFile(readmePath)
 	if err != nil {
@@ -815,6 +820,11 @@ func countREADMESignals(projectDir string, store *storage.YAMLStore) int {
 		return 0
 	}
 
-	candidates := ScanSpecsForREADMECandidates(specs, documented)
+	candidates := strategy.Detect(specs, documented)
 	return len(candidates)
+}
+
+// getDefaultREADMEStrategy returns the default README detection strategy (comparison-based).
+func getDefaultREADMEStrategy() readme.Strategy {
+	return comparison.New()
 }
