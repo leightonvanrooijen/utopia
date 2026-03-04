@@ -91,6 +91,7 @@ const (
 	SignalTypeADR     SignalType = "adr"
 	SignalTypeConcept SignalType = "concept"
 	SignalTypeDomain  SignalType = "domain"
+	SignalTypeREADME  SignalType = "readme"
 )
 
 // SignalConfidence represents the confidence level of a detected signal
@@ -138,11 +139,12 @@ type HarvestResult struct {
 	ADRSignals     []HarvestSignal `yaml:"adr_signals,omitempty"`
 	ConceptSignals []HarvestSignal `yaml:"concept_signals,omitempty"`
 	DomainSignals  []HarvestSignal `yaml:"domain_signals,omitempty"`
+	READMESignals  []HarvestSignal `yaml:"readme_signals,omitempty"`
 }
 
 // TotalSignals returns the total count of all signals
 func (h *HarvestResult) TotalSignals() int {
-	return len(h.ADRSignals) + len(h.ConceptSignals) + len(h.DomainSignals)
+	return len(h.ADRSignals) + len(h.ConceptSignals) + len(h.DomainSignals) + len(h.READMESignals)
 }
 
 // AllSignals returns all signals as a flat slice
@@ -151,5 +153,6 @@ func (h *HarvestResult) AllSignals() []HarvestSignal {
 	all = append(all, h.ADRSignals...)
 	all = append(all, h.ConceptSignals...)
 	all = append(all, h.DomainSignals...)
+	all = append(all, h.READMESignals...)
 	return all
 }

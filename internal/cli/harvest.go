@@ -54,8 +54,11 @@ Review persisted conversations and apply QUALIFICATION TESTS to identify candida
 - **ADR candidates**: Architectural decisions that pass category + reversal cost tests
 - **Concept candidates**: Educational content that passes orientation + independence tests
 - **Domain candidates**: Terms that pass domain specificity + precision + consistency tests
+- **README signals**: Spec features that qualify for README documentation (pre-computed and shown below)
 
 This unified approach is more efficient than running separate /adr, /concept, /domain commands and allows candidates to be cross-referenced.
+
+**Note on README signals:** Unlike other candidates which are detected from conversations, README signals are pre-computed by scanning specs against the current README. You simply include them in your results if they appear in the "README Documentation Signals" section below.
 
 ## Conversation Types
 
@@ -88,6 +91,9 @@ Conversations are classified by type based on whether they produced executed Cha
 %s
 
 ### Domain Docs (check for related bounded contexts)
+%s
+
+### README Documentation Signals
 %s
 
 ## The Journey
@@ -232,7 +238,7 @@ Present a STRUCTURED SUMMARY of all qualified candidates, grouped by type.
 ` + "```" + `
 ## Harvest Results
 
-**Summary: X qualified ADR candidates, Y qualified Concept candidates, Z qualified Domain candidates**
+**Summary: X ADR candidates, Y Concept candidates, Z Domain candidates, W README signals**
 **Conversations: N system-truth, M exploratory**
 
 ### ADR Candidates (Qualified)
@@ -258,6 +264,16 @@ Present a STRUCTURED SUMMARY of all qualified candidates, grouped by type.
 | domain-3 | MEDIUM | "bounded context" | Not in code yet (should be) | ✓ DDD term with local meaning | cr-session-20260216 | exploratory | - |
 
 **Note:** Only terms that pass all qualification tests (Domain Specificity, Precision, Consistency, Code Alignment) and the ambiguity litmus test appear here. Disqualified items are not shown.
+
+### README Documentation Signals
+These are spec features that qualify for README documentation but aren't yet documented.
+See the "README Documentation Signals" section in Existing Documentation above for pre-computed candidates.
+
+| ID | Confidence | Title | Category | Suggested Section | Spec | Feature |
+|----|------------|-------|----------|-------------------|------|---------|
+| readme-1 | HIGH | utopia cleanup command | command | Quick Start / The Loop | adoption | cleanup-command |
+
+**Note:** README signals are detected by scanning specs against the current README. Only features that qualify (new command, new artifact type, workflow change, new directory) AND are not already documented appear here.
 
 ### Cross-References
 - adr-1 ↔ concept-1: The ADR records the YAML decision; the Concept explains the trade-off reasoning
@@ -511,12 +527,16 @@ func runHarvest(cmd *cobra.Command, args []string) error {
 	domainDocsSummary := buildHarvestDomainDocsSummary(existingDomainDocs)
 	nextADRID := getNextADRID(existingADRs)
 
+	// Build README signals summary
+	readmeSignalsSummary := buildREADMESignalsSummary(absPath, store)
+
 	// Inject all summaries into the system prompt
 	systemPrompt := fmt.Sprintf(harvestSystemPrompt,
 		convsSummary,
 		adrsSummary,
 		conceptsSummary,
 		domainDocsSummary,
+		readmeSignalsSummary,
 		adrsDir,
 		conceptsDir,
 		domainDir,
@@ -533,6 +553,9 @@ func runHarvest(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Count README signal candidates
+	readmeSignalCount := countREADMESignals(absPath, store)
+
 	// Display harvest summary
 	fmt.Println("Starting unified harvest session...")
 	fmt.Printf("Found %d unprocessed conversations:\n", len(unprocessedConvs))
@@ -544,6 +567,10 @@ func runHarvest(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  - %d Concepts\n", len(existingConcepts))
 	fmt.Printf("  - %d Domain Docs\n", len(existingDomainDocs))
 	fmt.Println()
+	if readmeSignalCount > 0 {
+		fmt.Printf("README documentation signals: %d (spec features needing README updates)\n", readmeSignalCount)
+		fmt.Println()
+	}
 	fmt.Println("Documents will be saved to:")
 	fmt.Printf("  - ADRs: %s\n", adrsDir)
 	fmt.Printf("  - Concepts: %s\n", conceptsDir)
@@ -748,4 +775,46 @@ func getNextADRID(existingADRs []*domain.ADR) string {
 		}
 	}
 	return fmt.Sprintf("ADR-%03d", maxNum+1)
+}
+
+// buildREADMESignalsSummary scans specs against the README to find documentation candidates
+func buildREADMESignalsSummary(projectDir string, store *storage.YAMLStore) string {
+	// Try to read README.md from project root
+	readmePath := filepath.Join(projectDir, "README.md")
+	readmeContent, err := os.ReadFile(readmePath)
+	if err != nil {
+		return "(Could not read README.md - README signals skipped)"
+	}
+
+	// Parse what's documented in README
+	documented := ParseREADMEDocumented(string(readmeContent))
+
+	// Load all specs
+	specs, err := store.ListSpecs()
+	if err != nil {
+		return "(Could not load specs - README signals skipped)"
+	}
+
+	// Scan specs for README candidates
+	candidates := ScanSpecsForREADMECandidates(specs, documented)
+
+	return BuildREADMESignalsSummary(candidates)
+}
+
+// countREADMESignals returns the count of README signal candidates
+func countREADMESignals(projectDir string, store *storage.YAMLStore) int {
+	readmePath := filepath.Join(projectDir, "README.md")
+	readmeContent, err := os.ReadFile(readmePath)
+	if err != nil {
+		return 0
+	}
+
+	documented := ParseREADMEDocumented(string(readmeContent))
+	specs, err := store.ListSpecs()
+	if err != nil {
+		return 0
+	}
+
+	candidates := ScanSpecsForREADMECandidates(specs, documented)
+	return len(candidates)
 }
