@@ -151,3 +151,15 @@ type DiscoveryScope struct {
 	// ExcludePatterns lists glob patterns that were excluded from discovery
 	ExcludePatterns []string `yaml:"exclude_patterns,omitempty"`
 }
+
+// DomainDiscoveryState tracks the state of domain vocabulary discovery for incremental runs.
+// Stored in .utopia/drafts/domain/.discovery-state to enable re-running discover domain
+// and only analyzing new or modified files.
+type DomainDiscoveryState struct {
+	// LastRun is the timestamp of the last discovery run
+	LastRun time.Time `yaml:"last_run"`
+	// FilesAnalyzed tracks files processed in the last run with their mod times
+	FilesAnalyzed map[string]time.Time `yaml:"files_analyzed,omitempty"`
+	// Scope records any restrictions applied during discovery for context
+	Scope *DiscoveryScope `yaml:"scope,omitempty"`
+}

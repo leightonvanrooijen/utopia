@@ -14,13 +14,15 @@ import (
 // Compile-time interface assertions.
 // These ensure YAMLStore implements all repository interfaces from the domain package.
 var (
-	_ domain.SpecRepository           = (*YAMLStore)(nil)
-	_ domain.ChangeRequestRepository  = (*YAMLStore)(nil)
-	_ domain.WorkItemRepository       = (*YAMLStore)(nil)
-	_ domain.ConversationRepository   = (*YAMLStore)(nil)
-	_ domain.ConfigRepository         = (*YAMLStore)(nil)
-	_ domain.DraftRepository          = (*YAMLStore)(nil)
-	_ domain.DiscoveryStateRepository = (*YAMLStore)(nil)
+	_ domain.SpecRepository                = (*YAMLStore)(nil)
+	_ domain.ChangeRequestRepository       = (*YAMLStore)(nil)
+	_ domain.WorkItemRepository            = (*YAMLStore)(nil)
+	_ domain.ConversationRepository        = (*YAMLStore)(nil)
+	_ domain.ConfigRepository              = (*YAMLStore)(nil)
+	_ domain.DraftRepository               = (*YAMLStore)(nil)
+	_ domain.DiscoveryStateRepository      = (*YAMLStore)(nil)
+	_ domain.DraftDomainDocRepository      = (*YAMLStore)(nil)
+	_ domain.DomainDiscoveryStateRepository = (*YAMLStore)(nil)
 )
 
 // YAMLStore handles reading and writing YAML files
@@ -912,6 +914,104 @@ func (s *YAMLStore) SaveDiscoveryState(state *domain.DiscoveryState) error {
 	dir := filepath.Join(s.baseDir, "drafts", "specs")
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("failed to create drafts/specs directory: %w", err)
+	}
+
+	path := filepath.Join(dir, ".discovery-state")
+	return s.writeYAML(path, state)
+}
+
+// SaveDraftDomainDoc writes a draft domain doc to .utopia/drafts/domain/{id}.yaml
+func (s *YAMLStore) SaveDraftDomainDoc(draft *domain.DraftDomainDoc) error {
+	dir := filepath.Join(s.baseDir, "drafts", "domain")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create drafts/domain directory: %w", err)
+	}
+
+	path := filepath.Join(dir, draft.ID+".yaml")
+	return s.writeYAML(path, draft)
+}
+
+// LoadDraftDomainDoc reads a draft domain doc from .utopia/drafts/domain/{id}.yaml
+func (s *YAMLStore) LoadDraftDomainDoc(id string) (*domain.DraftDomainDoc, error) {
+	path := filepath.Join(s.baseDir, "drafts", "domain", id+".yaml")
+
+	var draft domain.DraftDomainDoc
+	if err := s.readYAML(path, &draft); err != nil {
+		if os.IsNotExist(err) {
+			return nil, &domain.NotFoundError{Resource: "draft domain doc", ID: id}
+		}
+		return nil, err
+	}
+
+	return &draft, nil
+}
+
+// ListDraftDomainDocs returns all draft domain docs in the drafts/domain directory
+func (s *YAMLStore) ListDraftDomainDocs() ([]*domain.DraftDomainDoc, error) {
+	dir := filepath.Join(s.baseDir, "drafts", "domain")
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []*domain.DraftDomainDoc{}, nil
+		}
+		return nil, fmt.Errorf("failed to read drafts/domain directory: %w", err)
+	}
+
+	var drafts []*domain.DraftDomainDoc
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
+			continue
+		}
+		// Skip discovery state file
+		if entry.Name() == ".discovery-state" {
+			continue
+		}
+
+		id := strings.TrimSuffix(entry.Name(), ".yaml")
+		draft, err := s.LoadDraftDomainDoc(id)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load draft domain doc %s: %w", id, err)
+		}
+		drafts = append(drafts, draft)
+	}
+
+	return drafts, nil
+}
+
+// DeleteDraftDomainDoc removes a draft domain doc file from .utopia/drafts/domain/{id}.yaml
+func (s *YAMLStore) DeleteDraftDomainDoc(id string) error {
+	path := filepath.Join(s.baseDir, "drafts", "domain", id+".yaml")
+	if err := os.Remove(path); err != nil {
+		if os.IsNotExist(err) {
+			return &domain.NotFoundError{Resource: "draft domain doc", ID: id}
+		}
+		return fmt.Errorf("failed to delete draft domain doc %s: %w", id, err)
+	}
+	return nil
+}
+
+// LoadDomainDiscoveryState reads domain discovery state from .utopia/drafts/domain/.discovery-state
+func (s *YAMLStore) LoadDomainDiscoveryState() (*domain.DomainDiscoveryState, error) {
+	path := filepath.Join(s.baseDir, "drafts", "domain", ".discovery-state")
+
+	var state domain.DomainDiscoveryState
+	if err := s.readYAML(path, &state); err != nil {
+		// Check for not-found using errors.Is to handle wrapped errors
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil // No previous state exists
+		}
+		return nil, err
+	}
+
+	return &state, nil
+}
+
+// SaveDomainDiscoveryState writes domain discovery state to .utopia/drafts/domain/.discovery-state
+func (s *YAMLStore) SaveDomainDiscoveryState(state *domain.DomainDiscoveryState) error {
+	dir := filepath.Join(s.baseDir, "drafts", "domain")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create drafts/domain directory: %w", err)
 	}
 
 	path := filepath.Join(dir, ".discovery-state")

@@ -73,3 +73,20 @@ type DiscoveryStateRepository interface {
 	LoadDiscoveryState() (*DiscoveryState, error)
 	SaveDiscoveryState(state *DiscoveryState) error
 }
+
+// DraftDomainDocRepository defines storage operations for DraftDomainDoc entities.
+// Draft domain docs are stored in .utopia/drafts/domain/ and represent proposed domain
+// vocabulary discovered from codebase analysis that requires validation.
+type DraftDomainDocRepository interface {
+	LoadDraftDomainDoc(id string) (*DraftDomainDoc, error)
+	SaveDraftDomainDoc(draft *DraftDomainDoc) error
+	ListDraftDomainDocs() ([]*DraftDomainDoc, error)
+	DeleteDraftDomainDoc(id string) error
+}
+
+// DomainDiscoveryStateRepository defines storage operations for domain discovery state.
+// State is stored in .utopia/drafts/domain/.discovery-state to track incremental discovery.
+type DomainDiscoveryStateRepository interface {
+	LoadDomainDiscoveryState() (*DomainDiscoveryState, error)
+	SaveDomainDiscoveryState(state *DomainDiscoveryState) error
+}

@@ -212,6 +212,80 @@ type DomainDoc struct {
 	SourceConversations []string       `yaml:"source_conversations,omitempty"`
 }
 
+// DraftDomainConfidence indicates how confident we are in a discovered domain document
+type DraftDomainConfidence string
+
+const (
+	// DraftDomainConfidenceHigh indicates strong evidence: clear type definitions, consistent naming, documentation
+	DraftDomainConfidenceHigh DraftDomainConfidence = "high"
+	// DraftDomainConfidenceMedium indicates partial evidence: some type definitions, naming patterns visible
+	DraftDomainConfidenceMedium DraftDomainConfidence = "medium"
+	// DraftDomainConfidenceLow indicates weak evidence: inferred from code patterns, inconsistent naming
+	DraftDomainConfidenceLow DraftDomainConfidence = "low"
+)
+
+// DraftDomainDoc represents a proposed domain document discovered from codebase analysis.
+// Draft domain docs live in .utopia/drafts/domain/ and require validation before promotion.
+type DraftDomainDoc struct {
+	ID             string                `yaml:"id"`
+	Title          string                `yaml:"title"`
+	BoundedContext string                `yaml:"bounded_context"`
+	Description    string                `yaml:"description"`
+	Confidence     DraftDomainConfidence `yaml:"confidence"`
+	Created        time.Time             `yaml:"created"`
+
+	// DiscoveredFrom lists the source files that were analyzed to create this draft.
+	DiscoveredFrom []string `yaml:"discovered_from,omitempty"`
+
+	// UncertaintyNotes explains what's unclear about this draft (especially for low confidence)
+	UncertaintyNotes []string `yaml:"uncertainty_notes,omitempty"`
+
+	// Evidence captures what sources informed this draft
+	Evidence DraftDomainEvidence `yaml:"evidence"`
+
+	// Proposed terms for this bounded context
+	Terms []DomainTerm `yaml:"terms,omitempty"`
+
+	// Proposed entities for this bounded context
+	Entities []DomainEntity `yaml:"entities,omitempty"`
+}
+
+// DraftDomainEvidence tracks what sources informed the draft domain doc
+type DraftDomainEvidence struct {
+	// TypeFiles lists source files containing type definitions
+	TypeFiles []string `yaml:"type_files,omitempty"`
+	// PackageFiles lists files showing package structure
+	PackageFiles []string `yaml:"package_files,omitempty"`
+	// SchemaFiles lists files containing schemas (yaml, json, protobuf, etc.)
+	SchemaFiles []string `yaml:"schema_files,omitempty"`
+	// Comments captures relevant code comments explaining domain concepts
+	Comments []string `yaml:"comments,omitempty"`
+}
+
+// NewDraftDomainDoc creates a new draft domain doc with sensible defaults
+func NewDraftDomainDoc(id, title, boundedContext string, confidence DraftDomainConfidence) *DraftDomainDoc {
+	return &DraftDomainDoc{
+		ID:             id,
+		Title:          title,
+		BoundedContext: boundedContext,
+		Confidence:     confidence,
+		Created:        time.Now(),
+		Evidence:       DraftDomainEvidence{},
+		Terms:          []DomainTerm{},
+		Entities:       []DomainEntity{},
+	}
+}
+
+// HasTypeDefinitions returns true if the draft has type file evidence
+func (d *DraftDomainDoc) HasTypeDefinitions() bool {
+	return len(d.Evidence.TypeFiles) > 0
+}
+
+// HasSchemas returns true if the draft has schema file evidence
+func (d *DraftDomainDoc) HasSchemas() bool {
+	return len(d.Evidence.SchemaFiles) > 0
+}
+
 // ConceptStatus represents the lifecycle state of a concept document
 type ConceptStatus string
 
