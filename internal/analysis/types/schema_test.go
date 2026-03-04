@@ -486,12 +486,12 @@ func TestToPascalCase(t *testing.T) {
 		{"user", "User"},
 		{"user_account", "UserAccount"},
 		{"order_line_item", "OrderLineItem"},
-		{"USER", "USER"},           // All caps preserved for camelCase path
+		{"USER", "USER"}, // All caps preserved for camelCase path
 		{"user-account", "UserAccount"},
 		{"", ""},
-		{"orderNumber", "OrderNumber"},   // camelCase preserved
-		{"totalAmount", "TotalAmount"},   // camelCase preserved
-		{"authorId", "AuthorId"},         // camelCase preserved
+		{"orderNumber", "OrderNumber"}, // camelCase preserved
+		{"totalAmount", "TotalAmount"}, // camelCase preserved
+		{"authorId", "AuthorId"},       // camelCase preserved
 	}
 
 	for _, test := range tests {

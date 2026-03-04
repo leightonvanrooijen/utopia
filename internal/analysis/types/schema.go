@@ -22,12 +22,12 @@ const (
 
 // SchemaEntity represents a table/model discovered from database schema
 type SchemaEntity struct {
-	Name       string              // Table/model name (converted to PascalCase for domain matching)
-	RawName    string              // Original name as it appears in schema (e.g., snake_case)
-	Source     SchemaSource        // Where this was discovered
-	FilePath   string              // Path to the schema file
-	LineNumber int                 // Line where the entity is defined
-	Columns    []SchemaColumn      // Columns/fields of this entity
+	Name        string             // Table/model name (converted to PascalCase for domain matching)
+	RawName     string             // Original name as it appears in schema (e.g., snake_case)
+	Source      SchemaSource       // Where this was discovered
+	FilePath    string             // Path to the schema file
+	LineNumber  int                // Line where the entity is defined
+	Columns     []SchemaColumn     // Columns/fields of this entity
 	ForeignKeys []SchemaForeignKey // Foreign key relationships
 }
 
@@ -43,28 +43,28 @@ type SchemaColumn struct {
 
 // SchemaForeignKey represents a foreign key relationship
 type SchemaForeignKey struct {
-	ColumnName    string // The column with the foreign key (PascalCase)
-	RawColumnName string // Original column name
-	TargetTable   string // Referenced table (PascalCase)
+	ColumnName     string // The column with the foreign key (PascalCase)
+	RawColumnName  string // Original column name
+	TargetTable    string // Referenced table (PascalCase)
 	RawTargetTable string // Original table name
-	TargetColumn  string // Referenced column (typically primary key)
-	LineNumber    int
+	TargetColumn   string // Referenced column (typically primary key)
+	LineNumber     int
 }
 
 // SchemaAnalyzer extracts domain entities from database schemas and migrations
 type SchemaAnalyzer struct {
 	// SQL patterns
-	createTableRegex     *regexp.Regexp
-	columnDefRegex       *regexp.Regexp
-	primaryKeyRegex      *regexp.Regexp
-	foreignKeyRegex      *regexp.Regexp
+	createTableRegex      *regexp.Regexp
+	columnDefRegex        *regexp.Regexp
+	primaryKeyRegex       *regexp.Regexp
+	foreignKeyRegex       *regexp.Regexp
 	inlineForeignKeyRegex *regexp.Regexp
-	alterTableFKRegex    *regexp.Regexp
+	alterTableFKRegex     *regexp.Regexp
 
 	// Prisma patterns
-	prismaModelRegex     *regexp.Regexp
-	prismaFieldRegex     *regexp.Regexp
-	prismaRelationRegex  *regexp.Regexp
+	prismaModelRegex    *regexp.Regexp
+	prismaFieldRegex    *regexp.Regexp
+	prismaRelationRegex *regexp.Regexp
 }
 
 // NewSchemaAnalyzer creates a new schema analyzer
