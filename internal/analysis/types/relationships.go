@@ -89,7 +89,12 @@ func (r *RelationshipAnalyzer) analyzeFieldRelationships(t *DiscoveredType) []*D
 			continue
 		}
 
+		// For embedded fields, use the Name (which may be the extracted domain term)
+		// For regular fields, use the Type
 		targetType := field.Type
+		if field.IsEmbedded && field.Name != "" {
+			targetType = field.Name
+		}
 
 		// Skip if target is not a known domain type
 		if _, known := r.knownTypes[targetType]; !known {

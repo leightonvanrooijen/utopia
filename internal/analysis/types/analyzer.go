@@ -18,6 +18,12 @@ type DiscoveredType struct {
 	Fields     []DiscoveredField  // Fields/properties of the type
 	Methods    []DiscoveredMethod // Methods of the type (for interfaces)
 	Language   string             // "go" or "typescript"
+
+	// Filtering metadata
+	OriginalName     string // Original name before domain extraction (e.g., "OrderService")
+	WasFiltered      bool   // True if this type was filtered but domain term extracted
+	FilterReason     string // Why the original was filtered (e.g., "has generic suffix: Service")
+	ExtractedFromTerm string // The term this was extracted from (e.g., "OrderService" -> "Order")
 }
 
 // DiscoveredField represents a field within a type definition
@@ -54,9 +60,9 @@ const (
 	TermConfidenceLow    TermConfidence = "low"    // Appears only as fields in one file
 )
 
-// genericTerms are programming terms that should be filtered out as they're
-// not domain-specific vocabulary
-var genericTerms = map[string]bool{
+// legacyGenericTerms is kept for backward compatibility with existing code
+// that may reference it. New code should use GenericTermFilter instead.
+var legacyGenericTerms = map[string]bool{
 	"Handler":    true,
 	"Manager":    true,
 	"Service":    true,
@@ -91,10 +97,16 @@ type Analyzer struct {
 	tsFieldRegex     *regexp.Regexp
 	tsMethodRegex    *regexp.Regexp
 	tsExtendsRegex   *regexp.Regexp
+	filter           *GenericTermFilter
 }
 
 // NewAnalyzer creates a new type definition analyzer
 func NewAnalyzer() *Analyzer {
+	return NewAnalyzerWithFilter(NewGenericTermFilter())
+}
+
+// NewAnalyzerWithFilter creates a new analyzer with a custom filter
+func NewAnalyzerWithFilter(filter *GenericTermFilter) *Analyzer {
 	return &Analyzer{
 		// Go patterns
 		goStructRegex:    regexp.MustCompile(`^type\s+([A-Z][a-zA-Z0-9]*)\s+struct\s*\{`),
@@ -119,7 +131,18 @@ func NewAnalyzer() *Analyzer {
 		tsMethodRegex: regexp.MustCompile(`^\s+([a-zA-Z][a-zA-Z0-9]*)\s*\(([^)]*)\)\s*:\s*([^;{]+)`),
 		// TypeScript extends clause: "interface Foo extends Bar, Baz"
 		tsExtendsRegex: regexp.MustCompile(`extends\s+([A-Z][a-zA-Z0-9]*(?:\s*,\s*[A-Z][a-zA-Z0-9]*)*)`),
+		filter:         filter,
 	}
+}
+
+// SetIncludeFiltered enables including filtered terms in results for review
+func (a *Analyzer) SetIncludeFiltered(include bool) {
+	a.filter.IncludeFiltered = include
+}
+
+// GetFilter returns the analyzer's generic term filter
+func (a *Analyzer) GetFilter() *GenericTermFilter {
+	return a.filter
 }
 
 // AnalyzeGoFile extracts type definitions from Go source code
@@ -138,7 +161,10 @@ func (a *Analyzer) AnalyzeGoFile(filePath, content string) []*DiscoveredType {
 		// Check for struct definition
 		if matches := a.goStructRegex.FindStringSubmatch(trimmedLine); matches != nil {
 			typeName := matches[1]
-			if !a.isGenericTerm(typeName) {
+			result := a.filterTerm(typeName)
+
+			if !result.IsFiltered {
+				// Not filtered - use as-is
 				currentType = &DiscoveredType{
 					Name:       typeName,
 					Kind:       "struct",
@@ -147,15 +173,46 @@ func (a *Analyzer) AnalyzeGoFile(filePath, content string) []*DiscoveredType {
 					Language:   "go",
 				}
 				types = append(types, currentType)
-				braceDepth = 1
+			} else if result.ExtractedDomainTerm != "" {
+				// Filtered but has extractable domain term (e.g., "OrderService" -> "Order")
+				currentType = &DiscoveredType{
+					Name:              result.ExtractedDomainTerm,
+					Kind:              "struct",
+					FilePath:          filePath,
+					LineNumber:        lineNum,
+					Language:          "go",
+					OriginalName:      typeName,
+					WasFiltered:       true,
+					FilterReason:      result.Reason,
+					ExtractedFromTerm: typeName,
+				}
+				types = append(types, currentType)
+			} else if a.filter.IncludeFiltered {
+				// Pure generic term but include for review
+				currentType = &DiscoveredType{
+					Name:         typeName,
+					Kind:         "struct",
+					FilePath:     filePath,
+					LineNumber:   lineNum,
+					Language:     "go",
+					WasFiltered:  true,
+					FilterReason: result.Reason,
+				}
+				types = append(types, currentType)
+			} else {
+				// Skip type but still track brace depth for field extraction
+				currentType = nil
 			}
+			braceDepth = 1
 			continue
 		}
 
 		// Check for interface definition
 		if matches := a.goInterfaceRegex.FindStringSubmatch(trimmedLine); matches != nil {
 			typeName := matches[1]
-			if !a.isGenericTerm(typeName) {
+			result := a.filterTerm(typeName)
+
+			if !result.IsFiltered {
 				currentType = &DiscoveredType{
 					Name:       typeName,
 					Kind:       "interface",
@@ -164,8 +221,34 @@ func (a *Analyzer) AnalyzeGoFile(filePath, content string) []*DiscoveredType {
 					Language:   "go",
 				}
 				types = append(types, currentType)
-				braceDepth = 1
+			} else if result.ExtractedDomainTerm != "" {
+				currentType = &DiscoveredType{
+					Name:              result.ExtractedDomainTerm,
+					Kind:              "interface",
+					FilePath:          filePath,
+					LineNumber:        lineNum,
+					Language:          "go",
+					OriginalName:      typeName,
+					WasFiltered:       true,
+					FilterReason:      result.Reason,
+					ExtractedFromTerm: typeName,
+				}
+				types = append(types, currentType)
+			} else if a.filter.IncludeFiltered {
+				currentType = &DiscoveredType{
+					Name:         typeName,
+					Kind:         "interface",
+					FilePath:     filePath,
+					LineNumber:   lineNum,
+					Language:     "go",
+					WasFiltered:  true,
+					FilterReason: result.Reason,
+				}
+				types = append(types, currentType)
+			} else {
+				currentType = nil
 			}
+			braceDepth = 1
 			continue
 		}
 
@@ -175,72 +258,113 @@ func (a *Analyzer) AnalyzeGoFile(filePath, content string) []*DiscoveredType {
 				typeName := matches[1]
 				baseType := matches[2]
 				// Skip if it's struct or interface (handled above)
-				if baseType != "struct" && baseType != "interface" && !a.isGenericTerm(typeName) {
-					types = append(types, &DiscoveredType{
-						Name:       typeName,
-						Kind:       "type",
-						FilePath:   filePath,
-						LineNumber: lineNum,
-						Language:   "go",
-					})
+				if baseType != "struct" && baseType != "interface" {
+					result := a.filterTerm(typeName)
+
+					if !result.IsFiltered {
+						types = append(types, &DiscoveredType{
+							Name:       typeName,
+							Kind:       "type",
+							FilePath:   filePath,
+							LineNumber: lineNum,
+							Language:   "go",
+						})
+					} else if result.ExtractedDomainTerm != "" {
+						types = append(types, &DiscoveredType{
+							Name:              result.ExtractedDomainTerm,
+							Kind:              "type",
+							FilePath:          filePath,
+							LineNumber:        lineNum,
+							Language:          "go",
+							OriginalName:      typeName,
+							WasFiltered:       true,
+							FilterReason:      result.Reason,
+							ExtractedFromTerm: typeName,
+						})
+					} else if a.filter.IncludeFiltered {
+						types = append(types, &DiscoveredType{
+							Name:         typeName,
+							Kind:         "type",
+							FilePath:     filePath,
+							LineNumber:   lineNum,
+							Language:     "go",
+							WasFiltered:  true,
+							FilterReason: result.Reason,
+						})
+					}
 				}
 			}
 			continue
 		}
 
 		// Track fields/methods within struct/interface
-		if currentType != nil && braceDepth > 0 {
+		if braceDepth > 0 {
 			// Count braces
 			braceDepth += strings.Count(trimmedLine, "{") - strings.Count(trimmedLine, "}")
 
-			// For interfaces, extract method signatures
-			if currentType.Kind == "interface" {
-				if matches := a.goMethodRegex.FindStringSubmatch(line); matches != nil {
-					methodName := matches[1]
-					if !a.isGenericTerm(methodName) {
-						params := a.extractGoTypes(matches[2])
-						var returns []string
-						if matches[3] != "" {
-							// Multiple return values: (Type1, Type2)
-							returns = a.extractGoTypes(matches[3])
-						} else if matches[4] != "" {
-							// Single return value: Type
-							returns = a.extractGoTypes(matches[4])
+			// Only extract fields/methods if we're tracking a type
+			if currentType != nil {
+				// For interfaces, extract method signatures
+				if currentType.Kind == "interface" {
+					if matches := a.goMethodRegex.FindStringSubmatch(line); matches != nil {
+						methodName := matches[1]
+						result := a.filterTerm(methodName)
+						effectiveName := methodName
+						if result.IsFiltered && result.ExtractedDomainTerm != "" {
+							effectiveName = result.ExtractedDomainTerm
 						}
-						currentType.Methods = append(currentType.Methods, DiscoveredMethod{
-							Name:        methodName,
-							Parameters:  params,
-							ReturnTypes: returns,
-							LineNumber:  lineNum,
-						})
+						if !result.IsFiltered || result.ExtractedDomainTerm != "" || a.filter.IncludeFiltered {
+							params := a.extractGoTypes(matches[2])
+							var returns []string
+							if matches[3] != "" {
+								returns = a.extractGoTypes(matches[3])
+							} else if matches[4] != "" {
+								returns = a.extractGoTypes(matches[4])
+							}
+							currentType.Methods = append(currentType.Methods, DiscoveredMethod{
+								Name:        effectiveName,
+								Parameters:  params,
+								ReturnTypes: returns,
+								LineNumber:  lineNum,
+							})
+						}
 					}
 				}
-			}
 
-			// For structs, extract fields
-			if currentType.Kind == "struct" {
-				// Check for embedded field first (just a type name, no field name)
-				if matches := a.goEmbeddedRegex.FindStringSubmatch(line); matches != nil {
-					typeName := matches[2]
-					if !a.isGenericTerm(typeName) {
-						currentType.Fields = append(currentType.Fields, DiscoveredField{
-							Name:       typeName,
-							Type:       typeName,
-							LineNumber: lineNum,
-							IsEmbedded: true,
-						})
-					}
-				} else if matches := a.goFieldRegex.FindStringSubmatch(line); matches != nil {
-					// Regular field with name and type
-					fieldName := matches[1]
-					fieldType := a.normalizeGoType(matches[2])
-					if !a.isGenericTerm(fieldName) {
-						currentType.Fields = append(currentType.Fields, DiscoveredField{
-							Name:       fieldName,
-							Type:       fieldType,
-							LineNumber: lineNum,
-							IsEmbedded: false,
-						})
+				// For structs, extract fields
+				if currentType.Kind == "struct" {
+					// Check for embedded field first
+					if matches := a.goEmbeddedRegex.FindStringSubmatch(line); matches != nil {
+						typeName := matches[2]
+						result := a.filterTerm(typeName)
+						effectiveName := typeName
+						if result.IsFiltered && result.ExtractedDomainTerm != "" {
+							effectiveName = result.ExtractedDomainTerm
+						}
+						if !result.IsFiltered || result.ExtractedDomainTerm != "" || a.filter.IncludeFiltered {
+							currentType.Fields = append(currentType.Fields, DiscoveredField{
+								Name:       effectiveName,
+								Type:       typeName,
+								LineNumber: lineNum,
+								IsEmbedded: true,
+							})
+						}
+					} else if matches := a.goFieldRegex.FindStringSubmatch(line); matches != nil {
+						fieldName := matches[1]
+						fieldType := a.normalizeGoType(matches[2])
+						result := a.filterTerm(fieldName)
+						effectiveName := fieldName
+						if result.IsFiltered && result.ExtractedDomainTerm != "" {
+							effectiveName = result.ExtractedDomainTerm
+						}
+						if !result.IsFiltered || result.ExtractedDomainTerm != "" || a.filter.IncludeFiltered {
+							currentType.Fields = append(currentType.Fields, DiscoveredField{
+								Name:       effectiveName,
+								Type:       fieldType,
+								LineNumber: lineNum,
+								IsEmbedded: false,
+							})
+						}
 					}
 				}
 			}
@@ -353,7 +477,9 @@ func (a *Analyzer) AnalyzeTypeScriptFile(filePath, content string) []*Discovered
 		// Check for interface definition
 		if matches := a.tsInterfaceRegex.FindStringSubmatch(trimmedLine); matches != nil {
 			typeName := matches[1]
-			if !a.isGenericTerm(typeName) {
+			result := a.filterTerm(typeName)
+
+			if !result.IsFiltered {
 				currentType = &DiscoveredType{
 					Name:       typeName,
 					Kind:       "interface",
@@ -362,15 +488,51 @@ func (a *Analyzer) AnalyzeTypeScriptFile(filePath, content string) []*Discovered
 					Language:   "typescript",
 				}
 				types = append(types, currentType)
+			} else if result.ExtractedDomainTerm != "" {
+				currentType = &DiscoveredType{
+					Name:              result.ExtractedDomainTerm,
+					Kind:              "interface",
+					FilePath:          filePath,
+					LineNumber:        lineNum,
+					Language:          "typescript",
+					OriginalName:      typeName,
+					WasFiltered:       true,
+					FilterReason:      result.Reason,
+					ExtractedFromTerm: typeName,
+				}
+				types = append(types, currentType)
+			} else if a.filter.IncludeFiltered {
+				currentType = &DiscoveredType{
+					Name:         typeName,
+					Kind:         "interface",
+					FilePath:     filePath,
+					LineNumber:   lineNum,
+					Language:     "typescript",
+					WasFiltered:  true,
+					FilterReason: result.Reason,
+				}
+				types = append(types, currentType)
+			} else {
+				currentType = nil
+			}
 
-				// Check for extends clause to capture inheritance as embedded fields
+			// Check for extends clause to capture inheritance as embedded fields
+			if currentType != nil {
 				if extendsMatches := a.tsExtendsRegex.FindStringSubmatch(trimmedLine); extendsMatches != nil {
 					extendedTypes := strings.Split(extendsMatches[1], ",")
 					for _, ext := range extendedTypes {
 						ext = strings.TrimSpace(ext)
-						if ext != "" && !a.isGenericTerm(ext) {
+						if ext == "" {
+							continue
+						}
+						extResult := a.filterTerm(ext)
+						effectiveName := ext
+						if extResult.IsFiltered && extResult.ExtractedDomainTerm != "" {
+							effectiveName = extResult.ExtractedDomainTerm
+						}
+						if !extResult.IsFiltered || extResult.ExtractedDomainTerm != "" || a.filter.IncludeFiltered {
 							currentType.Fields = append(currentType.Fields, DiscoveredField{
-								Name:       ext,
+								Name:       effectiveName,
 								Type:       ext,
 								LineNumber: lineNum,
 								IsEmbedded: true,
@@ -378,10 +540,10 @@ func (a *Analyzer) AnalyzeTypeScriptFile(filePath, content string) []*Discovered
 						}
 					}
 				}
+			}
 
-				if strings.Contains(trimmedLine, "{") {
-					braceDepth = 1
-				}
+			if strings.Contains(trimmedLine, "{") {
+				braceDepth = 1
 			}
 			continue
 		}
@@ -389,7 +551,9 @@ func (a *Analyzer) AnalyzeTypeScriptFile(filePath, content string) []*Discovered
 		// Check for class definition
 		if matches := a.tsClassRegex.FindStringSubmatch(trimmedLine); matches != nil {
 			typeName := matches[1]
-			if !a.isGenericTerm(typeName) {
+			result := a.filterTerm(typeName)
+
+			if !result.IsFiltered {
 				currentType = &DiscoveredType{
 					Name:       typeName,
 					Kind:       "class",
@@ -398,15 +562,51 @@ func (a *Analyzer) AnalyzeTypeScriptFile(filePath, content string) []*Discovered
 					Language:   "typescript",
 				}
 				types = append(types, currentType)
+			} else if result.ExtractedDomainTerm != "" {
+				currentType = &DiscoveredType{
+					Name:              result.ExtractedDomainTerm,
+					Kind:              "class",
+					FilePath:          filePath,
+					LineNumber:        lineNum,
+					Language:          "typescript",
+					OriginalName:      typeName,
+					WasFiltered:       true,
+					FilterReason:      result.Reason,
+					ExtractedFromTerm: typeName,
+				}
+				types = append(types, currentType)
+			} else if a.filter.IncludeFiltered {
+				currentType = &DiscoveredType{
+					Name:         typeName,
+					Kind:         "class",
+					FilePath:     filePath,
+					LineNumber:   lineNum,
+					Language:     "typescript",
+					WasFiltered:  true,
+					FilterReason: result.Reason,
+				}
+				types = append(types, currentType)
+			} else {
+				currentType = nil
+			}
 
-				// Check for extends clause
+			// Check for extends clause
+			if currentType != nil {
 				if extendsMatches := a.tsExtendsRegex.FindStringSubmatch(trimmedLine); extendsMatches != nil {
 					extendedTypes := strings.Split(extendsMatches[1], ",")
 					for _, ext := range extendedTypes {
 						ext = strings.TrimSpace(ext)
-						if ext != "" && !a.isGenericTerm(ext) {
+						if ext == "" {
+							continue
+						}
+						extResult := a.filterTerm(ext)
+						effectiveName := ext
+						if extResult.IsFiltered && extResult.ExtractedDomainTerm != "" {
+							effectiveName = extResult.ExtractedDomainTerm
+						}
+						if !extResult.IsFiltered || extResult.ExtractedDomainTerm != "" || a.filter.IncludeFiltered {
 							currentType.Fields = append(currentType.Fields, DiscoveredField{
-								Name:       ext,
+								Name:       effectiveName,
 								Type:       ext,
 								LineNumber: lineNum,
 								IsEmbedded: true,
@@ -414,10 +614,10 @@ func (a *Analyzer) AnalyzeTypeScriptFile(filePath, content string) []*Discovered
 						}
 					}
 				}
+			}
 
-				if strings.Contains(trimmedLine, "{") {
-					braceDepth = 1
-				}
+			if strings.Contains(trimmedLine, "{") {
+				braceDepth = 1
 			}
 			continue
 		}
@@ -425,7 +625,9 @@ func (a *Analyzer) AnalyzeTypeScriptFile(filePath, content string) []*Discovered
 		// Check for type alias
 		if matches := a.tsTypeRegex.FindStringSubmatch(trimmedLine); matches != nil {
 			typeName := matches[1]
-			if !a.isGenericTerm(typeName) {
+			result := a.filterTerm(typeName)
+
+			if !result.IsFiltered {
 				types = append(types, &DiscoveredType{
 					Name:       typeName,
 					Kind:       "type",
@@ -433,40 +635,76 @@ func (a *Analyzer) AnalyzeTypeScriptFile(filePath, content string) []*Discovered
 					LineNumber: lineNum,
 					Language:   "typescript",
 				})
+			} else if result.ExtractedDomainTerm != "" {
+				types = append(types, &DiscoveredType{
+					Name:              result.ExtractedDomainTerm,
+					Kind:              "type",
+					FilePath:          filePath,
+					LineNumber:        lineNum,
+					Language:          "typescript",
+					OriginalName:      typeName,
+					WasFiltered:       true,
+					FilterReason:      result.Reason,
+					ExtractedFromTerm: typeName,
+				})
+			} else if a.filter.IncludeFiltered {
+				types = append(types, &DiscoveredType{
+					Name:         typeName,
+					Kind:         "type",
+					FilePath:     filePath,
+					LineNumber:   lineNum,
+					Language:     "typescript",
+					WasFiltered:  true,
+					FilterReason: result.Reason,
+				})
 			}
 			continue
 		}
 
 		// Track fields/methods within interface/class
-		if currentType != nil && braceDepth > 0 {
+		if braceDepth > 0 {
 			// Count braces
 			braceDepth += strings.Count(trimmedLine, "{") - strings.Count(trimmedLine, "}")
 
-			// Check for method signature first
-			if matches := a.tsMethodRegex.FindStringSubmatch(line); matches != nil {
-				methodName := matches[1]
-				if !a.isGenericTerm(methodName) && !a.isCommonMethodName(methodName) {
-					params := a.extractTSTypes(matches[2])
-					returns := a.extractTSTypes(matches[3])
-					currentType.Methods = append(currentType.Methods, DiscoveredMethod{
-						Name:        methodName,
-						Parameters:  params,
-						ReturnTypes: returns,
-						LineNumber:  lineNum,
-					})
-				}
-			} else if matches := a.tsFieldRegex.FindStringSubmatch(line); matches != nil {
-				// Extract field/property with type
-				fieldName := matches[1]
-				fieldType := a.normalizeTSType(matches[2])
-				// Filter out common method names and generic terms
-				if !a.isGenericTerm(fieldName) && !a.isCommonMethodName(fieldName) {
-					currentType.Fields = append(currentType.Fields, DiscoveredField{
-						Name:       fieldName,
-						Type:       fieldType,
-						LineNumber: lineNum,
-						IsEmbedded: false,
-					})
+			if currentType != nil {
+				// Check for method signature first
+				if matches := a.tsMethodRegex.FindStringSubmatch(line); matches != nil {
+					methodName := matches[1]
+					if !a.isCommonMethodName(methodName) {
+						result := a.filterTerm(methodName)
+						effectiveName := methodName
+						if result.IsFiltered && result.ExtractedDomainTerm != "" {
+							effectiveName = result.ExtractedDomainTerm
+						}
+						if !result.IsFiltered || result.ExtractedDomainTerm != "" || a.filter.IncludeFiltered {
+							params := a.extractTSTypes(matches[2])
+							returns := a.extractTSTypes(matches[3])
+							currentType.Methods = append(currentType.Methods, DiscoveredMethod{
+								Name:        effectiveName,
+								Parameters:  params,
+								ReturnTypes: returns,
+								LineNumber:  lineNum,
+							})
+						}
+					}
+				} else if matches := a.tsFieldRegex.FindStringSubmatch(line); matches != nil {
+					fieldName := matches[1]
+					fieldType := a.normalizeTSType(matches[2])
+					if !a.isCommonMethodName(fieldName) {
+						result := a.filterTerm(fieldName)
+						effectiveName := fieldName
+						if result.IsFiltered && result.ExtractedDomainTerm != "" {
+							effectiveName = result.ExtractedDomainTerm
+						}
+						if !result.IsFiltered || result.ExtractedDomainTerm != "" || a.filter.IncludeFiltered {
+							currentType.Fields = append(currentType.Fields, DiscoveredField{
+								Name:       effectiveName,
+								Type:       fieldType,
+								LineNumber: lineNum,
+								IsEmbedded: false,
+							})
+						}
+					}
 				}
 			}
 
@@ -551,21 +789,18 @@ func (a *Analyzer) normalizeTSType(typeExpr string) string {
 	return typeExpr
 }
 
-// isGenericTerm checks if a term is a generic programming term to filter out
+// isGenericTerm checks if a term is a generic programming term to filter out.
+// Note: This returns true for terms that should be filtered, but the caller
+// should also check for extracted domain terms via filterTerm().
 func (a *Analyzer) isGenericTerm(term string) bool {
-	// Check exact match
-	if genericTerms[term] {
-		return true
-	}
+	result := a.filter.Filter(term)
+	return result.IsFiltered
+}
 
-	// Check if term ends with a generic suffix
-	for generic := range genericTerms {
-		if strings.HasSuffix(term, generic) {
-			return true
-		}
-	}
-
-	return false
+// filterTerm filters a term and returns both whether it should be filtered
+// and any domain term that was extracted from it.
+func (a *Analyzer) filterTerm(term string) FilterResult {
+	return a.filter.Filter(term)
 }
 
 // isCommonMethodName filters out common method/property names

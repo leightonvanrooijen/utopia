@@ -95,16 +95,35 @@ type User struct {
 
 	types := analyzer.AnalyzeGoFile("internal/service/user.go", goCode)
 
-	// Only User should remain - others have generic suffixes
-	if len(types) != 1 {
-		t.Errorf("expected 1 type (User), got %d", len(types))
+	// With the new filtering behavior:
+	// - UserService -> extracts "User" (was filtered, domain term extracted)
+	// - UserHandler -> extracts "User" (was filtered, domain term extracted)
+	// - UserManager -> extracts "User" (was filtered, domain term extracted)
+	// - User -> kept as-is (not filtered)
+	// Total: 4 types, all named "User"
+	if len(types) != 4 {
+		t.Errorf("expected 4 types (User extracted from each), got %d", len(types))
 		for _, typ := range types {
-			t.Logf("found type: %s", typ.Name)
+			t.Logf("found type: %s (wasFiltered=%v, extractedFrom=%s)", typ.Name, typ.WasFiltered, typ.ExtractedFromTerm)
 		}
 	}
 
-	if len(types) > 0 && types[0].Name != "User" {
-		t.Errorf("expected User, got %s", types[0].Name)
+	// All types should be named "User"
+	for _, typ := range types {
+		if typ.Name != "User" {
+			t.Errorf("expected all types to be named User, got %s", typ.Name)
+		}
+	}
+
+	// Verify extraction metadata
+	extractedCount := 0
+	for _, typ := range types {
+		if typ.WasFiltered && typ.ExtractedFromTerm != "" {
+			extractedCount++
+		}
+	}
+	if extractedCount != 3 {
+		t.Errorf("expected 3 types to have extraction metadata, got %d", extractedCount)
 	}
 }
 
@@ -239,16 +258,35 @@ export interface User {
 
 	types := analyzer.AnalyzeTypeScriptFile("src/services/user.ts", tsCode)
 
-	// Only User should remain
-	if len(types) != 1 {
-		t.Errorf("expected 1 type (User), got %d", len(types))
+	// With the new filtering behavior:
+	// - UserService -> extracts "User" (was filtered, domain term extracted)
+	// - UserRepository -> extracts "User" (was filtered, domain term extracted)
+	// - UserController -> extracts "User" (was filtered, domain term extracted)
+	// - User -> kept as-is (not filtered)
+	// Total: 4 types, all named "User"
+	if len(types) != 4 {
+		t.Errorf("expected 4 types (User extracted from each), got %d", len(types))
 		for _, typ := range types {
-			t.Logf("found type: %s", typ.Name)
+			t.Logf("found type: %s (wasFiltered=%v, extractedFrom=%s)", typ.Name, typ.WasFiltered, typ.ExtractedFromTerm)
 		}
 	}
 
-	if len(types) > 0 && types[0].Name != "User" {
-		t.Errorf("expected User, got %s", types[0].Name)
+	// All types should be named "User"
+	for _, typ := range types {
+		if typ.Name != "User" {
+			t.Errorf("expected all types to be named User, got %s", typ.Name)
+		}
+	}
+
+	// Verify extraction metadata
+	extractedCount := 0
+	for _, typ := range types {
+		if typ.WasFiltered && typ.ExtractedFromTerm != "" {
+			extractedCount++
+		}
+	}
+	if extractedCount != 3 {
+		t.Errorf("expected 3 types to have extraction metadata, got %d", extractedCount)
 	}
 }
 
