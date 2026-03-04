@@ -58,7 +58,7 @@ type ConfigRepository interface {
 }
 
 // DraftRepository defines storage operations for DraftSpec entities.
-// Drafts are stored in .utopia/drafts/ and represent proposed specs
+// Drafts are stored in .utopia/drafts/specs/ and represent proposed specs
 // discovered from codebase analysis that require validation.
 type DraftRepository interface {
 	LoadDraft(id string) (*DraftSpec, error)

@@ -17,7 +17,7 @@ const (
 )
 
 // DraftSpec represents a proposed specification discovered from codebase analysis.
-// Draft specs live in .utopia/drafts/ and require validation before promotion to specs.
+// Draft specs live in .utopia/drafts/specs/ and require validation before promotion to specs.
 type DraftSpec struct {
 	ID          string          `yaml:"id"`
 	Title       string          `yaml:"title"`
