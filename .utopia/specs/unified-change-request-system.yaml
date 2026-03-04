@@ -1,7 +1,7 @@
 id: unified-change-request-system
 title: Unified Change Request System
-created: 0001-01-01T00:00:00Z
-updated: 2026-02-16T08:42:20.081866+11:00
+created: "0001-01-01T00:00:00+00:00"
+updated: "2026-03-05T07:39:19.919527+11:00"
 description: |
     A unified system where all work flows through Change Requests. CRs are standalone
     documents that describe work to be done. Each change within a CR can target a
@@ -169,7 +169,8 @@ features:
         - Claude determines type based on conversation
         - Claude asks one question at a time
         - Output is written to .utopia/change-requests/<cr-id>.yaml
-        - Command prints helpful tips (e.g., watch command for live updates)
+        - CR system prompt includes project_context from config
+        - If project_context is empty, prints warning with instruction to run "utopia init" to add it
 
     - id: behavior-preservation-constraints
       description: |

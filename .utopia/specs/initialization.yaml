@@ -1,0 +1,24 @@
+id: initialization
+title: initialization
+created: "2026-03-05T07:39:19.919048+11:00"
+updated: "2026-03-05T07:39:19.919525+11:00"
+description: ""
+features:
+    - id: project-context-field
+      description: |
+        Config includes a project_context field - 1-2 sentences orienting
+        AI assistants to the project's workflow and philosophy.
+      acceptance_criteria:
+        - Config struct has ProjectContext string field with yaml tag "project_context"
+        - Init prompts "Project context (orient an AI to this project's workflow):"
+        - Value is saved to .utopia/config.yaml under project_context key
+
+    - id: init-rerunnable
+      description: |
+        Running utopia init on an existing project prompts only for missing
+        config fields, preserving existing values.
+      acceptance_criteria:
+        - Init detects existing .utopia/config.yaml
+        - Only prompts for fields that are empty/missing
+        - Preserves all existing config values
+        - Prints which fields were added vs skipped
