@@ -481,16 +481,16 @@ type domainDraftsOutput struct {
 }
 
 type domainDraftOutput struct {
-	ID               string                    `yaml:"id"`
-	Title            string                    `yaml:"title"`
-	BoundedContext   string                    `yaml:"bounded_context"`
-	Description      string                    `yaml:"description"`
-	Confidence       string                    `yaml:"confidence"`
-	DiscoveredFrom   []string                  `yaml:"discovered_from,omitempty"`
-	UncertaintyNotes []string                  `yaml:"uncertainty_notes,omitempty"`
-	Evidence         domainEvidenceOutput      `yaml:"evidence"`
-	Terms            []domainTermOutput        `yaml:"terms,omitempty"`
-	Entities         []domainEntityOutput      `yaml:"entities,omitempty"`
+	ID               string               `yaml:"id"`
+	Title            string               `yaml:"title"`
+	BoundedContext   string               `yaml:"bounded_context"`
+	Description      string               `yaml:"description"`
+	Confidence       string               `yaml:"confidence"`
+	DiscoveredFrom   []string             `yaml:"discovered_from,omitempty"`
+	UncertaintyNotes []string             `yaml:"uncertainty_notes,omitempty"`
+	Evidence         domainEvidenceOutput `yaml:"evidence"`
+	Terms            []domainTermOutput   `yaml:"terms,omitempty"`
+	Entities         []domainEntityOutput `yaml:"entities,omitempty"`
 }
 
 type domainEvidenceOutput struct {
@@ -510,9 +510,9 @@ type domainTermOutput struct {
 }
 
 type domainEntityOutput struct {
-	Name          string                       `yaml:"name"`
-	Description   string                       `yaml:"description,omitempty"`
-	Relationships []domainRelationshipOutput   `yaml:"relationships,omitempty"`
+	Name          string                     `yaml:"name"`
+	Description   string                     `yaml:"description,omitempty"`
+	Relationships []domainRelationshipOutput `yaml:"relationships,omitempty"`
 }
 
 type domainRelationshipOutput struct {

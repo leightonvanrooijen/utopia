@@ -14,14 +14,14 @@ import (
 // Compile-time interface assertions.
 // These ensure YAMLStore implements all repository interfaces from the domain package.
 var (
-	_ domain.SpecRepository                = (*YAMLStore)(nil)
-	_ domain.ChangeRequestRepository       = (*YAMLStore)(nil)
-	_ domain.WorkItemRepository            = (*YAMLStore)(nil)
-	_ domain.ConversationRepository        = (*YAMLStore)(nil)
-	_ domain.ConfigRepository              = (*YAMLStore)(nil)
-	_ domain.DraftRepository               = (*YAMLStore)(nil)
-	_ domain.DiscoveryStateRepository      = (*YAMLStore)(nil)
-	_ domain.DraftDomainDocRepository      = (*YAMLStore)(nil)
+	_ domain.SpecRepository                 = (*YAMLStore)(nil)
+	_ domain.ChangeRequestRepository        = (*YAMLStore)(nil)
+	_ domain.WorkItemRepository             = (*YAMLStore)(nil)
+	_ domain.ConversationRepository         = (*YAMLStore)(nil)
+	_ domain.ConfigRepository               = (*YAMLStore)(nil)
+	_ domain.DraftRepository                = (*YAMLStore)(nil)
+	_ domain.DiscoveryStateRepository       = (*YAMLStore)(nil)
+	_ domain.DraftDomainDocRepository       = (*YAMLStore)(nil)
 	_ domain.DomainDiscoveryStateRepository = (*YAMLStore)(nil)
 )
 
