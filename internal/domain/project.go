@@ -13,8 +13,9 @@ type Project struct {
 
 // Config holds project-level configuration
 type Config struct {
-	Strategies   StrategyConfig     `yaml:"strategies"`
-	Verification VerificationConfig `yaml:"verification"`
+	ProjectContext string             `yaml:"project_context,omitempty"`
+	Strategies     StrategyConfig     `yaml:"strategies"`
+	Verification   VerificationConfig `yaml:"verification"`
 }
 
 // VerificationConfig holds verification command settings

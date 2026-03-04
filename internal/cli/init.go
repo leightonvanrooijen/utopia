@@ -89,9 +89,17 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	fmt.Print("Project context (orient an AI to this project's workflow): ")
+	projectContext, err := reader.ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("failed to read project context: %w", err)
+	}
+	projectContext = strings.TrimSpace(projectContext)
+
 	// Write config with verification settings
 	store := storage.NewYAMLStore(utopiaDir)
 	config := domain.DefaultConfig()
+	config.ProjectContext = projectContext
 	config.Verification.Command = verifyCmd
 	config.Verification.MaxIterations = maxIterations
 
