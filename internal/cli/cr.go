@@ -44,8 +44,11 @@ func init() {
 }
 
 // crSystemPrompt guides Claude through change request creation
-// Use fmt.Sprintf to inject: specsSummary, existingCRsSummary, changeRequestsDir
+// Use fmt.Sprintf to inject: projectContext, specsSummary, existingCRsSummary, changeRequestsDir
 const crSystemPrompt = `You are a Change Request Claude - an AI assistant that helps users create structured change requests.
+
+## Project Context
+%s
 
 ## Your Role
 Guide users through a natural conversation to create change requests. CRs can target existing specs OR define new specs (which get created when the CR is merged).
@@ -259,11 +262,18 @@ func runCR(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("not a Utopia project (run 'utopia init' first)")
 	}
 
-	// Load config to validate project
+	// Load config to validate project and get project context
 	store := storage.NewYAMLStore(utopiaDir)
-	_, err = store.LoadConfig()
+	config, err := store.LoadConfig()
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// Warn if project_context is missing
+	if config.ProjectContext == "" {
+		fmt.Println("⚠ Warning: project_context is empty in config.yaml")
+		fmt.Println("  Run 'utopia init' to add project context for better CR guidance")
+		fmt.Println()
 	}
 
 	// Create change requests directory if it doesn't exist
@@ -290,17 +300,20 @@ func runCR(cmd *cobra.Command, args []string) error {
 	specsSummary := buildSpecsSummary(existingSpecs)
 	crsSummary := buildCRsSummary(existingCRs)
 
-	// Inject summaries and path into the system prompt
-	systemPrompt := fmt.Sprintf(crSystemPrompt, specsSummary, crsSummary, changeRequestsDir, changeRequestsDir)
+	// Prepare project context for injection
+	projectContext := config.ProjectContext
+	if projectContext == "" {
+		projectContext = "(No project context configured)"
+	}
+
+	// Inject project context, summaries, and path into the system prompt
+	systemPrompt := fmt.Sprintf(crSystemPrompt, projectContext, specsSummary, crsSummary, changeRequestsDir, changeRequestsDir)
 
 	fmt.Println("Starting change request creation session...")
 	fmt.Printf("Found %d existing specs\n", len(existingSpecs))
 	fmt.Printf("Found %d existing change requests\n", len(existingCRs))
 	fmt.Println()
 	fmt.Println("Change requests will be saved to:", changeRequestsDir)
-	fmt.Println()
-	fmt.Println("Tip: In another terminal, watch for changes with:")
-	fmt.Printf("  watch -n 1 'ls -la %s'\n", changeRequestsDir)
 	fmt.Println()
 
 	// Run interactive Claude session with transcript capture
