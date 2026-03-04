@@ -139,4 +139,15 @@ type DiscoveryState struct {
 	LastRun time.Time `yaml:"last_run"`
 	// FilesAnalyzed tracks files processed in the last run with their mod times
 	FilesAnalyzed map[string]time.Time `yaml:"files_analyzed,omitempty"`
+	// Scope records any restrictions applied during discovery for context
+	Scope *DiscoveryScope `yaml:"scope,omitempty"`
+}
+
+// DiscoveryScope records path and pattern restrictions applied during discovery.
+// This provides context about what portion of the codebase was analyzed.
+type DiscoveryScope struct {
+	// Paths lists directories that discovery was limited to (empty = entire codebase)
+	Paths []string `yaml:"paths,omitempty"`
+	// ExcludePatterns lists glob patterns that were excluded from discovery
+	ExcludePatterns []string `yaml:"exclude_patterns,omitempty"`
 }

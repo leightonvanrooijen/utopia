@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -896,7 +897,8 @@ func (s *YAMLStore) LoadDiscoveryState() (*domain.DiscoveryState, error) {
 
 	var state domain.DiscoveryState
 	if err := s.readYAML(path, &state); err != nil {
-		if os.IsNotExist(err) {
+		// Check for not-found using errors.Is to handle wrapped errors
+		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil // No previous state exists
 		}
 		return nil, err

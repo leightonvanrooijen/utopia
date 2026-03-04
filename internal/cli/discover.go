@@ -27,6 +27,20 @@ The command will:
   3. Generate draft specs with confidence levels based on evidence quality
   4. Save drafts to .utopia/drafts/ for review
 
+Scoping discovery:
+  By default, discover analyzes the entire codebase. For large codebases or to
+  focus on specific modules, use scoping flags:
+
+  --path <dir>       Limit discovery to a specific directory
+                     Can be specified multiple times for multiple directories
+  --exclude <glob>   Exclude files matching a glob pattern
+                     Can be specified multiple times for multiple patterns
+
+  Examples:
+    utopia discover --path internal/api --path internal/domain
+    utopia discover --exclude "**/*_test.go" --exclude "**/mock_*.go"
+    utopia discover --path cmd/server --exclude "**/vendor/**"
+
 Incremental discovery:
   Re-running discover after codebase changes only analyzes new or modified files.
   Use --full to force complete re-discovery of the entire codebase.
@@ -41,11 +55,17 @@ promoting them to official specifications.`,
 	RunE: runDiscover,
 }
 
-var discoverFullFlag bool
+var (
+	discoverFullFlag     bool
+	discoverPathFlags    []string
+	discoverExcludeFlags []string
+)
 
 func init() {
 	rootCmd.AddCommand(discoverCmd)
 	discoverCmd.Flags().BoolVar(&discoverFullFlag, "full", false, "Force complete re-discovery of entire codebase")
+	discoverCmd.Flags().StringSliceVar(&discoverPathFlags, "path", nil, "Limit discovery to specific directory (can be specified multiple times)")
+	discoverCmd.Flags().StringSliceVar(&discoverExcludeFlags, "exclude", nil, "Exclude files matching glob pattern (can be specified multiple times)")
 }
 
 // discoverSystemPrompt guides Claude through codebase analysis and draft spec generation
@@ -180,6 +200,12 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to create drafts directory: %w", err)
 	}
 
+	// Build scope from flags
+	scope := discoverScope{
+		paths:           discoverPathFlags,
+		excludePatterns: discoverExcludeFlags,
+	}
+
 	fmt.Println("Starting codebase discovery...")
 	fmt.Printf("Project: %s\n", absPath)
 	fmt.Printf("Existing specs: %d\n", len(existingSpecs))
@@ -189,11 +215,17 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 	} else {
 		fmt.Println("Mode: full discovery")
 	}
+	if len(scope.paths) > 0 {
+		fmt.Printf("Scope: %s\n", strings.Join(scope.paths, ", "))
+	}
+	if len(scope.excludePatterns) > 0 {
+		fmt.Printf("Excluding: %s\n", strings.Join(scope.excludePatterns, ", "))
+	}
 	fmt.Println()
 
 	// Collect codebase context (with optional time filter for incremental)
 	fmt.Println("Collecting codebase context...")
-	codebaseContext, filesAnalyzed, err := collectCodebaseContextIncremental(absPath, lastRunTime, isIncremental)
+	codebaseContext, filesAnalyzed, err := collectCodebaseContextIncremental(absPath, lastRunTime, isIncremental, scope)
 	if err != nil {
 		return fmt.Errorf("failed to collect codebase context: %w", err)
 	}
@@ -248,6 +280,13 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 		LastRun:       time.Now(),
 		FilesAnalyzed: filesAnalyzed,
 	}
+	// Record scope restrictions if any were applied
+	if len(scope.paths) > 0 || len(scope.excludePatterns) > 0 {
+		newState.Scope = &domain.DiscoveryScope{
+			Paths:           scope.paths,
+			ExcludePatterns: scope.excludePatterns,
+		}
+	}
 	if err := store.SaveDiscoveryState(newState); err != nil {
 		return fmt.Errorf("failed to save discovery state: %w", err)
 	}
@@ -261,7 +300,7 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 // collectCodebaseContextIncremental gathers relevant files for Claude to analyze,
 // optionally filtering to only include files modified since lastRun.
 // Returns the context string and a map of analyzed files with their modification times.
-func collectCodebaseContextIncremental(projectDir string, lastRun time.Time, incrementalMode bool) (string, map[string]time.Time, error) {
+func collectCodebaseContextIncremental(projectDir string, lastRun time.Time, incrementalMode bool, scope discoverScope) (string, map[string]time.Time, error) {
 	var sb strings.Builder
 	filesAnalyzed := make(map[string]time.Time)
 
@@ -277,15 +316,36 @@ func collectCodebaseContextIncremental(projectDir string, lastRun time.Time, inc
 		{"YAML Config", "**/*.yaml", 10000},
 	}
 
+	// Determine search roots - use scoped paths or entire project
+	searchRoots := scope.paths
+	if len(searchRoots) == 0 {
+		searchRoots = []string{projectDir}
+	} else {
+		// Convert relative paths to absolute
+		absoluteRoots := make([]string, 0, len(searchRoots))
+		for _, p := range searchRoots {
+			if filepath.IsAbs(p) {
+				absoluteRoots = append(absoluteRoots, p)
+			} else {
+				absoluteRoots = append(absoluteRoots, filepath.Join(projectDir, p))
+			}
+		}
+		searchRoots = absoluteRoots
+	}
+
 	for _, p := range patterns {
-		files, err := collectFilesIncremental(projectDir, p.glob, p.maxSize, lastRun, incrementalMode)
-		if err != nil {
-			continue // Skip on error, don't fail entire discovery
+		var allFiles []collectedFile
+		for _, root := range searchRoots {
+			files, err := collectFilesIncremental(root, projectDir, p.glob, p.maxSize, lastRun, incrementalMode, scope.excludePatterns)
+			if err != nil {
+				continue // Skip on error, don't fail entire discovery
+			}
+			allFiles = append(allFiles, files...)
 		}
 
-		if len(files) > 0 {
+		if len(allFiles) > 0 {
 			sb.WriteString(fmt.Sprintf("\n### %s\n\n", p.name))
-			for _, f := range files {
+			for _, f := range allFiles {
 				sb.WriteString(fmt.Sprintf("**File: %s**\n```\n%s\n```\n\n", f.path, f.content))
 				filesAnalyzed[f.path] = f.modTime
 			}
@@ -301,9 +361,17 @@ type collectedFile struct {
 	modTime time.Time
 }
 
+// discoverScope holds the scope restrictions for discovery
+type discoverScope struct {
+	paths           []string // directories to limit discovery to
+	excludePatterns []string // glob patterns to exclude
+}
+
 // collectFilesIncremental gathers files matching a pattern with size limit,
 // optionally filtering to only include files modified since lastRun.
-func collectFilesIncremental(root, pattern string, maxTotalSize int64, lastRun time.Time, incrementalMode bool) ([]collectedFile, error) {
+// The projectDir is used to compute paths relative to the project root.
+// excludePatterns contains glob patterns to skip files matching those patterns.
+func collectFilesIncremental(root, projectDir, pattern string, maxTotalSize int64, lastRun time.Time, incrementalMode bool, excludePatterns []string) ([]collectedFile, error) {
 	var files []collectedFile
 	var totalSize int64
 
@@ -322,12 +390,18 @@ func collectFilesIncremental(root, pattern string, maxTotalSize int64, lastRun t
 			return nil
 		}
 
-		// Check if file matches pattern
-		relPath, err := filepath.Rel(root, path)
+		// Compute path relative to project root for consistent reporting
+		relPath, err := filepath.Rel(projectDir, path)
 		if err != nil {
 			return nil
 		}
 
+		// Check if file matches any exclude pattern
+		if matchesAnyPattern(relPath, excludePatterns) {
+			return nil
+		}
+
+		// Check if file matches the include pattern
 		matched, err := filepath.Match(pattern, filepath.Base(path))
 		if err != nil || !matched {
 			// Try glob-style matching for **/ patterns
@@ -370,16 +444,44 @@ func collectFilesIncremental(root, pattern string, maxTotalSize int64, lastRun t
 	return files, err
 }
 
-// matchGlob does simple glob matching for **/*.ext patterns
+// matchesAnyPattern returns true if path matches any of the given glob patterns
+func matchesAnyPattern(path string, patterns []string) bool {
+	for _, pattern := range patterns {
+		if matchGlob(path, pattern) {
+			return true
+		}
+		// Also try direct filepath.Match for simple patterns
+		if matched, _ := filepath.Match(pattern, filepath.Base(path)); matched {
+			return true
+		}
+	}
+	return false
+}
+
+// matchGlob does simple glob matching for patterns with ** and * wildcards
 func matchGlob(path, pattern string) bool {
-	// Handle **/*.ext pattern
+	// Handle **/ prefix (match any directory depth)
 	if strings.HasPrefix(pattern, "**/") {
 		suffix := pattern[3:]
-		if strings.HasPrefix(suffix, "*.") {
-			ext := suffix[1:]
-			return strings.HasSuffix(path, ext)
+
+		// Handle trailing /** (matches everything under a directory)
+		if strings.HasSuffix(suffix, "/**") {
+			dirPart := strings.TrimSuffix(suffix, "/**")
+			// Check if path is inside this directory
+			return strings.HasPrefix(path, dirPart+"/") || path == dirPart
 		}
-		return strings.HasSuffix(path, suffix)
+
+		// Try matching the suffix against just the filename
+		matched, _ := filepath.Match(suffix, filepath.Base(path))
+		if matched {
+			return true
+		}
+		// Also try matching against the full path for patterns like **/vendor/**
+		if strings.Contains(suffix, "/") {
+			// For patterns like **/foo/bar, check if path contains the suffix
+			return strings.Contains(path, strings.TrimPrefix(suffix, "**/"))
+		}
+		return false
 	}
 	return false
 }
