@@ -11,12 +11,13 @@ import (
 
 // DiscoveredType represents a type definition found in source code
 type DiscoveredType struct {
-	Name       string            // The type name (e.g., "DomainDoc", "UserAccount")
-	Kind       string            // "struct", "interface", "type", "class"
-	FilePath   string            // Relative path to source file
-	LineNumber int               // Line number where the type is defined
-	Fields     []DiscoveredField // Fields/properties of the type
-	Language   string            // "go" or "typescript"
+	Name       string             // The type name (e.g., "DomainDoc", "UserAccount")
+	Kind       string             // "struct", "interface", "type", "class"
+	FilePath   string             // Relative path to source file
+	LineNumber int                // Line number where the type is defined
+	Fields     []DiscoveredField  // Fields/properties of the type
+	Methods    []DiscoveredMethod // Methods of the type (for interfaces)
+	Language   string             // "go" or "typescript"
 }
 
 // DiscoveredField represents a field within a type definition
@@ -24,6 +25,15 @@ type DiscoveredField struct {
 	Name       string // Field name
 	Type       string // Field type (if extractable)
 	LineNumber int    // Line number where the field is defined
+	IsEmbedded bool   // True if this is an embedded/anonymous field (Go) or extends (TS)
+}
+
+// DiscoveredMethod represents a method signature within a type definition (interfaces)
+type DiscoveredMethod struct {
+	Name        string   // Method name
+	Parameters  []string // Parameter types
+	ReturnTypes []string // Return types
+	LineNumber  int      // Line number where the method is defined
 }
 
 // TermOccurrence tracks where a term appears across the codebase
@@ -69,14 +79,18 @@ var genericTerms = map[string]bool{
 
 // Analyzer extracts type definitions from source files
 type Analyzer struct {
-	goStructRegex    *regexp.Regexp
-	goInterfaceRegex *regexp.Regexp
-	goTypeAliasRegex *regexp.Regexp
-	goFieldRegex     *regexp.Regexp
-	tsInterfaceRegex *regexp.Regexp
-	tsClassRegex     *regexp.Regexp
-	tsTypeRegex      *regexp.Regexp
-	tsFieldRegex     *regexp.Regexp
+	goStructRegex      *regexp.Regexp
+	goInterfaceRegex   *regexp.Regexp
+	goTypeAliasRegex   *regexp.Regexp
+	goFieldRegex       *regexp.Regexp
+	goEmbeddedRegex    *regexp.Regexp
+	goMethodRegex      *regexp.Regexp
+	tsInterfaceRegex   *regexp.Regexp
+	tsClassRegex       *regexp.Regexp
+	tsTypeRegex        *regexp.Regexp
+	tsFieldRegex       *regexp.Regexp
+	tsMethodRegex      *regexp.Regexp
+	tsExtendsRegex     *regexp.Regexp
 }
 
 // NewAnalyzer creates a new type definition analyzer
@@ -86,12 +100,25 @@ func NewAnalyzer() *Analyzer {
 		goStructRegex:    regexp.MustCompile(`^type\s+([A-Z][a-zA-Z0-9]*)\s+struct\s*\{`),
 		goInterfaceRegex: regexp.MustCompile(`^type\s+([A-Z][a-zA-Z0-9]*)\s+interface\s*\{`),
 		goTypeAliasRegex: regexp.MustCompile(`^type\s+([A-Z][a-zA-Z0-9]*)\s+(\w+)`),
-		goFieldRegex:     regexp.MustCompile(`^\s+([A-Z][a-zA-Z0-9]*)\s+`),
+		// Go field: captures name and type (handles pointers, slices, maps)
+		// Examples: "Name string", "Items []Item", "User *User", "Data map[string]Value"
+		goFieldRegex: regexp.MustCompile(`^\s+([A-Z][a-zA-Z0-9]*)\s+(\*?\[?\]?\*?(?:map\[[^\]]+\])?[A-Za-z][A-Za-z0-9]*)`),
+		// Go embedded field: just a type name on its own line (no field name)
+		// Examples: "  User" (embedded struct), "  *Config" (embedded pointer)
+		goEmbeddedRegex: regexp.MustCompile(`^\s+(\*?)([A-Z][a-zA-Z0-9]*)\s*$`),
+		// Go method signature in interface: "MethodName(params) (returns)"
+		goMethodRegex: regexp.MustCompile(`^\s+([A-Z][a-zA-Z0-9]*)\s*\(([^)]*)\)\s*(?:\(([^)]*)\)|([A-Za-z*\[\]]+))?`),
 		// TypeScript patterns
 		tsInterfaceRegex: regexp.MustCompile(`^(?:export\s+)?interface\s+([A-Z][a-zA-Z0-9]*)`),
 		tsClassRegex:     regexp.MustCompile(`^(?:export\s+)?(?:abstract\s+)?class\s+([A-Z][a-zA-Z0-9]*)`),
 		tsTypeRegex:      regexp.MustCompile(`^(?:export\s+)?type\s+([A-Z][a-zA-Z0-9]*)\s*=`),
-		tsFieldRegex:     regexp.MustCompile(`^\s+(?:readonly\s+)?([a-zA-Z][a-zA-Z0-9]*)\s*[?:]`),
+		// TypeScript field: captures name and type
+		// Examples: "name: string", "items: Item[]", "user?: User"
+		tsFieldRegex: regexp.MustCompile(`^\s+(?:readonly\s+)?([a-zA-Z][a-zA-Z0-9]*)\s*\??\s*:\s*([^;=]+)`),
+		// TypeScript method signature: "methodName(params): returnType"
+		tsMethodRegex: regexp.MustCompile(`^\s+([a-zA-Z][a-zA-Z0-9]*)\s*\(([^)]*)\)\s*:\s*([^;{]+)`),
+		// TypeScript extends clause: "interface Foo extends Bar, Baz"
+		tsExtendsRegex: regexp.MustCompile(`extends\s+([A-Z][a-zA-Z0-9]*(?:\s*,\s*[A-Z][a-zA-Z0-9]*)*)`),
 	}
 }
 
@@ -161,19 +188,60 @@ func (a *Analyzer) AnalyzeGoFile(filePath, content string) []*DiscoveredType {
 			continue
 		}
 
-		// Track fields within struct/interface
+		// Track fields/methods within struct/interface
 		if currentType != nil && braceDepth > 0 {
 			// Count braces
 			braceDepth += strings.Count(trimmedLine, "{") - strings.Count(trimmedLine, "}")
 
-			// Extract field names (exported fields start with uppercase)
-			if matches := a.goFieldRegex.FindStringSubmatch(line); matches != nil {
-				fieldName := matches[1]
-				if !a.isGenericTerm(fieldName) {
-					currentType.Fields = append(currentType.Fields, DiscoveredField{
-						Name:       fieldName,
-						LineNumber: lineNum,
-					})
+			// For interfaces, extract method signatures
+			if currentType.Kind == "interface" {
+				if matches := a.goMethodRegex.FindStringSubmatch(line); matches != nil {
+					methodName := matches[1]
+					if !a.isGenericTerm(methodName) {
+						params := a.extractGoTypes(matches[2])
+						var returns []string
+						if matches[3] != "" {
+							// Multiple return values: (Type1, Type2)
+							returns = a.extractGoTypes(matches[3])
+						} else if matches[4] != "" {
+							// Single return value: Type
+							returns = a.extractGoTypes(matches[4])
+						}
+						currentType.Methods = append(currentType.Methods, DiscoveredMethod{
+							Name:        methodName,
+							Parameters:  params,
+							ReturnTypes: returns,
+							LineNumber:  lineNum,
+						})
+					}
+				}
+			}
+
+			// For structs, extract fields
+			if currentType.Kind == "struct" {
+				// Check for embedded field first (just a type name, no field name)
+				if matches := a.goEmbeddedRegex.FindStringSubmatch(line); matches != nil {
+					typeName := matches[2]
+					if !a.isGenericTerm(typeName) {
+						currentType.Fields = append(currentType.Fields, DiscoveredField{
+							Name:       typeName,
+							Type:       typeName,
+							LineNumber: lineNum,
+							IsEmbedded: true,
+						})
+					}
+				} else if matches := a.goFieldRegex.FindStringSubmatch(line); matches != nil {
+					// Regular field with name and type
+					fieldName := matches[1]
+					fieldType := a.normalizeGoType(matches[2])
+					if !a.isGenericTerm(fieldName) {
+						currentType.Fields = append(currentType.Fields, DiscoveredField{
+							Name:       fieldName,
+							Type:       fieldType,
+							LineNumber: lineNum,
+							IsEmbedded: false,
+						})
+					}
 				}
 			}
 
@@ -185,6 +253,83 @@ func (a *Analyzer) AnalyzeGoFile(filePath, content string) []*DiscoveredType {
 	}
 
 	return types
+}
+
+// extractGoTypes extracts type names from a Go parameter/return list
+// Examples: "ctx context.Context, id string" -> ["Context"], "*User, error" -> ["User"]
+func (a *Analyzer) extractGoTypes(typeList string) []string {
+	if typeList == "" {
+		return nil
+	}
+
+	var types []string
+	// Split by comma for multiple params/returns
+	parts := strings.Split(typeList, ",")
+
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		// Extract the type (last word, handling pointers and slices)
+		// For "ctx context.Context", we want "Context"
+		// For "*User", we want "User"
+		// For "[]Item", we want "Item"
+		normalized := a.normalizeGoType(part)
+		if normalized != "" {
+			// Extract just the type name (after any package prefix)
+			if idx := strings.LastIndex(normalized, "."); idx >= 0 {
+				normalized = normalized[idx+1:]
+			}
+			// Only include exported types (starting with uppercase)
+			if len(normalized) > 0 && normalized[0] >= 'A' && normalized[0] <= 'Z' {
+				types = append(types, normalized)
+			}
+		}
+	}
+
+	return types
+}
+
+// normalizeGoType extracts the core type name from a Go type expression
+// Examples: "*User" -> "User", "[]Item" -> "Item", "map[string]Value" -> "Value"
+func (a *Analyzer) normalizeGoType(typeExpr string) string {
+	typeExpr = strings.TrimSpace(typeExpr)
+
+	// Handle "name type" format (e.g., "id string")
+	parts := strings.Fields(typeExpr)
+	if len(parts) >= 2 {
+		typeExpr = parts[len(parts)-1]
+	}
+
+	// Remove pointer prefix
+	typeExpr = strings.TrimPrefix(typeExpr, "*")
+
+	// Remove slice prefix
+	typeExpr = strings.TrimPrefix(typeExpr, "[]")
+	typeExpr = strings.TrimPrefix(typeExpr, "*") // Handle []*Type
+
+	// Handle map - extract value type
+	if strings.HasPrefix(typeExpr, "map[") {
+		// Find the closing bracket of the key type
+		bracketCount := 1
+		for i := 4; i < len(typeExpr); i++ {
+			if typeExpr[i] == '[' {
+				bracketCount++
+			} else if typeExpr[i] == ']' {
+				bracketCount--
+				if bracketCount == 0 {
+					typeExpr = typeExpr[i+1:]
+					break
+				}
+			}
+		}
+		typeExpr = strings.TrimPrefix(typeExpr, "*")
+	}
+
+	// Extract just the type name (after any package prefix)
+	if idx := strings.LastIndex(typeExpr, "."); idx >= 0 {
+		typeExpr = typeExpr[idx+1:]
+	}
+
+	return typeExpr
 }
 
 // AnalyzeTypeScriptFile extracts type definitions from TypeScript source code
@@ -217,6 +362,23 @@ func (a *Analyzer) AnalyzeTypeScriptFile(filePath, content string) []*Discovered
 					Language:   "typescript",
 				}
 				types = append(types, currentType)
+
+				// Check for extends clause to capture inheritance as embedded fields
+				if extendsMatches := a.tsExtendsRegex.FindStringSubmatch(trimmedLine); extendsMatches != nil {
+					extendedTypes := strings.Split(extendsMatches[1], ",")
+					for _, ext := range extendedTypes {
+						ext = strings.TrimSpace(ext)
+						if ext != "" && !a.isGenericTerm(ext) {
+							currentType.Fields = append(currentType.Fields, DiscoveredField{
+								Name:       ext,
+								Type:       ext,
+								LineNumber: lineNum,
+								IsEmbedded: true,
+							})
+						}
+					}
+				}
+
 				if strings.Contains(trimmedLine, "{") {
 					braceDepth = 1
 				}
@@ -236,6 +398,23 @@ func (a *Analyzer) AnalyzeTypeScriptFile(filePath, content string) []*Discovered
 					Language:   "typescript",
 				}
 				types = append(types, currentType)
+
+				// Check for extends clause
+				if extendsMatches := a.tsExtendsRegex.FindStringSubmatch(trimmedLine); extendsMatches != nil {
+					extendedTypes := strings.Split(extendsMatches[1], ",")
+					for _, ext := range extendedTypes {
+						ext = strings.TrimSpace(ext)
+						if ext != "" && !a.isGenericTerm(ext) {
+							currentType.Fields = append(currentType.Fields, DiscoveredField{
+								Name:       ext,
+								Type:       ext,
+								LineNumber: lineNum,
+								IsEmbedded: true,
+							})
+						}
+					}
+				}
+
 				if strings.Contains(trimmedLine, "{") {
 					braceDepth = 1
 				}
@@ -258,19 +437,35 @@ func (a *Analyzer) AnalyzeTypeScriptFile(filePath, content string) []*Discovered
 			continue
 		}
 
-		// Track fields within interface/class
+		// Track fields/methods within interface/class
 		if currentType != nil && braceDepth > 0 {
 			// Count braces
 			braceDepth += strings.Count(trimmedLine, "{") - strings.Count(trimmedLine, "}")
 
-			// Extract field/property names
-			if matches := a.tsFieldRegex.FindStringSubmatch(line); matches != nil {
+			// Check for method signature first
+			if matches := a.tsMethodRegex.FindStringSubmatch(line); matches != nil {
+				methodName := matches[1]
+				if !a.isGenericTerm(methodName) && !a.isCommonMethodName(methodName) {
+					params := a.extractTSTypes(matches[2])
+					returns := a.extractTSTypes(matches[3])
+					currentType.Methods = append(currentType.Methods, DiscoveredMethod{
+						Name:        methodName,
+						Parameters:  params,
+						ReturnTypes: returns,
+						LineNumber:  lineNum,
+					})
+				}
+			} else if matches := a.tsFieldRegex.FindStringSubmatch(line); matches != nil {
+				// Extract field/property with type
 				fieldName := matches[1]
+				fieldType := a.normalizeTSType(matches[2])
 				// Filter out common method names and generic terms
 				if !a.isGenericTerm(fieldName) && !a.isCommonMethodName(fieldName) {
 					currentType.Fields = append(currentType.Fields, DiscoveredField{
 						Name:       fieldName,
+						Type:       fieldType,
 						LineNumber: lineNum,
+						IsEmbedded: false,
 					})
 				}
 			}
@@ -283,6 +478,77 @@ func (a *Analyzer) AnalyzeTypeScriptFile(filePath, content string) []*Discovered
 	}
 
 	return types
+}
+
+// extractTSTypes extracts type names from a TypeScript parameter/return type
+// Examples: "user: User, id: string" -> ["User"], "Promise<Order>" -> ["Order"]
+func (a *Analyzer) extractTSTypes(typeExpr string) []string {
+	if typeExpr == "" {
+		return nil
+	}
+
+	var types []string
+	// Split by comma for multiple params
+	parts := strings.Split(typeExpr, ",")
+
+	for _, part := range parts {
+		normalized := a.normalizeTSType(part)
+		if normalized != "" && len(normalized) > 0 && normalized[0] >= 'A' && normalized[0] <= 'Z' {
+			types = append(types, normalized)
+		}
+	}
+
+	return types
+}
+
+// normalizeTSType extracts the core type name from a TypeScript type expression
+// Examples: "User[]" -> "User", "Promise<Order>" -> "Order", "user: User" -> "User"
+func (a *Analyzer) normalizeTSType(typeExpr string) string {
+	typeExpr = strings.TrimSpace(typeExpr)
+
+	// Handle "name: Type" format
+	if colonIdx := strings.Index(typeExpr, ":"); colonIdx >= 0 {
+		typeExpr = strings.TrimSpace(typeExpr[colonIdx+1:])
+	}
+
+	// Remove array suffix
+	typeExpr = strings.TrimSuffix(typeExpr, "[]")
+
+	// Handle Promise<Type>, Array<Type>, etc.
+	if ltIdx := strings.Index(typeExpr, "<"); ltIdx >= 0 {
+		// Extract the inner type
+		inner := typeExpr[ltIdx+1:]
+		if gtIdx := strings.LastIndex(inner, ">"); gtIdx >= 0 {
+			inner = inner[:gtIdx]
+		}
+		// Use the inner type if it's a domain type
+		inner = strings.TrimSpace(inner)
+		if len(inner) > 0 && inner[0] >= 'A' && inner[0] <= 'Z' {
+			typeExpr = inner
+		} else {
+			// Otherwise use the outer type (e.g., Promise -> skip)
+			typeExpr = typeExpr[:ltIdx]
+		}
+	}
+
+	// Handle union types - take first domain type
+	if pipeIdx := strings.Index(typeExpr, "|"); pipeIdx >= 0 {
+		parts := strings.Split(typeExpr, "|")
+		for _, part := range parts {
+			part = strings.TrimSpace(part)
+			if len(part) > 0 && part[0] >= 'A' && part[0] <= 'Z' {
+				typeExpr = part
+				break
+			}
+		}
+	}
+
+	typeExpr = strings.TrimSpace(typeExpr)
+
+	// Remove any remaining array brackets
+	typeExpr = strings.TrimSuffix(typeExpr, "[]")
+
+	return typeExpr
 }
 
 // isGenericTerm checks if a term is a generic programming term to filter out
