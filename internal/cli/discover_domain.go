@@ -74,6 +74,8 @@ const discoverDomainSystemPrompt = `You are a Domain Discovery Claude - an AI as
 ## Your Role
 Analyze the provided codebase context (type definitions, package structure, schemas) and identify bounded contexts with their domain vocabulary.
 
+**IMPORTANT**: You MUST create a SEPARATE draft domain document for EACH bounded context identified in the "Pre-Analyzed Domain Terms by Bounded Context" section. Do NOT create one monolithic document - each bounded context gets its own draft.
+
 ## Codebase Context
 %s
 
@@ -82,15 +84,23 @@ Analyze the provided codebase context (type definitions, package structure, sche
 
 ## Guidelines for Domain Discovery
 
-### Using Pre-Analyzed Domain Terms
-The "Pre-Analyzed Domain Terms" section contains terms automatically extracted from type definitions
-(structs, interfaces, classes) in Go and TypeScript files. Use this section to:
+### Using Pre-Analyzed Domain Terms by Bounded Context
+The "Pre-Analyzed Domain Terms by Bounded Context" section contains terms automatically extracted from type definitions
+(structs, interfaces, classes) in Go and TypeScript files, GROUPED BY THEIR INFERRED BOUNDED CONTEXT based on package structure.
+
+**CRITICAL**: Each bounded context section (e.g., "#### Bounded Context: order", "#### Bounded Context: customer") should become a SEPARATE draft domain document. The bounded context name from the section header should be used as:
+- The draft's 'id' (kebab-case)
+- The draft's 'bounded_context' field (kebab-case)
+- The basis for the draft's 'title' (Title Case)
+
+For each bounded context:
 - **Prioritize HIGH confidence terms** - these appear as types in multiple files and are likely core domain concepts
 - **Include term evidence** - copy the file:line references to the evidence.files and evidence.lines fields
 - **Filter wisely** - generic programming terms have already been removed, but some remaining terms may still be infrastructure rather than domain terms
+- **Note cross-context terms** - if a term appears in multiple contexts (marked with ⚠), include a cross_context_note explaining how it differs
 
 ### What to Look For
-1. **Bounded Contexts**: Distinct areas of the system with their own vocabulary
+1. **Bounded Contexts**: Each package-derived context section represents a candidate bounded context
 2. **Type Definitions**: Structs, interfaces, enums that define domain concepts
 3. **Canonical Terms**: The authoritative names used in code and should be used in communication
 4. **Aliases**: Alternative names that map to canonical terms
@@ -173,14 +183,15 @@ drafts:
 ` + "```" + `
 
 ## Important Rules
-1. Create SEPARATE draft domain docs for distinct bounded contexts
-2. Use kebab-case for IDs and bounded_context values
+1. **Create ONE draft domain doc PER bounded context** - each "#### Bounded Context: X" section becomes a separate draft
+2. Use kebab-case for IDs and bounded_context values (matching the context name from the section headers)
 3. Use PascalCase for term names (matching Go naming conventions)
 4. Focus on VOCABULARY and RELATIONSHIPS, not implementation details
 5. Don't duplicate existing domain documents - check the "Existing Domain Documents" section
-6. If a term appears in multiple contexts with different meanings, note this in cross_context_note
+6. If a term appears in multiple contexts with different meanings (marked with ⚠), include cross_context_note
 7. Canonical terms should match actual code identifiers where possible
 8. **ALWAYS include evidence for terms** - use the file:line references from the Pre-Analyzed Domain Terms section
+9. The number of drafts should roughly match the number of bounded context sections in the analysis
 
 Now analyze the codebase and generate draft domain documents.`
 
@@ -397,52 +408,93 @@ func collectDomainContextIncremental(projectDir string, lastRun time.Time, incre
 		}
 	}
 
-	// Add pre-analyzed type definitions section if we found any types
+	// Add pre-analyzed type definitions section grouped by bounded context
 	if len(allDiscoveredTypes) > 0 {
-		termMap := typeAnalyzer.AggregateTerms(allDiscoveredTypes)
-		highConfidenceTerms := typeAnalyzer.GetHighConfidenceTerms(termMap)
+		bcAnalyzer := types.NewBoundedContextAnalyzer()
+		contextTerms := bcAnalyzer.GroupTermsByContext(allDiscoveredTypes)
+		crossContextTerms := bcAnalyzer.FindCrossContextTerms(contextTerms)
 
-		sb.WriteString("\n### Pre-Analyzed Domain Terms (from Type Definitions)\n\n")
-		sb.WriteString("The following terms were extracted from type definitions in Go and TypeScript files.\n")
-		sb.WriteString("Terms appearing in multiple files as types are marked with higher confidence.\n")
+		sb.WriteString("\n### Pre-Analyzed Domain Terms by Bounded Context\n\n")
+		sb.WriteString("Terms are grouped by their inferred bounded context based on package structure.\n")
+		sb.WriteString("Each bounded context should become a SEPARATE draft domain document.\n")
 		sb.WriteString("Generic programming terms (Handler, Manager, Service, etc.) have been filtered out.\n\n")
 
-		// Group by confidence
-		for _, conf := range []types.TermConfidence{types.TermConfidenceHigh, types.TermConfidenceMedium, types.TermConfidenceLow} {
-			var termsAtLevel []*types.TermOccurrence
-			for _, term := range highConfidenceTerms {
-				if term.Confidence == conf {
-					termsAtLevel = append(termsAtLevel, term)
-				}
+		// Get sorted context names for consistent output
+		var contextNames []string
+		for ctx := range contextTerms {
+			contextNames = append(contextNames, ctx)
+		}
+		sort.Strings(contextNames)
+
+		// Output terms grouped by bounded context
+		for _, ctx := range contextNames {
+			terms := contextTerms[ctx]
+			if len(terms) == 0 {
+				continue
 			}
 
-			if len(termsAtLevel) > 0 {
-				sb.WriteString(fmt.Sprintf("#### %s Confidence Terms\n\n", strings.ToUpper(string(conf))))
-				for _, term := range termsAtLevel {
-					isType := len(term.Types) > 0
-					typeKind := ""
-					if isType && len(term.Types) > 0 {
-						typeKind = term.Types[0].Kind
-					}
+			sb.WriteString(fmt.Sprintf("#### Bounded Context: %s\n\n", ctx))
 
-					sb.WriteString(fmt.Sprintf("- **%s**", term.Term))
-					if typeKind != "" {
-						sb.WriteString(fmt.Sprintf(" (%s)", typeKind))
+			// Group by confidence within context
+			for _, conf := range []types.TermConfidence{types.TermConfidenceHigh, types.TermConfidenceMedium, types.TermConfidenceLow} {
+				var termsAtLevel []*types.ContextualTerm
+				for _, term := range terms {
+					if term.Confidence == conf {
+						termsAtLevel = append(termsAtLevel, term)
 					}
-					sb.WriteString(fmt.Sprintf(" - found in %d file(s)\n", len(term.Files)))
+				}
 
-					// Add evidence lines (limit to first 3)
-					evidenceLimit := 3
-					for i, line := range term.Lines {
-						if i >= evidenceLimit {
-							sb.WriteString(fmt.Sprintf("  - ... and %d more locations\n", len(term.Lines)-evidenceLimit))
-							break
+				if len(termsAtLevel) > 0 {
+					sb.WriteString(fmt.Sprintf("**%s Confidence:**\n", strings.Title(string(conf))))
+					for _, term := range termsAtLevel {
+						isType := len(term.Types) > 0
+						typeKind := ""
+						if isType && len(term.Types) > 0 {
+							typeKind = term.Types[0].Kind
 						}
-						sb.WriteString(fmt.Sprintf("  - %s\n", line))
+
+						sb.WriteString(fmt.Sprintf("- **%s**", term.Term))
+						if typeKind != "" {
+							sb.WriteString(fmt.Sprintf(" (%s)", typeKind))
+						}
+						sb.WriteString(fmt.Sprintf(" - found in %d file(s)\n", len(term.Files)))
+
+						// Note if this term appears in other contexts
+						if otherContexts, exists := crossContextTerms[term.Term]; exists {
+							var others []string
+							for _, other := range otherContexts {
+								if other != ctx {
+									others = append(others, other)
+								}
+							}
+							if len(others) > 0 {
+								sb.WriteString(fmt.Sprintf("  - ⚠ Also appears in: %s (may need cross_context_note)\n", strings.Join(others, ", ")))
+							}
+						}
+
+						// Add evidence lines (limit to first 3)
+						evidenceLimit := 3
+						for i, line := range term.Lines {
+							if i >= evidenceLimit {
+								sb.WriteString(fmt.Sprintf("  - ... and %d more locations\n", len(term.Lines)-evidenceLimit))
+								break
+							}
+							sb.WriteString(fmt.Sprintf("  - %s\n", line))
+						}
 					}
+					sb.WriteString("\n")
 				}
-				sb.WriteString("\n")
 			}
+		}
+
+		// Summary of cross-context terms
+		if len(crossContextTerms) > 0 {
+			sb.WriteString("### Cross-Context Terms (require cross_context_note)\n\n")
+			sb.WriteString("These terms appear in multiple bounded contexts and may have different meanings:\n\n")
+			for term, contexts := range crossContextTerms {
+				sb.WriteString(fmt.Sprintf("- **%s**: appears in %s\n", term, strings.Join(contexts, ", ")))
+			}
+			sb.WriteString("\n")
 		}
 	}
 
