@@ -891,9 +891,9 @@ func (s *YAMLStore) DeleteDraft(id string) error {
 	return nil
 }
 
-// LoadDiscoveryState reads discovery state from .utopia/drafts/.discovery-state
+// LoadDiscoveryState reads discovery state from .utopia/drafts/specs/.discovery-state
 func (s *YAMLStore) LoadDiscoveryState() (*domain.DiscoveryState, error) {
-	path := filepath.Join(s.baseDir, "drafts", ".discovery-state")
+	path := filepath.Join(s.baseDir, "drafts", "specs", ".discovery-state")
 
 	var state domain.DiscoveryState
 	if err := s.readYAML(path, &state); err != nil {
@@ -907,11 +907,11 @@ func (s *YAMLStore) LoadDiscoveryState() (*domain.DiscoveryState, error) {
 	return &state, nil
 }
 
-// SaveDiscoveryState writes discovery state to .utopia/drafts/.discovery-state
+// SaveDiscoveryState writes discovery state to .utopia/drafts/specs/.discovery-state
 func (s *YAMLStore) SaveDiscoveryState(state *domain.DiscoveryState) error {
-	dir := filepath.Join(s.baseDir, "drafts")
+	dir := filepath.Join(s.baseDir, "drafts", "specs")
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create drafts directory: %w", err)
+		return fmt.Errorf("failed to create drafts/specs directory: %w", err)
 	}
 
 	path := filepath.Join(dir, ".discovery-state")
