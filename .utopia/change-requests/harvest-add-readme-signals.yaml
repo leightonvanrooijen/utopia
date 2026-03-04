@@ -1,56 +1,54 @@
 id: harvest-add-readme-signals
 type: enhancement
 title: Add README signal detection to harvest
-status: draft
+status: in-progress
 changes:
-  - operation: add
-    spec: harvest
-    feature:
-      id: readme-signal-detection
-      description: |
-        Detects spec features that qualify for README documentation using strict
-        criteria. Only surfaces signals for user-facing, primary workflow elements.
+    - operation: add
+      spec: harvest
+      feature:
+        id: readme-signal-detection
+        description: |
+            Detects spec features that qualify for README documentation using strict
+            criteria. Only surfaces signals for user-facing, primary workflow elements.
 
-        Qualification criteria (must meet at least one):
-        - New primary CLI command (not flags, not internal)
-        - New knowledge artifact type (alongside ADR/Concept/Domain)
-        - Change to core workflow/loop
-        - New top-level .utopia/ directory users interact with
+            Qualification criteria (must meet at least one):
+            - New primary CLI command (not flags, not internal)
+            - New knowledge artifact type (alongside ADR/Concept/Domain)
+            - Change to core workflow/loop
+            - New top-level .utopia/ directory users interact with
 
-        Disqualification criteria (any of these excludes):
-        - Enhancement to existing feature (README already covers it)
-        - Internal implementation detail
-        - Config options (too granular)
-        - Spec-only changes with no user workflow impact
-      acceptance_criteria:
-        - Scans specs for features matching strict README qualification criteria
-        - Parses existing README to extract documented commands, artifacts, and structure
-        - Only signals features that qualify AND are not already in README
-        - Each signal includes suggested README section based on content type
-        - Each signal includes confidence level (high/medium/low)
-        - Output is conversational matching other harvest signals
-        - Signals include the source spec and feature ID
-
-  - operation: add
-    spec: harvest
-    feature:
-      id: readme-detection-strategy
-      description: |
-        Pluggable strategy for how README signals are detected. Default strategy
-        uses README comparison (scan README vs specs). Can be replaced with
-        alternative strategies like git-diff-based detection.
-      acceptance_criteria:
-        - Detection logic is encapsulated behind a strategy interface
-        - Default strategy is comparison-based (README vs specs)
-        - Strategy can be swapped without changing harvest command flow
-        - Strategy receives parsed README structure and current specs as input
-        - Strategy returns list of README signals with confidence and suggested section
-
-  - operation: modify
-    spec: harvest
-    feature_id: harvest-command
-    criteria:
-      add:
-        - README signals included in harvest output alongside ADR/Concept/Domain signals
-        - Shows count of README signals found (e.g., "1 README signal")
-        - README signals grouped separately in results display
+            Disqualification criteria (any of these excludes):
+            - Enhancement to existing feature (README already covers it)
+            - Internal implementation detail
+            - Config options (too granular)
+            - Spec-only changes with no user workflow impact
+        acceptance_criteria:
+            - Scans specs for features matching strict README qualification criteria
+            - Parses existing README to extract documented commands, artifacts, and structure
+            - Only signals features that qualify AND are not already in README
+            - Each signal includes suggested README section based on content type
+            - Each signal includes confidence level (high/medium/low)
+            - Output is conversational matching other harvest signals
+            - Signals include the source spec and feature ID
+    - operation: add
+      spec: harvest
+      feature:
+        id: readme-detection-strategy
+        description: |
+            Pluggable strategy for how README signals are detected. Default strategy
+            uses README comparison (scan README vs specs). Can be replaced with
+            alternative strategies like git-diff-based detection.
+        acceptance_criteria:
+            - Detection logic is encapsulated behind a strategy interface
+            - Default strategy is comparison-based (README vs specs)
+            - Strategy can be swapped without changing harvest command flow
+            - Strategy receives parsed README structure and current specs as input
+            - Strategy returns list of README signals with confidence and suggested section
+    - operation: modify
+      spec: harvest
+      feature_id: harvest-command
+      criteria:
+        add:
+            - README signals included in harvest output alongside ADR/Concept/Domain signals
+            - Shows count of README signals found (e.g., "1 README signal")
+            - README signals grouped separately in results display
