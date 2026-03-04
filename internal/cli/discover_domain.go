@@ -445,7 +445,7 @@ func collectDomainContextIncremental(projectDir string, lastRun time.Time, incre
 				}
 
 				if len(termsAtLevel) > 0 {
-					sb.WriteString(fmt.Sprintf("**%s Confidence:**\n", strings.Title(string(conf))))
+					sb.WriteString(fmt.Sprintf("**%s Confidence:**\n", titleCase(string(conf))))
 					for _, term := range termsAtLevel {
 						isType := len(term.Types) > 0
 						typeKind := ""
@@ -739,6 +739,15 @@ func parseDomainDraftsFromOutput(output string) ([]*domain.DraftDomainDoc, error
 	}
 
 	return drafts, nil
+}
+
+// titleCase capitalizes the first letter of a string.
+// This is a simple replacement for the deprecated strings.Title.
+func titleCase(s string) string {
+	if len(s) == 0 {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
 }
 
 // printDomainDiscoverySummary displays the results of domain discovery
