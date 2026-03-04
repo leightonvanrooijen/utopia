@@ -570,10 +570,9 @@ func runHarvest(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  - %d Concepts\n", len(existingConcepts))
 	fmt.Printf("  - %d Domain Docs\n", len(existingDomainDocs))
 	fmt.Println()
-	if readmeSignalCount > 0 {
-		fmt.Printf("README documentation signals: %d (spec features needing README updates)\n", readmeSignalCount)
-		fmt.Println()
-	}
+	fmt.Println("Documentation signals:")
+	fmt.Printf("  - %s README signal%s\n", formatSignalCount(readmeSignalCount), pluralize(readmeSignalCount))
+	fmt.Println()
 	fmt.Println("Documents will be saved to:")
 	fmt.Printf("  - ADRs: %s\n", adrsDir)
 	fmt.Printf("  - Concepts: %s\n", conceptsDir)
@@ -827,4 +826,17 @@ func countREADMESignalsWithStrategy(projectDir string, store *storage.YAMLStore,
 // getDefaultREADMEStrategy returns the default README detection strategy (comparison-based).
 func getDefaultREADMEStrategy() readme.Strategy {
 	return comparison.New()
+}
+
+// formatSignalCount returns a formatted count string (e.g., "1", "3", or "0")
+func formatSignalCount(count int) string {
+	return fmt.Sprintf("%d", count)
+}
+
+// pluralize returns "s" if count != 1, empty string otherwise
+func pluralize(count int) string {
+	if count == 1 {
+		return ""
+	}
+	return "s"
 }
