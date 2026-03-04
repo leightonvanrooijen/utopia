@@ -364,14 +364,14 @@ func buildOtherTermsList(allTerms []termInfo, currentDraftID string) string {
 
 // domainShapeResult represents the parsed output from a domain shape session
 type domainShapeResult struct {
-	DraftID      string                    `yaml:"draft_id"`
-	Action       string                    `yaml:"action"` // "update", "reject_all", "no_changes"
-	UpdatedDraft *domainShapeUpdatedDraft  `yaml:"updated_draft,omitempty"`
-	RemovedTerms []domainRemovedTerm       `yaml:"removed_terms,omitempty"`
-	AliasedTerms []domainAliasedTerm       `yaml:"aliased_terms,omitempty"`
-	MergedTerms  []domainMergedTerm        `yaml:"merged_terms,omitempty"`
-	SplitTerms   []domainSplitTerm         `yaml:"split_terms,omitempty"`
-	ChangesSummary []string                `yaml:"changes_summary,omitempty"`
+	DraftID        string                   `yaml:"draft_id"`
+	Action         string                   `yaml:"action"` // "update", "reject_all", "no_changes"
+	UpdatedDraft   *domainShapeUpdatedDraft `yaml:"updated_draft,omitempty"`
+	RemovedTerms   []domainRemovedTerm      `yaml:"removed_terms,omitempty"`
+	AliasedTerms   []domainAliasedTerm      `yaml:"aliased_terms,omitempty"`
+	MergedTerms    []domainMergedTerm       `yaml:"merged_terms,omitempty"`
+	SplitTerms     []domainSplitTerm        `yaml:"split_terms,omitempty"`
+	ChangesSummary []string                 `yaml:"changes_summary,omitempty"`
 }
 
 type domainShapeUpdatedDraft struct {
