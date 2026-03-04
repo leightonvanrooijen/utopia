@@ -1,0 +1,187 @@
+id: adoption-add-domain-discovery
+type: feature
+title: Add domain discovery workflow for existing codebases
+status: draft
+changes:
+  # Reorganize existing spec drafts into subdirectory for consistency
+  - operation: modify
+    spec: adoption
+    feature_id: discover-command
+    criteria:
+      edit:
+        - old: "Output is draft specs saved to `.utopia/drafts/` directory"
+          new: "Output is draft specs saved to `.utopia/drafts/specs/` directory"
+
+  - operation: modify
+    spec: adoption
+    feature_id: drafts-storage
+    criteria:
+      edit:
+        - old: "Draft specs stored in `.utopia/drafts/` directory"
+          new: "Draft specs stored in `.utopia/drafts/specs/` directory"
+        - old: "Drafts directory created by `utopia discover` if it doesn't exist"
+          new: "Drafts directory created by `utopia discover` if it doesn't exist (creates `.utopia/drafts/specs/`)"
+
+  - operation: modify
+    spec: adoption
+    feature_id: spec-promotion
+    description: |
+      Moves validated drafts from `.utopia/drafts/specs/` to `.utopia/specs/`.
+      Removes draft-specific fields during promotion.
+    criteria:
+      edit:
+        - old: "Promotion moves file from `drafts/` to `specs/`"
+          new: "Promotion moves file from `drafts/specs/` to `specs/`"
+
+  - operation: modify
+    spec: adoption
+    feature_id: incremental-discovery
+    criteria:
+      edit:
+        - old: "Discovery tracks last run timestamp in `.utopia/drafts/.discovery-state`"
+          new: "Discovery tracks last run timestamp in `.utopia/drafts/specs/.discovery-state`"
+
+  - operation: add
+    spec: adoption
+    feature:
+      id: discover-domain-command
+      description: |
+        Scans the codebase to discover domain vocabulary and propose draft
+        domain documents. Uses Claude to analyze type definitions, package
+        structure, and relationships to identify bounded contexts and
+        canonical terms.
+      acceptance_criteria:
+        - Command `utopia discover domain` initiates domain analysis
+        - Claude receives codebase context (types, packages, schemas)
+        - Output is draft domain docs saved to `.utopia/drafts/domain/` directory
+        - Each draft includes confidence level (high/medium/low)
+        - Confidence based on evidence quality (clear type definitions, consistent naming)
+        - Low confidence terms include uncertainty notes explaining what's unclear
+        - Discovery completes with summary of drafts created
+
+  - operation: add
+    spec: adoption
+    feature:
+      id: domain-drafts-storage
+      description: |
+        Stores proposed domain documents in a drafts directory until validated.
+        Drafts are not used by the system until promoted.
+      acceptance_criteria:
+        - Draft domain docs stored in `.utopia/drafts/domain/` directory
+        - Draft format matches domain doc format with additional `confidence` field
+        - Drafts include `discovered_from` field listing source files analyzed
+        - Each term includes `evidence` field showing where it was found in code
+        - Drafts directory created by `utopia discover domain` if it doesn't exist
+
+  - operation: add
+    spec: adoption
+    feature:
+      id: domain-type-analysis
+      description: |
+        Analyzes type definitions (structs, interfaces, classes) as the primary
+        source of domain vocabulary. Types are the most reliable evidence of
+        domain language since they directly represent domain entities.
+      acceptance_criteria:
+        - Scans for struct/type definitions in Go files
+        - Scans for interface/class definitions in TypeScript files
+        - Extracts type name as potential domain term
+        - Extracts field names as potential related terms
+        - Records file path and line number as evidence
+        - Filters out generic programming terms (Handler, Manager, Service, Repository, Controller, Factory, Builder, Adapter, Wrapper, Helper, Util, Base, Abstract, Default, Common, Generic, Internal)
+        - Terms appearing in multiple files receive higher confidence
+
+  - operation: add
+    spec: adoption
+    feature:
+      id: domain-bounded-context-inference
+      description: |
+        Infers bounded context boundaries from package/module structure.
+        Each top-level package may represent a separate bounded context
+        where terms can have context-specific meanings.
+      acceptance_criteria:
+        - Analyzes package/directory structure to identify bounded contexts
+        - Top-level packages under domain directories become candidate bounded contexts
+        - Terms are grouped by their bounded context
+        - Same term in different contexts creates separate entries
+        - Bounded context name derived from package name
+        - Draft domain doc created per bounded context (not one monolithic file)
+
+  - operation: add
+    spec: adoption
+    feature:
+      id: domain-relationship-detection
+      description: |
+        Detects relationships between domain entities by analyzing type
+        references, field types, and method signatures.
+      acceptance_criteria:
+        - Detects "contains" relationships from embedded/nested types
+        - Detects "references" relationships from field types pointing to other domain types
+        - Detects "produces" relationships from method return types
+        - Detects "consumes" relationships from method parameter types
+        - Relationships recorded in draft with source evidence
+        - Only relationships between discovered domain types are included
+
+  - operation: add
+    spec: adoption
+    feature:
+      id: domain-schema-analysis
+      description: |
+        Analyzes database schemas and migrations as an additional source
+        of domain entities and their relationships.
+      acceptance_criteria:
+        - Scans for SQL migration files in common locations (migrations/, db/migrations/)
+        - Scans for schema definition files (schema.sql, schema.prisma, etc.)
+        - Extracts table names as potential domain entities
+        - Extracts column names as potential term attributes
+        - Detects foreign key relationships between tables
+        - Schema-discovered terms cross-referenced with type-discovered terms
+        - Terms found in both code and schema receive higher confidence
+
+  - operation: add
+    spec: adoption
+    feature:
+      id: shape-domain-command
+      description: |
+        Guided conversation flow for validating and refining draft domain
+        documents. Walks through each bounded context and term, asking
+        clarifying questions about meaning and usage.
+      acceptance_criteria:
+        - Command `utopia shape domain` starts guided validation flow
+        - Presents drafts one bounded context at a time
+        - For each term, Claude asks about uncertain areas
+        - User confirms, corrects, or rejects each proposed term
+        - Corrections update the term definition
+        - Rejected terms are removed from the draft
+        - User can mark terms as aliases of other terms
+        - User can merge terms that represent the same concept
+        - User can split terms that have multiple meanings
+
+  - operation: add
+    spec: adoption
+    feature:
+      id: domain-promotion
+      description: |
+        Moves validated domain drafts from `.utopia/drafts/domain/` to
+        `.utopia/domain/`. Removes draft-specific fields during promotion.
+      acceptance_criteria:
+        - After shaping conversation, user can promote draft to domain doc
+        - Promotion moves file from `drafts/domain/` to `domain/`
+        - Promotion removes `confidence`, `discovered_from`, and `evidence` fields
+        - Promoted domain doc follows standard domain template
+        - Original draft is deleted after successful promotion
+        - If domain doc already exists for bounded context, merge terms instead of overwrite
+
+  - operation: add
+    spec: adoption
+    feature:
+      id: domain-generic-term-filtering
+      description: |
+        Filters out generic programming terms that don't represent domain
+        concepts. Prevents technical jargon from polluting the domain vocabulary.
+      acceptance_criteria:
+        - Maintains list of generic programming terms to filter
+        - Generic suffixes filtered (Handler, Manager, Service, Repository, etc.)
+        - Generic prefixes filtered (Base, Abstract, Default, Common, etc.)
+        - Terms that are ONLY generic are excluded entirely
+        - Terms with generic suffix but domain prefix are kept with note (e.g., "OrderService" keeps "Order")
+        - Filtering is configurable via flag to include filtered terms for review
