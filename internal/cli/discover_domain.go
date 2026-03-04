@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/leightonvanrooijen/utopia/internal/analysis/types"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 	"github.com/leightonvanrooijen/utopia/internal/infra/claude"
 	"github.com/leightonvanrooijen/utopia/internal/infra/storage"
@@ -81,6 +82,13 @@ Analyze the provided codebase context (type definitions, package structure, sche
 
 ## Guidelines for Domain Discovery
 
+### Using Pre-Analyzed Domain Terms
+The "Pre-Analyzed Domain Terms" section contains terms automatically extracted from type definitions
+(structs, interfaces, classes) in Go and TypeScript files. Use this section to:
+- **Prioritize HIGH confidence terms** - these appear as types in multiple files and are likely core domain concepts
+- **Include term evidence** - copy the file:line references to the evidence.files and evidence.lines fields
+- **Filter wisely** - generic programming terms have already been removed, but some remaining terms may still be infrastructure rather than domain terms
+
 ### What to Look For
 1. **Bounded Contexts**: Distinct areas of the system with their own vocabulary
 2. **Type Definitions**: Structs, interfaces, enums that define domain concepts
@@ -101,6 +109,8 @@ Assign confidence based on evidence:
 - **HIGH**: Clear type definitions AND consistent naming AND (docs OR strong code patterns)
 - **MEDIUM**: Type definitions exist OR consistent naming (but not both, or inconsistencies present)
 - **LOW**: Inferred from code patterns only, naming inconsistent
+
+Terms from the pre-analyzed section that appear in multiple files should receive higher confidence.
 
 ### Uncertainty Notes
 For LOW confidence drafts, include notes explaining:
@@ -150,8 +160,8 @@ drafts:
             - "path/to/file.go"
             - "path/to/another.go"
           lines:
-            - "type CanonicalTermName struct {"
-            - "func NewCanonicalTermName() *CanonicalTermName"
+            - "path/to/file.go:42"
+            - "path/to/another.go:15"
     entities:
       - name: EntityName
         description: "What this entity represents"
@@ -170,6 +180,7 @@ drafts:
 5. Don't duplicate existing domain documents - check the "Existing Domain Documents" section
 6. If a term appears in multiple contexts with different meanings, note this in cross_context_note
 7. Canonical terms should match actual code identifiers where possible
+8. **ALWAYS include evidence for terms** - use the file:line references from the Pre-Analyzed Domain Terms section
 
 Now analyze the codebase and generate draft domain documents.`
 
@@ -323,6 +334,10 @@ func collectDomainContextIncremental(projectDir string, lastRun time.Time, incre
 	var sb strings.Builder
 	filesAnalyzed := make(map[string]time.Time)
 
+	// Initialize type analyzer for Go and TypeScript files
+	typeAnalyzer := types.NewAnalyzer()
+	var allDiscoveredTypes []*types.DiscoveredType
+
 	// Define file patterns focused on domain vocabulary discovery
 	patterns := []struct {
 		name    string
@@ -369,6 +384,64 @@ func collectDomainContextIncremental(projectDir string, lastRun time.Time, incre
 			for _, f := range allFiles {
 				sb.WriteString(fmt.Sprintf("**File: %s**\n```\n%s\n```\n\n", f.path, f.content))
 				filesAnalyzed[f.path] = f.modTime
+
+				// Run type analysis on Go and TypeScript files
+				if strings.HasSuffix(f.path, ".go") {
+					discoveredTypes := typeAnalyzer.AnalyzeGoFile(f.path, f.content)
+					allDiscoveredTypes = append(allDiscoveredTypes, discoveredTypes...)
+				} else if strings.HasSuffix(f.path, ".ts") {
+					discoveredTypes := typeAnalyzer.AnalyzeTypeScriptFile(f.path, f.content)
+					allDiscoveredTypes = append(allDiscoveredTypes, discoveredTypes...)
+				}
+			}
+		}
+	}
+
+	// Add pre-analyzed type definitions section if we found any types
+	if len(allDiscoveredTypes) > 0 {
+		termMap := typeAnalyzer.AggregateTerms(allDiscoveredTypes)
+		highConfidenceTerms := typeAnalyzer.GetHighConfidenceTerms(termMap)
+
+		sb.WriteString("\n### Pre-Analyzed Domain Terms (from Type Definitions)\n\n")
+		sb.WriteString("The following terms were extracted from type definitions in Go and TypeScript files.\n")
+		sb.WriteString("Terms appearing in multiple files as types are marked with higher confidence.\n")
+		sb.WriteString("Generic programming terms (Handler, Manager, Service, etc.) have been filtered out.\n\n")
+
+		// Group by confidence
+		for _, conf := range []types.TermConfidence{types.TermConfidenceHigh, types.TermConfidenceMedium, types.TermConfidenceLow} {
+			var termsAtLevel []*types.TermOccurrence
+			for _, term := range highConfidenceTerms {
+				if term.Confidence == conf {
+					termsAtLevel = append(termsAtLevel, term)
+				}
+			}
+
+			if len(termsAtLevel) > 0 {
+				sb.WriteString(fmt.Sprintf("#### %s Confidence Terms\n\n", strings.ToUpper(string(conf))))
+				for _, term := range termsAtLevel {
+					isType := len(term.Types) > 0
+					typeKind := ""
+					if isType && len(term.Types) > 0 {
+						typeKind = term.Types[0].Kind
+					}
+
+					sb.WriteString(fmt.Sprintf("- **%s**", term.Term))
+					if typeKind != "" {
+						sb.WriteString(fmt.Sprintf(" (%s)", typeKind))
+					}
+					sb.WriteString(fmt.Sprintf(" - found in %d file(s)\n", len(term.Files)))
+
+					// Add evidence lines (limit to first 3)
+					evidenceLimit := 3
+					for i, line := range term.Lines {
+						if i >= evidenceLimit {
+							sb.WriteString(fmt.Sprintf("  - ... and %d more locations\n", len(term.Lines)-evidenceLimit))
+							break
+						}
+						sb.WriteString(fmt.Sprintf("  - %s\n", line))
+					}
+				}
+				sb.WriteString("\n")
 			}
 		}
 	}
@@ -508,12 +581,18 @@ type domainEvidenceOutput struct {
 }
 
 type domainTermOutput struct {
-	Term             string   `yaml:"term"`
-	Canonical        bool     `yaml:"canonical"`
-	CodeUsage        string   `yaml:"code_usage"`
-	Definition       string   `yaml:"definition"`
-	Aliases          []string `yaml:"aliases,omitempty"`
-	CrossContextNote string   `yaml:"cross_context_note,omitempty"`
+	Term             string                  `yaml:"term"`
+	Canonical        bool                    `yaml:"canonical"`
+	CodeUsage        string                  `yaml:"code_usage"`
+	Definition       string                  `yaml:"definition"`
+	Aliases          []string                `yaml:"aliases,omitempty"`
+	CrossContextNote string                  `yaml:"cross_context_note,omitempty"`
+	Evidence         *domainTermEvidenceOutput `yaml:"evidence,omitempty"`
+}
+
+type domainTermEvidenceOutput struct {
+	Files []string `yaml:"files,omitempty"`
+	Lines []string `yaml:"lines,omitempty"`
 }
 
 type domainEntityOutput struct {
@@ -571,14 +650,22 @@ func parseDomainDraftsFromOutput(output string) ([]*domain.DraftDomainDoc, error
 
 		// Convert terms
 		for _, t := range d.Terms {
-			draft.Terms = append(draft.Terms, domain.DomainTerm{
+			term := domain.DomainTerm{
 				Term:             t.Term,
 				Canonical:        t.Canonical,
 				CodeUsage:        t.CodeUsage,
 				Definition:       t.Definition,
 				Aliases:          t.Aliases,
 				CrossContextNote: t.CrossContextNote,
-			})
+			}
+			// Add evidence if present
+			if t.Evidence != nil && (len(t.Evidence.Files) > 0 || len(t.Evidence.Lines) > 0) {
+				term.Evidence = &domain.TermEvidence{
+					Files: t.Evidence.Files,
+					Lines: t.Evidence.Lines,
+				}
+			}
+			draft.Terms = append(draft.Terms, term)
 		}
 
 		// Convert entities
