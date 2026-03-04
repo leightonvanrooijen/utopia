@@ -22,11 +22,11 @@ type READMEDocumented struct {
 
 // READMESignalCandidate represents a potential README documentation signal
 type READMESignalCandidate struct {
-	SpecID       string
-	FeatureID    string
-	Title        string
-	Category     string // "command", "artifact", "workflow", "directory"
-	Confidence   domain.SignalConfidence
+	SpecID           string
+	FeatureID        string
+	Title            string
+	Category         string // "command", "artifact", "workflow", "directory"
+	Confidence       domain.SignalConfidence
 	SuggestedSection string
 }
 
@@ -281,13 +281,17 @@ func isNewPrimaryCLICommand(feature domain.Feature, documented *READMEDocumented
 	matches := cmdPattern.FindAllStringSubmatch(desc, -1)
 	for _, match := range matches {
 		cmdName := strings.ToLower(match[1])
+		isDocumented := false
 		for _, docCmd := range documented.Commands {
 			if strings.ToLower(docCmd) == cmdName {
-				return false // Already documented
+				isDocumented = true
+				break
 			}
 		}
 		// Found a command that's not in README
-		return true
+		if !isDocumented {
+			return true
+		}
 	}
 
 	// Also check feature ID for command names
