@@ -18,6 +18,7 @@ var (
 	_ domain.WorkItemRepository      = (*YAMLStore)(nil)
 	_ domain.ConversationRepository  = (*YAMLStore)(nil)
 	_ domain.ConfigRepository        = (*YAMLStore)(nil)
+	_ domain.DraftRepository         = (*YAMLStore)(nil)
 )
 
 // YAMLStore handles reading and writing YAML files
@@ -819,4 +820,71 @@ func (s *YAMLStore) ListConceptDocs() ([]*domain.ConceptDoc, error) {
 	}
 
 	return docs, nil
+}
+
+// SaveDraft writes a draft spec to .utopia/drafts/{id}.yaml
+func (s *YAMLStore) SaveDraft(draft *domain.DraftSpec) error {
+	dir := filepath.Join(s.baseDir, "drafts")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create drafts directory: %w", err)
+	}
+
+	path := filepath.Join(dir, draft.ID+".yaml")
+	return s.writeYAML(path, draft)
+}
+
+// LoadDraft reads a draft spec from .utopia/drafts/{id}.yaml
+func (s *YAMLStore) LoadDraft(id string) (*domain.DraftSpec, error) {
+	path := filepath.Join(s.baseDir, "drafts", id+".yaml")
+
+	var draft domain.DraftSpec
+	if err := s.readYAML(path, &draft); err != nil {
+		if os.IsNotExist(err) {
+			return nil, &domain.NotFoundError{Resource: "draft", ID: id}
+		}
+		return nil, err
+	}
+
+	return &draft, nil
+}
+
+// ListDrafts returns all draft specs in the drafts directory
+func (s *YAMLStore) ListDrafts() ([]*domain.DraftSpec, error) {
+	dir := filepath.Join(s.baseDir, "drafts")
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []*domain.DraftSpec{}, nil
+		}
+		return nil, fmt.Errorf("failed to read drafts directory: %w", err)
+	}
+
+	var drafts []*domain.DraftSpec
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
+			continue
+		}
+
+		id := strings.TrimSuffix(entry.Name(), ".yaml")
+		draft, err := s.LoadDraft(id)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load draft %s: %w", id, err)
+		}
+		drafts = append(drafts, draft)
+	}
+
+	return drafts, nil
+}
+
+// DeleteDraft removes a draft spec file from .utopia/drafts/{id}.yaml
+func (s *YAMLStore) DeleteDraft(id string) error {
+	path := filepath.Join(s.baseDir, "drafts", id+".yaml")
+	if err := os.Remove(path); err != nil {
+		if os.IsNotExist(err) {
+			return &domain.NotFoundError{Resource: "draft", ID: id}
+		}
+		return fmt.Errorf("failed to delete draft %s: %w", id, err)
+	}
+	return nil
 }

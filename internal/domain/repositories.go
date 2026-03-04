@@ -56,3 +56,13 @@ type ConfigRepository interface {
 	LoadConfig() (*Config, error)
 	SaveConfig(config *Config) error
 }
+
+// DraftRepository defines storage operations for DraftSpec entities.
+// Drafts are stored in .utopia/drafts/ and represent proposed specs
+// discovered from codebase analysis that require validation.
+type DraftRepository interface {
+	LoadDraft(id string) (*DraftSpec, error)
+	SaveDraft(draft *DraftSpec) error
+	ListDrafts() ([]*DraftSpec, error)
+	DeleteDraft(id string) error
+}
