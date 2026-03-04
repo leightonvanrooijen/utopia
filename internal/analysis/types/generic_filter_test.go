@@ -86,7 +86,7 @@ func TestGenericTermFilter_GenericPrefixExtraction(t *testing.T) {
 		{"CommonUtils", true, ""}, // Utils is also generic, so no extraction
 		{"GenericType", true, "Type"},
 		{"InternalService", true, ""}, // Service is also generic
-		{"MockRepository", true, ""}, // Repository is also generic
+		{"MockRepository", true, ""},  // Repository is also generic
 	}
 
 	for _, c := range cases {
@@ -148,16 +148,16 @@ func TestGenericTermFilter_SingleLetterPrefixHandling(t *testing.T) {
 		extract  string
 	}{
 		// Suffix check happens first, so "IRepository" is filtered by "Repository" suffix
-		{"IRepository", true, "I"},    // Repository suffix found, extracts "I" (but single char)
+		{"IRepository", true, "I"},        // Repository suffix found, extracts "I" (but single char)
 		{"IOrderService", true, "IOrder"}, // Service suffix found, extracts "IOrder"
-		{"IOrder", true, "Order"},     // "I" prefix with "Order" suffix (>= 3 chars)
-		{"ID", false, ""},             // "D" has only 1 char < 3, not I-prefix
-		{"IP", false, ""},             // "P" has only 1 char < 3
-		{"Ice", false, ""},            // Lowercase after I, not a prefix pattern
-		{"Item", false, ""},           // Item is a domain term, no I-prefix pattern
-		{"IAbcde", true, "Abcde"},     // "I" prefix, "Abcde" has 5 chars >= 3
-		{"IAbc", true, "Abc"},         // "I" prefix, "Abc" has 3 chars == 3
-		{"IAb", false, ""},            // "Ab" has 2 chars < 3, not I-prefix
+		{"IOrder", true, "Order"},         // "I" prefix with "Order" suffix (>= 3 chars)
+		{"ID", false, ""},                 // "D" has only 1 char < 3, not I-prefix
+		{"IP", false, ""},                 // "P" has only 1 char < 3
+		{"Ice", false, ""},                // Lowercase after I, not a prefix pattern
+		{"Item", false, ""},               // Item is a domain term, no I-prefix pattern
+		{"IAbcde", true, "Abcde"},         // "I" prefix, "Abcde" has 5 chars >= 3
+		{"IAbc", true, "Abc"},             // "I" prefix, "Abc" has 3 chars == 3
+		{"IAb", false, ""},                // "Ab" has 2 chars < 3, not I-prefix
 	}
 
 	for _, c := range cases {
@@ -176,11 +176,11 @@ func TestGenericTermFilter_FilterTermsDeduplication(t *testing.T) {
 
 	// Input terms with potential duplicates after extraction
 	terms := []string{
-		"OrderService",   // -> "Order"
-		"OrderHandler",   // -> "Order"
+		"OrderService",    // -> "Order"
+		"OrderHandler",    // -> "Order"
 		"OrderRepository", // -> "Order"
-		"Order",          // -> "Order" (not filtered)
-		"Customer",       // -> "Customer" (not filtered)
+		"Order",           // -> "Order" (not filtered)
+		"Customer",        // -> "Customer" (not filtered)
 	}
 
 	domainTerms, _ := filter.FilterTerms(terms)
@@ -263,9 +263,9 @@ func TestGenericTermFilter_ExtractDomainTerm(t *testing.T) {
 	}{
 		{"OrderService", "Order"},
 		{"BaseEntity", "Entity"},
-		{"Order", "Order"},           // Not filtered, returns as-is
-		{"Handler", ""},              // Pure generic, no extraction
-		{"MockService", ""},          // Both Mock prefix and Service suffix are generic
+		{"Order", "Order"},  // Not filtered, returns as-is
+		{"Handler", ""},     // Pure generic, no extraction
+		{"MockService", ""}, // Both Mock prefix and Service suffix are generic
 	}
 
 	for _, c := range cases {
@@ -280,14 +280,14 @@ func TestGenericTermFilter_HasGenericSuffix(t *testing.T) {
 	filter := NewGenericTermFilter()
 
 	cases := []struct {
-		input    string
+		input     string
 		hasSuffix bool
-		suffix   string
+		suffix    string
 	}{
 		{"OrderService", true, "Service"},
 		{"UserHandler", true, "Handler"},
 		{"Order", false, ""},
-		{"Handler", false, ""},  // Exact match, not suffix
+		{"Handler", false, ""}, // Exact match, not suffix
 	}
 
 	for _, c := range cases {

@@ -20,9 +20,9 @@ type DiscoveredType struct {
 	Language   string             // "go" or "typescript"
 
 	// Filtering metadata
-	OriginalName     string // Original name before domain extraction (e.g., "OrderService")
-	WasFiltered      bool   // True if this type was filtered but domain term extracted
-	FilterReason     string // Why the original was filtered (e.g., "has generic suffix: Service")
+	OriginalName      string // Original name before domain extraction (e.g., "OrderService")
+	WasFiltered       bool   // True if this type was filtered but domain term extracted
+	FilterReason      string // Why the original was filtered (e.g., "has generic suffix: Service")
 	ExtractedFromTerm string // The term this was extracted from (e.g., "OrderService" -> "Order")
 }
 
@@ -59,29 +59,6 @@ const (
 	TermConfidenceMedium TermConfidence = "medium" // Appears in one file as a type or multiple as fields
 	TermConfidenceLow    TermConfidence = "low"    // Appears only as fields in one file
 )
-
-// legacyGenericTerms is kept for backward compatibility with existing code
-// that may reference it. New code should use GenericTermFilter instead.
-var legacyGenericTerms = map[string]bool{
-	"Handler":    true,
-	"Manager":    true,
-	"Service":    true,
-	"Repository": true,
-	"Controller": true,
-	"Factory":    true,
-	"Builder":    true,
-	"Adapter":    true,
-	"Wrapper":    true,
-	"Helper":     true,
-	"Util":       true,
-	"Utils":      true,
-	"Base":       true,
-	"Abstract":   true,
-	"Default":    true,
-	"Common":     true,
-	"Generic":    true,
-	"Internal":   true,
-}
 
 // Analyzer extracts type definitions from source files
 type Analyzer struct {
@@ -787,14 +764,6 @@ func (a *Analyzer) normalizeTSType(typeExpr string) string {
 	typeExpr = strings.TrimSuffix(typeExpr, "[]")
 
 	return typeExpr
-}
-
-// isGenericTerm checks if a term is a generic programming term to filter out.
-// Note: This returns true for terms that should be filtered, but the caller
-// should also check for extracted domain terms via filterTerm().
-func (a *Analyzer) isGenericTerm(term string) bool {
-	result := a.filter.Filter(term)
-	return result.IsFiltered
 }
 
 // filterTerm filters a term and returns both whether it should be filtered
