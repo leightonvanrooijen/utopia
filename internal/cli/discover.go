@@ -375,14 +375,14 @@ type draftsOutput struct {
 }
 
 type draftOutput struct {
-	ID               string         `yaml:"id"`
-	Title            string         `yaml:"title"`
-	Description      string         `yaml:"description"`
-	Confidence       string         `yaml:"confidence"`
-	UncertaintyNotes []string       `yaml:"uncertainty_notes,omitempty"`
-	Evidence         evidenceOutput `yaml:"evidence"`
+	ID               string          `yaml:"id"`
+	Title            string          `yaml:"title"`
+	Description      string          `yaml:"description"`
+	Confidence       string          `yaml:"confidence"`
+	UncertaintyNotes []string        `yaml:"uncertainty_notes,omitempty"`
+	Evidence         evidenceOutput  `yaml:"evidence"`
 	Features         []featureOutput `yaml:"features"`
-	DomainKnowledge  []string       `yaml:"domain_knowledge,omitempty"`
+	DomainKnowledge  []string        `yaml:"domain_knowledge,omitempty"`
 }
 
 type evidenceOutput struct {
