@@ -66,3 +66,10 @@ type DraftRepository interface {
 	ListDrafts() ([]*DraftSpec, error)
 	DeleteDraft(id string) error
 }
+
+// DiscoveryStateRepository defines storage operations for discovery state.
+// State is stored in .utopia/drafts/.discovery-state to track incremental discovery.
+type DiscoveryStateRepository interface {
+	LoadDiscoveryState() (*DiscoveryState, error)
+	SaveDiscoveryState(state *DiscoveryState) error
+}

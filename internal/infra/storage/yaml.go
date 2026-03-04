@@ -13,12 +13,13 @@ import (
 // Compile-time interface assertions.
 // These ensure YAMLStore implements all repository interfaces from the domain package.
 var (
-	_ domain.SpecRepository          = (*YAMLStore)(nil)
-	_ domain.ChangeRequestRepository = (*YAMLStore)(nil)
-	_ domain.WorkItemRepository      = (*YAMLStore)(nil)
-	_ domain.ConversationRepository  = (*YAMLStore)(nil)
-	_ domain.ConfigRepository        = (*YAMLStore)(nil)
-	_ domain.DraftRepository         = (*YAMLStore)(nil)
+	_ domain.SpecRepository           = (*YAMLStore)(nil)
+	_ domain.ChangeRequestRepository  = (*YAMLStore)(nil)
+	_ domain.WorkItemRepository       = (*YAMLStore)(nil)
+	_ domain.ConversationRepository   = (*YAMLStore)(nil)
+	_ domain.ConfigRepository         = (*YAMLStore)(nil)
+	_ domain.DraftRepository          = (*YAMLStore)(nil)
+	_ domain.DiscoveryStateRepository = (*YAMLStore)(nil)
 )
 
 // YAMLStore handles reading and writing YAML files
@@ -887,4 +888,30 @@ func (s *YAMLStore) DeleteDraft(id string) error {
 		return fmt.Errorf("failed to delete draft %s: %w", id, err)
 	}
 	return nil
+}
+
+// LoadDiscoveryState reads discovery state from .utopia/drafts/.discovery-state
+func (s *YAMLStore) LoadDiscoveryState() (*domain.DiscoveryState, error) {
+	path := filepath.Join(s.baseDir, "drafts", ".discovery-state")
+
+	var state domain.DiscoveryState
+	if err := s.readYAML(path, &state); err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil // No previous state exists
+		}
+		return nil, err
+	}
+
+	return &state, nil
+}
+
+// SaveDiscoveryState writes discovery state to .utopia/drafts/.discovery-state
+func (s *YAMLStore) SaveDiscoveryState(state *domain.DiscoveryState) error {
+	dir := filepath.Join(s.baseDir, "drafts")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create drafts directory: %w", err)
+	}
+
+	path := filepath.Join(dir, ".discovery-state")
+	return s.writeYAML(path, state)
 }

@@ -27,6 +27,10 @@ The command will:
   3. Generate draft specs with confidence levels based on evidence quality
   4. Save drafts to .utopia/drafts/ for review
 
+Incremental discovery:
+  Re-running discover after codebase changes only analyzes new or modified files.
+  Use --full to force complete re-discovery of the entire codebase.
+
 Confidence levels:
   - HIGH: Tests exist with clear boundaries and documentation
   - MEDIUM: Some tests or docs exist, but gaps remain
@@ -37,8 +41,11 @@ promoting them to official specifications.`,
 	RunE: runDiscover,
 }
 
+var discoverFullFlag bool
+
 func init() {
 	rootCmd.AddCommand(discoverCmd)
+	discoverCmd.Flags().BoolVar(&discoverFullFlag, "full", false, "Force complete re-discovery of entire codebase")
 }
 
 // discoverSystemPrompt guides Claude through codebase analysis and draft spec generation
@@ -155,6 +162,18 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 		existingDrafts = []*domain.DraftSpec{}
 	}
 
+	// Load previous discovery state for incremental discovery
+	var lastRunTime time.Time
+	previousState, err := store.LoadDiscoveryState()
+	if err != nil {
+		return fmt.Errorf("failed to load discovery state: %w", err)
+	}
+
+	isIncremental := !discoverFullFlag && previousState != nil
+	if isIncremental {
+		lastRunTime = previousState.LastRun
+	}
+
 	// Ensure drafts directory exists
 	draftsDir := filepath.Join(utopiaDir, "drafts")
 	if err := os.MkdirAll(draftsDir, 0755); err != nil {
@@ -165,14 +184,28 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Project: %s\n", absPath)
 	fmt.Printf("Existing specs: %d\n", len(existingSpecs))
 	fmt.Printf("Existing drafts: %d\n", len(existingDrafts))
+	if isIncremental {
+		fmt.Printf("Mode: incremental (since %s)\n", lastRunTime.Format("2006-01-02 15:04:05"))
+	} else {
+		fmt.Println("Mode: full discovery")
+	}
 	fmt.Println()
 
-	// Collect codebase context
+	// Collect codebase context (with optional time filter for incremental)
 	fmt.Println("Collecting codebase context...")
-	codebaseContext, err := collectCodebaseContext(absPath)
+	codebaseContext, filesAnalyzed, err := collectCodebaseContextIncremental(absPath, lastRunTime, isIncremental)
 	if err != nil {
 		return fmt.Errorf("failed to collect codebase context: %w", err)
 	}
+
+	// Check if there are any files to analyze
+	if len(filesAnalyzed) == 0 {
+		fmt.Println("No new or modified files to analyze.")
+		fmt.Println("Use --full to force complete re-discovery.")
+		return nil
+	}
+
+	fmt.Printf("Files to analyze: %d\n", len(filesAnalyzed))
 
 	// Build existing specs summary
 	specsSummary := buildExistingSpecsSummary(existingSpecs)
@@ -210,15 +243,27 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Save discovery state for future incremental runs
+	newState := &domain.DiscoveryState{
+		LastRun:       time.Now(),
+		FilesAnalyzed: filesAnalyzed,
+	}
+	if err := store.SaveDiscoveryState(newState); err != nil {
+		return fmt.Errorf("failed to save discovery state: %w", err)
+	}
+
 	// Print summary
 	printDiscoverySummary(drafts, draftsDir)
 
 	return nil
 }
 
-// collectCodebaseContext gathers relevant files for Claude to analyze
-func collectCodebaseContext(projectDir string) (string, error) {
+// collectCodebaseContextIncremental gathers relevant files for Claude to analyze,
+// optionally filtering to only include files modified since lastRun.
+// Returns the context string and a map of analyzed files with their modification times.
+func collectCodebaseContextIncremental(projectDir string, lastRun time.Time, incrementalMode bool) (string, map[string]time.Time, error) {
 	var sb strings.Builder
+	filesAnalyzed := make(map[string]time.Time)
 
 	// Define file patterns to collect
 	patterns := []struct {
@@ -233,7 +278,7 @@ func collectCodebaseContext(projectDir string) (string, error) {
 	}
 
 	for _, p := range patterns {
-		files, err := collectFiles(projectDir, p.glob, p.maxSize)
+		files, err := collectFilesIncremental(projectDir, p.glob, p.maxSize, lastRun, incrementalMode)
 		if err != nil {
 			continue // Skip on error, don't fail entire discovery
 		}
@@ -242,20 +287,23 @@ func collectCodebaseContext(projectDir string) (string, error) {
 			sb.WriteString(fmt.Sprintf("\n### %s\n\n", p.name))
 			for _, f := range files {
 				sb.WriteString(fmt.Sprintf("**File: %s**\n```\n%s\n```\n\n", f.path, f.content))
+				filesAnalyzed[f.path] = f.modTime
 			}
 		}
 	}
 
-	return sb.String(), nil
+	return sb.String(), filesAnalyzed, nil
 }
 
 type collectedFile struct {
 	path    string
 	content string
+	modTime time.Time
 }
 
-// collectFiles gathers files matching a pattern with size limit
-func collectFiles(root, pattern string, maxTotalSize int64) ([]collectedFile, error) {
+// collectFilesIncremental gathers files matching a pattern with size limit,
+// optionally filtering to only include files modified since lastRun.
+func collectFilesIncremental(root, pattern string, maxTotalSize int64, lastRun time.Time, incrementalMode bool) ([]collectedFile, error) {
 	var files []collectedFile
 	var totalSize int64
 
@@ -288,6 +336,11 @@ func collectFiles(root, pattern string, maxTotalSize int64) ([]collectedFile, er
 			}
 		}
 
+		// In incremental mode, skip files not modified since last run
+		if incrementalMode && !info.ModTime().After(lastRun) {
+			return nil
+		}
+
 		// Check size
 		if totalSize+info.Size() > maxTotalSize {
 			return nil // Skip if would exceed limit
@@ -307,6 +360,7 @@ func collectFiles(root, pattern string, maxTotalSize int64) ([]collectedFile, er
 		files = append(files, collectedFile{
 			path:    relPath,
 			content: truncateContent(string(content), 5000),
+			modTime: info.ModTime(),
 		})
 		totalSize += info.Size()
 
