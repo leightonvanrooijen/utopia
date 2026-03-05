@@ -1,37 +1,21 @@
 id: adoption-discover-language-agnostic
 type: enhancement
 title: Make discover command language-agnostic
-status: draft
+status: in-progress
 changes:
-  - operation: modify
-    spec: adoption
-    feature_id: discover-command
-    description: |
-      Remove hardcoded Go file patterns. Scan all text files and let Claude
-      determine what's relevant. Utopia is a helper tool for any codebase,
-      not just Go projects.
-    criteria:
-      add:
-        - "Scans all text files regardless of extension"
-        - "Works on any codebase (Go, TypeScript, Python, Rust, etc.)"
-      remove:
-        - "Scans codebase to find potential user-observable capabilities."
-      edit:
-        - old: "Scans codebase to find potential user-observable capabilities."
-          new: "Scans all text files in codebase to find potential user-observable capabilities."
-
-notes: |
-  Current implementation has hardcoded patterns:
-    - **/*.go (50KB limit)
-    - **/*_test.go (30KB limit)
-    - **/*.md (20KB limit)
-    - **/*.yaml (10KB limit)
-
-  This means running discover on a TypeScript project finds zero source code.
-
-  Fix: Remove pattern-based filtering. Keep existing safeguards:
-    - Skip .git, vendor, node_modules, .utopia
-    - Skip binary files
-    - Enforce size limits
-
-  Let Claude analyze whatever text files exist.
+    - operation: modify
+      spec: adoption
+      feature_id: discover-command
+      description: |
+        Remove hardcoded Go file patterns. Scan all text files and let Claude
+        determine what's relevant. Utopia is a helper tool for any codebase,
+        not just Go projects.
+      criteria:
+        add:
+            - Scans all text files regardless of extension
+            - Works on any codebase (Go, TypeScript, Python, Rust, etc.)
+        remove:
+            - Scans codebase to find potential user-observable capabilities.
+        edit:
+            - old: Scans codebase to find potential user-observable capabilities.
+              new: Scans all text files in codebase to find potential user-observable capabilities.
