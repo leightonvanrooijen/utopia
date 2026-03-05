@@ -156,28 +156,21 @@ candidates:
 Output ONLY the YAML block.`
 
 // Stage 2: Qualification Agent
-// Applies strict criteria to filter candidates ruthlessly
-const qualifierAgentPrompt = `You are a Qualification Agent. Apply strict criteria to filter spec candidates.
+// Applies strict criteria to filter candidates ruthlessly.
+// Criteria are defined in domain.SpecQualificationCriteria.
+func buildQualifierAgentPrompt(candidatesYAML string) string {
+	criteria := domain.SpecQualificationCriteria{}
+	return fmt.Sprintf(`You are a Qualification Agent. Apply strict criteria to filter spec candidates.
 
 ## Candidates from Stage 1
 %s
 
-## Qualification Criteria (ALL must be true)
-1. Describes a USER-OBSERVABLE capability (not internal implementation)
-2. Can be VERIFIED by using the system (testable by a user)
-3. Represents a COHERENT, BOUNDED feature
-4. Answers "what can I do?" NOT "how is it built?"
-
-## Disqualification Criteria (ANY disqualifies)
-- Implementation details (data structures, algorithms, internal state)
-- Internal code organization (services, handlers, utilities)
-- Technical plumbing users don't interact with
-- Standard practices covered by language/framework conventions
+%s
 
 ## Output Format
 Output qualified candidates with qualification reasoning.
 
-` + "```yaml" + `
+`+"```yaml"+`
 qualified:
   - id: candidate-id
     title: "Title"
@@ -188,10 +181,11 @@ qualified:
 disqualified:
   - id: candidate-id
     reason: "Why this was disqualified"
-` + "```" + `
+`+"```"+`
 
 Be RUTHLESS. When in doubt, disqualify. Quality over quantity.
-Output ONLY the YAML block.`
+Output ONLY the YAML block.`, candidatesYAML, criteria.FormatForAgent())
+}
 
 // Stage 3: Refinement Agent
 // Sharpens descriptions and ensures acceptance criteria are testable
@@ -357,7 +351,7 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 
 	// Phase 3: Stage 2 - Qualification
 	progress.startPhase(3, "Stage 2: Qualifying candidates")
-	stage2Prompt := fmt.Sprintf(qualifierAgentPrompt, candidatesOutput)
+	stage2Prompt := buildQualifierAgentPrompt(candidatesOutput)
 	qualifiedOutput, err := cli.Prompt(ctx, stage2Prompt)
 	if err != nil {
 		return fmt.Errorf("qualification failed: %w", err)
