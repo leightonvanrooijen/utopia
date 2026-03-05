@@ -123,124 +123,117 @@ func init() {
 
 // Stage 1: Candidate Identification Agent
 // Scans codebase to identify potential user-observable capabilities
-const candidateAgentPrompt = `You are a Candidate Identification Agent. Scan the codebase to find potential user-observable capabilities.
+const candidateAgentPrompt = `Find what users can DO with this system.
 
-## Codebase Context
+## Codebase
 %s
 
-## Existing Specifications (avoid duplicates)
+## Already Documented (skip these)
 %s
 
-## Core Principle
-Specs document USER-OBSERVABLE capabilities. They answer "what can I do?" not "how is it built?"
+## Look For
+User-observable capabilities: commands, APIs, features, behaviors.
+Ask: "Can a user DO this or SEE this?" → Include it.
 
-## What to Identify
-- Commands users can run
-- APIs users can call
-- Features users can interact with
-- Behaviors users can observe
+## Good vs Bad Candidates
+GOOD: "Users can initialize a project" - observable action
+GOOD: "Users can export data to CSV" - observable output
+BAD:  "YAML parser validates schemas" - internal implementation
+BAD:  "Repository uses file storage" - technical plumbing
 
-## Output Format
-Output a YAML list of candidates. Be inclusive at this stage - filtering happens next.
-
+## Output
 ` + "```yaml" + `
 candidates:
-  - id: candidate-id-kebab-case
-    title: "Brief Title"
-    description: "What the user can do or observe"
-    source_files:
-      - "path/to/file.go"
+  - id: kebab-case-id
+    title: "What User Can Do"
+    description: "User-facing capability"
+    source_files: ["path/to/file.go"]
     evidence_type: code|test|doc
 ` + "```" + `
-
-Output ONLY the YAML block.`
+Output ONLY the YAML.`
 
 // Stage 2: Qualification Agent
 // Applies strict criteria to filter candidates ruthlessly.
 // Criteria are defined in domain.SpecQualificationCriteria.
 func buildQualifierAgentPrompt(candidatesYAML string) string {
 	criteria := domain.SpecQualificationCriteria{}
-	return fmt.Sprintf(`You are a Qualification Agent. Apply strict criteria to filter spec candidates.
+	return fmt.Sprintf(`Is this user-observable and testable?
 
-## Candidates from Stage 1
+## Candidates
 %s
 
 %s
 
-## Output Format
-Output qualified candidates with qualification reasoning.
+## The Test
+For each candidate, ask: "Could a user verify this by using the system?"
+YES → Qualify. NO → Disqualify.
 
+## Good vs Bad
+QUALIFIES: "Initialize a project" - user runs command, sees result
+QUALIFIES: "Export reports to PDF" - user triggers export, gets file
+DISQUALIFY: "Service validates input" - internal behavior
+DISQUALIFY: "Handler parses JSON" - implementation detail
+
+## Output
 `+"```yaml"+`
 qualified:
   - id: candidate-id
     title: "Title"
-    description: "What the user can do"
-    source_files:
-      - "path/to/file.go"
-    qualification_reason: "Why this qualifies as user-observable"
+    description: "What user can do"
+    source_files: ["path/to/file.go"]
+    qualification_reason: "How user verifies this"
 disqualified:
   - id: candidate-id
-    reason: "Why this was disqualified"
+    reason: "Why not user-observable"
 `+"```"+`
-
-Be RUTHLESS. When in doubt, disqualify. Quality over quantity.
-Output ONLY the YAML block.`, candidatesYAML, criteria.FormatForAgent())
+Be RUTHLESS. When in doubt, disqualify.
+Output ONLY the YAML.`, candidatesYAML, criteria.FormatForAgent())
 }
 
 // Stage 3: Refinement Agent
 // Sharpens descriptions and ensures acceptance criteria are testable
-const refinementAgentPrompt = `You are a Refinement Agent. Sharpen qualified specs for clarity and testability.
+const refinementAgentPrompt = `Can someone verify this by using the system?
 
-## Qualified Candidates from Stage 2
+## Qualified Candidates
 %s
 
-## Your Task
-For each qualified candidate:
-1. Sharpen the description to focus on user value
-2. Break into specific features with testable acceptance criteria
-3. Assess confidence based on evidence quality
-4. Note any uncertainties
+## Your Job
+Make each spec verifiable. Every acceptance criterion must be testable by a user.
 
-## Confidence Levels
-- HIGH: Tests exist AND (docs exist OR very clear boundaries)
-- MEDIUM: Tests OR docs exist (not both)
-- LOW: Inferred from code only
+## Confidence
+- HIGH: Tests + docs exist
+- MEDIUM: Tests OR docs (not both)
+- LOW: Code only
 
-## Output Format
-Output refined draft specifications.
+## Good vs Bad Acceptance Criteria
+GOOD: "Given a project dir, when user runs 'init', then .utopia/ is created"
+GOOD: "When user exports to CSV, the file contains all records"
+BAD:  "The service correctly handles errors" - not observable
+BAD:  "Data is validated before saving" - internal detail
 
+## Output
 ` + "```yaml" + `
 drafts:
   - id: spec-id-kebab-case
-    title: "Human Readable Title"
+    title: "What User Can Do"
     description: |
-      Clear description of what the user can do.
-      Focus on user value, not implementation.
+      User-focused description.
     confidence: high|medium|low
-    discovered_from:
-      - "path/to/file.go"
-    uncertainty_notes:
-      - "What remains unclear (for low confidence)"
+    discovered_from: ["source/file.go"]
+    uncertainty_notes: ["What's unclear"]
     evidence:
-      code_files:
-        - "path/to/impl.go"
-      test_files:
-        - "path/to/test.go"
-      doc_files:
-        - "path/to/docs.md"
-      comments:
-        - "Relevant comment explaining intent"
+      code_files: ["impl.go"]
+      test_files: ["test.go"]
+      doc_files: ["docs.md"]
+      comments: ["Relevant intent"]
     features:
       - id: feature-id
         description: "Specific capability"
         acceptance_criteria:
           - "Given X, when Y, then Z"
-    domain_knowledge:
-      - "Important domain concept"
+    domain_knowledge: ["Key concept"]
 ` + "```" + `
-
-Ensure EVERY acceptance criterion is testable by using the system.
-Output ONLY the YAML block.`
+Output ONLY the YAML.`
 
 func runDiscover(cmd *cobra.Command, args []string) error {
 	projectDir := GetProjectDir(cmd)
