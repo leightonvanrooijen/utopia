@@ -67,7 +67,7 @@ var discoverCmd = &cobra.Command{
 Discovery uses a sequential multi-agent pipeline optimized for spec quality:
 
   Stage 1 - Candidate Identification:
-    Scans codebase to find potential user-observable capabilities.
+    Scans all text files in codebase to find potential user-observable capabilities.
     Casts a wide net to identify anything users might interact with.
 
   Stage 2 - Qualification:
@@ -421,24 +421,12 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// collectCodebaseContextIncremental gathers relevant files for Claude to analyze,
+// collectCodebaseContextIncremental gathers all text files for Claude to analyze,
 // optionally filtering to only include files modified since lastRun.
 // Returns the context string and a map of analyzed files with their modification times.
 func collectCodebaseContextIncremental(projectDir string, lastRun time.Time, incrementalMode bool, scope discoverScope, progress *discoverProgress) (string, map[string]time.Time, error) {
 	var sb strings.Builder
 	filesAnalyzed := make(map[string]time.Time)
-
-	// Define file patterns to collect
-	patterns := []struct {
-		name    string
-		glob    string
-		maxSize int64
-	}{
-		{"Go Source Files", "**/*.go", 50000},
-		{"Test Files", "**/*_test.go", 30000},
-		{"Documentation", "**/*.md", 20000},
-		{"YAML Config", "**/*.yaml", 10000},
-	}
 
 	// Determine search roots - use scoped paths or entire project
 	searchRoots := scope.paths
@@ -457,28 +445,29 @@ func collectCodebaseContextIncremental(projectDir string, lastRun time.Time, inc
 		searchRoots = absoluteRoots
 	}
 
-	for _, p := range patterns {
-		var allFiles []collectedFile
-		for _, root := range searchRoots {
-			files, skipped, err := collectFilesIncremental(root, projectDir, p.glob, p.maxSize, lastRun, incrementalMode, scope.excludePatterns, progress)
-			if err != nil {
-				continue // Skip on error, don't fail entire discovery
-			}
-			allFiles = append(allFiles, files...)
+	// Collect all text files - let Claude determine what's relevant
+	var allFiles []collectedFile
+	const maxTotalSize int64 = 200000 // 200KB total limit for context
 
-			// Log skipped files in verbose mode
-			for _, skip := range skipped {
-				progress.verbosePrintf("\n  Skipped: %s (%s)", skip.path, skip.reason)
-			}
+	for _, root := range searchRoots {
+		files, skipped, err := collectAllTextFilesIncremental(root, projectDir, maxTotalSize, lastRun, incrementalMode, scope.excludePatterns, progress)
+		if err != nil {
+			continue // Skip on error, don't fail entire discovery
 		}
+		allFiles = append(allFiles, files...)
 
-		if len(allFiles) > 0 {
-			sb.WriteString(fmt.Sprintf("\n### %s\n\n", p.name))
-			for _, f := range allFiles {
-				progress.verbosePrintf("\n  Collected: %s", f.path)
-				sb.WriteString(fmt.Sprintf("**File: %s**\n```\n%s\n```\n\n", f.path, f.content))
-				filesAnalyzed[f.path] = f.modTime
-			}
+		// Log skipped files in verbose mode
+		for _, skip := range skipped {
+			progress.verbosePrintf("\n  Skipped: %s (%s)", skip.path, skip.reason)
+		}
+	}
+
+	if len(allFiles) > 0 {
+		sb.WriteString("\n### Source Files\n\n")
+		for _, f := range allFiles {
+			progress.verbosePrintf("\n  Collected: %s", f.path)
+			sb.WriteString(fmt.Sprintf("**File: %s**\n```\n%s\n```\n\n", f.path, f.content))
+			filesAnalyzed[f.path] = f.modTime
 		}
 	}
 
@@ -564,6 +553,85 @@ func collectFilesIncremental(root, projectDir, pattern string, maxTotalSize int6
 				skipped = append(skipped, skippedFile{path: relPath, reason: "size limit exceeded"})
 			}
 			return nil // Skip if would exceed limit
+		}
+
+		// Read file
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+
+		// Skip binary files
+		if !isTextFile(content) {
+			if progress.verbose {
+				skipped = append(skipped, skippedFile{path: relPath, reason: "binary file"})
+			}
+			return nil
+		}
+
+		files = append(files, collectedFile{
+			path:    relPath,
+			content: truncateContent(string(content), 5000),
+			modTime: info.ModTime(),
+		})
+		totalSize += info.Size()
+
+		return nil
+	})
+
+	return files, skipped, err
+}
+
+// collectAllTextFilesIncremental gathers all text files regardless of extension,
+// letting Claude determine what's relevant for capability discovery.
+// Returns collected files, skipped files (for verbose logging), and any error.
+func collectAllTextFilesIncremental(root, projectDir string, maxTotalSize int64, lastRun time.Time, incrementalMode bool, excludePatterns []string, progress *discoverProgress) ([]collectedFile, []skippedFile, error) {
+	var files []collectedFile
+	var skipped []skippedFile
+	var totalSize int64
+
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil // Skip errors
+		}
+
+		// Skip directories we don't care about
+		if info.IsDir() {
+			name := info.Name()
+			if name == ".git" || name == "vendor" || name == "node_modules" || name == ".utopia" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		// Compute path relative to project root for consistent reporting
+		relPath, err := filepath.Rel(projectDir, path)
+		if err != nil {
+			return nil
+		}
+
+		// Check if file matches any exclude pattern
+		if matchesAnyPattern(relPath, excludePatterns) {
+			if progress.verbose {
+				skipped = append(skipped, skippedFile{path: relPath, reason: "excluded by pattern"})
+			}
+			return nil
+		}
+
+		// In incremental mode, skip files not modified since last run
+		if incrementalMode && !info.ModTime().After(lastRun) {
+			if progress.verbose {
+				skipped = append(skipped, skippedFile{path: relPath, reason: "not modified since last run"})
+			}
+			return nil
+		}
+
+		// Check size limit
+		if totalSize+info.Size() > maxTotalSize {
+			if progress.verbose {
+				skipped = append(skipped, skippedFile{path: relPath, reason: "size limit exceeded"})
+			}
+			return nil
 		}
 
 		// Read file
