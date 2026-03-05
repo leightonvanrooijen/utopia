@@ -1,0 +1,25 @@
+id: adoption-enhance-discovery-feedback
+type: enhancement
+title: Add verbose flag and phase timing to discovery commands
+status: in-progress
+changes:
+    - operation: modify
+      spec: adoption
+      feature_id: discover-command
+      criteria:
+        add:
+            - Default output shows phase-by-phase progress with timing (e.g., '[1/4] Scanning files... done (0.3s, 47 files found)')
+            - Flag `-v` or `--verbose` enables detailed file-by-file progress during scanning
+            - Verbose mode shows which files are skipped during incremental filtering
+            - Verbose mode shows each draft filename as it's saved
+            - Total elapsed time displayed at end of discovery
+    - operation: modify
+      spec: adoption
+      feature_id: discover-domain-command
+      criteria:
+        add:
+            - Default output shows phase-by-phase progress with timing (e.g., '[1/4] Scanning files... done (0.3s, 47 files found)')
+            - Flag `-v` or `--verbose` enables detailed file-by-file progress during scanning
+            - Verbose mode shows which files are skipped during incremental filtering
+            - Verbose mode shows each draft filename as it's saved
+            - Total elapsed time displayed at end of discovery
