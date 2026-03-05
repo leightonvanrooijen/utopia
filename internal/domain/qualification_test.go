@@ -33,17 +33,21 @@ func TestSpecQualificationCriteria_Disqualifications(t *testing.T) {
 	criteria := SpecQualificationCriteria{}
 	disqualifications := criteria.Disqualifications()
 
-	if len(disqualifications) != 4 {
-		t.Errorf("expected 4 disqualifications, got %d", len(disqualifications))
+	if len(disqualifications) != 8 {
+		t.Errorf("expected 8 disqualifications, got %d", len(disqualifications))
 	}
 
-	// Verify implementation details are excluded
+	// Verify all disqualification categories are covered
 	allText := strings.Join(disqualifications, " ")
 	requiredExclusions := []string{
 		"Implementation details",
 		"Internal code organization",
 		"Technical plumbing",
 		"conventions",
+		"Infrastructure concerns",
+		"Code quality practices",
+		"Architectural decisions",
+		"Domain vocabulary definitions",
 	}
 
 	for _, exclusion := range requiredExclusions {

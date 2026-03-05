@@ -360,6 +360,10 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 	disqualifiedCount := countYAMLItems(qualifiedOutput, "disqualified")
 	progress.endPhase(fmt.Sprintf("%d qualified, %d disqualified", qualifiedCount, disqualifiedCount))
 
+	// Log disqualified candidates with reasons for transparency
+	disqualified := parseDisqualifiedCandidates(qualifiedOutput)
+	logDisqualifiedCandidates(disqualified, discoverVerboseFlag)
+
 	// Check if any candidates qualified
 	if qualifiedCount == 0 {
 		fmt.Println("\nNo candidates passed qualification criteria.")
@@ -708,6 +712,56 @@ type featureOutput struct {
 	ID                 string   `yaml:"id"`
 	Description        string   `yaml:"description"`
 	AcceptanceCriteria []string `yaml:"acceptance_criteria"`
+}
+
+// qualificationOutput represents the Stage 2 qualification agent output
+type qualificationOutput struct {
+	Qualified    []qualifiedCandidate    `yaml:"qualified"`
+	Disqualified []disqualifiedCandidate `yaml:"disqualified"`
+}
+
+type qualifiedCandidate struct {
+	ID                  string   `yaml:"id"`
+	Title               string   `yaml:"title"`
+	Description         string   `yaml:"description"`
+	SourceFiles         []string `yaml:"source_files,omitempty"`
+	QualificationReason string   `yaml:"qualification_reason"`
+}
+
+type disqualifiedCandidate struct {
+	ID     string `yaml:"id"`
+	Reason string `yaml:"reason"`
+}
+
+// parseDisqualifiedCandidates extracts disqualified candidates from Stage 2 output
+func parseDisqualifiedCandidates(output string) []disqualifiedCandidate {
+	yamlContent := extractYAMLBlock(output)
+	if yamlContent == "" {
+		return nil
+	}
+
+	var qOutput qualificationOutput
+	if err := yaml.Unmarshal([]byte(yamlContent), &qOutput); err != nil {
+		return nil
+	}
+
+	return qOutput.Disqualified
+}
+
+// logDisqualifiedCandidates logs disqualified candidates with their reasons
+// for transparency. This helps users understand why certain candidates
+// were filtered out during discovery.
+func logDisqualifiedCandidates(disqualified []disqualifiedCandidate, verbose bool) {
+	if len(disqualified) == 0 {
+		return
+	}
+
+	if verbose {
+		fmt.Println("\n  Disqualified candidates:")
+		for _, d := range disqualified {
+			fmt.Printf("    ✗ %s: %s\n", d.ID, d.Reason)
+		}
+	}
 }
 
 // parseDraftsFromOutput extracts draft specs from Claude's YAML output

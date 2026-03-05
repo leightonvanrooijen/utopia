@@ -48,10 +48,14 @@ func (c SpecQualificationCriteria) AcceptanceCriteriaRequirements() []string {
 // These are implementation details that should not become specs.
 func (c SpecQualificationCriteria) Disqualifications() []string {
 	return []string{
-		"Implementation details (data structures, algorithms, internal state)",
-		"Internal code organization (services, handlers, utilities)",
-		"Technical plumbing users don't interact with",
+		"Implementation details (data structures, algorithms, patterns used)",
+		"Internal code organization (services, handlers, repositories, utils)",
+		"Technical plumbing users don't interact with (middleware, adapters)",
 		"Standard practices covered by language/framework conventions",
+		"Infrastructure concerns (logging, monitoring, deployment)",
+		"Code quality practices (error handling patterns, validation approaches)",
+		"Architectural decisions (those belong in ADRs)",
+		"Domain vocabulary definitions (those belong in Domain docs)",
 	}
 }
 
