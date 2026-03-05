@@ -120,6 +120,52 @@ utopia harvest
 
 Scans your conversations for architectural decisions, concepts, and domain terminology. Creates documentation that feeds back into future conversations.
 
+### Adopting an Existing Codebase
+
+> ⚠️ **Experimental:** The discover commands use AI to analyze your codebase and may produce incomplete or inaccurate results. Always validate discovered drafts carefully during shaping.
+
+If you're adding Utopia to an existing project (brownfield), you can discover existing behavior rather than writing specs from scratch:
+
+**1. Discover Specs**
+
+```bash
+utopia discover
+```
+
+Scans your codebase (code, tests, docs) and proposes draft specs saved to `.utopia/drafts/specs/`. Each draft includes a confidence level based on evidence quality.
+
+**2. Shape Specs**
+
+```bash
+utopia shape
+```
+
+Guided conversation to validate and refine draft specs. Walk through each draft, correct misunderstandings, and promote validated drafts to active specs.
+
+**3. Discover Domain**
+
+```bash
+utopia discover domain
+```
+
+Scans type definitions, packages, and schemas to propose domain vocabulary. Drafts saved to `.utopia/drafts/domain/` with inferred bounded contexts.
+
+**4. Shape Domain**
+
+```bash
+utopia shape domain
+```
+
+Guided conversation to validate domain terms. Confirm definitions, merge duplicates, mark aliases, and promote to active domain docs.
+
+### Formatting
+
+```bash
+utopia format
+```
+
+Formats all YAML files in `.utopia/` for consistency. Use `--check` flag in CI to verify formatting without changes.
+
 ### Knowledge Artifacts
 
 Harvest extracts three types of documentation from your conversations:
