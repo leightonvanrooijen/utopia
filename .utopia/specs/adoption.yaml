@@ -1,7 +1,7 @@
 id: adoption
 title: adoption
 created: "2026-03-04T19:32:20.781903+11:00"
-updated: "2026-03-05T10:20:31.787468+11:00"
+updated: "2026-03-05T18:58:21.575377+11:00"
 description: ""
 features:
     - id: discover-command
@@ -17,6 +17,11 @@ features:
         - Confidence based on evidence quality (tests exist, clear boundaries, documentation)
         - Low confidence specs include uncertainty notes explaining what's unclear
         - Discovery completes with summary of drafts created
+        - Default output shows phase-by-phase progress with timing (e.g., '[1/4] Scanning files... done (0.3s, 47 files found)')
+        - Flag `-v` or `--verbose` enables detailed file-by-file progress during scanning
+        - Verbose mode shows which files are skipped during incremental filtering
+        - Verbose mode shows each draft filename as it's saved
+        - Total elapsed time displayed at end of discovery
 
     - id: drafts-storage
       description: |
@@ -91,6 +96,11 @@ features:
         - Confidence based on evidence quality (clear type definitions, consistent naming)
         - Low confidence terms include uncertainty notes explaining what's unclear
         - Discovery completes with summary of drafts created
+        - Default output shows phase-by-phase progress with timing (e.g., '[1/4] Scanning files... done (0.3s, 47 files found)')
+        - Flag `-v` or `--verbose` enables detailed file-by-file progress during scanning
+        - Verbose mode shows which files are skipped during incremental filtering
+        - Verbose mode shows each draft filename as it's saved
+        - Total elapsed time displayed at end of discovery
 
     - id: domain-drafts-storage
       description: |
