@@ -59,6 +59,7 @@ var (
 	discoverDomainFullFlag     bool
 	discoverDomainPathFlags    []string
 	discoverDomainExcludeFlags []string
+	discoverDomainVerboseFlag  bool
 )
 
 func init() {
@@ -66,6 +67,7 @@ func init() {
 	discoverDomainCmd.Flags().BoolVar(&discoverDomainFullFlag, "full", false, "Force complete re-discovery of entire codebase")
 	discoverDomainCmd.Flags().StringSliceVar(&discoverDomainPathFlags, "path", nil, "Limit discovery to specific directory (can be specified multiple times)")
 	discoverDomainCmd.Flags().StringSliceVar(&discoverDomainExcludeFlags, "exclude", nil, "Exclude files matching glob pattern (can be specified multiple times)")
+	discoverDomainCmd.Flags().BoolVarP(&discoverDomainVerboseFlag, "verbose", "v", false, "Enable detailed file-by-file progress output")
 }
 
 // discoverDomainSystemPrompt guides Claude through codebase analysis for domain vocabulary discovery
@@ -265,21 +267,26 @@ func runDiscoverDomain(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Println()
 
-	// Collect codebase context focused on type definitions and structure
-	fmt.Println("Collecting codebase context (types, packages, schemas)...")
-	codebaseContext, filesAnalyzed, err := collectDomainContextIncremental(absPath, lastRunTime, isIncremental, scope)
+	// Initialize progress tracker with 4 phases: scan, analyze, parse, save
+	progress := newDiscoverProgress(4, discoverDomainVerboseFlag)
+
+	// Phase 1: Collect codebase context focused on type definitions and structure
+	progress.startPhase(1, "Scanning files")
+	codebaseContext, filesAnalyzed, err := collectDomainContextIncremental(absPath, lastRunTime, isIncremental, scope, progress)
 	if err != nil {
 		return fmt.Errorf("failed to collect codebase context: %w", err)
 	}
 
 	// Check if there are any files to analyze
 	if len(filesAnalyzed) == 0 {
+		fmt.Printf(" done (no new files)\n")
 		fmt.Println("No new or modified files to analyze.")
 		fmt.Println("Use --full to force complete re-discovery.")
+		progress.printTotalElapsed()
 		return nil
 	}
 
-	fmt.Printf("Files to analyze: %d\n", len(filesAnalyzed))
+	progress.endPhase(fmt.Sprintf("%d files found", len(filesAnalyzed)))
 
 	// Build existing domain docs summary
 	domainDocsSummary := buildExistingDomainDocsSummary(existingDomainDocs)
@@ -287,8 +294,8 @@ func runDiscoverDomain(cmd *cobra.Command, args []string) error {
 	// Build system prompt
 	systemPrompt := fmt.Sprintf(discoverDomainSystemPrompt, codebaseContext, domainDocsSummary)
 
-	fmt.Println("Analyzing codebase with Claude...")
-	fmt.Println()
+	// Phase 2: Analyze codebase with Claude
+	progress.startPhase(2, "Analyzing codebase with Claude")
 
 	// Run Claude analysis
 	ctx := context.Background()
@@ -298,24 +305,32 @@ func runDiscoverDomain(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("claude analysis failed: %w", err)
 	}
+	progress.endPhase("")
 
-	// Parse drafts from Claude output
+	// Phase 3: Parse drafts from Claude output
+	progress.startPhase(3, "Parsing draft domain documents")
 	drafts, err := parseDomainDraftsFromOutput(output)
 	if err != nil {
 		return fmt.Errorf("failed to parse drafts: %w", err)
 	}
 
 	if len(drafts) == 0 {
+		fmt.Printf(" done (no drafts found)\n")
 		fmt.Println("No new draft domain documents discovered.")
+		progress.printTotalElapsed()
 		return nil
 	}
+	progress.endPhase(fmt.Sprintf("%d drafts parsed", len(drafts)))
 
-	// Save drafts
+	// Phase 4: Save drafts
+	progress.startPhase(4, "Saving drafts")
 	for _, draft := range drafts {
+		progress.verbosePrintf("\n  Saving %s.yaml", draft.ID)
 		if err := store.SaveDraftDomainDoc(draft); err != nil {
 			return fmt.Errorf("failed to save draft %s: %w", draft.ID, err)
 		}
 	}
+	progress.endPhase(fmt.Sprintf("%d drafts saved", len(drafts)))
 
 	// Save discovery state for future incremental runs
 	newState := &domain.DomainDiscoveryState{
@@ -336,12 +351,15 @@ func runDiscoverDomain(cmd *cobra.Command, args []string) error {
 	// Print summary
 	printDomainDiscoverySummary(drafts, draftsDir)
 
+	// Print total elapsed time
+	progress.printTotalElapsed()
+
 	return nil
 }
 
 // collectDomainContextIncremental gathers relevant files for domain analysis,
 // focusing on type definitions, package structure, and schemas.
-func collectDomainContextIncremental(projectDir string, lastRun time.Time, incrementalMode bool, scope discoverScope) (string, map[string]time.Time, error) {
+func collectDomainContextIncremental(projectDir string, lastRun time.Time, incrementalMode bool, scope discoverScope, progress *discoverProgress) (string, map[string]time.Time, error) {
 	var sb strings.Builder
 	filesAnalyzed := make(map[string]time.Time)
 
@@ -383,16 +401,22 @@ func collectDomainContextIncremental(projectDir string, lastRun time.Time, incre
 	for _, p := range patterns {
 		var allFiles []collectedFile
 		for _, root := range searchRoots {
-			files, err := collectDomainFilesIncremental(root, projectDir, p.glob, p.maxSize, lastRun, incrementalMode, scope.excludePatterns)
+			files, skipped, err := collectDomainFilesIncremental(root, projectDir, p.glob, p.maxSize, lastRun, incrementalMode, scope.excludePatterns, progress)
 			if err != nil {
 				continue // Skip on error, don't fail entire discovery
 			}
 			allFiles = append(allFiles, files...)
+
+			// Log skipped files in verbose mode
+			for _, skip := range skipped {
+				progress.verbosePrintf("\n  Skipped: %s (%s)", skip.path, skip.reason)
+			}
 		}
 
 		if len(allFiles) > 0 {
 			sb.WriteString(fmt.Sprintf("\n### %s\n\n", p.name))
 			for _, f := range allFiles {
+				progress.verbosePrintf("\n  Collected: %s", f.path)
 				sb.WriteString(fmt.Sprintf("**File: %s**\n```\n%s\n```\n\n", f.path, f.content))
 				filesAnalyzed[f.path] = f.modTime
 
@@ -503,8 +527,10 @@ func collectDomainContextIncremental(projectDir string, lastRun time.Time, incre
 
 // collectDomainFilesIncremental gathers files for domain analysis, prioritizing
 // files with type definitions and filtering out test files and generated code.
-func collectDomainFilesIncremental(root, projectDir, pattern string, maxTotalSize int64, lastRun time.Time, incrementalMode bool, excludePatterns []string) ([]collectedFile, error) {
+// Returns collected files, skipped files (for verbose logging), and any error.
+func collectDomainFilesIncremental(root, projectDir, pattern string, maxTotalSize int64, lastRun time.Time, incrementalMode bool, excludePatterns []string, progress *discoverProgress) ([]collectedFile, []skippedFile, error) {
 	var files []collectedFile
+	var skipped []skippedFile
 	var totalSize int64
 
 	// Walk directory and find matching files
@@ -530,21 +556,33 @@ func collectDomainFilesIncremental(root, projectDir, pattern string, maxTotalSiz
 
 		// Skip test files for domain discovery (we want core type definitions)
 		if strings.HasSuffix(relPath, "_test.go") {
+			if progress.verbose {
+				skipped = append(skipped, skippedFile{path: relPath, reason: "test file"})
+			}
 			return nil
 		}
 
 		// Skip mock files
 		if strings.Contains(filepath.Base(relPath), "mock") {
+			if progress.verbose {
+				skipped = append(skipped, skippedFile{path: relPath, reason: "mock file"})
+			}
 			return nil
 		}
 
 		// Skip generated files
 		if strings.Contains(relPath, "generated") || strings.HasSuffix(relPath, ".gen.go") {
+			if progress.verbose {
+				skipped = append(skipped, skippedFile{path: relPath, reason: "generated file"})
+			}
 			return nil
 		}
 
 		// Check if file matches any exclude pattern
 		if matchesAnyPattern(relPath, excludePatterns) {
+			if progress.verbose {
+				skipped = append(skipped, skippedFile{path: relPath, reason: "excluded by pattern"})
+			}
 			return nil
 		}
 
@@ -559,11 +597,17 @@ func collectDomainFilesIncremental(root, projectDir, pattern string, maxTotalSiz
 
 		// In incremental mode, skip files not modified since last run
 		if incrementalMode && !info.ModTime().After(lastRun) {
+			if progress.verbose {
+				skipped = append(skipped, skippedFile{path: relPath, reason: "not modified since last run"})
+			}
 			return nil
 		}
 
 		// Check size
 		if totalSize+info.Size() > maxTotalSize {
+			if progress.verbose {
+				skipped = append(skipped, skippedFile{path: relPath, reason: "size limit exceeded"})
+			}
 			return nil // Skip if would exceed limit
 		}
 
@@ -575,6 +619,9 @@ func collectDomainFilesIncremental(root, projectDir, pattern string, maxTotalSiz
 
 		// Skip binary files
 		if !isTextFile(content) {
+			if progress.verbose {
+				skipped = append(skipped, skippedFile{path: relPath, reason: "binary file"})
+			}
 			return nil
 		}
 
@@ -588,7 +635,7 @@ func collectDomainFilesIncremental(root, projectDir, pattern string, maxTotalSiz
 		return nil
 	})
 
-	return files, err
+	return files, skipped, err
 }
 
 // buildExistingDomainDocsSummary creates a summary of existing domain docs for Claude

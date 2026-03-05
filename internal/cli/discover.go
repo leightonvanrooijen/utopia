@@ -16,6 +16,49 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// discoverProgress tracks timing and progress for discovery phases
+type discoverProgress struct {
+	startTime   time.Time
+	phaseStart  time.Time
+	totalPhases int
+	verbose     bool
+}
+
+func newDiscoverProgress(totalPhases int, verbose bool) *discoverProgress {
+	now := time.Now()
+	return &discoverProgress{
+		startTime:   now,
+		phaseStart:  now,
+		totalPhases: totalPhases,
+		verbose:     verbose,
+	}
+}
+
+func (p *discoverProgress) startPhase(phaseNum int, name string) {
+	p.phaseStart = time.Now()
+	fmt.Printf("[%d/%d] %s...", phaseNum, p.totalPhases, name)
+}
+
+func (p *discoverProgress) endPhase(detail string) {
+	elapsed := time.Since(p.phaseStart)
+	if detail != "" {
+		fmt.Printf(" done (%.1fs, %s)\n", elapsed.Seconds(), detail)
+	} else {
+		fmt.Printf(" done (%.1fs)\n", elapsed.Seconds())
+	}
+}
+
+func (p *discoverProgress) printTotalElapsed() {
+	elapsed := time.Since(p.startTime)
+	fmt.Printf("\nTotal elapsed time: %.1fs\n", elapsed.Seconds())
+}
+
+func (p *discoverProgress) verbosePrintf(format string, args ...interface{}) {
+	if p.verbose {
+		fmt.Printf(format, args...)
+	}
+}
+
 var discoverCmd = &cobra.Command{
 	Use:   "discover",
 	Short: "Scan codebase and propose draft specifications",
@@ -59,6 +102,7 @@ var (
 	discoverFullFlag     bool
 	discoverPathFlags    []string
 	discoverExcludeFlags []string
+	discoverVerboseFlag  bool
 )
 
 func init() {
@@ -66,6 +110,7 @@ func init() {
 	discoverCmd.Flags().BoolVar(&discoverFullFlag, "full", false, "Force complete re-discovery of entire codebase")
 	discoverCmd.Flags().StringSliceVar(&discoverPathFlags, "path", nil, "Limit discovery to specific directory (can be specified multiple times)")
 	discoverCmd.Flags().StringSliceVar(&discoverExcludeFlags, "exclude", nil, "Exclude files matching glob pattern (can be specified multiple times)")
+	discoverCmd.Flags().BoolVarP(&discoverVerboseFlag, "verbose", "v", false, "Enable detailed file-by-file progress output")
 }
 
 // discoverSystemPrompt guides Claude through codebase analysis and draft spec generation
@@ -223,21 +268,26 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Println()
 
-	// Collect codebase context (with optional time filter for incremental)
-	fmt.Println("Collecting codebase context...")
-	codebaseContext, filesAnalyzed, err := collectCodebaseContextIncremental(absPath, lastRunTime, isIncremental, scope)
+	// Initialize progress tracker with 4 phases: scan, analyze, parse, save
+	progress := newDiscoverProgress(4, discoverVerboseFlag)
+
+	// Phase 1: Collect codebase context (with optional time filter for incremental)
+	progress.startPhase(1, "Scanning files")
+	codebaseContext, filesAnalyzed, err := collectCodebaseContextIncremental(absPath, lastRunTime, isIncremental, scope, progress)
 	if err != nil {
 		return fmt.Errorf("failed to collect codebase context: %w", err)
 	}
 
 	// Check if there are any files to analyze
 	if len(filesAnalyzed) == 0 {
+		fmt.Printf(" done (no new files)\n")
 		fmt.Println("No new or modified files to analyze.")
 		fmt.Println("Use --full to force complete re-discovery.")
+		progress.printTotalElapsed()
 		return nil
 	}
 
-	fmt.Printf("Files to analyze: %d\n", len(filesAnalyzed))
+	progress.endPhase(fmt.Sprintf("%d files found", len(filesAnalyzed)))
 
 	// Build existing specs summary
 	specsSummary := buildExistingSpecsSummary(existingSpecs)
@@ -245,8 +295,8 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 	// Build system prompt
 	systemPrompt := fmt.Sprintf(discoverSystemPrompt, codebaseContext, specsSummary)
 
-	fmt.Println("Analyzing codebase with Claude...")
-	fmt.Println()
+	// Phase 2: Analyze codebase with Claude
+	progress.startPhase(2, "Analyzing codebase with Claude")
 
 	// Run Claude analysis
 	ctx := context.Background()
@@ -256,24 +306,32 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("claude analysis failed: %w", err)
 	}
+	progress.endPhase("")
 
-	// Parse drafts from Claude output
+	// Phase 3: Parse drafts from Claude output
+	progress.startPhase(3, "Parsing draft specifications")
 	drafts, err := parseDraftsFromOutput(output)
 	if err != nil {
 		return fmt.Errorf("failed to parse drafts: %w", err)
 	}
 
 	if len(drafts) == 0 {
+		fmt.Printf(" done (no drafts found)\n")
 		fmt.Println("No new draft specifications discovered.")
+		progress.printTotalElapsed()
 		return nil
 	}
+	progress.endPhase(fmt.Sprintf("%d drafts parsed", len(drafts)))
 
-	// Save drafts
+	// Phase 4: Save drafts
+	progress.startPhase(4, "Saving drafts")
 	for _, draft := range drafts {
+		progress.verbosePrintf("\n  Saving %s.yaml", draft.ID)
 		if err := store.SaveDraft(draft); err != nil {
 			return fmt.Errorf("failed to save draft %s: %w", draft.ID, err)
 		}
 	}
+	progress.endPhase(fmt.Sprintf("%d drafts saved", len(drafts)))
 
 	// Save discovery state for future incremental runs
 	newState := &domain.DiscoveryState{
@@ -294,13 +352,16 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 	// Print summary
 	printDiscoverySummary(drafts, draftsDir)
 
+	// Print total elapsed time
+	progress.printTotalElapsed()
+
 	return nil
 }
 
 // collectCodebaseContextIncremental gathers relevant files for Claude to analyze,
 // optionally filtering to only include files modified since lastRun.
 // Returns the context string and a map of analyzed files with their modification times.
-func collectCodebaseContextIncremental(projectDir string, lastRun time.Time, incrementalMode bool, scope discoverScope) (string, map[string]time.Time, error) {
+func collectCodebaseContextIncremental(projectDir string, lastRun time.Time, incrementalMode bool, scope discoverScope, progress *discoverProgress) (string, map[string]time.Time, error) {
 	var sb strings.Builder
 	filesAnalyzed := make(map[string]time.Time)
 
@@ -336,16 +397,22 @@ func collectCodebaseContextIncremental(projectDir string, lastRun time.Time, inc
 	for _, p := range patterns {
 		var allFiles []collectedFile
 		for _, root := range searchRoots {
-			files, err := collectFilesIncremental(root, projectDir, p.glob, p.maxSize, lastRun, incrementalMode, scope.excludePatterns)
+			files, skipped, err := collectFilesIncremental(root, projectDir, p.glob, p.maxSize, lastRun, incrementalMode, scope.excludePatterns, progress)
 			if err != nil {
 				continue // Skip on error, don't fail entire discovery
 			}
 			allFiles = append(allFiles, files...)
+
+			// Log skipped files in verbose mode
+			for _, skip := range skipped {
+				progress.verbosePrintf("\n  Skipped: %s (%s)", skip.path, skip.reason)
+			}
 		}
 
 		if len(allFiles) > 0 {
 			sb.WriteString(fmt.Sprintf("\n### %s\n\n", p.name))
 			for _, f := range allFiles {
+				progress.verbosePrintf("\n  Collected: %s", f.path)
 				sb.WriteString(fmt.Sprintf("**File: %s**\n```\n%s\n```\n\n", f.path, f.content))
 				filesAnalyzed[f.path] = f.modTime
 			}
@@ -361,6 +428,11 @@ type collectedFile struct {
 	modTime time.Time
 }
 
+type skippedFile struct {
+	path   string
+	reason string
+}
+
 // discoverScope holds the scope restrictions for discovery
 type discoverScope struct {
 	paths           []string // directories to limit discovery to
@@ -371,8 +443,10 @@ type discoverScope struct {
 // optionally filtering to only include files modified since lastRun.
 // The projectDir is used to compute paths relative to the project root.
 // excludePatterns contains glob patterns to skip files matching those patterns.
-func collectFilesIncremental(root, projectDir, pattern string, maxTotalSize int64, lastRun time.Time, incrementalMode bool, excludePatterns []string) ([]collectedFile, error) {
+// Returns collected files, skipped files (for verbose logging), and any error.
+func collectFilesIncremental(root, projectDir, pattern string, maxTotalSize int64, lastRun time.Time, incrementalMode bool, excludePatterns []string, progress *discoverProgress) ([]collectedFile, []skippedFile, error) {
 	var files []collectedFile
+	var skipped []skippedFile
 	var totalSize int64
 
 	// Walk directory and find matching files
@@ -398,6 +472,9 @@ func collectFilesIncremental(root, projectDir, pattern string, maxTotalSize int6
 
 		// Check if file matches any exclude pattern
 		if matchesAnyPattern(relPath, excludePatterns) {
+			if progress.verbose {
+				skipped = append(skipped, skippedFile{path: relPath, reason: "excluded by pattern"})
+			}
 			return nil
 		}
 
@@ -412,11 +489,17 @@ func collectFilesIncremental(root, projectDir, pattern string, maxTotalSize int6
 
 		// In incremental mode, skip files not modified since last run
 		if incrementalMode && !info.ModTime().After(lastRun) {
+			if progress.verbose {
+				skipped = append(skipped, skippedFile{path: relPath, reason: "not modified since last run"})
+			}
 			return nil
 		}
 
 		// Check size
 		if totalSize+info.Size() > maxTotalSize {
+			if progress.verbose {
+				skipped = append(skipped, skippedFile{path: relPath, reason: "size limit exceeded"})
+			}
 			return nil // Skip if would exceed limit
 		}
 
@@ -428,6 +511,9 @@ func collectFilesIncremental(root, projectDir, pattern string, maxTotalSize int6
 
 		// Skip binary files
 		if !isTextFile(content) {
+			if progress.verbose {
+				skipped = append(skipped, skippedFile{path: relPath, reason: "binary file"})
+			}
 			return nil
 		}
 
@@ -441,7 +527,7 @@ func collectFilesIncremental(root, projectDir, pattern string, maxTotalSize int6
 		return nil
 	})
 
-	return files, err
+	return files, skipped, err
 }
 
 // matchesAnyPattern returns true if path matches any of the given glob patterns
