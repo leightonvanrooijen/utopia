@@ -62,39 +62,47 @@ func (p *discoverProgress) verbosePrintf(format string, args ...interface{}) {
 var discoverCmd = &cobra.Command{
 	Use:   "discover",
 	Short: "Scan codebase and propose draft specifications",
-	Long: `Analyze the codebase to discover existing system behavior and propose draft specifications.
+	Long: `Analyze the codebase to discover user-observable capabilities and propose draft specifications.
 
-The command will:
-  1. Scan source code, tests, documentation, and comments
-  2. Use Claude to analyze the codebase and identify features
-  3. Generate draft specs with confidence levels based on evidence quality
-  4. Save drafts to .utopia/drafts/specs/ for review
+Discovery uses a sequential multi-agent pipeline optimized for spec quality:
+
+  Stage 1 - Candidate Identification:
+    Scans codebase to find potential user-observable capabilities.
+    Casts a wide net to identify anything users might interact with.
+
+  Stage 2 - Qualification:
+    Applies strict criteria to filter candidates ruthlessly.
+    Only specs that describe what users can DO pass through.
+
+  Stage 3 - Refinement:
+    Sharpens descriptions and ensures acceptance criteria are testable.
+    Produces polished draft specifications ready for review.
+
+Qualification criteria (specs must satisfy ALL):
+  - Describes a user-observable capability
+  - Can be verified by using the system
+  - Represents a coherent, bounded feature
+  - Answers "what can I do?" not "how is it built?"
+
+Disqualification criteria (ANY disqualifies):
+  - Implementation details (data structures, algorithms)
+  - Internal code organization (services, handlers)
+  - Technical plumbing users don't interact with
+  - Standard practices covered by language/framework conventions
 
 Scoping discovery:
-  By default, discover analyzes the entire codebase. For large codebases or to
-  focus on specific modules, use scoping flags:
-
   --path <dir>       Limit discovery to a specific directory
-                     Can be specified multiple times for multiple directories
-  --exclude <glob>   Exclude files matching a glob pattern
-                     Can be specified multiple times for multiple patterns
+  --exclude <glob>   Exclude files matching glob pattern
 
   Examples:
     utopia discover --path internal/api --path internal/domain
     utopia discover --exclude "**/*_test.go" --exclude "**/mock_*.go"
-    utopia discover --path cmd/server --exclude "**/vendor/**"
 
 Incremental discovery:
-  Re-running discover after codebase changes only analyzes new or modified files.
-  Use --full to force complete re-discovery of the entire codebase.
+  Re-running discover only analyzes new or modified files.
+  Use --full to force complete re-discovery.
 
-Confidence levels:
-  - HIGH: Tests exist with clear boundaries and documentation
-  - MEDIUM: Some tests or docs exist, but gaps remain
-  - LOW: Inferred from code patterns only (includes uncertainty notes)
-
-After discovery, use 'utopia shape' to validate and refine drafts before
-promoting them to official specifications.`,
+After discovery, use 'utopia shape' to validate and refine drafts.`,
 	RunE: runDiscover,
 }
 
@@ -113,90 +121,132 @@ func init() {
 	discoverCmd.Flags().BoolVarP(&discoverVerboseFlag, "verbose", "v", false, "Enable detailed file-by-file progress output")
 }
 
-// discoverSystemPrompt guides Claude through codebase analysis and draft spec generation
-const discoverSystemPrompt = `You are a Discovery Claude - an AI assistant that analyzes codebases to identify existing system behavior and propose draft specifications.
-
-## Your Role
-Analyze the provided codebase context (source code, tests, documentation, comments) and identify distinct features or capabilities that should be documented as specifications.
+// Stage 1: Candidate Identification Agent
+// Scans codebase to identify potential user-observable capabilities
+const candidateAgentPrompt = `You are a Candidate Identification Agent. Scan the codebase to find potential user-observable capabilities.
 
 ## Codebase Context
 %s
 
-## Existing Specifications
+## Existing Specifications (avoid duplicates)
 %s
 
-## Guidelines for Discovery
+## Core Principle
+Specs document USER-OBSERVABLE capabilities. They answer "what can I do?" not "how is it built?"
 
-### What to Look For
-1. **Distinct Features**: Self-contained capabilities with clear boundaries
-2. **Behavioral Patterns**: How the system responds to different inputs
-3. **Integration Points**: APIs, commands, data flows between components
-4. **Domain Concepts**: Core entities and their relationships
-
-### Evidence Quality Assessment
-For each discovered feature, assess the evidence:
-- **Tests**: Do tests exist that verify this behavior?
-- **Documentation**: Is this behavior documented?
-- **Clear Boundaries**: Are the feature boundaries well-defined?
-- **Code Comments**: Do comments explain the intent?
-
-### Confidence Levels
-Assign confidence based on evidence:
-- **HIGH**: Tests exist AND (docs exist OR very clear code boundaries)
-- **MEDIUM**: Tests exist OR docs exist (but not both)
-- **LOW**: Inferred from code patterns only
-
-### Uncertainty Notes
-For LOW confidence drafts, include notes explaining:
-- What aspects are unclear
-- What additional information would help
-- Potential alternative interpretations
+## What to Identify
+- Commands users can run
+- APIs users can call
+- Features users can interact with
+- Behaviors users can observe
 
 ## Output Format
+Output a YAML list of candidates. Be inclusive at this stage - filtering happens next.
 
-Generate draft specifications in this EXACT YAML format. Output ONLY the YAML block, no additional text:
+` + "```yaml" + `
+candidates:
+  - id: candidate-id-kebab-case
+    title: "Brief Title"
+    description: "What the user can do or observe"
+    source_files:
+      - "path/to/file.go"
+    evidence_type: code|test|doc
+` + "```" + `
+
+Output ONLY the YAML block.`
+
+// Stage 2: Qualification Agent
+// Applies strict criteria to filter candidates ruthlessly
+const qualifierAgentPrompt = `You are a Qualification Agent. Apply strict criteria to filter spec candidates.
+
+## Candidates from Stage 1
+%s
+
+## Qualification Criteria (ALL must be true)
+1. Describes a USER-OBSERVABLE capability (not internal implementation)
+2. Can be VERIFIED by using the system (testable by a user)
+3. Represents a COHERENT, BOUNDED feature
+4. Answers "what can I do?" NOT "how is it built?"
+
+## Disqualification Criteria (ANY disqualifies)
+- Implementation details (data structures, algorithms, internal state)
+- Internal code organization (services, handlers, utilities)
+- Technical plumbing users don't interact with
+- Standard practices covered by language/framework conventions
+
+## Output Format
+Output qualified candidates with qualification reasoning.
+
+` + "```yaml" + `
+qualified:
+  - id: candidate-id
+    title: "Title"
+    description: "What the user can do"
+    source_files:
+      - "path/to/file.go"
+    qualification_reason: "Why this qualifies as user-observable"
+disqualified:
+  - id: candidate-id
+    reason: "Why this was disqualified"
+` + "```" + `
+
+Be RUTHLESS. When in doubt, disqualify. Quality over quantity.
+Output ONLY the YAML block.`
+
+// Stage 3: Refinement Agent
+// Sharpens descriptions and ensures acceptance criteria are testable
+const refinementAgentPrompt = `You are a Refinement Agent. Sharpen qualified specs for clarity and testability.
+
+## Qualified Candidates from Stage 2
+%s
+
+## Your Task
+For each qualified candidate:
+1. Sharpen the description to focus on user value
+2. Break into specific features with testable acceptance criteria
+3. Assess confidence based on evidence quality
+4. Note any uncertainties
+
+## Confidence Levels
+- HIGH: Tests exist AND (docs exist OR very clear boundaries)
+- MEDIUM: Tests OR docs exist (not both)
+- LOW: Inferred from code only
+
+## Output Format
+Output refined draft specifications.
 
 ` + "```yaml" + `
 drafts:
-  - id: feature-name-kebab-case
-    title: "Human Readable Feature Title"
+  - id: spec-id-kebab-case
+    title: "Human Readable Title"
     description: |
-      Clear description of what this feature does.
-      Include the business value and main use cases.
+      Clear description of what the user can do.
+      Focus on user value, not implementation.
     confidence: high|medium|low
     discovered_from:
-      - "path/to/source_file_analyzed.go"
-      - "path/to/another_source.go"
+      - "path/to/file.go"
     uncertainty_notes:
-      - "Note about what's unclear (only for low confidence)"
+      - "What remains unclear (for low confidence)"
     evidence:
       code_files:
-        - "path/to/implementation.go"
+        - "path/to/impl.go"
       test_files:
-        - "path/to/implementation_test.go"
+        - "path/to/test.go"
       doc_files:
         - "path/to/docs.md"
       comments:
-        - "Relevant code comment that explains intent"
+        - "Relevant comment explaining intent"
     features:
-      - id: sub-feature-id
-        description: "What this specific capability does"
+      - id: feature-id
+        description: "Specific capability"
         acceptance_criteria:
           - "Given X, when Y, then Z"
-          - "Must handle error case A"
     domain_knowledge:
-      - "Important domain concept relevant to this spec"
+      - "Important domain concept"
 ` + "```" + `
 
-## Important Rules
-1. Create SEPARATE draft specs for distinct features - don't combine unrelated functionality
-2. Use kebab-case for all IDs
-3. Focus on BEHAVIOR, not implementation details
-4. Acceptance criteria should be testable
-5. Don't duplicate existing specifications - check the "Existing Specifications" section
-6. If a feature is partially covered by an existing spec, note this in uncertainty_notes
-
-Now analyze the codebase and generate draft specifications.`
+Ensure EVERY acceptance criterion is testable by using the system.
+Output ONLY the YAML block.`
 
 func runDiscover(cmd *cobra.Command, args []string) error {
 	projectDir := GetProjectDir(cmd)
@@ -268,8 +318,8 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Println()
 
-	// Initialize progress tracker with 4 phases: scan, analyze, parse, save
-	progress := newDiscoverProgress(4, discoverVerboseFlag)
+	// Initialize progress tracker with 5 phases: scan, 3 agent stages, save
+	progress := newDiscoverProgress(5, discoverVerboseFlag)
 
 	// Phase 1: Collect codebase context (with optional time filter for incremental)
 	progress.startPhase(1, "Scanning files")
@@ -292,39 +342,61 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 	// Build existing specs summary
 	specsSummary := buildExistingSpecsSummary(existingSpecs)
 
-	// Build system prompt
-	systemPrompt := fmt.Sprintf(discoverSystemPrompt, codebaseContext, specsSummary)
-
-	// Phase 2: Analyze codebase with Claude
-	progress.startPhase(2, "Analyzing codebase with Claude")
-
-	// Run Claude analysis
 	ctx := context.Background()
-	cli := claude.NewCLI().WithVerbose(true)
+	cli := claude.NewCLI().WithVerbose(discoverVerboseFlag)
 
-	output, err := cli.Prompt(ctx, systemPrompt)
+	// Phase 2: Stage 1 - Candidate Identification
+	progress.startPhase(2, "Stage 1: Identifying candidates")
+	stage1Prompt := fmt.Sprintf(candidateAgentPrompt, codebaseContext, specsSummary)
+	candidatesOutput, err := cli.Prompt(ctx, stage1Prompt)
 	if err != nil {
-		return fmt.Errorf("claude analysis failed: %w", err)
+		return fmt.Errorf("candidate identification failed: %w", err)
+	}
+	candidateCount := countYAMLItems(candidatesOutput, "candidates")
+	progress.endPhase(fmt.Sprintf("%d candidates found", candidateCount))
+
+	// Phase 3: Stage 2 - Qualification
+	progress.startPhase(3, "Stage 2: Qualifying candidates")
+	stage2Prompt := fmt.Sprintf(qualifierAgentPrompt, candidatesOutput)
+	qualifiedOutput, err := cli.Prompt(ctx, stage2Prompt)
+	if err != nil {
+		return fmt.Errorf("qualification failed: %w", err)
+	}
+	qualifiedCount := countYAMLItems(qualifiedOutput, "qualified")
+	disqualifiedCount := countYAMLItems(qualifiedOutput, "disqualified")
+	progress.endPhase(fmt.Sprintf("%d qualified, %d disqualified", qualifiedCount, disqualifiedCount))
+
+	// Check if any candidates qualified
+	if qualifiedCount == 0 {
+		fmt.Println("\nNo candidates passed qualification criteria.")
+		fmt.Println("All identified items were implementation details, not user-observable capabilities.")
+		progress.printTotalElapsed()
+		return nil
+	}
+
+	// Phase 4: Stage 3 - Refinement
+	progress.startPhase(4, "Stage 3: Refining specifications")
+	stage3Prompt := fmt.Sprintf(refinementAgentPrompt, qualifiedOutput)
+	refinedOutput, err := cli.Prompt(ctx, stage3Prompt)
+	if err != nil {
+		return fmt.Errorf("refinement failed: %w", err)
 	}
 	progress.endPhase("")
 
-	// Phase 3: Parse drafts from Claude output
-	progress.startPhase(3, "Parsing draft specifications")
-	drafts, err := parseDraftsFromOutput(output)
+	// Parse final drafts from refined output
+	drafts, err := parseDraftsFromOutput(refinedOutput)
 	if err != nil {
 		return fmt.Errorf("failed to parse drafts: %w", err)
 	}
 
 	if len(drafts) == 0 {
-		fmt.Printf(" done (no drafts found)\n")
-		fmt.Println("No new draft specifications discovered.")
+		fmt.Println("\nNo draft specifications produced after refinement.")
 		progress.printTotalElapsed()
 		return nil
 	}
-	progress.endPhase(fmt.Sprintf("%d drafts parsed", len(drafts)))
 
-	// Phase 4: Save drafts
-	progress.startPhase(4, "Saving drafts")
+	// Phase 5: Save drafts
+	progress.startPhase(5, "Saving drafts")
 	for _, draft := range drafts {
 		progress.verbosePrintf("\n  Saving %s.yaml", draft.ID)
 		if err := store.SaveDraft(draft); err != nil {
@@ -698,6 +770,27 @@ func parseDraftsFromOutput(output string) ([]*domain.DraftSpec, error) {
 	}
 
 	return drafts, nil
+}
+
+// countYAMLItems counts items in a YAML list by key name
+// Used for progress reporting between pipeline stages
+func countYAMLItems(yamlOutput, key string) int {
+	yamlContent := extractYAMLBlock(yamlOutput)
+	if yamlContent == "" {
+		return 0
+	}
+
+	var data map[string]interface{}
+	if err := yaml.Unmarshal([]byte(yamlContent), &data); err != nil {
+		return 0
+	}
+
+	if items, ok := data[key]; ok {
+		if list, ok := items.([]interface{}); ok {
+			return len(list)
+		}
+	}
+	return 0
 }
 
 // extractYAMLBlock finds and extracts a YAML code block from text
