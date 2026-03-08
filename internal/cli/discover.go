@@ -407,10 +407,10 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 // Returns refined drafts and any errors that occurred.
 func runParallelRefinement(ctx context.Context, candidates []qualifiedCandidate, iterations int, verbose bool) ([]*domain.DraftSpec, []error) {
 	var (
-		drafts   []*domain.DraftSpec
-		errors   []error
-		mu       sync.Mutex
-		wg       sync.WaitGroup
+		drafts []*domain.DraftSpec
+		errors []error
+		mu     sync.Mutex
+		wg     sync.WaitGroup
 	)
 
 	// Create a CLI instance with tool access for refinement agents
@@ -862,7 +862,6 @@ func logDisqualifiedCandidates(disqualified []disqualifiedCandidate, verbose boo
 		}
 	}
 }
-
 
 // countYAMLItems counts items in a YAML list by key name
 // Used for progress reporting between pipeline stages
