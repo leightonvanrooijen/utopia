@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/leightonvanrooijen/utopia/internal/domain"
@@ -15,6 +16,9 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
+
+// Default number of refinement iterations per candidate
+const defaultRefinementIterations = 3
 
 // discoverProgress tracks timing and progress for discovery phases
 type discoverProgress struct {
@@ -64,19 +68,18 @@ var discoverCmd = &cobra.Command{
 	Short: "Scan codebase and propose draft specifications",
 	Long: `Analyze the codebase to discover user-observable capabilities and propose draft specifications.
 
-Discovery uses a sequential multi-agent pipeline optimized for spec quality:
+Discovery uses a 2-stage parallel agent pipeline:
 
-  Stage 1 - Candidate Identification:
-    Scans all text files in codebase to find potential user-observable capabilities.
-    Casts a wide net to identify anything users might interact with.
-
-  Stage 2 - Qualification:
-    Applies strict criteria to filter candidates ruthlessly.
+  Stage 1 - Identify & Qualify:
+    Scans codebase to find potential user-observable capabilities.
+    Applies qualification criteria to filter candidates ruthlessly.
     Only specs that describe what users can DO pass through.
 
-  Stage 3 - Refinement:
-    Sharpens descriptions and ensures acceptance criteria are testable.
-    Produces polished draft specifications ready for review.
+  Stage 2 - Parallel Refinement:
+    Spawns one Claude Code agent per qualified candidate.
+    Each agent has tool access (Read, Grep, Glob) to explore the codebase.
+    Agents refine specs iteratively, discovering details from source files.
+    Runs for a fixed number of iterations (default: 3) per candidate.
 
 Qualification criteria (specs must satisfy ALL):
   - Describes a user-observable capability
@@ -98,16 +101,11 @@ Scoping discovery:
     utopia discover --path internal/api --path internal/domain
     utopia discover --exclude "**/*_test.go" --exclude "**/mock_*.go"
 
-Incremental discovery:
-  Re-running discover only analyzes new or modified files.
-  Use --full to force complete re-discovery.
-
 After discovery, use 'utopia shape' to validate and refine drafts.`,
 	RunE: runDiscover,
 }
 
 var (
-	discoverFullFlag     bool
 	discoverPathFlags    []string
 	discoverExcludeFlags []string
 	discoverVerboseFlag  bool
@@ -115,15 +113,18 @@ var (
 
 func init() {
 	rootCmd.AddCommand(discoverCmd)
-	discoverCmd.Flags().BoolVar(&discoverFullFlag, "full", false, "Force complete re-discovery of entire codebase")
 	discoverCmd.Flags().StringSliceVar(&discoverPathFlags, "path", nil, "Limit discovery to specific directory (can be specified multiple times)")
 	discoverCmd.Flags().StringSliceVar(&discoverExcludeFlags, "exclude", nil, "Exclude files matching glob pattern (can be specified multiple times)")
 	discoverCmd.Flags().BoolVarP(&discoverVerboseFlag, "verbose", "v", false, "Enable detailed file-by-file progress output")
 }
 
-// Stage 1: Candidate Identification Agent
-// Scans codebase to identify potential user-observable capabilities
-const candidateAgentPrompt = `Find what users can DO with this system.
+// Stage 1: Identify & Qualify Agent
+// Scans codebase to identify potential user-observable capabilities AND
+// applies qualification criteria to filter candidates in a single pass.
+// This merged stage reduces context loss between identification and qualification.
+func buildIdentifyQualifyPrompt(codebaseContext, specsSummary string) string {
+	criteria := domain.SpecQualificationCriteria{}
+	return fmt.Sprintf(`Find and qualify user-observable capabilities in this system.
 
 ## Codebase
 %s
@@ -131,79 +132,87 @@ const candidateAgentPrompt = `Find what users can DO with this system.
 ## Already Documented (skip these)
 %s
 
-## Look For
-User-observable capabilities: commands, APIs, features, behaviors.
-Ask: "Can a user DO this or SEE this?" → Include it.
+%s
+
+## Your Mission
+1. IDENTIFY: Find capabilities users can DO or SEE
+2. QUALIFY: Apply the litmus test - "Could a user verify this by using the system?"
+3. OUTPUT: Only qualified candidates that pass ALL criteria
 
 ## Good vs Bad Candidates
-GOOD: "Users can initialize a project" - observable action
-GOOD: "Users can export data to CSV" - observable output
-BAD:  "YAML parser validates schemas" - internal implementation
-BAD:  "Repository uses file storage" - technical plumbing
+QUALIFIES: "Users can initialize a project" - user runs command, sees result
+QUALIFIES: "Users can export data to CSV" - user triggers action, gets output
+DISQUALIFY: "YAML parser validates schemas" - internal implementation
+DISQUALIFY: "Repository uses file storage" - technical plumbing
+DISQUALIFY: "Service validates input" - internal behavior
 
 ## Output
-` + "```yaml" + `
-candidates:
+`+"```yaml"+`
+qualified:
   - id: kebab-case-id
     title: "What User Can Do"
     description: "User-facing capability"
     source_files: ["path/to/file.go"]
     evidence_type: code|test|doc
-` + "```" + `
-Output ONLY the YAML.`
-
-// Stage 2: Qualification Agent
-// Applies strict criteria to filter candidates ruthlessly.
-// Criteria are defined in domain.SpecQualificationCriteria.
-func buildQualifierAgentPrompt(candidatesYAML string) string {
-	criteria := domain.SpecQualificationCriteria{}
-	return fmt.Sprintf(`Is this user-observable and testable?
-
-## Candidates
-%s
-
-%s
-
-## The Test
-For each candidate, ask: "Could a user verify this by using the system?"
-YES → Qualify. NO → Disqualify.
-
-## Good vs Bad
-QUALIFIES: "Initialize a project" - user runs command, sees result
-QUALIFIES: "Export reports to PDF" - user triggers export, gets file
-DISQUALIFY: "Service validates input" - internal behavior
-DISQUALIFY: "Handler parses JSON" - implementation detail
-
-## Output
-`+"```yaml"+`
-qualified:
-  - id: candidate-id
-    title: "Title"
-    description: "What user can do"
-    source_files: ["path/to/file.go"]
     qualification_reason: "How user verifies this"
 disqualified:
   - id: candidate-id
     reason: "Why not user-observable"
 `+"```"+`
 Be RUTHLESS. When in doubt, disqualify.
-Output ONLY the YAML.`, candidatesYAML, criteria.FormatForAgent())
+Output ONLY the YAML.`, codebaseContext, specsSummary, criteria.FormatForAgent())
 }
 
-// Stage 3: Refinement Agent
-// Deep analysis to extract precise, implementation-complete specifications
-const refinementAgentPrompt = `ULTRATHINK: Study this code deeply. Extract precise specifications.
+// Stage 2: Refinement Agent (runs per-candidate with tool access)
+// Deep analysis to extract precise, implementation-complete specifications.
+// This agent has access to Read, Grep, Glob tools to explore the codebase.
+func buildRefinementAgentPrompt(candidate qualifiedCandidate, iteration, maxIterations int) string {
+	sourceFilesStr := strings.Join(candidate.SourceFiles, ", ")
+	return fmt.Sprintf(`ULTRATHINK: Study the code deeply. Extract a precise specification.
+
+## Your Mission
+Refine this candidate into a high-quality draft specification.
+This is iteration %d of %d - explore thoroughly using your tools.
+
+## Candidate to Refine
+- ID: %s
+- Title: %s
+- Description: %s
+- Source Files: %s
+- Qualification Reason: %s
+
+## Tools Available
+You have access to Read, Grep, and Glob tools. USE THEM to:
+1. Read the source files listed above
+2. Search for related code, tests, and documentation
+3. Find exact values, error messages, and boundaries
+4. Trace execution paths and discover edge cases
 
 ## Quality Bar
 Could someone implement EQUIVALENT BEHAVIOR from this spec alone?
-If no: the spec is too vague. Dig deeper.
+If no: the spec is too vague. Use your tools to dig deeper.
 
-## Qualified Candidates
-%s
+## What to Extract
 
-## Your Mission
-STUDY the code. Don't skim - trace execution paths, read error messages,
-find exact values. Every detail you miss is a detail someone will implement wrong.
+### 1. Specific Values (never categories)
+BAD:  "Supports multiple output formats"
+GOOD: "Supports exactly 3 output formats: json, yaml, csv"
+
+### 2. Exact Rules (not vague behaviors)
+BAD:  "Validates input appropriately"
+GOOD: "Rejects input if: empty string, longer than 255 chars, contains characters outside [a-zA-Z0-9_-]"
+
+### 3. Explicit Boundaries
+BAD:  "Works with large files"
+GOOD: "Maximum file size: 10MB. Files larger than 10MB return error 'file exceeds 10MB limit'"
+
+### 4. Negative Constraints (what DOESN'T happen)
+BAD:  (missing)
+GOOD: "Does NOT retry on 4xx errors (only 5xx). Does NOT follow redirects."
+
+### 5. Format Strings and Identifiers
+BAD:  "Outputs a formatted message"
+GOOD: "Output format: '[{level}] {timestamp}: {message}' where level is INFO|WARN|ERROR"
 
 ## Forbidden Language
 NEVER use these vague terms:
@@ -214,85 +223,41 @@ NEVER use these vague terms:
 - "supports" - describe exact mechanism
 - "multiple" - give the exact count or list
 
-## What to Extract
-
-### 1. Specific Values (never categories)
-BAD:  "Supports multiple output formats"
-GOOD: "Supports exactly 3 output formats: json, yaml, csv"
-
-BAD:  "Has several configuration options"
-GOOD: "Configuration options: timeout (int, default 30s), retries (int, default 3), verbose (bool, default false)"
-
-### 2. Exact Rules (not vague behaviors)
-BAD:  "Validates input appropriately"
-GOOD: "Rejects input if: empty string, longer than 255 chars, contains characters outside [a-zA-Z0-9_-]"
-
-BAD:  "Handles edge cases"
-GOOD: "When file doesn't exist: returns error 'file not found: {path}'. When file empty: returns empty array []"
-
-### 3. Explicit Boundaries
-BAD:  "Works with large files"
-GOOD: "Maximum file size: 10MB. Files larger than 10MB return error 'file exceeds 10MB limit'"
-
-BAD:  "Times out after a while"
-GOOD: "Default timeout: 30 seconds. Configurable via --timeout flag (1s-600s range)"
-
-### 4. Negative Constraints (what DOESN'T happen)
-BAD:  (missing)
-GOOD: "Does NOT retry on 4xx errors (only 5xx). Does NOT follow redirects. Does NOT cache responses"
-
-BAD:  (missing)
-GOOD: "Ignores hidden files (starting with '.'). Skips directories: .git, node_modules, vendor"
-
-### 5. Format Strings and Identifiers
-BAD:  "Outputs a formatted message"
-GOOD: "Output format: '[{level}] {timestamp}: {message}' where level is INFO|WARN|ERROR, timestamp is RFC3339"
-
-BAD:  "Creates files with descriptive names"
-GOOD: "File naming: '{id}-{title}.yaml' where id is kebab-case, title is slugified (max 50 chars)"
-
-## Examples
-
-### BAD Acceptance Criterion (vague)
-"When discovery runs, it finds capabilities in the codebase"
-- What counts as a capability? Which file types? What's the output format?
-
-### GOOD Acceptance Criterion (specific)
-"Given a Go project with .go files, when user runs 'utopia discover':
-- Scans files matching *.go (excludes *_test.go, vendor/**, .git/**)
-- Produces YAML files in .utopia/drafts/specs/ named {id}.yaml
-- Each draft contains: id (kebab-case), title, description, features[], confidence (high|medium|low)
-- Confidence is 'high' if both tests and docs exist, 'medium' if one exists, 'low' if only code"
-
 ## Confidence Assessment
 - HIGH: Tests + docs exist AND spec has concrete values
 - MEDIUM: Tests OR docs (not both) AND spec mostly concrete
 - LOW: Code only OR spec contains vague language
 
 ## Output
-` + "```yaml" + `
-drafts:
-  - id: spec-id-kebab-case
-    title: "What User Can Do"
-    description: |
-      User-focused description with SPECIFIC details.
-    confidence: high|medium|low
-    discovered_from: ["source/file.go"]
-    uncertainty_notes: ["What's unclear - be specific about what you couldn't determine"]
-    evidence:
-      code_files: ["impl.go"]
-      test_files: ["test.go"]
-      doc_files: ["docs.md"]
-      comments: ["Relevant code comments showing intent"]
-    features:
-      - id: feature-id
-        description: "Specific capability with exact details"
-        acceptance_criteria:
-          - "Given [specific precondition], when [exact action], then [measurable outcome with specific values]"
-          - "Does NOT [explicit negative constraint]"
-    domain_knowledge: ["Specific term: exact meaning in this codebase"]
-` + "```" + `
-Output ONLY the YAML. If you can't determine a specific value, note it in uncertainty_notes.`
+`+"```yaml"+`
+draft:
+  id: %s
+  title: "What User Can Do"
+  description: |
+    User-focused description with SPECIFIC details.
+  confidence: high|medium|low
+  discovered_from: ["source/file.go"]
+  uncertainty_notes: ["What's unclear - be specific about what you couldn't determine"]
+  evidence:
+    code_files: ["impl.go"]
+    test_files: ["test.go"]
+    doc_files: ["docs.md"]
+    comments: ["Relevant code comments showing intent"]
+  features:
+    - id: feature-id
+      description: "Specific capability with exact details"
+      acceptance_criteria:
+        - "Given [specific precondition], when [exact action], then [measurable outcome with specific values]"
+        - "Does NOT [explicit negative constraint]"
+  domain_knowledge: ["Specific term: exact meaning in this codebase"]
+`+"```"+`
+FIRST: Use your tools to read the source files and explore related code.
+THEN: Output ONLY the YAML block with your refined specification.
+If you can't determine a specific value, note it in uncertainty_notes.`,
+		iteration, maxIterations,
+		candidate.ID, candidate.Title, candidate.Description, sourceFilesStr, candidate.QualificationReason,
+		candidate.ID)
+}
 
 func runDiscover(cmd *cobra.Command, args []string) error {
 	projectDir := GetProjectDir(cmd)
@@ -323,18 +288,6 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 		existingDrafts = []*domain.DraftSpec{}
 	}
 
-	// Load previous discovery state for incremental discovery
-	var lastRunTime time.Time
-	previousState, err := store.LoadDiscoveryState()
-	if err != nil {
-		return fmt.Errorf("failed to load discovery state: %w", err)
-	}
-
-	isIncremental := !discoverFullFlag && previousState != nil
-	if isIncremental {
-		lastRunTime = previousState.LastRun
-	}
-
 	// Ensure drafts/specs directory exists
 	draftsDir := filepath.Join(utopiaDir, "drafts", "specs")
 	if err := os.MkdirAll(draftsDir, 0755); err != nil {
@@ -351,11 +304,6 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Project: %s\n", absPath)
 	fmt.Printf("Existing specs: %d\n", len(existingSpecs))
 	fmt.Printf("Existing drafts: %d\n", len(existingDrafts))
-	if isIncremental {
-		fmt.Printf("Mode: incremental (since %s)\n", lastRunTime.Format("2006-01-02 15:04:05"))
-	} else {
-		fmt.Println("Mode: full discovery")
-	}
 	if len(scope.paths) > 0 {
 		fmt.Printf("Scope: %s\n", strings.Join(scope.paths, ", "))
 	}
@@ -364,21 +312,20 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Println()
 
-	// Initialize progress tracker with 5 phases: scan, 3 agent stages, save
-	progress := newDiscoverProgress(5, discoverVerboseFlag)
+	// Initialize progress tracker with 4 phases: scan, identify+qualify, parallel refine, save
+	progress := newDiscoverProgress(4, discoverVerboseFlag)
 
-	// Phase 1: Collect codebase context (with optional time filter for incremental)
+	// Phase 1: Collect codebase context
 	progress.startPhase(1, "Scanning files")
-	codebaseContext, filesAnalyzed, err := collectCodebaseContextIncremental(absPath, lastRunTime, isIncremental, scope, progress)
+	codebaseContext, filesAnalyzed, err := collectCodebaseContext(absPath, scope, progress)
 	if err != nil {
 		return fmt.Errorf("failed to collect codebase context: %w", err)
 	}
 
 	// Check if there are any files to analyze
 	if len(filesAnalyzed) == 0 {
-		fmt.Printf(" done (no new files)\n")
-		fmt.Println("No new or modified files to analyze.")
-		fmt.Println("Use --full to force complete re-discovery.")
+		fmt.Printf(" done (no files found)\n")
+		fmt.Println("No files to analyze.")
 		progress.printTotalElapsed()
 		return nil
 	}
@@ -391,22 +338,12 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 	cli := claude.NewCLI().WithVerbose(discoverVerboseFlag)
 
-	// Phase 2: Stage 1 - Candidate Identification
-	progress.startPhase(2, "Stage 1: Identifying candidates")
-	stage1Prompt := fmt.Sprintf(candidateAgentPrompt, codebaseContext, specsSummary)
-	candidatesOutput, err := cli.Prompt(ctx, stage1Prompt)
+	// Phase 2: Stage 1 - Identify & Qualify (merged stage)
+	progress.startPhase(2, "Stage 1: Identifying and qualifying candidates")
+	stage1Prompt := buildIdentifyQualifyPrompt(codebaseContext, specsSummary)
+	qualifiedOutput, err := cli.Prompt(ctx, stage1Prompt)
 	if err != nil {
-		return fmt.Errorf("candidate identification failed: %w", err)
-	}
-	candidateCount := countYAMLItems(candidatesOutput, "candidates")
-	progress.endPhase(fmt.Sprintf("%d candidates found", candidateCount))
-
-	// Phase 3: Stage 2 - Qualification
-	progress.startPhase(3, "Stage 2: Qualifying candidates")
-	stage2Prompt := buildQualifierAgentPrompt(candidatesOutput)
-	qualifiedOutput, err := cli.Prompt(ctx, stage2Prompt)
-	if err != nil {
-		return fmt.Errorf("qualification failed: %w", err)
+		return fmt.Errorf("identify and qualify failed: %w", err)
 	}
 	qualifiedCount := countYAMLItems(qualifiedOutput, "qualified")
 	disqualifiedCount := countYAMLItems(qualifiedOutput, "disqualified")
@@ -416,27 +353,28 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 	disqualified := parseDisqualifiedCandidates(qualifiedOutput)
 	logDisqualifiedCandidates(disqualified, discoverVerboseFlag)
 
+	// Parse qualified candidates for parallel refinement
+	qualified := parseQualifiedCandidates(qualifiedOutput)
+
 	// Check if any candidates qualified
-	if qualifiedCount == 0 {
+	if len(qualified) == 0 {
 		fmt.Println("\nNo candidates passed qualification criteria.")
 		fmt.Println("All identified items were implementation details, not user-observable capabilities.")
 		progress.printTotalElapsed()
 		return nil
 	}
 
-	// Phase 4: Stage 3 - Refinement
-	progress.startPhase(4, "Stage 3: Refining specifications")
-	stage3Prompt := fmt.Sprintf(refinementAgentPrompt, qualifiedOutput)
-	refinedOutput, err := cli.Prompt(ctx, stage3Prompt)
-	if err != nil {
-		return fmt.Errorf("refinement failed: %w", err)
-	}
-	progress.endPhase("")
+	// Phase 3: Stage 2 - Parallel Refinement
+	progress.startPhase(3, fmt.Sprintf("Stage 2: Refining %d candidates in parallel", len(qualified)))
+	drafts, refinementErrors := runParallelRefinement(ctx, qualified, defaultRefinementIterations, discoverVerboseFlag)
+	progress.endPhase(fmt.Sprintf("%d drafts refined", len(drafts)))
 
-	// Parse final drafts from refined output
-	drafts, err := parseDraftsFromOutput(refinedOutput)
-	if err != nil {
-		return fmt.Errorf("failed to parse drafts: %w", err)
+	// Log any refinement errors
+	if len(refinementErrors) > 0 && discoverVerboseFlag {
+		fmt.Println("\n  Refinement errors:")
+		for _, err := range refinementErrors {
+			fmt.Printf("    ✗ %v\n", err)
+		}
 	}
 
 	if len(drafts) == 0 {
@@ -445,8 +383,8 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Phase 5: Save drafts
-	progress.startPhase(5, "Saving drafts")
+	// Phase 4: Save drafts
+	progress.startPhase(4, "Saving drafts")
 	for _, draft := range drafts {
 		progress.verbosePrintf("\n  Saving %s.yaml", draft.ID)
 		if err := store.SaveDraft(draft); err != nil {
@@ -454,22 +392,6 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 		}
 	}
 	progress.endPhase(fmt.Sprintf("%d drafts saved", len(drafts)))
-
-	// Save discovery state for future incremental runs
-	newState := &domain.DiscoveryState{
-		LastRun:       time.Now(),
-		FilesAnalyzed: filesAnalyzed,
-	}
-	// Record scope restrictions if any were applied
-	if len(scope.paths) > 0 || len(scope.excludePatterns) > 0 {
-		newState.Scope = &domain.DiscoveryScope{
-			Paths:           scope.paths,
-			ExcludePatterns: scope.excludePatterns,
-		}
-	}
-	if err := store.SaveDiscoveryState(newState); err != nil {
-		return fmt.Errorf("failed to save discovery state: %w", err)
-	}
 
 	// Print summary
 	printDiscoverySummary(drafts, draftsDir)
@@ -480,12 +402,169 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// collectCodebaseContextIncremental gathers all text files for Claude to analyze,
-// optionally filtering to only include files modified since lastRun.
-// Returns the context string and a map of analyzed files with their modification times.
-func collectCodebaseContextIncremental(projectDir string, lastRun time.Time, incrementalMode bool, scope discoverScope, progress *discoverProgress) (string, map[string]time.Time, error) {
+// runParallelRefinement spawns one refinement agent per qualified candidate.
+// Each agent runs for a fixed number of iterations and has access to Read, Grep, Glob tools.
+// Returns refined drafts and any errors that occurred.
+func runParallelRefinement(ctx context.Context, candidates []qualifiedCandidate, iterations int, verbose bool) ([]*domain.DraftSpec, []error) {
+	var (
+		drafts   []*domain.DraftSpec
+		errors   []error
+		mu       sync.Mutex
+		wg       sync.WaitGroup
+	)
+
+	// Create a CLI instance with tool access for refinement agents
+	// Agents get Read, Grep, Glob tools to explore codebase deeply
+	refinementCLI := claude.NewCLI().
+		WithVerbose(verbose).
+		WithAllowedTools([]string{"Read", "Grep", "Glob"})
+
+	// Spawn one agent per candidate
+	for _, candidate := range candidates {
+		wg.Add(1)
+		go func(c qualifiedCandidate) {
+			defer wg.Done()
+
+			if verbose {
+				fmt.Printf("\n  Starting refinement for: %s\n", c.ID)
+			}
+
+			// Run refinement iterations for this candidate
+			var lastOutput string
+			var lastErr error
+			for i := 1; i <= iterations; i++ {
+				prompt := buildRefinementAgentPrompt(c, i, iterations)
+				output, err := refinementCLI.Prompt(ctx, prompt)
+				if err != nil {
+					lastErr = fmt.Errorf("refinement failed for %s (iteration %d): %w", c.ID, i, err)
+					continue
+				}
+				lastOutput = output
+				lastErr = nil
+
+				if verbose {
+					fmt.Printf("  ✓ %s iteration %d/%d complete\n", c.ID, i, iterations)
+				}
+			}
+
+			// Parse the final output into a draft
+			if lastErr != nil {
+				mu.Lock()
+				errors = append(errors, lastErr)
+				mu.Unlock()
+				return
+			}
+
+			draft, err := parseSingleDraftFromOutput(lastOutput)
+			if err != nil {
+				mu.Lock()
+				errors = append(errors, fmt.Errorf("failed to parse draft for %s: %w", c.ID, err))
+				mu.Unlock()
+				return
+			}
+
+			mu.Lock()
+			drafts = append(drafts, draft)
+			mu.Unlock()
+
+			if verbose {
+				fmt.Printf("  ✓ %s refinement complete (confidence: %s)\n", c.ID, draft.Confidence)
+			}
+		}(candidate)
+	}
+
+	// Wait for all agents to complete
+	wg.Wait()
+
+	return drafts, errors
+}
+
+// parseQualifiedCandidates extracts qualified candidates from Stage 1 output
+func parseQualifiedCandidates(output string) []qualifiedCandidate {
+	yamlContent := extractYAMLBlock(output)
+	if yamlContent == "" {
+		return nil
+	}
+
+	var qOutput qualificationOutput
+	if err := yaml.Unmarshal([]byte(yamlContent), &qOutput); err != nil {
+		return nil
+	}
+
+	return qOutput.Qualified
+}
+
+// parseSingleDraftFromOutput extracts a single draft from refinement agent output
+func parseSingleDraftFromOutput(output string) (*domain.DraftSpec, error) {
+	yamlContent := extractYAMLBlock(output)
+	if yamlContent == "" {
+		return nil, fmt.Errorf("no YAML block found in output")
+	}
+
+	// Try parsing as single draft first (new format)
+	var singleDraft struct {
+		Draft draftOutput `yaml:"draft"`
+	}
+	if err := yaml.Unmarshal([]byte(yamlContent), &singleDraft); err == nil && singleDraft.Draft.ID != "" {
+		return convertDraftOutput(singleDraft.Draft), nil
+	}
+
+	// Fallback: try parsing as drafts array (old format compatibility)
+	var draftsOut draftsOutput
+	if err := yaml.Unmarshal([]byte(yamlContent), &draftsOut); err != nil {
+		return nil, fmt.Errorf("failed to parse YAML: %w", err)
+	}
+
+	if len(draftsOut.Drafts) == 0 {
+		return nil, fmt.Errorf("no drafts found in output")
+	}
+
+	return convertDraftOutput(draftsOut.Drafts[0]), nil
+}
+
+// convertDraftOutput converts a draftOutput to a domain.DraftSpec
+func convertDraftOutput(d draftOutput) *domain.DraftSpec {
+	confidence := domain.DraftConfidenceMedium
+	switch strings.ToLower(d.Confidence) {
+	case "high":
+		confidence = domain.DraftConfidenceHigh
+	case "low":
+		confidence = domain.DraftConfidenceLow
+	}
+
+	draft := &domain.DraftSpec{
+		ID:               d.ID,
+		Title:            d.Title,
+		Created:          time.Now(),
+		Description:      d.Description,
+		Confidence:       confidence,
+		DiscoveredFrom:   d.DiscoveredFrom,
+		UncertaintyNotes: d.UncertaintyNotes,
+		Evidence: domain.DraftEvidence{
+			CodeFiles: d.Evidence.CodeFiles,
+			TestFiles: d.Evidence.TestFiles,
+			DocFiles:  d.Evidence.DocFiles,
+			Comments:  d.Evidence.Comments,
+		},
+		DomainKnowledge: d.DomainKnowledge,
+	}
+
+	for _, f := range d.Features {
+		draft.Features = append(draft.Features, domain.Feature{
+			ID:                 f.ID,
+			Description:        f.Description,
+			AcceptanceCriteria: f.AcceptanceCriteria,
+		})
+	}
+
+	return draft
+}
+
+// collectCodebaseContext gathers all text files for Claude to analyze.
+// Returns the context string and a list of analyzed file paths.
+func collectCodebaseContext(projectDir string, scope discoverScope, progress *discoverProgress) (string, []string, error) {
 	var sb strings.Builder
-	filesAnalyzed := make(map[string]time.Time)
+	var filesAnalyzed []string
 
 	// Determine search roots - use scoped paths or entire project
 	searchRoots := scope.paths
@@ -509,7 +588,7 @@ func collectCodebaseContextIncremental(projectDir string, lastRun time.Time, inc
 	const maxTotalSize int64 = 200000 // 200KB total limit for context
 
 	for _, root := range searchRoots {
-		files, skipped, err := collectAllTextFilesIncremental(root, projectDir, maxTotalSize, lastRun, incrementalMode, scope.excludePatterns, progress)
+		files, skipped, err := collectAllTextFiles(root, projectDir, maxTotalSize, scope.excludePatterns, progress)
 		if err != nil {
 			continue // Skip on error, don't fail entire discovery
 		}
@@ -526,7 +605,7 @@ func collectCodebaseContextIncremental(projectDir string, lastRun time.Time, inc
 		for _, f := range allFiles {
 			progress.verbosePrintf("\n  Collected: %s", f.path)
 			sb.WriteString(fmt.Sprintf("**File: %s**\n```\n%s\n```\n\n", f.path, f.content))
-			filesAnalyzed[f.path] = f.modTime
+			filesAnalyzed = append(filesAnalyzed, f.path)
 		}
 	}
 
@@ -550,10 +629,10 @@ type discoverScope struct {
 	excludePatterns []string // glob patterns to exclude
 }
 
-// collectAllTextFilesIncremental gathers all text files regardless of extension,
+// collectAllTextFiles gathers all text files regardless of extension,
 // letting Claude determine what's relevant for capability discovery.
 // Returns collected files, skipped files (for verbose logging), and any error.
-func collectAllTextFilesIncremental(root, projectDir string, maxTotalSize int64, lastRun time.Time, incrementalMode bool, excludePatterns []string, progress *discoverProgress) ([]collectedFile, []skippedFile, error) {
+func collectAllTextFiles(root, projectDir string, maxTotalSize int64, excludePatterns []string, progress *discoverProgress) ([]collectedFile, []skippedFile, error) {
 	var files []collectedFile
 	var skipped []skippedFile
 	var totalSize int64
@@ -586,14 +665,6 @@ func collectAllTextFilesIncremental(root, projectDir string, maxTotalSize int64,
 			return nil
 		}
 
-		// In incremental mode, skip files not modified since last run
-		if incrementalMode && !info.ModTime().After(lastRun) {
-			if progress.verbose {
-				skipped = append(skipped, skippedFile{path: relPath, reason: "not modified since last run"})
-			}
-			return nil
-		}
-
 		// Check size limit
 		if totalSize+info.Size() > maxTotalSize {
 			if progress.verbose {
@@ -619,7 +690,6 @@ func collectAllTextFilesIncremental(root, projectDir string, maxTotalSize int64,
 		files = append(files, collectedFile{
 			path:    relPath,
 			content: truncateContent(string(content), 5000),
-			modTime: info.ModTime(),
 		})
 		totalSize += info.Size()
 
@@ -793,61 +863,6 @@ func logDisqualifiedCandidates(disqualified []disqualifiedCandidate, verbose boo
 	}
 }
 
-// parseDraftsFromOutput extracts draft specs from Claude's YAML output
-func parseDraftsFromOutput(output string) ([]*domain.DraftSpec, error) {
-	// Find YAML block in output
-	yamlContent := extractYAMLBlock(output)
-	if yamlContent == "" {
-		return nil, fmt.Errorf("no YAML block found in output")
-	}
-
-	var draftsOut draftsOutput
-	if err := yaml.Unmarshal([]byte(yamlContent), &draftsOut); err != nil {
-		return nil, fmt.Errorf("failed to parse YAML: %w", err)
-	}
-
-	var drafts []*domain.DraftSpec
-	now := time.Now()
-
-	for _, d := range draftsOut.Drafts {
-		confidence := domain.DraftConfidenceMedium
-		switch strings.ToLower(d.Confidence) {
-		case "high":
-			confidence = domain.DraftConfidenceHigh
-		case "low":
-			confidence = domain.DraftConfidenceLow
-		}
-
-		draft := &domain.DraftSpec{
-			ID:               d.ID,
-			Title:            d.Title,
-			Created:          now,
-			Description:      d.Description,
-			Confidence:       confidence,
-			DiscoveredFrom:   d.DiscoveredFrom,
-			UncertaintyNotes: d.UncertaintyNotes,
-			Evidence: domain.DraftEvidence{
-				CodeFiles: d.Evidence.CodeFiles,
-				TestFiles: d.Evidence.TestFiles,
-				DocFiles:  d.Evidence.DocFiles,
-				Comments:  d.Evidence.Comments,
-			},
-			DomainKnowledge: d.DomainKnowledge,
-		}
-
-		for _, f := range d.Features {
-			draft.Features = append(draft.Features, domain.Feature{
-				ID:                 f.ID,
-				Description:        f.Description,
-				AcceptanceCriteria: f.AcceptanceCriteria,
-			})
-		}
-
-		drafts = append(drafts, draft)
-	}
-
-	return drafts, nil
-}
 
 // countYAMLItems counts items in a YAML list by key name
 // Used for progress reporting between pipeline stages
