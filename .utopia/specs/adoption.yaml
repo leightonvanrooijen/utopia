@@ -1,14 +1,26 @@
 id: adoption
 title: adoption
 created: "2026-03-04T19:32:20.781903+11:00"
-updated: "2026-03-08T20:47:46.374114+11:00"
+updated: "2026-03-08T21:33:23.86116+11:00"
 description: ""
 features:
     - id: discover-command
       description: |
-        Remove hardcoded Go file patterns. Scan all text files and let Claude
-        determine what's relevant. Utopia is a helper tool for any codebase,
-        not just Go projects.
+        Replace the sequential 3-stage pipeline with a 2-stage architecture:
+
+        Stage 1 (Identify + Qualify): Scans codebase, identifies candidates, and
+        applies qualification criteria to filter. Merges current stages 1 & 2.
+
+        Stage 2 (Parallel Refinement): Spawns one Claude Code agent per qualified
+        candidate. Each agent has full tool access (Read, Grep, Glob) to explore
+        the codebase deeply based on what's in the candidate spec. Agents refine
+        until quality threshold is met.
+
+        Key changes:
+        - Later stages no longer lose code context (agents can fetch what they need)
+        - Parallel execution for faster discovery on large codebases
+        - Each spec gets dedicated deep attention rather than shared context budget
+        - Quality can be iteratively improved per-spec
       acceptance_criteria:
         - Each draft spec includes confidence level (high/medium/low)
         - Confidence based on evidence quality (tests exist, clear boundaries, documentation)
@@ -19,11 +31,9 @@ features:
         - Verbose mode shows which files are skipped during incremental filtering
         - Verbose mode shows each draft filename as it's saved
         - Total elapsed time displayed at end of discovery
-        - Discovery uses sequential multi-agent pipeline (3 stages)
         - 'Stage 1 (Candidate Agent): Scans all text files to find potential user-observable capabilities'
         - 'Stage 2 (Qualifier Agent): Applies qualification/disqualification criteria to filter candidates'
         - 'Stage 3 (Refinement Agent): Sharpens descriptions and ensures acceptance criteria are testable'
-        - Each stage receives output from previous stage (no parallel execution)
         - Pipeline continues only with candidates that pass qualification
         - 'Spec qualification criteria enforced: describes user-observable capability'
         - 'Spec qualification criteria enforced: can be verified by using the system'
@@ -37,6 +47,15 @@ features:
         - Quality over speed (no quick mode)
         - Scans all text files regardless of extension
         - Works on any codebase (Go, TypeScript, Python, Rust, etc.)
+        - Stage 2 spawns one agent per qualified candidate (parallel execution)
+        - 'Each refinement agent has access to Claude Code tools: Read, Grep, Glob'
+        - Agents explore codebase based on source_files and evidence from candidate
+        - 'Refinement agents run for a fixed number of iterations (default: 3)'
+        - Each iteration improves the spec and may discover missing details
+        - No quality threshold checks - iteration naturally improves output
+        - After all iterations, spec is saved regardless of quality
+        - Specs that still have gaps after iteration are saved as low-confidence drafts
+        - Concurrency managed by Claude Code (no custom batching needed)
 
     - id: drafts-storage
       description: |
