@@ -191,25 +191,83 @@ Output ONLY the YAML.`, candidatesYAML, criteria.FormatForAgent())
 }
 
 // Stage 3: Refinement Agent
-// Sharpens descriptions and ensures acceptance criteria are testable
-const refinementAgentPrompt = `Can someone verify this by using the system?
+// Deep analysis to extract precise, implementation-complete specifications
+const refinementAgentPrompt = `ULTRATHINK: Study this code deeply. Extract precise specifications.
+
+## Quality Bar
+Could someone implement EQUIVALENT BEHAVIOR from this spec alone?
+If no: the spec is too vague. Dig deeper.
 
 ## Qualified Candidates
 %s
 
-## Your Job
-Make each spec verifiable. Every acceptance criterion must be testable by a user.
+## Your Mission
+STUDY the code. Don't skim - trace execution paths, read error messages,
+find exact values. Every detail you miss is a detail someone will implement wrong.
 
-## Confidence
-- HIGH: Tests + docs exist
-- MEDIUM: Tests OR docs (not both)
-- LOW: Code only
+## Forbidden Language
+NEVER use these vague terms:
+- "etc." - list EVERY item explicitly
+- "various" - name each one
+- "appropriately" - state the exact behavior
+- "handles errors" - state WHICH errors and HOW
+- "supports" - describe exact mechanism
+- "multiple" - give the exact count or list
 
-## Good vs Bad Acceptance Criteria
-GOOD: "Given a project dir, when user runs 'init', then .utopia/ is created"
-GOOD: "When user exports to CSV, the file contains all records"
-BAD:  "The service correctly handles errors" - not observable
-BAD:  "Data is validated before saving" - internal detail
+## What to Extract
+
+### 1. Specific Values (never categories)
+BAD:  "Supports multiple output formats"
+GOOD: "Supports exactly 3 output formats: json, yaml, csv"
+
+BAD:  "Has several configuration options"
+GOOD: "Configuration options: timeout (int, default 30s), retries (int, default 3), verbose (bool, default false)"
+
+### 2. Exact Rules (not vague behaviors)
+BAD:  "Validates input appropriately"
+GOOD: "Rejects input if: empty string, longer than 255 chars, contains characters outside [a-zA-Z0-9_-]"
+
+BAD:  "Handles edge cases"
+GOOD: "When file doesn't exist: returns error 'file not found: {path}'. When file empty: returns empty array []"
+
+### 3. Explicit Boundaries
+BAD:  "Works with large files"
+GOOD: "Maximum file size: 10MB. Files larger than 10MB return error 'file exceeds 10MB limit'"
+
+BAD:  "Times out after a while"
+GOOD: "Default timeout: 30 seconds. Configurable via --timeout flag (1s-600s range)"
+
+### 4. Negative Constraints (what DOESN'T happen)
+BAD:  (missing)
+GOOD: "Does NOT retry on 4xx errors (only 5xx). Does NOT follow redirects. Does NOT cache responses"
+
+BAD:  (missing)
+GOOD: "Ignores hidden files (starting with '.'). Skips directories: .git, node_modules, vendor"
+
+### 5. Format Strings and Identifiers
+BAD:  "Outputs a formatted message"
+GOOD: "Output format: '[{level}] {timestamp}: {message}' where level is INFO|WARN|ERROR, timestamp is RFC3339"
+
+BAD:  "Creates files with descriptive names"
+GOOD: "File naming: '{id}-{title}.yaml' where id is kebab-case, title is slugified (max 50 chars)"
+
+## Examples
+
+### BAD Acceptance Criterion (vague)
+"When discovery runs, it finds capabilities in the codebase"
+- What counts as a capability? Which file types? What's the output format?
+
+### GOOD Acceptance Criterion (specific)
+"Given a Go project with .go files, when user runs 'utopia discover':
+- Scans files matching *.go (excludes *_test.go, vendor/**, .git/**)
+- Produces YAML files in .utopia/drafts/specs/ named {id}.yaml
+- Each draft contains: id (kebab-case), title, description, features[], confidence (high|medium|low)
+- Confidence is 'high' if both tests and docs exist, 'medium' if one exists, 'low' if only code"
+
+## Confidence Assessment
+- HIGH: Tests + docs exist AND spec has concrete values
+- MEDIUM: Tests OR docs (not both) AND spec mostly concrete
+- LOW: Code only OR spec contains vague language
 
 ## Output
 ` + "```yaml" + `
@@ -217,23 +275,24 @@ drafts:
   - id: spec-id-kebab-case
     title: "What User Can Do"
     description: |
-      User-focused description.
+      User-focused description with SPECIFIC details.
     confidence: high|medium|low
     discovered_from: ["source/file.go"]
-    uncertainty_notes: ["What's unclear"]
+    uncertainty_notes: ["What's unclear - be specific about what you couldn't determine"]
     evidence:
       code_files: ["impl.go"]
       test_files: ["test.go"]
       doc_files: ["docs.md"]
-      comments: ["Relevant intent"]
+      comments: ["Relevant code comments showing intent"]
     features:
       - id: feature-id
-        description: "Specific capability"
+        description: "Specific capability with exact details"
         acceptance_criteria:
-          - "Given X, when Y, then Z"
-    domain_knowledge: ["Key concept"]
+          - "Given [specific precondition], when [exact action], then [measurable outcome with specific values]"
+          - "Does NOT [explicit negative constraint]"
+    domain_knowledge: ["Specific term: exact meaning in this codebase"]
 ` + "```" + `
-Output ONLY the YAML.`
+Output ONLY the YAML. If you can't determine a specific value, note it in uncertainty_notes.`
 
 func runDiscover(cmd *cobra.Command, args []string) error {
 	projectDir := GetProjectDir(cmd)
