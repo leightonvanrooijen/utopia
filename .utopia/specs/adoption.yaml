@@ -1,22 +1,14 @@
 id: adoption
 title: adoption
 created: "2026-03-04T19:32:20.781903+11:00"
-updated: "2026-03-05T19:17:02.293678+11:00"
+updated: "2026-03-08T20:46:42.43761+11:00"
 description: ""
 features:
     - id: discover-command
       description: |
-        Replaces single-pass discovery with a sequential multi-agent pipeline
-        optimized for spec quality over speed. Each agent has a focused role
-        with clear qualification criteria.
-
-        Pipeline stages:
-        1. Candidate Identification - Scan codebase, identify potential specs
-        2. Qualification - Apply strict criteria, filter noise ruthlessly
-        3. Refinement - Sharpen acceptance criteria, ensure testability
-
-        Core principle: Specs document user-observable capabilities.
-        They answer "what can I do?" not "how is it built?"
+        Remove hardcoded Go file patterns. Scan all text files and let Claude
+        determine what's relevant. Utopia is a helper tool for any codebase,
+        not just Go projects.
       acceptance_criteria:
         - Each draft spec includes confidence level (high/medium/low)
         - Confidence based on evidence quality (tests exist, clear boundaries, documentation)
@@ -28,7 +20,7 @@ features:
         - Verbose mode shows each draft filename as it's saved
         - Total elapsed time displayed at end of discovery
         - Discovery uses sequential multi-agent pipeline (3 stages)
-        - 'Stage 1 (Candidate Agent): Scans codebase for potential user-observable capabilities'
+        - 'Stage 1 (Candidate Agent): Scans all text files to find potential user-observable capabilities'
         - 'Stage 2 (Qualifier Agent): Applies qualification/disqualification criteria to filter candidates'
         - 'Stage 3 (Refinement Agent): Sharpens descriptions and ensures acceptance criteria are testable'
         - Each stage receives output from previous stage (no parallel execution)
@@ -43,6 +35,8 @@ features:
         - 'Spec disqualification criteria enforced: standard practices covered by language/framework conventions'
         - Prompts are concise and laser-focused on intent
         - Quality over speed (no quick mode)
+        - Scans all text files regardless of extension
+        - Works on any codebase (Go, TypeScript, Python, Rust, etc.)
 
     - id: drafts-storage
       description: |
