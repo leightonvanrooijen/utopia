@@ -1,0 +1,27 @@
+id: adoption-enhance-discovery-depth
+type: enhancement
+title: Enhance discover prompts for regeneration-quality specs
+status: in-progress
+changes:
+    - operation: modify
+      spec: adoption
+      feature_id: discovery-agent-prompts
+      description: |
+        Update agent prompts to demand specificity and depth. The quality bar is:
+        "Could someone implement equivalent behavior from this spec alone?"
+
+        Current prompts are terse and produce vague specs with "etc." and
+        generic descriptions. New prompts emphasize ultrathinking - deep study
+        of the code to extract exact values, explicit rules, and precise boundaries.
+      criteria:
+        add:
+            - Refinement Agent prompt instructs Claude to "ultrathink" - deep analysis, not skimming
+            - Refinement Agent prompt instructs Claude to "study" the code thoroughly
+            - Refinement Agent prompt states regeneration quality bar explicitly
+            - Prompt includes concrete BAD/GOOD examples showing vague vs specific criteria
+            - Prompt explicitly forbids vague language ("etc.", "various", "appropriately")
+            - Prompt instructs to list specific values, never categories
+            - Prompt instructs to state exact rules, not vague behaviors
+            - Prompt instructs to name boundaries explicitly
+            - Prompt instructs to capture what DOESN'T happen (negative constraints)
+            - Prompt instructs to include format strings and identifiers when they matter
