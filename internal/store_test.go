@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/leightonvanrooijen/utopia/internal/domain"
-	"github.com/leightonvanrooijen/utopia/internal/testutil"
 )
 
 // SetupTestStore creates a YAMLStore backed by a temporary directory with the
@@ -15,8 +14,14 @@ import (
 // Returns the store and a cleanup function.
 func SetupTestStore(t *testing.T) (*YAMLStore, func()) {
 	t.Helper()
-	dir, cleanup := testutil.SetupTestProject(t)
-	return NewYAMLStore(dir), cleanup
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "specs"), 0755); err != nil {
+		t.Fatalf("failed to create specs subdir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "change-requests"), 0755); err != nil {
+		t.Fatalf("failed to create change-requests subdir: %v", err)
+	}
+	return NewYAMLStore(dir), func() {}
 }
 
 // Tests for merge workflow
@@ -28,12 +33,14 @@ func TestMergeWorkflow_AddFeature(t *testing.T) {
 	// Create parent spec
 	parentSpec := domain.NewSpec("parent-spec", "Parent Spec")
 	parentSpec.Features = []domain.Feature{
-		testutil.NewTestFeature("existing-feature", "Already here", "Works"),
+		{ID: "existing-feature", Description: "Already here", AcceptanceCriteria: []string{"Works"}},
 	}
-	testutil.AssertNoError(t, store.SaveSpec(parentSpec))
+	if err := store.SaveSpec(parentSpec); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	// Create change request that adds a feature
-	newFeature := testutil.NewTestFeature("new-feature", "Brand new", "It works")
+	newFeature := domain.Feature{ID: "new-feature", Description: "Brand new", AcceptanceCriteria: []string{"It works"}}
 	cr := &domain.ChangeRequest{
 		ID:         "add-feature-cr",
 		Title:      "Add New Feature",
@@ -45,17 +52,25 @@ func TestMergeWorkflow_AddFeature(t *testing.T) {
 			},
 		},
 	}
-	testutil.AssertNoError(t, store.SaveChangeRequest(cr))
+	if err := store.SaveChangeRequest(cr); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	// Apply changes (simulating merge)
-	testutil.AssertNoError(t, cr.ApplyChanges(parentSpec))
+	if err := cr.ApplyChanges(parentSpec); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	// Save updated spec
-	testutil.AssertNoError(t, store.SaveSpec(parentSpec))
+	if err := store.SaveSpec(parentSpec); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	// Reload and verify
 	reloaded, err := store.LoadSpec("parent-spec")
-	testutil.AssertNoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if len(reloaded.Features) != 2 {
 		t.Errorf("expected 2 features after merge, got %d", len(reloaded.Features))
@@ -76,9 +91,11 @@ func TestMergeWorkflow_ModifyFeature(t *testing.T) {
 	// Create parent spec
 	parentSpec := domain.NewSpec("parent-spec", "Parent Spec")
 	parentSpec.Features = []domain.Feature{
-		testutil.NewTestFeature("my-feature", "Original", "Old criterion"),
+		{ID: "my-feature", Description: "Original", AcceptanceCriteria: []string{"Old criterion"}},
 	}
-	testutil.AssertNoError(t, store.SaveSpec(parentSpec))
+	if err := store.SaveSpec(parentSpec); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	// Create change request that modifies the feature
 	cr := &domain.ChangeRequest{
@@ -96,16 +113,24 @@ func TestMergeWorkflow_ModifyFeature(t *testing.T) {
 			},
 		},
 	}
-	testutil.AssertNoError(t, store.SaveChangeRequest(cr))
+	if err := store.SaveChangeRequest(cr); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	// Apply changes
-	testutil.AssertNoError(t, cr.ApplyChanges(parentSpec))
+	if err := cr.ApplyChanges(parentSpec); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	// Save and reload
-	testutil.AssertNoError(t, store.SaveSpec(parentSpec))
+	if err := store.SaveSpec(parentSpec); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	reloaded, err := store.LoadSpec("parent-spec")
-	testutil.AssertNoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if reloaded.Features[0].Description != "Updated description" {
 		t.Errorf("expected updated description, got %q", reloaded.Features[0].Description)
@@ -123,10 +148,12 @@ func TestMergeWorkflow_RemoveFeature(t *testing.T) {
 	// Create parent spec with two features
 	parentSpec := domain.NewSpec("parent-spec", "Parent Spec")
 	parentSpec.Features = []domain.Feature{
-		testutil.NewTestFeature("keep-feature", "Keep this", "Works"),
-		testutil.NewTestFeature("remove-feature", "Remove this", "Old"),
+		{ID: "keep-feature", Description: "Keep this", AcceptanceCriteria: []string{"Works"}},
+		{ID: "remove-feature", Description: "Remove this", AcceptanceCriteria: []string{"Old"}},
 	}
-	testutil.AssertNoError(t, store.SaveSpec(parentSpec))
+	if err := store.SaveSpec(parentSpec); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	// Create change request that removes a feature
 	cr := &domain.ChangeRequest{
@@ -141,16 +168,24 @@ func TestMergeWorkflow_RemoveFeature(t *testing.T) {
 			},
 		},
 	}
-	testutil.AssertNoError(t, store.SaveChangeRequest(cr))
+	if err := store.SaveChangeRequest(cr); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	// Apply changes
-	testutil.AssertNoError(t, cr.ApplyChanges(parentSpec))
+	if err := cr.ApplyChanges(parentSpec); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	// Save and reload
-	testutil.AssertNoError(t, store.SaveSpec(parentSpec))
+	if err := store.SaveSpec(parentSpec); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	reloaded, err := store.LoadSpec("parent-spec")
-	testutil.AssertNoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if len(reloaded.Features) != 1 {
 		t.Errorf("expected 1 feature after merge, got %d", len(reloaded.Features))
@@ -170,10 +205,12 @@ func TestMergeWorkflow_DeleteChangeRequestAfterMerge(t *testing.T) {
 
 	// Create parent spec
 	parentSpec := domain.NewSpec("parent-spec", "Parent Spec")
-	testutil.AssertNoError(t, store.SaveSpec(parentSpec))
+	if err := store.SaveSpec(parentSpec); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	// Create change request
-	newFeature := testutil.NewTestFeature("new-feature", "New", "Works")
+	newFeature := domain.Feature{ID: "new-feature", Description: "New", AcceptanceCriteria: []string{"Works"}}
 	cr := &domain.ChangeRequest{
 		ID:         "to-delete-cr",
 		Title:      "Will Be Deleted",
@@ -185,7 +222,9 @@ func TestMergeWorkflow_DeleteChangeRequestAfterMerge(t *testing.T) {
 			},
 		},
 	}
-	testutil.AssertNoError(t, store.SaveChangeRequest(cr))
+	if err := store.SaveChangeRequest(cr); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	// Verify it exists
 	_, err := store.LoadChangeRequest("to-delete-cr")
@@ -194,9 +233,15 @@ func TestMergeWorkflow_DeleteChangeRequestAfterMerge(t *testing.T) {
 	}
 
 	// Apply changes and delete
-	testutil.AssertNoError(t, cr.ApplyChanges(parentSpec))
-	testutil.AssertNoError(t, store.SaveSpec(parentSpec))
-	testutil.AssertNoError(t, store.DeleteChangeRequest("to-delete-cr"))
+	if err := cr.ApplyChanges(parentSpec); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := store.SaveSpec(parentSpec); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := store.DeleteChangeRequest("to-delete-cr"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	// Verify it's gone
 	_, err = store.LoadChangeRequest("to-delete-cr")
@@ -206,8 +251,13 @@ func TestMergeWorkflow_DeleteChangeRequestAfterMerge(t *testing.T) {
 }
 
 func TestYAMLFormatting_FeatureSpacing(t *testing.T) {
-	dir, cleanup := testutil.SetupTestProject(t)
-	defer cleanup()
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "specs"), 0755); err != nil {
+		t.Fatalf("failed to create specs subdir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "change-requests"), 0755); err != nil {
+		t.Fatalf("failed to create change-requests subdir: %v", err)
+	}
 
 	store := NewYAMLStore(dir)
 
@@ -231,11 +281,15 @@ func TestYAMLFormatting_FeatureSpacing(t *testing.T) {
 		},
 	}
 
-	testutil.AssertNoError(t, store.SaveSpec(spec))
+	if err := store.SaveSpec(spec); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	// Read the raw file to check formatting
 	content, err := os.ReadFile(filepath.Join(dir, "specs", "test-spec.yaml"))
-	testutil.AssertNoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	contentStr := string(content)
 
@@ -254,22 +308,31 @@ func TestYAMLFormatting_FeatureSpacing(t *testing.T) {
 }
 
 func TestYAMLFormatting_BlockStyleDescription(t *testing.T) {
-	dir, cleanup := testutil.SetupTestProject(t)
-	defer cleanup()
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "specs"), 0755); err != nil {
+		t.Fatalf("failed to create specs subdir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "change-requests"), 0755); err != nil {
+		t.Fatalf("failed to create change-requests subdir: %v", err)
+	}
 
 	store := NewYAMLStore(dir)
 
 	// Create a spec with a multi-line description
 	spec := domain.NewSpec("block-test", "Block Style Test")
 	spec.Features = []domain.Feature{
-		testutil.NewTestFeature("multiline-feature", "This is a longer description\nthat should use block style", "Works"),
+		{ID: "multiline-feature", Description: "This is a longer description\nthat should use block style", AcceptanceCriteria: []string{"Works"}},
 	}
 
-	testutil.AssertNoError(t, store.SaveSpec(spec))
+	if err := store.SaveSpec(spec); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	// Read and verify
 	content, err := os.ReadFile(filepath.Join(dir, "specs", "block-test.yaml"))
-	testutil.AssertNoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if !strings.Contains(string(content), "description: |") {
 		t.Errorf("expected block style for multi-line description, got:\n%s", string(content))
@@ -283,9 +346,11 @@ func TestDeleteSpec_Success(t *testing.T) {
 	// Create a spec
 	spec := domain.NewSpec("to-delete", "Spec To Delete")
 	spec.Features = []domain.Feature{
-		testutil.NewTestFeature("feature-1", "A feature", "Works"),
+		{ID: "feature-1", Description: "A feature", AcceptanceCriteria: []string{"Works"}},
 	}
-	testutil.AssertNoError(t, store.SaveSpec(spec))
+	if err := store.SaveSpec(spec); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	// Verify it exists
 	_, err := store.LoadSpec("to-delete")
@@ -294,7 +359,9 @@ func TestDeleteSpec_Success(t *testing.T) {
 	}
 
 	// Delete it
-	testutil.AssertNoError(t, store.DeleteSpec("to-delete"))
+	if err := store.DeleteSpec("to-delete"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	// Verify it's gone
 	_, err = store.LoadSpec("to-delete")
@@ -327,13 +394,15 @@ func TestMergeWorkflow_FullScenario(t *testing.T) {
 	parentSpec.Description = "The Ralph execution loop"
 	parentSpec.DomainKnowledge = []string{"Existing knowledge"}
 	parentSpec.Features = []domain.Feature{
-		testutil.NewTestFeature("ralph-loop", "Core loop", "Loops correctly"),
-		testutil.NewTestFeature("old-feature", "To be removed", "Old"),
+		{ID: "ralph-loop", Description: "Core loop", AcceptanceCriteria: []string{"Loops correctly"}},
+		{ID: "old-feature", Description: "To be removed", AcceptanceCriteria: []string{"Old"}},
 	}
-	testutil.AssertNoError(t, store.SaveSpec(parentSpec))
+	if err := store.SaveSpec(parentSpec); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	// Create change request with all operation types
-	timeoutFeature := testutil.NewTestFeature("timeout-flag", "Add --timeout flag", "Flag accepts minutes", "Flag is optional")
+	timeoutFeature := domain.Feature{ID: "timeout-flag", Description: "Add --timeout flag", AcceptanceCriteria: []string{"Flag accepts minutes", "Flag is optional"}}
 	cr := &domain.ChangeRequest{
 		ID:         "execution-ralph-add-timeout",
 		Title:      "Add timeout feature",
@@ -361,16 +430,26 @@ func TestMergeWorkflow_FullScenario(t *testing.T) {
 			},
 		},
 	}
-	testutil.AssertNoError(t, store.SaveChangeRequest(cr))
+	if err := store.SaveChangeRequest(cr); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	// Simulate full merge workflow
-	testutil.AssertNoError(t, cr.ApplyChanges(parentSpec))
-	testutil.AssertNoError(t, store.SaveSpec(parentSpec))
-	testutil.AssertNoError(t, store.DeleteChangeRequest("execution-ralph-add-timeout"))
+	if err := cr.ApplyChanges(parentSpec); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := store.SaveSpec(parentSpec); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := store.DeleteChangeRequest("execution-ralph-add-timeout"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	// Reload and verify final state
 	final, err := store.LoadSpec("execution-ralph")
-	testutil.AssertNoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	// Check domain knowledge
 	if len(final.DomainKnowledge) != 2 {

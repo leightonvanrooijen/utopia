@@ -5,16 +5,23 @@ import (
 	"testing"
 
 	"github.com/leightonvanrooijen/utopia/internal/domain"
-	"github.com/leightonvanrooijen/utopia/internal/testutil"
 )
 
 func TestChunk_SingleFeature(t *testing.T) {
-	cr := testutil.CRWithFeatures("test-cr",
-		testutil.NewTestFeature("feature-1", "First feature", "Criterion A", "Criterion B"),
-	)
+	f := domain.Feature{ID: "feature-1", Description: "First feature", AcceptanceCriteria: []string{"Criterion A", "Criterion B"}}
+	cr := &domain.ChangeRequest{
+		ID:    "test-cr",
+		Type:  domain.CRTypeFeature,
+		Title: "Test CR",
+		Changes: []domain.Change{
+			{Operation: "add", Feature: &f},
+		},
+	}
 
 	items, err := Chunk(cr, nil)
-	testutil.AssertNoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if len(items) != 1 {
 		t.Fatalf("Chunk() returned %d items, want 1", len(items))
@@ -47,14 +54,24 @@ func TestChunk_SingleFeature(t *testing.T) {
 }
 
 func TestChunk_MultipleFeatures(t *testing.T) {
-	cr := testutil.CRWithFeatures("multi-cr",
-		testutil.NewTestFeature("f1", "Feature 1", "C1"),
-		testutil.NewTestFeature("f2", "Feature 2", "C2"),
-		testutil.NewTestFeature("f3", "Feature 3", "C3"),
-	)
+	f1 := domain.Feature{ID: "f1", Description: "Feature 1", AcceptanceCriteria: []string{"C1"}}
+	f2 := domain.Feature{ID: "f2", Description: "Feature 2", AcceptanceCriteria: []string{"C2"}}
+	f3 := domain.Feature{ID: "f3", Description: "Feature 3", AcceptanceCriteria: []string{"C3"}}
+	cr := &domain.ChangeRequest{
+		ID:    "multi-cr",
+		Type:  domain.CRTypeFeature,
+		Title: "Test CR",
+		Changes: []domain.Change{
+			{Operation: "add", Feature: &f1},
+			{Operation: "add", Feature: &f2},
+			{Operation: "add", Feature: &f3},
+		},
+	}
 
 	items, err := Chunk(cr, nil)
-	testutil.AssertNoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if len(items) != 3 {
 		t.Fatalf("Chunk() returned %d items, want 3", len(items))
@@ -92,9 +109,15 @@ func TestChunk_NoFeatures(t *testing.T) {
 
 func TestChunk_Validate_NoAcceptanceCriteria(t *testing.T) {
 	// Use a Feature without acceptance criteria to test validation
-	cr := testutil.CRWithFeatures("invalid-cr",
-		domain.Feature{ID: "bad-feature", Description: "No criteria", AcceptanceCriteria: []string{}},
-	)
+	f := domain.Feature{ID: "bad-feature", Description: "No criteria", AcceptanceCriteria: []string{}}
+	cr := &domain.ChangeRequest{
+		ID:    "invalid-cr",
+		Type:  domain.CRTypeFeature,
+		Title: "Test CR",
+		Changes: []domain.Change{
+			{Operation: "add", Feature: &f},
+		},
+	}
 
 	_, err := Chunk(cr, nil)
 	if err == nil {
@@ -116,10 +139,17 @@ func TestChunk_Validate_NoAcceptanceCriteria(t *testing.T) {
 }
 
 func TestChunk_Validate_MultipleEmptyCriteria(t *testing.T) {
-	cr := testutil.CRWithFeatures("multi-error-cr",
-		domain.Feature{ID: "f1", Description: "No criteria", AcceptanceCriteria: []string{}},
-		domain.Feature{ID: "f2", Description: "Also empty", AcceptanceCriteria: []string{}},
-	)
+	f1 := domain.Feature{ID: "f1", Description: "No criteria", AcceptanceCriteria: []string{}}
+	f2 := domain.Feature{ID: "f2", Description: "Also empty", AcceptanceCriteria: []string{}}
+	cr := &domain.ChangeRequest{
+		ID:    "multi-error-cr",
+		Type:  domain.CRTypeFeature,
+		Title: "Test CR",
+		Changes: []domain.Change{
+			{Operation: "add", Feature: &f1},
+			{Operation: "add", Feature: &f2},
+		},
+	}
 
 	_, err := Chunk(cr, nil)
 	if err == nil {
@@ -137,12 +167,20 @@ func TestChunk_Validate_MultipleEmptyCriteria(t *testing.T) {
 }
 
 func TestChunk_MergeConstraints_DefaultsOnly(t *testing.T) {
-	cr := testutil.CRWithFeatures("no-knowledge",
-		testutil.NewTestFeature("f1", "Test", "Works"),
-	)
+	f := domain.Feature{ID: "f1", Description: "Test", AcceptanceCriteria: []string{"Works"}}
+	cr := &domain.ChangeRequest{
+		ID:    "no-knowledge",
+		Type:  domain.CRTypeFeature,
+		Title: "Test CR",
+		Changes: []domain.Change{
+			{Operation: "add", Feature: &f},
+		},
+	}
 
 	items, err := Chunk(cr, nil)
-	testutil.AssertNoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	constraints := items[0].Constraints
 
@@ -300,12 +338,20 @@ func TestChunk_RefactorCR_InjectsConstraints(t *testing.T) {
 
 func TestChunk_NonRefactorCR_NoRefactorConstraints(t *testing.T) {
 	// Create a feature change request (not a refactor)
-	cr := testutil.CRWithFeatures("regular-cr",
-		testutil.NewTestFeature("feature-1", "Add new feature", "Feature is added"),
-	)
+	f := domain.Feature{ID: "feature-1", Description: "Add new feature", AcceptanceCriteria: []string{"Feature is added"}}
+	cr := &domain.ChangeRequest{
+		ID:    "regular-cr",
+		Type:  domain.CRTypeFeature,
+		Title: "Test CR",
+		Changes: []domain.Change{
+			{Operation: "add", Feature: &f},
+		},
+	}
 
 	items, err := Chunk(cr, nil)
-	testutil.AssertNoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	item := items[0]
 

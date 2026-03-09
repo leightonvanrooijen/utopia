@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/leightonvanrooijen/utopia/internal/domain"
-	"github.com/leightonvanrooijen/utopia/internal/testutil"
 )
 
 func TestCompletionToken(t *testing.T) {
@@ -16,7 +15,12 @@ func TestCompletionToken(t *testing.T) {
 }
 
 func TestBuildPrompt_NoFailures(t *testing.T) {
-	item := testutil.NewTestWorkItem("test-item", "## TASK\n\nImplement feature X\n\n## CONSTRAINTS\n\n- Keep it simple\n\n---\n\nWhen complete, output: <COMPLETE>")
+	item := &domain.WorkItem{
+		ID:         "test-item",
+		Prompt:     "## TASK\n\nImplement feature X\n\n## CONSTRAINTS\n\n- Keep it simple\n\n---\n\nWhen complete, output: <COMPLETE>",
+		Status:     domain.WorkItemPending,
+		Complexity: domain.ComplexityMedium,
+	}
 
 	prompt := buildPrompt(item)
 
@@ -32,8 +36,13 @@ func TestBuildPrompt_NoFailures(t *testing.T) {
 }
 
 func TestBuildPrompt_WithFailures(t *testing.T) {
-	item := testutil.NewTestWorkItem("test-item", "## TASK\n\nImplement feature X\n\n## CONSTRAINTS\n\n- Keep it simple\n\n---\n\nWhen complete, output: <COMPLETE>")
-	item.LastFailureOutput = "Error: test failed\nExpected 1 but got 2"
+	item := &domain.WorkItem{
+		ID:                "test-item",
+		Prompt:            "## TASK\n\nImplement feature X\n\n## CONSTRAINTS\n\n- Keep it simple\n\n---\n\nWhen complete, output: <COMPLETE>",
+		Status:            domain.WorkItemPending,
+		Complexity:        domain.ComplexityMedium,
+		LastFailureOutput: "Error: test failed\nExpected 1 but got 2",
+	}
 
 	prompt := buildPrompt(item)
 
@@ -63,7 +72,12 @@ func TestBuildPrompt_WithFailures(t *testing.T) {
 }
 
 func TestBuildPrompt_EmptyFailureOutput(t *testing.T) {
-	item := testutil.NewTestWorkItem("test-item", "Original prompt")
+	item := &domain.WorkItem{
+		ID:         "test-item",
+		Prompt:     "Original prompt",
+		Status:     domain.WorkItemPending,
+		Complexity: domain.ComplexityMedium,
+	}
 	// LastFailureOutput defaults to empty string
 
 	prompt := buildPrompt(item)
@@ -92,8 +106,13 @@ Acceptance criteria:
 
 When complete, commit your changes and output: <COMPLETE>`
 
-	item := testutil.NewTestWorkItem("api-endpoint", originalPrompt)
-	item.LastFailureOutput = "404 Not Found"
+	item := &domain.WorkItem{
+		ID:                "api-endpoint",
+		Prompt:            originalPrompt,
+		Status:            domain.WorkItemPending,
+		Complexity:        domain.ComplexityMedium,
+		LastFailureOutput: "404 Not Found",
+	}
 
 	prompt := buildPrompt(item)
 
@@ -109,8 +128,13 @@ When complete, commit your changes and output: <COMPLETE>`
 }
 
 func TestBuildPrompt_FailureInCodeBlock(t *testing.T) {
-	item := testutil.NewTestWorkItem("test-item", "Original prompt")
-	item.LastFailureOutput = "some failure output"
+	item := &domain.WorkItem{
+		ID:                "test-item",
+		Prompt:            "Original prompt",
+		Status:            domain.WorkItemPending,
+		Complexity:        domain.ComplexityMedium,
+		LastFailureOutput: "some failure output",
+	}
 
 	prompt := buildPrompt(item)
 
@@ -173,8 +197,13 @@ func TestWorkItemStatusTransitions(t *testing.T) {
 
 // TestIterationCountTracking verifies iteration counting behavior
 func TestIterationCountTracking(t *testing.T) {
-	item := testutil.NewTestWorkItem("test-item", "")
-	item.IterationCount = 0 // Ensure starting at 0
+	item := &domain.WorkItem{
+		ID:             "test-item",
+		Prompt:         "",
+		Status:         domain.WorkItemPending,
+		Complexity:     domain.ComplexityMedium,
+		IterationCount: 0, // Ensure starting at 0
+	}
 
 	// Simulate multiple iterations
 	for i := 1; i <= 5; i++ {
