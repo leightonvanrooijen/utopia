@@ -30,4 +30,3 @@ func SetupTestProject(t *testing.T) (string, func()) {
 
 	return dir, cleanup
 }
-
