@@ -22,7 +22,6 @@ type Project struct {
 // Config holds project-level configuration
 type Config struct {
 	ProjectContext string             `yaml:"project_context,omitempty"`
-	Strategies     StrategyConfig     `yaml:"strategies"`
 	Verification   VerificationConfig `yaml:"verification"`
 }
 
@@ -35,22 +34,9 @@ type VerificationConfig struct {
 	MaxIterations int `yaml:"max_iterations,omitempty"`
 }
 
-// StrategyConfig specifies which strategies to use
-type StrategyConfig struct {
-	Spec    string `yaml:"spec"`    // e.g., "guided", "minimal", "template"
-	Chunk   string `yaml:"chunk"`   // e.g., "simple", "llm", "atomic"
-	Execute string `yaml:"execute"` // e.g., "sequential", "parallel", "supervised"
-}
-
 // DefaultConfig returns sensible defaults
 func DefaultConfig() *Config {
-	return &Config{
-		Strategies: StrategyConfig{
-			Spec:    "guided",
-			Chunk:   "ralph-sequential",
-			Execute: "sequential",
-		},
-	}
+	return &Config{}
 }
 
 // =============================================================================
