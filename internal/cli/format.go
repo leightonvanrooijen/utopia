@@ -39,18 +39,9 @@ Use --check to verify files are formatted without making changes (useful for CI)
 }
 
 func runFormat(cmd *cobra.Command, args []string, checkOnly bool) error {
-	projectDir := GetProjectDir(cmd)
-
-	absPath, err := filepath.Abs(projectDir)
+	absPath, utopiaDir, _, err := ResolveProject(cmd)
 	if err != nil {
-		return fmt.Errorf("failed to resolve project path: %w", err)
-	}
-
-	utopiaDir := filepath.Join(absPath, ".utopia")
-
-	// Check if initialized
-	if _, err := os.Stat(utopiaDir); os.IsNotExist(err) {
-		return fmt.Errorf("not a Utopia project (run 'utopia init' first)")
+		return err
 	}
 
 	// Find all YAML files
