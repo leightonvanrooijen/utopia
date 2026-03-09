@@ -1,0 +1,97 @@
+id: lean-architecture-refactor
+type: refactor
+title: Simplify architecture by removing unnecessary abstractions
+status: in-progress
+tasks:
+    - id: generic-yaml-store
+      description: |
+        Replace 9 repository interfaces and 1000-line YAMLStore with generic functions.
+
+        Current: domain/repositories.go defines interfaces, storage/yaml.go implements them
+        with copy-pasted methods for each type (LoadSpec, LoadChangeRequest, LoadWorkItem...).
+
+        New: Generic functions that work with any type:
+          - Load[T](path) (*T, error)
+          - Save[T](path, *T) error
+          - List[T](dir) ([]*T, error)
+          - Delete(path) error
+      acceptance_criteria:
+        - All existing Load/Save/List/Delete operations work identically
+        - domain/repositories.go is deleted
+        - storage/yaml.go reduced from ~1000 to ~200 lines
+        - All existing tests pass
+    - id: remove-strategy-pattern
+      description: |
+        Remove strategy registries and interfaces for chunking and execution.
+        There is only one implementation of each, so the abstraction provides no value.
+
+        Current: Registry pattern with interfaces in strategies/chunk/ and strategies/execute/
+        New: Direct function calls, inline the single implementation
+      acceptance_criteria:
+        - strategies/chunk/strategy.go (interface + registry) deleted
+        - strategies/execute/strategy.go (interface + registry) deleted
+        - ralphsequential logic moved to internal/chunk.go or similar
+        - sequential executor logic moved to internal/ralph.go or similar
+        - cmd/utopia/main.go simplified (no registry setup)
+        - execute command works identically
+    - id: consolidate-domain-types
+      description: |
+        Consolidate domain package from 14 files to fewer, removing interface file.
+        Keep all structs and their methods, just organize better.
+
+        Current: internal/domain/ with 14 files including repositories.go
+        New: internal/types/ or internal/domain/ with ~4-5 files max
+      acceptance_criteria:
+        - All domain structs preserved (Spec, ChangeRequest, WorkItem, Feature, etc.)
+        - All validation methods preserved
+        - ApplyChanges logic preserved (merge needs this)
+        - repositories.go deleted (interfaces removed in task 1)
+        - No changes to YAML serialization
+    - id: consolidate-infra-packages
+      description: |
+        Flatten infra/ subpackages into internal/ root or single package.
+
+        Current: internal/infra/claude/, internal/infra/storage/, internal/infra/formatter/
+        New: internal/claude.go, internal/store.go, internal/format.go (or single infra.go)
+      acceptance_criteria:
+        - Claude CLI integration works identically
+        - YAML formatting works identically
+        - No new packages introduced
+        - Import paths simplified
+    - id: consolidate-cli-commands
+      description: |
+        Reduce CLI package from 20 files (~7000 lines) to ~10 files (~2500 lines).
+
+        Key consolidations:
+        - discover.go + discover_domain.go → discover.go
+        - shape.go + shape_domain.go → shape.go
+        - promote.go + promote_domain.go → promote.go
+        - execute.go + execute_chunk.go + execute_initiative.go → execute.go
+
+        Remove:
+        - Helper types used by single functions (inline them)
+        - Duplicated patterns between X.go and X_domain.go
+      acceptance_criteria:
+        - All CLI commands work identically (same flags, same output)
+        - File count reduced from 20 to ~10
+        - Line count reduced from ~7000 to ~2500
+        - No helper structs that exist for single functions
+    - id: remove-readme-strategy
+      description: |
+        Remove strategies/readme/ package - appears to be unused or minimal use.
+        Verify usage first, inline if needed.
+      acceptance_criteria:
+        - Verify readme strategy usage in codebase
+        - If used, inline the logic where needed
+        - If unused, delete entirely
+        - No functionality change to harvest command
+    - id: final-cleanup
+      description: |
+        Final pass to remove dead code, unused imports, empty packages.
+        Run tests, verify all commands work.
+      acceptance_criteria:
+        - go build succeeds
+        - go test ./... passes
+        - All CLI commands execute without error
+        - No unused imports or dead code
+        - Total production LOC reduced to ~4000 or less
