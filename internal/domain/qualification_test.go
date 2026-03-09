@@ -67,55 +67,6 @@ func TestSpecQualificationCriteria_LitmusTest(t *testing.T) {
 	}
 }
 
-func TestSpecQualificationCriteria_IsSpecWorthy(t *testing.T) {
-	criteria := SpecQualificationCriteria{}
-
-	tests := []struct {
-		name          string
-		description   string
-		canUserVerify bool
-		wantQualified bool
-	}{
-		{
-			name:          "user-verifiable capability qualifies",
-			description:   "Users can initialize a project",
-			canUserVerify: true,
-			wantQualified: true,
-		},
-		{
-			name:          "non-user-verifiable disqualifies",
-			description:   "YAML parser validates spec schema",
-			canUserVerify: false,
-			wantQualified: false,
-		},
-		{
-			name:          "command execution qualifies",
-			description:   "Users can discover specs from code",
-			canUserVerify: true,
-			wantQualified: true,
-		},
-		{
-			name:          "internal storage disqualifies",
-			description:   "Repository uses file-based storage",
-			canUserVerify: false,
-			wantQualified: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := criteria.IsSpecWorthy(tt.description, tt.canUserVerify)
-			if result.Qualified != tt.wantQualified {
-				t.Errorf("IsSpecWorthy(%q, %v) = %v, want %v; reason: %s",
-					tt.description, tt.canUserVerify, result.Qualified, tt.wantQualified, result.Reason)
-			}
-			if result.Reason == "" {
-				t.Error("result should include a reason")
-			}
-		})
-	}
-}
-
 func TestSpecQualificationCriteria_FormatForAgent(t *testing.T) {
 	criteria := SpecQualificationCriteria{}
 	formatted := criteria.FormatForAgent()

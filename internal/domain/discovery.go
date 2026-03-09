@@ -137,29 +137,6 @@ func (c SpecQualificationCriteria) LitmusTest() string {
 	return "Could a user verify this by using the system?"
 }
 
-// IsSpecWorthy applies the litmus test logic. A capability is spec-worthy
-// if it can be verified by a user through normal system usage.
-//
-// Examples of spec-worthy capabilities:
-//   - "Users can initialize a project" - YES, run `utopia init` and verify
-//   - "Users can discover specs from code" - YES, run `utopia discover` and verify
-//
-// Examples of NOT spec-worthy (implementation details):
-//   - "YAML parser validates spec schema" - NO, internal implementation
-//   - "Repository uses file-based storage" - NO, technical plumbing
-func (c SpecQualificationCriteria) IsSpecWorthy(description string, canUserVerify bool) QualificationResult {
-	if !canUserVerify {
-		return QualificationResult{
-			Qualified: false,
-			Reason:    "Cannot be verified by using the system - likely implementation detail",
-		}
-	}
-	return QualificationResult{
-		Qualified: true,
-		Reason:    "User can verify this capability by using the system",
-	}
-}
-
 // FormatForAgent returns the qualification criteria formatted for inclusion
 // in agent prompts. This ensures consistency between the domain definition
 // and the agent's instructions.
