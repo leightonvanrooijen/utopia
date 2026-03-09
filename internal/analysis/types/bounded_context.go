@@ -132,55 +132,6 @@ func (a *BoundedContextAnalyzer) normalizeContextName(name string) string {
 	return normalized
 }
 
-// contextTitle converts a kebab-case context name to a human-readable title
-func (a *BoundedContextAnalyzer) contextTitle(name string) string {
-	// Split by hyphens and title-case each word
-	parts := strings.Split(name, "-")
-	for i, part := range parts {
-		if len(part) > 0 {
-			parts[i] = strings.ToUpper(part[:1]) + part[1:]
-		}
-	}
-	return strings.Join(parts, " ")
-}
-
-// DiscoverBoundedContexts analyzes file paths to discover bounded contexts
-func (a *BoundedContextAnalyzer) DiscoverBoundedContexts(filePaths []string) []*BoundedContext {
-	// Group files by context
-	contextFiles := make(map[string][]string)
-	contextRoots := make(map[string]string)
-
-	for _, path := range filePaths {
-		ctx := a.InferBoundedContext(path)
-		contextFiles[ctx] = append(contextFiles[ctx], path)
-
-		// Track the shortest path as the root
-		if existing, ok := contextRoots[ctx]; !ok || len(path) < len(existing) {
-			// Extract directory from file path
-			dir := filepath.Dir(path)
-			contextRoots[ctx] = dir
-		}
-	}
-
-	// Convert to BoundedContext slice
-	var contexts []*BoundedContext
-	for name, files := range contextFiles {
-		contexts = append(contexts, &BoundedContext{
-			Name:     name,
-			Title:    a.contextTitle(name),
-			RootPath: contextRoots[name],
-			Files:    files,
-		})
-	}
-
-	// Sort by name for consistent ordering
-	sort.Slice(contexts, func(i, j int) bool {
-		return contexts[i].Name < contexts[j].Name
-	})
-
-	return contexts
-}
-
 // GroupTermsByContext takes discovered types and groups them by bounded context
 func (a *BoundedContextAnalyzer) GroupTermsByContext(types []*DiscoveredType) map[string][]*ContextualTerm {
 	// First, group types by term name AND context

@@ -135,63 +135,6 @@ func TestNormalizeContextName(t *testing.T) {
 	}
 }
 
-func TestContextTitle(t *testing.T) {
-	analyzer := NewBoundedContextAnalyzer()
-
-	tests := []struct {
-		input    string
-		expected string
-	}{
-		{"order", "Order"},
-		{"user-account", "User Account"},
-		{"order-management", "Order Management"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			result := analyzer.contextTitle(tt.input)
-			if result != tt.expected {
-				t.Errorf("contextTitle(%q) = %q, want %q", tt.input, result, tt.expected)
-			}
-		})
-	}
-}
-
-func TestDiscoverBoundedContexts(t *testing.T) {
-	analyzer := NewBoundedContextAnalyzer()
-
-	filePaths := []string{
-		"internal/order/order.go",
-		"internal/order/line_item.go",
-		"internal/customer/customer.go",
-		"internal/customer/address.go",
-		"internal/billing/invoice.go",
-	}
-
-	contexts := analyzer.DiscoverBoundedContexts(filePaths)
-
-	if len(contexts) != 3 {
-		t.Errorf("expected 3 bounded contexts, got %d", len(contexts))
-	}
-
-	// Verify contexts are sorted by name
-	expectedNames := []string{"billing", "customer", "order"}
-	for i, ctx := range contexts {
-		if ctx.Name != expectedNames[i] {
-			t.Errorf("context[%d].Name = %q, want %q", i, ctx.Name, expectedNames[i])
-		}
-	}
-
-	// Verify order context has 2 files
-	for _, ctx := range contexts {
-		if ctx.Name == "order" {
-			if len(ctx.Files) != 2 {
-				t.Errorf("order context should have 2 files, got %d", len(ctx.Files))
-			}
-		}
-	}
-}
-
 func TestGroupTermsByContext(t *testing.T) {
 	analyzer := NewBoundedContextAnalyzer()
 
