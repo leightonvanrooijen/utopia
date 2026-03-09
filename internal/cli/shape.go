@@ -631,13 +631,13 @@ func buildOtherTermsList(allTerms []struct{ Term, BoundedContext, DraftID string
 
 // YAML parsing types for domain shape results
 type domainShapeResult struct {
-	DraftID        string                   `yaml:"draft_id"`
-	Action         string                   `yaml:"action"`
-	UpdatedDraft   *domainShapeUpdatedDraft `yaml:"updated_draft,omitempty"`
-	RemovedTerms   []struct{ Term, Reason string }
-	AliasedTerms   []struct{ Term, CanonicalTarget, Reason string }
-	MergedTerms    []struct{ FromTerm, IntoTerm, Reason string }
-	SplitTerms     []struct {
+	DraftID      string                   `yaml:"draft_id"`
+	Action       string                   `yaml:"action"`
+	UpdatedDraft *domainShapeUpdatedDraft `yaml:"updated_draft,omitempty"`
+	RemovedTerms []struct{ Term, Reason string }
+	AliasedTerms []struct{ Term, CanonicalTarget, Reason string }
+	MergedTerms  []struct{ FromTerm, IntoTerm, Reason string }
+	SplitTerms   []struct {
 		OriginalTerm string
 		NewTerms     []struct{ Term, Definition string }
 		Reason       string
