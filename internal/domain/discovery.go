@@ -273,18 +273,6 @@ func (d *DraftSpec) CalculateConfidence() DraftConfidence {
 // Discovery State Types
 // =============================================================================
 
-// DiscoveryState tracks the state of codebase discovery for incremental runs.
-// Stored in .utopia/drafts/specs/.discovery-state to enable re-running discover
-// and only analyzing new or modified files.
-type DiscoveryState struct {
-	// LastRun is the timestamp of the last discovery run
-	LastRun time.Time `yaml:"last_run"`
-	// FilesAnalyzed tracks files processed in the last run with their mod times
-	FilesAnalyzed map[string]time.Time `yaml:"files_analyzed,omitempty"`
-	// Scope records any restrictions applied during discovery for context
-	Scope *DiscoveryScope `yaml:"scope,omitempty"`
-}
-
 // DiscoveryScope records path and pattern restrictions applied during discovery.
 // This provides context about what portion of the codebase was analyzed.
 type DiscoveryScope struct {
