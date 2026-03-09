@@ -247,22 +247,12 @@ Your role is ONLY to create the CR file. Let the execution and merge phases hand
 Start by warmly greeting the user and asking what change they'd like to make.`
 
 func runCR(cmd *cobra.Command, args []string) error {
-	projectDir := GetProjectDir(cmd)
-
-	absPath, err := filepath.Abs(projectDir)
+	absPath, utopiaDir, store, err := ResolveProject(cmd)
 	if err != nil {
-		return fmt.Errorf("failed to resolve project path: %w", err)
+		return err
 	}
 
-	utopiaDir := filepath.Join(absPath, ".utopia")
-
-	// Check if initialized
-	if _, err := os.Stat(utopiaDir); os.IsNotExist(err) {
-		return fmt.Errorf("not a Utopia project (run 'utopia init' first)")
-	}
-
-	// Load config to validate project and get project context
-	store := internal.NewYAMLStore(utopiaDir)
+	// Load config to get project context
 	config, err := store.LoadConfig()
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
