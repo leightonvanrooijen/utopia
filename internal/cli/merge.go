@@ -47,21 +47,11 @@ Use --dry-run to preview changes without applying them.`,
 
 func runMerge(cmd *cobra.Command, args []string, dryRun bool) error {
 	changeRequestID := args[0]
-	projectDir := GetProjectDir(cmd)
 
-	absPath, err := filepath.Abs(projectDir)
+	_, utopiaDir, store, err := ResolveProject(cmd)
 	if err != nil {
-		return fmt.Errorf("failed to resolve project path: %w", err)
+		return err
 	}
-
-	utopiaDir := filepath.Join(absPath, ".utopia")
-
-	// Check if initialized
-	if _, err := os.Stat(utopiaDir); os.IsNotExist(err) {
-		return fmt.Errorf("not a Utopia project (run 'utopia init' first)")
-	}
-
-	store := internal.NewYAMLStore(utopiaDir)
 
 	// Load the change request
 	cr, err := store.LoadChangeRequest(changeRequestID)
