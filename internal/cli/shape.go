@@ -125,17 +125,10 @@ Updated drafts will be saved to: %s
 Begin by presenting the draft and addressing any uncertainty notes first.`
 
 func runShape(cmd *cobra.Command, args []string) error {
-	projectDir := GetProjectDir(cmd)
-	absPath, err := filepath.Abs(projectDir)
+	_, utopiaDir, store, err := ResolveProject(cmd)
 	if err != nil {
-		return fmt.Errorf("failed to resolve project path: %w", err)
+		return err
 	}
-	utopiaDir := filepath.Join(absPath, ".utopia")
-	if _, err := os.Stat(utopiaDir); os.IsNotExist(err) {
-		return fmt.Errorf("not a Utopia project (run 'utopia init' first)")
-	}
-
-	store := internal.NewYAMLStore(utopiaDir)
 	draftsDir := filepath.Join(utopiaDir, "drafts", "specs")
 	if err := os.MkdirAll(draftsDir, 0755); err != nil {
 		return fmt.Errorf("failed to create drafts/specs directory: %w", err)
@@ -487,17 +480,10 @@ Updated drafts will be saved to: %s
 Begin by presenting the bounded context and addressing any uncertainty notes first.`
 
 func runShapeDomain(cmd *cobra.Command, args []string) error {
-	projectDir := GetProjectDir(cmd)
-	absPath, err := filepath.Abs(projectDir)
+	_, utopiaDir, store, err := ResolveProject(cmd)
 	if err != nil {
-		return fmt.Errorf("failed to resolve project path: %w", err)
+		return err
 	}
-	utopiaDir := filepath.Join(absPath, ".utopia")
-	if _, err := os.Stat(utopiaDir); os.IsNotExist(err) {
-		return fmt.Errorf("not a Utopia project (run 'utopia init' first)")
-	}
-
-	store := internal.NewYAMLStore(utopiaDir)
 	draftsDir := filepath.Join(utopiaDir, "drafts", "domain")
 	if err := os.MkdirAll(draftsDir, 0755); err != nil {
 		return fmt.Errorf("failed to create drafts/domain directory: %w", err)
