@@ -2,10 +2,7 @@ package cli
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 
-	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/spf13/cobra"
 )
 
@@ -21,21 +18,10 @@ func init() {
 }
 
 func runStatus(cmd *cobra.Command, args []string) error {
-	projectDir := GetProjectDir(cmd)
-
-	absPath, err := filepath.Abs(projectDir)
+	_, _, store, err := ResolveProject(cmd)
 	if err != nil {
-		return fmt.Errorf("failed to resolve project path: %w", err)
+		return err
 	}
-
-	utopiaDir := filepath.Join(absPath, ".utopia")
-
-	// Check if initialized
-	if _, err := os.Stat(utopiaDir); os.IsNotExist(err) {
-		return fmt.Errorf("not a Utopia project (run 'utopia init' first)")
-	}
-
-	store := internal.NewYAMLStore(utopiaDir)
 
 	// Load and display specs
 	specs, err := store.ListSpecs()
