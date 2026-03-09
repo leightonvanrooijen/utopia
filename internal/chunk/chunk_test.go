@@ -203,36 +203,6 @@ func TestChunk_MergeConstraints_DefaultsOnly(t *testing.T) {
 	}
 }
 
-func TestLooksLikeConstraint(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected bool
-	}{
-		{"Do not use external libraries", true},
-		{"Don't modify the database", true},
-		{"Never expose internal IDs", true},
-		{"Avoid blocking operations", true},
-		{"Must not exceed 100ms", true},
-		{"Only use approved vendors", true},
-		{"Always log errors", true},
-		{"Must handle errors", true},
-		{"Should not throw exceptions", true},
-		{"The system uses PostgreSQL", false},
-		{"Users can upload files", false},
-		{"API returns JSON", false},
-		{"", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			got := looksLikeConstraint(tt.input)
-			if got != tt.expected {
-				t.Errorf("looksLikeConstraint(%q) = %v, want %v", tt.input, got, tt.expected)
-			}
-		})
-	}
-}
-
 func TestValidationError_Error(t *testing.T) {
 	err := &ValidationError{
 		Errors: []string{"error 1", "error 2", "error 3"},
@@ -959,49 +929,6 @@ func TestChunkPhase_BugfixPhase_WithSpecReference(t *testing.T) {
 }
 
 // Prompt building tests
-
-func TestBuildPrompt_BasicPrompt(t *testing.T) {
-	feature := domain.Feature{
-		ID:                 "test",
-		Description:        "Test feature",
-		AcceptanceCriteria: []string{"Criterion 1"},
-	}
-
-	prompt := BuildPrompt(feature, nil)
-
-	if !strings.Contains(prompt, "## TASK") {
-		t.Error("Prompt should contain TASK section")
-	}
-	if !strings.Contains(prompt, "Test feature") {
-		t.Error("Prompt should contain feature description")
-	}
-	if !strings.Contains(prompt, "Criterion 1") {
-		t.Error("Prompt should contain acceptance criteria")
-	}
-	if !strings.Contains(prompt, "## CONSTRAINTS") {
-		t.Error("Prompt should contain CONSTRAINTS section")
-	}
-	if !strings.Contains(prompt, "<COMPLETE>") {
-		t.Error("Prompt should contain completion token")
-	}
-}
-
-func TestBuildPrompt_WithFailures(t *testing.T) {
-	feature := domain.Feature{
-		ID:                 "test",
-		Description:        "Test feature",
-		AcceptanceCriteria: []string{"Criterion 1"},
-	}
-
-	prompt := BuildPrompt(feature, []string{"Error: test failed"})
-
-	if !strings.Contains(prompt, "## PREVIOUS FAILURES") {
-		t.Error("Prompt should contain PREVIOUS FAILURES section")
-	}
-	if !strings.Contains(prompt, "Error: test failed") {
-		t.Error("Prompt should contain failure output")
-	}
-}
 
 func TestBuildPromptWithConstraints_CustomConstraints(t *testing.T) {
 	feature := domain.Feature{

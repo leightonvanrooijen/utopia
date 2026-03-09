@@ -419,21 +419,6 @@ func mergeConstraintsForCRType(isRefactor, isBugfix bool) []string {
 	return result
 }
 
-// looksLikeConstraint heuristically checks if a string is a constraint.
-func looksLikeConstraint(s string) bool {
-	lower := strings.ToLower(s)
-	prefixes := []string{
-		"do not", "don't", "never", "avoid", "must not",
-		"only", "always", "must", "should not",
-	}
-	for _, prefix := range prefixes {
-		if strings.HasPrefix(lower, prefix) {
-			return true
-		}
-	}
-	return false
-}
-
 // ValidationError contains validation failures from spec checking.
 type ValidationError struct {
 	Errors []string
@@ -480,13 +465,6 @@ type PromptData struct {
 	Reference        string // Optional: for bugfix items, the referenced spec feature content
 	Constraints      []string
 	PreviousFailures string
-}
-
-// BuildPrompt creates a prompt for a feature, optionally including previous failures.
-// For first iteration, pass nil for failures.
-// For retry iterations, pass the extracted failure output.
-func BuildPrompt(feature domain.Feature, failures []string) string {
-	return BuildPromptWithConstraints(feature, DefaultConstraints, failures, nil)
 }
 
 // BuildPromptWithConstraints creates a prompt with custom constraints.
