@@ -1,0 +1,109 @@
+id: cli-boilerplate-dedup
+type: refactor
+title: Deduplicate CLI project resolution boilerplate
+status: in-progress
+tasks:
+    - id: add-resolve-project-helper
+      description: |
+        Add a ResolveProject helper function to root.go that handles the common
+        pattern of resolving project path, checking .utopia exists, and creating store.
+
+        The helper should:
+        - Take *cobra.Command as input
+        - Return (projectDir, utopiaDir string, store *YAMLStore, err error)
+        - Handle path resolution with filepath.Abs
+        - Check .utopia directory exists
+        - Create and return the YAMLStore
+
+        Add to internal/cli/root.go
+      acceptance_criteria:
+        - ResolveProject function exists in root.go
+        - Function returns projectDir, utopiaDir, store, and error
+        - Function checks .utopia exists and returns clear error if not
+        - Build succeeds
+    - id: update-status-command
+      description: |
+        Update internal/cli/status.go to use ResolveProject helper
+      acceptance_criteria:
+        - status.go uses ResolveProject instead of inline boilerplate
+        - Behavior is unchanged
+        - Build succeeds
+    - id: update-execute-command
+      description: |
+        Update internal/cli/execute.go to use ResolveProject helper
+      acceptance_criteria:
+        - execute.go uses ResolveProject instead of inline boilerplate
+        - Behavior is unchanged
+        - Build succeeds
+    - id: update-merge-command
+      description: |
+        Update internal/cli/merge.go to use ResolveProject helper
+      acceptance_criteria:
+        - merge.go uses ResolveProject instead of inline boilerplate
+        - Behavior is unchanged
+        - Build succeeds
+    - id: update-cr-command
+      description: |
+        Update internal/cli/cr.go to use ResolveProject helper
+      acceptance_criteria:
+        - cr.go uses ResolveProject instead of inline boilerplate
+        - Behavior is unchanged
+        - Build succeeds
+    - id: update-format-command
+      description: |
+        Update internal/cli/format.go to use ResolveProject helper
+      acceptance_criteria:
+        - format.go uses ResolveProject instead of inline boilerplate
+        - Behavior is unchanged
+        - Build succeeds
+    - id: update-harvest-command
+      description: |
+        Update internal/cli/harvest.go to use ResolveProject helper
+      acceptance_criteria:
+        - harvest.go uses ResolveProject instead of inline boilerplate
+        - Behavior is unchanged
+        - Build succeeds
+    - id: update-discover-command
+      description: |
+        Update internal/cli/discover.go to use ResolveProject helper.
+        Note: discover.go has TWO occurrences (spec and domain discovery)
+      acceptance_criteria:
+        - Both occurrences in discover.go use ResolveProject
+        - Behavior is unchanged
+        - Build succeeds
+    - id: update-shape-command
+      description: |
+        Update internal/cli/shape.go to use ResolveProject helper.
+        Note: shape.go has TWO occurrences (spec and domain shaping)
+      acceptance_criteria:
+        - Both occurrences in shape.go use ResolveProject
+        - Behavior is unchanged
+        - Build succeeds
+    - id: update-promote-command
+      description: |
+        Update internal/cli/promote.go to use ResolveProject helper.
+        Note: promote.go has TWO occurrences (spec and domain promotion)
+      acceptance_criteria:
+        - Both occurrences in promote.go use ResolveProject
+        - Behavior is unchanged
+        - Build succeeds
+    - id: update-init-command
+      description: |
+        Update internal/cli/init.go - NOTE: init is special because it should NOT
+        check if .utopia exists (it creates it). Use a simpler helper or keep
+        minimal inline code. Consider adding ResolveProjectDir that only resolves
+        path without existence check.
+      acceptance_criteria:
+        - init.go updated appropriately (may need different helper)
+        - init still works on non-initialized projects
+        - Behavior is unchanged
+        - Build succeeds
+    - id: verify-all-commands
+      description: |
+        Run all commands to verify they still work correctly after refactoring
+      acceptance_criteria:
+        - utopia status works
+        - utopia init works (on fresh directory)
+        - utopia cr works
+        - Build succeeds
+        - All tests pass
