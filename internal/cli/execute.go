@@ -9,8 +9,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
-	"github.com/leightonvanrooijen/utopia/internal/infra/storage"
 	"github.com/leightonvanrooijen/utopia/internal/ralph"
 	"github.com/spf13/cobra"
 )
@@ -80,7 +80,7 @@ func runExecute(cmd *cobra.Command, args []string) error {
 	}
 
 	// Load config
-	store := storage.NewYAMLStore(utopiaDir)
+	store := internal.NewYAMLStore(utopiaDir)
 	config, err := store.LoadConfig()
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)

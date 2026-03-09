@@ -5,8 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
-	"github.com/leightonvanrooijen/utopia/internal/infra/storage"
 	"github.com/spf13/cobra"
 )
 
@@ -61,7 +61,7 @@ func runMerge(cmd *cobra.Command, args []string, dryRun bool) error {
 		return fmt.Errorf("not a Utopia project (run 'utopia init' first)")
 	}
 
-	store := storage.NewYAMLStore(utopiaDir)
+	store := internal.NewYAMLStore(utopiaDir)
 
 	// Load the change request
 	cr, err := store.LoadChangeRequest(changeRequestID)
@@ -313,7 +313,7 @@ func allAdds(changes []domain.Change) bool {
 // mergeInitiative handles merge for initiative CRs with multiple phases.
 // Each phase's changes are applied to their target specs in order.
 // Refactor phases don't modify specs (they only restructure code).
-func mergeInitiative(cr *domain.ChangeRequest, changeRequestID, utopiaDir string, store *storage.YAMLStore, dryRun bool) error {
+func mergeInitiative(cr *domain.ChangeRequest, changeRequestID, utopiaDir string, store *internal.YAMLStore, dryRun bool) error {
 	fmt.Printf("Phases: %d total\n", len(cr.Phases))
 
 	// Check all phases are complete
@@ -492,7 +492,7 @@ func mergeInitiative(cr *domain.ChangeRequest, changeRequestID, utopiaDir string
 // mergeRefactor handles merge for refactor CRs, which don't modify specs.
 // Refactors only restructure code while preserving behavior, so merge
 // simply deletes the CR and its work items.
-func mergeRefactor(cr *domain.ChangeRequest, changeRequestID, utopiaDir string, store *storage.YAMLStore, dryRun bool) error {
+func mergeRefactor(cr *domain.ChangeRequest, changeRequestID, utopiaDir string, store *internal.YAMLStore, dryRun bool) error {
 	fmt.Printf("Tasks completed: %d\n", len(cr.Tasks))
 	fmt.Println()
 
@@ -547,7 +547,7 @@ type MergeResult struct {
 // This is used by the execute command to auto-merge after successful completion.
 // Returns MergeResult on success, or error if merge fails.
 // Note: This does NOT delete the CR or work items - caller handles cleanup after git commit.
-func PerformMerge(cr *domain.ChangeRequest, store *storage.YAMLStore) (*MergeResult, error) {
+func PerformMerge(cr *domain.ChangeRequest, store *internal.YAMLStore) (*MergeResult, error) {
 	result := &MergeResult{}
 
 	// Refactor and bugfix CRs don't modify specs
@@ -567,7 +567,7 @@ func PerformMerge(cr *domain.ChangeRequest, store *storage.YAMLStore) (*MergeRes
 
 // performMergeChanges applies a set of changes to specs.
 // Used for both regular CRs and initiative phases.
-func performMergeChanges(changes []domain.Change, store *storage.YAMLStore) (*MergeResult, error) {
+func performMergeChanges(changes []domain.Change, store *internal.YAMLStore) (*MergeResult, error) {
 	result := &MergeResult{}
 
 	// Separate delete-spec operations from other operations
@@ -644,7 +644,7 @@ func performMergeChanges(changes []domain.Change, store *storage.YAMLStore) (*Me
 }
 
 // performMergeInitiative applies all phase changes from an initiative CR.
-func performMergeInitiative(cr *domain.ChangeRequest, store *storage.YAMLStore) (*MergeResult, error) {
+func performMergeInitiative(cr *domain.ChangeRequest, store *internal.YAMLStore) (*MergeResult, error) {
 	result := &MergeResult{}
 
 	// Check all phases are complete
@@ -685,7 +685,7 @@ func performMergeInitiative(cr *domain.ChangeRequest, store *storage.YAMLStore) 
 // AutoMergeCR performs the merge after all work items complete successfully.
 // It applies CR changes to specs, creates a git commit, then cleans up CR/work items.
 // On failure, work item completion state is preserved for manual retry.
-func AutoMergeCR(cr *domain.ChangeRequest, crID string, store *storage.YAMLStore, projectDir, utopiaDir string) error {
+func AutoMergeCR(cr *domain.ChangeRequest, crID string, store *internal.YAMLStore, projectDir, utopiaDir string) error {
 	// Step 1: Apply changes to specs (without deleting CR/work items)
 	mergeResult, err := PerformMerge(cr, store)
 	if err != nil {
@@ -736,7 +736,7 @@ func AutoMergeCR(cr *domain.ChangeRequest, crID string, store *storage.YAMLStore
 }
 
 // CleanupAfterMerge deletes the CR and work items after a successful merge and git commit.
-func CleanupAfterMerge(cr *domain.ChangeRequest, crID, utopiaDir string, store *storage.YAMLStore) error {
+func CleanupAfterMerge(cr *domain.ChangeRequest, crID, utopiaDir string, store *internal.YAMLStore) error {
 	// Mark CR as complete before deletion
 	cr.Status = domain.ChangeRequestComplete
 	if err := store.SaveChangeRequest(cr); err != nil {

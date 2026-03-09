@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/leightonvanrooijen/utopia/internal/infra/formatter"
+	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/spf13/cobra"
 )
 
@@ -90,7 +90,7 @@ func runFormat(cmd *cobra.Command, args []string, checkOnly bool) error {
 			return fmt.Errorf("failed to read %s: %w", file, err)
 		}
 
-		formatted, err := formatter.Format(content)
+		formatted, err := internal.FormatYAML(content)
 		if err != nil {
 			return fmt.Errorf("failed to format %s: %w", file, err)
 		}

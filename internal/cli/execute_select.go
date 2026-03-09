@@ -7,11 +7,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/leightonvanrooijen/utopia/internal/infra/storage"
+	"github.com/leightonvanrooijen/utopia/internal"
 )
 
 // selectChangeRequest lists available CRs and prompts the user to select one.
-func selectChangeRequest(store *storage.YAMLStore) (string, error) {
+func selectChangeRequest(store *internal.YAMLStore) (string, error) {
 	crs, err := store.ListChangeRequests()
 	if err != nil {
 		return "", fmt.Errorf("failed to list change requests: %w", err)

@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
-	"github.com/leightonvanrooijen/utopia/internal/infra/storage"
 	"github.com/spf13/cobra"
 )
 
@@ -45,7 +45,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	utopiaDir := filepath.Join(absPath, ".utopia")
-	store := storage.NewYAMLStore(utopiaDir)
+	store := internal.NewYAMLStore(utopiaDir)
 
 	// Check if config already exists
 	existingConfig, _ := store.LoadConfig()

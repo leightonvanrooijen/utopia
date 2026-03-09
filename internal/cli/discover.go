@@ -10,9 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
-	"github.com/leightonvanrooijen/utopia/internal/infra/claude"
-	"github.com/leightonvanrooijen/utopia/internal/infra/storage"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -274,7 +273,7 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("not a Utopia project (run 'utopia init' first)")
 	}
 
-	store := storage.NewYAMLStore(utopiaDir)
+	store := internal.NewYAMLStore(utopiaDir)
 
 	// Load existing specs to avoid duplicates
 	existingSpecs, err := store.ListSpecs()
@@ -336,7 +335,7 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 	specsSummary := buildExistingSpecsSummary(existingSpecs)
 
 	ctx := context.Background()
-	cli := claude.NewCLI().WithVerbose(discoverVerboseFlag)
+	cli := internal.NewCLI().WithVerbose(discoverVerboseFlag)
 
 	// Phase 2: Stage 1 - Identify & Qualify (merged stage)
 	progress.startPhase(2, "Stage 1: Identifying and qualifying candidates")
@@ -415,7 +414,7 @@ func runParallelRefinement(ctx context.Context, candidates []qualifiedCandidate,
 
 	// Create a CLI instance with tool access for refinement agents
 	// Agents get Read, Grep, Glob tools to explore codebase deeply
-	refinementCLI := claude.NewCLI().
+	refinementCLI := internal.NewCLI().
 		WithVerbose(verbose).
 		WithAllowedTools([]string{"Read", "Grep", "Glob"})
 

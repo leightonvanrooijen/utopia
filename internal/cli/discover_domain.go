@@ -9,10 +9,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/analysis/types"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
-	"github.com/leightonvanrooijen/utopia/internal/infra/claude"
-	"github.com/leightonvanrooijen/utopia/internal/infra/storage"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -212,7 +211,7 @@ func runDiscoverDomain(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("not a Utopia project (run 'utopia init' first)")
 	}
 
-	store := storage.NewYAMLStore(utopiaDir)
+	store := internal.NewYAMLStore(utopiaDir)
 
 	// Load existing domain docs to avoid duplicates
 	existingDomainDocs, err := store.ListDomainDocs()
@@ -299,7 +298,7 @@ func runDiscoverDomain(cmd *cobra.Command, args []string) error {
 
 	// Run Claude analysis
 	ctx := context.Background()
-	cli := claude.NewCLI().WithVerbose(true)
+	cli := internal.NewCLI().WithVerbose(true)
 
 	output, err := cli.Prompt(ctx, systemPrompt)
 	if err != nil {

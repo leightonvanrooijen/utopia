@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/leightonvanrooijen/utopia/internal/infra/storage"
+	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/spf13/cobra"
 )
 
@@ -35,7 +35,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("not a Utopia project (run 'utopia init' first)")
 	}
 
-	store := storage.NewYAMLStore(utopiaDir)
+	store := internal.NewYAMLStore(utopiaDir)
 
 	// Load and display specs
 	specs, err := store.ListSpecs()

@@ -8,9 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
-	"github.com/leightonvanrooijen/utopia/internal/infra/claude"
-	"github.com/leightonvanrooijen/utopia/internal/infra/storage"
 	"github.com/spf13/cobra"
 )
 
@@ -263,7 +262,7 @@ func runCR(cmd *cobra.Command, args []string) error {
 	}
 
 	// Load config to validate project and get project context
-	store := storage.NewYAMLStore(utopiaDir)
+	store := internal.NewYAMLStore(utopiaDir)
 	config, err := store.LoadConfig()
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
@@ -318,7 +317,7 @@ func runCR(cmd *cobra.Command, args []string) error {
 
 	// Run interactive Claude session with transcript capture
 	ctx := context.Background()
-	cli := claude.NewCLI()
+	cli := internal.NewCLI()
 
 	// Get git branch for metadata before session
 	branch := getGitBranch(absPath)
@@ -470,7 +469,7 @@ func buildSpecsSummary(specs []*domain.Spec) string {
 
 // validateChangeRequests validates all change request files for YAML syntax and required fields.
 // Returns nil if all CRs are valid, or an error describing validation failures.
-func validateChangeRequests(store *storage.YAMLStore) error {
+func validateChangeRequests(store *internal.YAMLStore) error {
 	crs, err := store.ListChangeRequests()
 	if err != nil {
 		// ListChangeRequests returns parse errors for invalid YAML
@@ -552,7 +551,7 @@ Start by reading the file mentioned in the error and fixing it.`
 
 // saveConversation persists a conversation transcript with metadata
 // Returns the conversation ID, or empty string if conversation has no meaningful content
-func saveConversation(store *storage.YAMLStore, sessionStart time.Time, branch, transcript string, crsCreated []domain.CRCommit, commits []string) string {
+func saveConversation(store *internal.YAMLStore, sessionStart time.Time, branch, transcript string, crsCreated []domain.CRCommit, commits []string) string {
 	// Skip persisting empty conversations (no transcript, no CRs, no commits)
 	if strings.TrimSpace(transcript) == "" && len(crsCreated) == 0 && len(commits) == 0 {
 		return ""

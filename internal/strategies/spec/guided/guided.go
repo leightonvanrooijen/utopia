@@ -4,19 +4,19 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
-	"github.com/leightonvanrooijen/utopia/internal/infra/claude"
 )
 
 // Strategy implements the guided 5-stage spec creation workflow
 type Strategy struct {
-	cli *claude.CLI
+	cli *internal.CLI
 }
 
 // New creates a new guided strategy
 func New() *Strategy {
 	return &Strategy{
-		cli: claude.NewCLI(),
+		cli: internal.NewCLI(),
 	}
 }
 

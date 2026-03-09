@@ -5,8 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
-	"github.com/leightonvanrooijen/utopia/internal/infra/storage"
 	"github.com/spf13/cobra"
 )
 
@@ -53,7 +53,7 @@ func runPromoteDomain(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("not a Utopia project (run 'utopia init' first)")
 	}
 
-	store := storage.NewYAMLStore(utopiaDir)
+	store := internal.NewYAMLStore(utopiaDir)
 
 	// Handle --list flag
 	if promoteDomainListFlag {
@@ -248,7 +248,7 @@ func countNewEntities(existing *domain.DomainDoc, draft *domain.DraftDomainDoc) 
 }
 
 // listDomainDraftsForPromotion displays available domain drafts that can be promoted
-func listDomainDraftsForPromotion(store *storage.YAMLStore) error {
+func listDomainDraftsForPromotion(store *internal.YAMLStore) error {
 	drafts, err := store.ListDraftDomainDocs()
 	if err != nil {
 		return fmt.Errorf("failed to load domain drafts: %w", err)

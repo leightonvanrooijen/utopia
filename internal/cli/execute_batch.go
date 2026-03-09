@@ -9,15 +9,15 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
-	"github.com/leightonvanrooijen/utopia/internal/infra/storage"
 	"github.com/leightonvanrooijen/utopia/internal/ralph"
 	"github.com/spf13/cobra"
 )
 
 // runExecuteAll executes all CRs in .utopia/change-requests/ in alphabetical order.
 // If any CR fails, execution stops and reports which CR failed.
-func runExecuteAll(cmd *cobra.Command, store *storage.YAMLStore, config *domain.Config, projectDir, utopiaDir string) error {
+func runExecuteAll(cmd *cobra.Command, store *internal.YAMLStore, config *domain.Config, projectDir, utopiaDir string) error {
 	// List all change requests
 	crs, err := store.ListChangeRequests()
 	if err != nil {
@@ -126,7 +126,7 @@ func runExecuteAll(cmd *cobra.Command, store *storage.YAMLStore, config *domain.
 
 // executeSingleCR executes a single CR with the given context.
 // This is extracted from runExecute to allow reuse in batch execution.
-func executeSingleCR(ctx context.Context, cr *domain.ChangeRequest, store *storage.YAMLStore, config *domain.Config, projectDir, utopiaDir string) error {
+func executeSingleCR(ctx context.Context, cr *domain.ChangeRequest, store *internal.YAMLStore, config *domain.Config, projectDir, utopiaDir string) error {
 	crID := cr.ID
 
 	// Check if this is an initiative CR (needs per-phase execution)

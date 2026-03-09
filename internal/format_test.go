@@ -1,18 +1,18 @@
-package formatter
+package internal
 
 import (
 	"strings"
 	"testing"
 )
 
-func TestFormat_IndentsWithTwoSpaces(t *testing.T) {
+func TestFormatYAML_IndentsWithTwoSpaces(t *testing.T) {
 	input := `root:
   nested:
       deeply: value`
 
-	formatted, err := Format([]byte(input))
+	formatted, err := FormatYAML([]byte(input))
 	if err != nil {
-		t.Fatalf("Format() error = %v", err)
+		t.Fatalf("FormatYAML() error = %v", err)
 	}
 
 	// Check that output uses 2-space indentation
@@ -22,14 +22,14 @@ func TestFormat_IndentsWithTwoSpaces(t *testing.T) {
 	}
 }
 
-func TestFormat_RetainsLineBreaks(t *testing.T) {
+func TestFormatYAML_RetainsLineBreaks(t *testing.T) {
 	input := `first: value
 
 second: value`
 
-	formatted, err := Format([]byte(input))
+	formatted, err := FormatYAML([]byte(input))
 	if err != nil {
-		t.Fatalf("Format() error = %v", err)
+		t.Fatalf("FormatYAML() error = %v", err)
 	}
 
 	result := string(formatted)
@@ -39,12 +39,12 @@ second: value`
 	}
 }
 
-func TestFormat_AddsEOFNewline(t *testing.T) {
+func TestFormatYAML_AddsEOFNewline(t *testing.T) {
 	input := `key: value`
 
-	formatted, err := Format([]byte(input))
+	formatted, err := FormatYAML([]byte(input))
 	if err != nil {
-		t.Fatalf("Format() error = %v", err)
+		t.Fatalf("FormatYAML() error = %v", err)
 	}
 
 	if !strings.HasSuffix(string(formatted), "\n") {
@@ -52,12 +52,12 @@ func TestFormat_AddsEOFNewline(t *testing.T) {
 	}
 }
 
-func TestFormat_TrimsTrailingWhitespace(t *testing.T) {
+func TestFormatYAML_TrimsTrailingWhitespace(t *testing.T) {
 	input := "key: value   \nother: data  "
 
-	formatted, err := Format([]byte(input))
+	formatted, err := FormatYAML([]byte(input))
 	if err != nil {
-		t.Fatalf("Format() error = %v", err)
+		t.Fatalf("FormatYAML() error = %v", err)
 	}
 
 	result := string(formatted)
@@ -66,25 +66,25 @@ func TestFormat_TrimsTrailingWhitespace(t *testing.T) {
 	}
 }
 
-func TestFormat_InvalidYAML(t *testing.T) {
+func TestFormatYAML_InvalidYAML(t *testing.T) {
 	input := `key: [unclosed`
 
-	_, err := Format([]byte(input))
+	_, err := FormatYAML([]byte(input))
 	if err == nil {
 		t.Error("expected error for invalid YAML, got nil")
 	}
 }
 
-func TestFormat_ValidYAML(t *testing.T) {
+func TestFormatYAML_ValidYAML(t *testing.T) {
 	input := `id: test
 title: Test Spec
 features:
   - id: feature-1
     description: A feature`
 
-	formatted, err := Format([]byte(input))
+	formatted, err := FormatYAML([]byte(input))
 	if err != nil {
-		t.Fatalf("Format() error = %v", err)
+		t.Fatalf("FormatYAML() error = %v", err)
 	}
 
 	result := string(formatted)
@@ -93,7 +93,7 @@ features:
 	}
 }
 
-func TestFormat_SpecLikeYAML(t *testing.T) {
+func TestFormatYAML_SpecLikeYAML(t *testing.T) {
 	// Test with a realistic Utopia spec structure
 	input := `id: yaml-formatting
 title: YAML Formatting System
@@ -108,12 +108,12 @@ features:
     description: |
       A dedicated formatter package.
     acceptance_criteria:
-      - Package lives at internal/infra/formatter
-      - Exposes a Format function`
+      - Package lives at internal/format.go
+      - Exposes a FormatYAML function`
 
-	formatted, err := Format([]byte(input))
+	formatted, err := FormatYAML([]byte(input))
 	if err != nil {
-		t.Fatalf("Format() error = %v", err)
+		t.Fatalf("FormatYAML() error = %v", err)
 	}
 
 	result := string(formatted)

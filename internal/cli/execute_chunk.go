@@ -3,13 +3,13 @@ package cli
 import (
 	"fmt"
 
+	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/chunk"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
-	"github.com/leightonvanrooijen/utopia/internal/infra/storage"
 )
 
 // chunkCR invokes the chunking logic to produce work items from a change request.
-func chunkCR(cr *domain.ChangeRequest, crID string, store *storage.YAMLStore, config *domain.Config, projectDir string) ([]*domain.WorkItem, error) {
+func chunkCR(cr *domain.ChangeRequest, crID string, store *internal.YAMLStore, config *domain.Config, projectDir string) ([]*domain.WorkItem, error) {
 	fmt.Printf("Chunking change request: %s\n", cr.Title)
 
 	// Update CR status to in-progress when chunking begins

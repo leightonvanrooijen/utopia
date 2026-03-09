@@ -9,9 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
-	"github.com/leightonvanrooijen/utopia/internal/infra/claude"
-	"github.com/leightonvanrooijen/utopia/internal/infra/storage"
 	"github.com/leightonvanrooijen/utopia/internal/verification"
 )
 
@@ -33,7 +32,7 @@ type Result struct {
 // Execute runs all work items for a spec sequentially.
 // Work items are processed one at a time, in order, retrying until
 // verification passes or max iterations is reached.
-func Execute(ctx context.Context, specID string, store *storage.YAMLStore, config *domain.Config, projectDir string) (*Result, error) {
+func Execute(ctx context.Context, specID string, store *internal.YAMLStore, config *domain.Config, projectDir string) (*Result, error) {
 	// Load work items for this spec
 	items, err := store.ListWorkItemsForSpec(specID)
 	if err != nil {
@@ -58,7 +57,7 @@ func Execute(ctx context.Context, specID string, store *storage.YAMLStore, confi
 	}
 
 	// Create dependencies
-	cli := claude.NewCLI().WithVerbose(true)
+	cli := internal.NewCLI().WithVerbose(true)
 	verifier := verification.NewRunner(projectDir)
 
 	// Execute each work item in order
@@ -92,8 +91,8 @@ func executeWorkItem(
 	ctx context.Context,
 	item *domain.WorkItem,
 	specID string,
-	store *storage.YAMLStore,
-	cli *claude.CLI,
+	store *internal.YAMLStore,
+	cli *internal.CLI,
 	verifier *verification.Runner,
 	config *domain.Config,
 	projectDir string,
@@ -258,7 +257,7 @@ func deriveOperationType(cr *domain.ChangeRequest, specRef string) string {
 }
 
 // logExecutionEntry appends an execution log entry to conversations that reference the CR.
-func logExecutionEntry(store *storage.YAMLStore, crID string, item *domain.WorkItem, operation string) {
+func logExecutionEntry(store *internal.YAMLStore, crID string, item *domain.WorkItem, operation string) {
 	entry := domain.ExecutionLogEntry{
 		WorkItemID:  item.ID,
 		SpecRef:     item.SpecRef,

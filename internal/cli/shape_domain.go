@@ -8,9 +8,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
-	"github.com/leightonvanrooijen/utopia/internal/infra/claude"
-	"github.com/leightonvanrooijen/utopia/internal/infra/storage"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -192,7 +191,7 @@ func runShapeDomain(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("not a Utopia project (run 'utopia init' first)")
 	}
 
-	store := storage.NewYAMLStore(utopiaDir)
+	store := internal.NewYAMLStore(utopiaDir)
 	draftsDir := filepath.Join(utopiaDir, "drafts", "domain")
 
 	// Ensure drafts/domain directory exists
@@ -231,7 +230,7 @@ func runShapeDomain(cmd *cobra.Command, args []string) error {
 
 	// Process each draft
 	ctx := context.Background()
-	cli := claude.NewCLI()
+	cli := internal.NewCLI()
 
 	for i, draft := range drafts {
 		fmt.Println("═══════════════════════════════════════════════════════════════")
@@ -466,7 +465,7 @@ func parseDomainShapeResult(transcript string) (*domainShapeResult, error) {
 }
 
 // applyDomainShapeResult applies the shape result to update or delete the draft
-func applyDomainShapeResult(store *storage.YAMLStore, original *domain.DraftDomainDoc, result *domainShapeResult, allDrafts []*domain.DraftDomainDoc) error {
+func applyDomainShapeResult(store *internal.YAMLStore, original *domain.DraftDomainDoc, result *domainShapeResult, allDrafts []*domain.DraftDomainDoc) error {
 	switch result.Action {
 	case "reject_all":
 		// Delete the draft entirely

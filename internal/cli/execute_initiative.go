@@ -8,9 +8,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/chunk"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
-	"github.com/leightonvanrooijen/utopia/internal/infra/storage"
 	"github.com/leightonvanrooijen/utopia/internal/ralph"
 	"github.com/spf13/cobra"
 )
@@ -32,7 +32,7 @@ type initiativeCoreOpts struct {
 func executeInitiativeCore(
 	ctx context.Context,
 	cr *domain.ChangeRequest,
-	store *storage.YAMLStore,
+	store *internal.YAMLStore,
 	config *domain.Config,
 	projectDir, utopiaDir string,
 	opts initiativeCoreOpts,
@@ -163,7 +163,7 @@ func executeInitiativeCore(
 
 // executeInitiative handles execution for initiative CRs, executing phases in order.
 // Phases execute continuously until all complete or the user interrupts with Ctrl+C.
-func executeInitiative(cmd *cobra.Command, cr *domain.ChangeRequest, store *storage.YAMLStore, config *domain.Config, projectDir, utopiaDir string) error {
+func executeInitiative(cmd *cobra.Command, cr *domain.ChangeRequest, store *internal.YAMLStore, config *domain.Config, projectDir, utopiaDir string) error {
 	fmt.Printf("Executing initiative: %s\n", cr.Title)
 	fmt.Printf("Phases: %d total, current: %d\n", len(cr.Phases), cr.CurrentPhase+1)
 
@@ -213,7 +213,7 @@ func executeInitiative(cmd *cobra.Command, cr *domain.ChangeRequest, store *stor
 
 // executeSingleInitiative handles execution for initiative CRs within batch mode.
 // Similar to executeInitiative but uses the provided context.
-func executeSingleInitiative(ctx context.Context, cr *domain.ChangeRequest, store *storage.YAMLStore, config *domain.Config, projectDir, utopiaDir string) error {
+func executeSingleInitiative(ctx context.Context, cr *domain.ChangeRequest, store *internal.YAMLStore, config *domain.Config, projectDir, utopiaDir string) error {
 	fmt.Printf("Executing initiative: %s\n", cr.Title)
 	fmt.Printf("Phases: %d total, current: %d\n", len(cr.Phases), cr.CurrentPhase+1)
 
@@ -232,7 +232,7 @@ func executeSingleInitiative(ctx context.Context, cr *domain.ChangeRequest, stor
 }
 
 // chunkPhase invokes the chunking logic to produce work items for a single phase of an initiative.
-func chunkPhase(crID string, phaseIndex int, phase *domain.Phase, store *storage.YAMLStore, config *domain.Config, projectDir string) ([]*domain.WorkItem, error) {
+func chunkPhase(crID string, phaseIndex int, phase *domain.Phase, store *internal.YAMLStore, config *domain.Config, projectDir string) ([]*domain.WorkItem, error) {
 	fmt.Printf("Chunking phase %d (type: %s)\n", phaseIndex+1, phase.Type)
 
 	// Run the chunking on this phase

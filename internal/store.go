@@ -1,4 +1,4 @@
-package storage
+package internal
 
 import (
 	"errors"

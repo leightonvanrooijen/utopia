@@ -8,9 +8,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
-	"github.com/leightonvanrooijen/utopia/internal/infra/claude"
-	"github.com/leightonvanrooijen/utopia/internal/infra/storage"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -142,7 +141,7 @@ func runShape(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("not a Utopia project (run 'utopia init' first)")
 	}
 
-	store := storage.NewYAMLStore(utopiaDir)
+	store := internal.NewYAMLStore(utopiaDir)
 	draftsDir := filepath.Join(utopiaDir, "drafts", "specs")
 
 	// Ensure drafts/specs directory exists
@@ -178,7 +177,7 @@ func runShape(cmd *cobra.Command, args []string) error {
 
 	// Process each draft
 	ctx := context.Background()
-	cli := claude.NewCLI()
+	cli := internal.NewCLI()
 
 	for i, draft := range drafts {
 		fmt.Println("═══════════════════════════════════════════════════════════════")
@@ -326,7 +325,7 @@ func parseShapeResult(transcript string) (*shapeResult, error) {
 }
 
 // applyShapeResult applies the shape result to update or delete the draft
-func applyShapeResult(store *storage.YAMLStore, original *domain.DraftSpec, result *shapeResult) error {
+func applyShapeResult(store *internal.YAMLStore, original *domain.DraftSpec, result *shapeResult) error {
 	switch result.Action {
 	case "reject_all":
 		// Delete the draft entirely

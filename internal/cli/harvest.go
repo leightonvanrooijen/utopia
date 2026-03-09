@@ -8,9 +8,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
-	"github.com/leightonvanrooijen/utopia/internal/infra/claude"
-	"github.com/leightonvanrooijen/utopia/internal/infra/storage"
 	"github.com/leightonvanrooijen/utopia/internal/strategies/readme"
 	"github.com/leightonvanrooijen/utopia/internal/strategies/readme/comparison"
 	"github.com/spf13/cobra"
@@ -477,7 +476,7 @@ func runHarvest(cmd *cobra.Command, args []string) error {
 	}
 
 	// Load config to validate project
-	store := storage.NewYAMLStore(utopiaDir)
+	store := internal.NewYAMLStore(utopiaDir)
 	_, err = store.LoadConfig()
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
@@ -581,7 +580,7 @@ func runHarvest(cmd *cobra.Command, args []string) error {
 
 	// Run interactive Claude session
 	ctx := context.Background()
-	cli := claude.NewCLI()
+	cli := internal.NewCLI()
 
 	_, sessionErr := cli.SessionWithCapture(ctx, systemPrompt)
 
@@ -781,7 +780,7 @@ func getNextADRID(existingADRs []*domain.ADR) string {
 
 // buildREADMESignalsSummary scans specs against the README to find documentation candidates.
 // Uses the provided strategy for detection, allowing different detection approaches.
-func buildREADMESignalsSummaryWithStrategy(projectDir string, store *storage.YAMLStore, strategy readme.Strategy) string {
+func buildREADMESignalsSummaryWithStrategy(projectDir string, store *internal.YAMLStore, strategy readme.Strategy) string {
 	// Try to read README.md from project root
 	readmePath := filepath.Join(projectDir, "README.md")
 	readmeContent, err := os.ReadFile(readmePath)
@@ -806,7 +805,7 @@ func buildREADMESignalsSummaryWithStrategy(projectDir string, store *storage.YAM
 
 // countREADMESignalsWithStrategy returns the count of README signal candidates.
 // Uses the provided strategy for detection.
-func countREADMESignalsWithStrategy(projectDir string, store *storage.YAMLStore, strategy readme.Strategy) int {
+func countREADMESignalsWithStrategy(projectDir string, store *internal.YAMLStore, strategy readme.Strategy) int {
 	readmePath := filepath.Join(projectDir, "README.md")
 	readmeContent, err := os.ReadFile(readmePath)
 	if err != nil {
