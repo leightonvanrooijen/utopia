@@ -19,7 +19,11 @@ type Project struct {
 	Config *Config
 }
 
-// Config holds project-level configuration
+// Config holds project-level configuration.
+//
+// Note: Unknown YAML fields (such as the deprecated "strategies" section) are
+// silently ignored when loading config files. This allows older config files
+// to continue working without modification.
 type Config struct {
 	ProjectContext string             `yaml:"project_context,omitempty"`
 	Verification   VerificationConfig `yaml:"verification"`
