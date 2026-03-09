@@ -11,28 +11,23 @@ import (
 
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 	"github.com/leightonvanrooijen/utopia/internal/infra/storage"
-	chunkStrategy "github.com/leightonvanrooijen/utopia/internal/strategies/chunk"
-	executeStrategy "github.com/leightonvanrooijen/utopia/internal/strategies/execute"
+	"github.com/leightonvanrooijen/utopia/internal/ralph"
 	"github.com/spf13/cobra"
 )
 
 // Flags for execute command (package-level for Cobra compatibility)
 var (
-	executeStrategyFlag      string
-	executeChunkStrategyFlag string
-	executeTimeoutFlag       int
-	executeAllFlag           bool
+	executeTimeoutFlag int
+	executeAllFlag     bool
 )
 
 // InitExecuteCmd creates and registers the execute command with the root command.
-// This is called from main to wire up the strategy registries.
-func InitExecuteCmd(execRegistry *executeStrategy.Registry, chunkRegistry *chunkStrategy.Registry) {
-	rootCmd.AddCommand(NewExecuteCmd(execRegistry, chunkRegistry))
+func InitExecuteCmd() {
+	rootCmd.AddCommand(NewExecuteCmd())
 }
 
-// NewExecuteCmd creates the execute command with the given strategy registries.
-// This allows multiple command instances (useful for testing) and explicit dependency injection.
-func NewExecuteCmd(execRegistry *executeStrategy.Registry, chunkRegistry *chunkStrategy.Registry) *cobra.Command {
+// NewExecuteCmd creates the execute command.
+func NewExecuteCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "execute [cr-id]",
 		Short: "Execute a change request using the Ralph loop",
@@ -48,24 +43,14 @@ If no CR ID is provided, lists available change requests for interactive selecti
 Use --all to execute all CRs in .utopia/change-requests/ in alphabetical order.
 If any CR fails, execution stops and reports which CR failed.
 
-The chunking strategy determines how features/tasks become work items:
-  - ralph-sequential: One work item per feature/task, executed in order
-
-The execution strategy determines how work items are processed:
-  - sequential: Execute one at a time, in order, with retry on failure
-
 Press Ctrl+C to gracefully stop execution (current state will be saved).
 Run the command again to resume from where you left off.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runExecute(cmd, args, execRegistry, chunkRegistry)
+			return runExecute(cmd, args)
 		},
 	}
 
-	cmd.Flags().StringVarP(&executeStrategyFlag, "strategy", "s", "",
-		"execution strategy (sequential)")
-	cmd.Flags().StringVar(&executeChunkStrategyFlag, "chunk-strategy", "",
-		"chunking strategy (ralph-sequential)")
 	cmd.Flags().IntVarP(&executeTimeoutFlag, "timeout", "t", 0,
 		"timeout in minutes (0 means no timeout)")
 	cmd.Flags().BoolVar(&executeAllFlag, "all", false,
@@ -74,7 +59,7 @@ Run the command again to resume from where you left off.`,
 	return cmd
 }
 
-func runExecute(cmd *cobra.Command, args []string, execRegistry *executeStrategy.Registry, chunkRegistry *chunkStrategy.Registry) error {
+func runExecute(cmd *cobra.Command, args []string) error {
 	projectDir := GetProjectDir(cmd)
 
 	// Validate timeout flag
@@ -106,7 +91,7 @@ func runExecute(cmd *cobra.Command, args []string, execRegistry *executeStrategy
 		if len(args) > 0 {
 			return fmt.Errorf("cannot specify CR ID with --all flag")
 		}
-		return runExecuteAll(cmd, store, config, absPath, utopiaDir, execRegistry, chunkRegistry)
+		return runExecuteAll(cmd, store, config, absPath, utopiaDir)
 	}
 
 	// Get CR ID from args or interactive selection
@@ -130,7 +115,7 @@ func runExecute(cmd *cobra.Command, args []string, execRegistry *executeStrategy
 
 	// Check if this is an initiative CR (needs per-phase execution)
 	if cr.Type == domain.CRTypeInitiative {
-		return executeInitiative(cmd, cr, store, config, absPath, utopiaDir, execRegistry, chunkRegistry)
+		return executeInitiative(cmd, cr, store, config, absPath, utopiaDir)
 	}
 
 	// Check if work items already exist for this CR
@@ -141,7 +126,7 @@ func runExecute(cmd *cobra.Command, args []string, execRegistry *executeStrategy
 
 	// If no work items exist, chunk the CR first
 	if len(items) == 0 {
-		items, err = chunkCR(cr, crID, store, config, chunkRegistry, absPath)
+		items, err = chunkCR(cr, crID, store, config, absPath)
 		if err != nil {
 			return err
 		}
@@ -149,22 +134,6 @@ func runExecute(cmd *cobra.Command, args []string, execRegistry *executeStrategy
 		fmt.Printf("Found %d existing work item(s) for %s\n", len(items), crID)
 	}
 
-	// Determine which execution strategy to use
-	strategyName := executeStrategyFlag
-	if strategyName == "" {
-		strategyName = config.Strategies.Execute
-	}
-
-	strategy, ok := execRegistry.Get(strategyName)
-	if !ok {
-		available := execRegistry.List()
-		if len(available) == 0 {
-			return fmt.Errorf("no execution strategies registered")
-		}
-		return fmt.Errorf("unknown strategy %q (available: %v)", strategyName, available)
-	}
-
-	fmt.Printf("Using '%s' strategy: %s\n", strategy.Name(), strategy.Description())
 	fmt.Printf("Executing CR: %s (%d work items)\n", crID, len(items))
 	if executeTimeoutFlag > 0 {
 		fmt.Printf("Timeout: %d minute(s)\n", executeTimeoutFlag)
@@ -193,13 +162,13 @@ func runExecute(cmd *cobra.Command, args []string, execRegistry *executeStrategy
 		cancel()
 	}()
 
-	// Run the strategy
-	result, err := strategy.Execute(ctx, crID, store, config, absPath)
+	// Run the execution
+	result, err := ralph.Execute(ctx, crID, store, config, absPath)
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
 			// Timeout reached - clearly differentiate from success
 			sessionDuration := time.Since(sessionStart).Round(time.Second)
-			fmt.Printf("\n⏱  TIMEOUT REACHED\n")
+			fmt.Printf("\n  TIMEOUT REACHED\n")
 			fmt.Printf("Session duration: %s\n", sessionDuration)
 			fmt.Printf("Completed: %d/%d work items\n", result.Completed, result.Total)
 			if result.StoppedAt != "" {
@@ -236,7 +205,7 @@ func runExecute(cmd *cobra.Command, args []string, execRegistry *executeStrategy
 	fmt.Println("Merging CR into specs...")
 	if err := AutoMergeCR(cr, crID, store, absPath, utopiaDir); err != nil {
 		// Merge failed but work items are complete - preserve completion state
-		fmt.Printf("\n⚠ Merge failed: %s\n", err)
+		fmt.Printf("\n  Merge failed: %s\n", err)
 		fmt.Printf("Work items remain completed. You can retry merge with: utopia merge %s\n", crID)
 		return nil // Don't return error - work items completed successfully
 	}

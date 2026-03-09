@@ -1,4 +1,4 @@
-package ralphsequential
+package chunk
 
 import (
 	"strings"
@@ -8,62 +8,12 @@ import (
 	"github.com/leightonvanrooijen/utopia/internal/testutil"
 )
 
-func TestNew(t *testing.T) {
-	s := New()
-
-	if s == nil {
-		t.Fatal("New() returned nil")
-	}
-}
-
-func TestNewWithDeps(t *testing.T) {
-	loader := func(specID string) (*domain.Spec, error) {
-		return &domain.Spec{ID: specID}, nil
-	}
-
-	s := NewWithDeps(loader)
-
-	if s == nil {
-		t.Fatal("NewWithDeps() returned nil")
-	}
-
-	// Verify the loader was set
-	if s.specLoader == nil {
-		t.Fatal("NewWithDeps() should set specLoader")
-	}
-}
-
-func TestStrategy_Name(t *testing.T) {
-	s := New()
-
-	if got := s.Name(); got != "ralph-sequential" {
-		t.Errorf("Name() = %q, want %q", got, "ralph-sequential")
-	}
-}
-
-func TestStrategy_Description(t *testing.T) {
-	s := New()
-
-	desc := s.Description()
-	if desc == "" {
-		t.Error("Description() returned empty string")
-	}
-
-	// Should mention key characteristics
-	lower := strings.ToLower(desc)
-	if !strings.Contains(lower, "sequential") && !strings.Contains(lower, "feature") {
-		t.Error("Description should mention sequential or feature-based execution")
-	}
-}
-
-func TestStrategy_Chunk_SingleFeature(t *testing.T) {
-	s := New()
-
+func TestChunk_SingleFeature(t *testing.T) {
 	cr := testutil.CRWithFeatures("test-cr",
 		testutil.NewTestFeature("feature-1", "First feature", "Criterion A", "Criterion B"),
 	)
 
-	items, err := s.Chunk(cr)
+	items, err := Chunk(cr, nil)
 	testutil.AssertNoError(t, err)
 
 	if len(items) != 1 {
@@ -96,16 +46,14 @@ func TestStrategy_Chunk_SingleFeature(t *testing.T) {
 	}
 }
 
-func TestStrategy_Chunk_MultipleFeatures(t *testing.T) {
-	s := New()
-
+func TestChunk_MultipleFeatures(t *testing.T) {
 	cr := testutil.CRWithFeatures("multi-cr",
 		testutil.NewTestFeature("f1", "Feature 1", "C1"),
 		testutil.NewTestFeature("f2", "Feature 2", "C2"),
 		testutil.NewTestFeature("f3", "Feature 3", "C3"),
 	)
 
-	items, err := s.Chunk(cr)
+	items, err := Chunk(cr, nil)
 	testutil.AssertNoError(t, err)
 
 	if len(items) != 3 {
@@ -125,16 +73,14 @@ func TestStrategy_Chunk_MultipleFeatures(t *testing.T) {
 	}
 }
 
-func TestStrategy_Chunk_NoFeatures(t *testing.T) {
-	s := New()
-
+func TestChunk_NoFeatures(t *testing.T) {
 	cr := &domain.ChangeRequest{
 		ID:      "empty-cr",
 		Type:    domain.CRTypeFeature,
 		Changes: []domain.Change{},
 	}
 
-	items, err := s.Chunk(cr)
+	items, err := Chunk(cr, nil)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
@@ -144,15 +90,13 @@ func TestStrategy_Chunk_NoFeatures(t *testing.T) {
 	}
 }
 
-func TestStrategy_Validate_NoAcceptanceCriteria(t *testing.T) {
-	s := New()
-
+func TestChunk_Validate_NoAcceptanceCriteria(t *testing.T) {
 	// Use a Feature without acceptance criteria to test validation
 	cr := testutil.CRWithFeatures("invalid-cr",
 		domain.Feature{ID: "bad-feature", Description: "No criteria", AcceptanceCriteria: []string{}},
 	)
 
-	_, err := s.Chunk(cr)
+	_, err := Chunk(cr, nil)
 	if err == nil {
 		t.Fatal("Chunk() should return error for feature without acceptance criteria")
 	}
@@ -171,15 +115,13 @@ func TestStrategy_Validate_NoAcceptanceCriteria(t *testing.T) {
 	}
 }
 
-func TestStrategy_Validate_MultipleEmptyCriteria(t *testing.T) {
-	s := New()
-
+func TestChunk_Validate_MultipleEmptyCriteria(t *testing.T) {
 	cr := testutil.CRWithFeatures("multi-error-cr",
 		domain.Feature{ID: "f1", Description: "No criteria", AcceptanceCriteria: []string{}},
 		domain.Feature{ID: "f2", Description: "Also empty", AcceptanceCriteria: []string{}},
 	)
 
-	_, err := s.Chunk(cr)
+	_, err := Chunk(cr, nil)
 	if err == nil {
 		t.Fatal("Chunk() should return error for features without acceptance criteria")
 	}
@@ -194,14 +136,12 @@ func TestStrategy_Validate_MultipleEmptyCriteria(t *testing.T) {
 	}
 }
 
-func TestStrategy_MergeConstraints_DefaultsOnly(t *testing.T) {
-	s := New()
-
+func TestChunk_MergeConstraints_DefaultsOnly(t *testing.T) {
 	cr := testutil.CRWithFeatures("no-knowledge",
 		testutil.NewTestFeature("f1", "Test", "Works"),
 	)
 
-	items, err := s.Chunk(cr)
+	items, err := Chunk(cr, nil)
 	testutil.AssertNoError(t, err)
 
 	constraints := items[0].Constraints
@@ -307,9 +247,7 @@ func TestRefactorSystemConstraints_RequiredText(t *testing.T) {
 	}
 }
 
-func TestStrategy_Chunk_RefactorCR_InjectsConstraints(t *testing.T) {
-	s := New()
-
+func TestChunk_RefactorCR_InjectsConstraints(t *testing.T) {
 	// Create a refactor change request with tasks
 	cr := &domain.ChangeRequest{
 		ID:    "refactor-test",
@@ -324,7 +262,7 @@ func TestStrategy_Chunk_RefactorCR_InjectsConstraints(t *testing.T) {
 		},
 	}
 
-	items, err := s.Chunk(cr)
+	items, err := Chunk(cr, nil)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
@@ -360,15 +298,13 @@ func TestStrategy_Chunk_RefactorCR_InjectsConstraints(t *testing.T) {
 	}
 }
 
-func TestStrategy_Chunk_NonRefactorCR_NoRefactorConstraints(t *testing.T) {
-	s := New()
-
+func TestChunk_NonRefactorCR_NoRefactorConstraints(t *testing.T) {
 	// Create a feature change request (not a refactor)
 	cr := testutil.CRWithFeatures("regular-cr",
 		testutil.NewTestFeature("feature-1", "Add new feature", "Feature is added"),
 	)
 
-	items, err := s.Chunk(cr)
+	items, err := Chunk(cr, nil)
 	testutil.AssertNoError(t, err)
 
 	item := items[0]
@@ -383,9 +319,7 @@ func TestStrategy_Chunk_NonRefactorCR_NoRefactorConstraints(t *testing.T) {
 	}
 }
 
-func TestStrategy_MergeConstraints_RefactorConstraintsFirst(t *testing.T) {
-	s := New()
-
+func TestChunk_MergeConstraints_RefactorConstraintsFirst(t *testing.T) {
 	cr := &domain.ChangeRequest{
 		ID:   "refactor-order-test",
 		Type: domain.CRTypeRefactor,
@@ -394,7 +328,7 @@ func TestStrategy_MergeConstraints_RefactorConstraintsFirst(t *testing.T) {
 		},
 	}
 
-	items, err := s.Chunk(cr)
+	items, err := Chunk(cr, nil)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
@@ -414,11 +348,9 @@ func TestStrategy_MergeConstraints_RefactorConstraintsFirst(t *testing.T) {
 	}
 }
 
-// TestStrategy_Chunk_RefactorCR_MultipleTasks verifies that change requests
+// TestChunk_RefactorCR_MultipleTasks verifies that change requests
 // with type "refactor" receive behavior-preservation constraints on all work items.
-func TestStrategy_Chunk_RefactorCR_MultipleTasks(t *testing.T) {
-	s := New()
-
+func TestChunk_RefactorCR_MultipleTasks(t *testing.T) {
 	// Create a refactor change request with multiple tasks
 	cr := &domain.ChangeRequest{
 		ID:    "refactor-auth",
@@ -438,7 +370,7 @@ func TestStrategy_Chunk_RefactorCR_MultipleTasks(t *testing.T) {
 		},
 	}
 
-	items, err := s.Chunk(cr)
+	items, err := Chunk(cr, nil)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
@@ -469,11 +401,9 @@ func TestStrategy_Chunk_RefactorCR_MultipleTasks(t *testing.T) {
 	}
 }
 
-// TestStrategy_Chunk_FeatureCR_NoRefactorConstraints verifies that
+// TestChunk_FeatureCR_NoRefactorConstraints verifies that
 // non-refactor CRs do NOT receive behavior-preservation constraints.
-func TestStrategy_Chunk_FeatureCR_NoRefactorConstraints(t *testing.T) {
-	s := New()
-
+func TestChunk_FeatureCR_NoRefactorConstraints(t *testing.T) {
 	// Create a feature change request (not a refactor)
 	cr := &domain.ChangeRequest{
 		ID:    "feature-new-login",
@@ -491,7 +421,7 @@ func TestStrategy_Chunk_FeatureCR_NoRefactorConstraints(t *testing.T) {
 		},
 	}
 
-	items, err := s.Chunk(cr)
+	items, err := Chunk(cr, nil)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
@@ -508,10 +438,8 @@ func TestStrategy_Chunk_FeatureCR_NoRefactorConstraints(t *testing.T) {
 	}
 }
 
-// TestStrategy_ChunkPhase verifies that ChunkPhase correctly handles initiative phases
-func TestStrategy_ChunkPhase_SingleTask(t *testing.T) {
-	s := New()
-
+// TestChunkPhase verifies that ChunkPhase correctly handles initiative phases
+func TestChunkPhase_SingleTask(t *testing.T) {
 	phase := &domain.Phase{
 		Type: domain.CRTypeFeature,
 		Tasks: []domain.Task{
@@ -523,7 +451,7 @@ func TestStrategy_ChunkPhase_SingleTask(t *testing.T) {
 		},
 	}
 
-	items, err := s.ChunkPhase("initiative-1", 0, phase)
+	items, err := ChunkPhase("initiative-1", 0, phase, nil)
 	if err != nil {
 		t.Fatalf("ChunkPhase() error = %v", err)
 	}
@@ -538,9 +466,7 @@ func TestStrategy_ChunkPhase_SingleTask(t *testing.T) {
 	}
 }
 
-func TestStrategy_ChunkPhase_RefactorPhase(t *testing.T) {
-	s := New()
-
+func TestChunkPhase_RefactorPhase(t *testing.T) {
 	phase := &domain.Phase{
 		Type: domain.CRTypeRefactor,
 		Tasks: []domain.Task{
@@ -552,7 +478,7 @@ func TestStrategy_ChunkPhase_RefactorPhase(t *testing.T) {
 		},
 	}
 
-	items, err := s.ChunkPhase("initiative-1", 1, phase)
+	items, err := ChunkPhase("initiative-1", 1, phase, nil)
 	if err != nil {
 		t.Fatalf("ChunkPhase() error = %v", err)
 	}
@@ -572,9 +498,7 @@ func TestStrategy_ChunkPhase_RefactorPhase(t *testing.T) {
 	}
 }
 
-func TestStrategy_ChunkPhase_WithChanges(t *testing.T) {
-	s := New()
-
+func TestChunkPhase_WithChanges(t *testing.T) {
 	phase := &domain.Phase{
 		Type: domain.CRTypeFeature,
 		Changes: []domain.Change{
@@ -589,7 +513,7 @@ func TestStrategy_ChunkPhase_WithChanges(t *testing.T) {
 		},
 	}
 
-	items, err := s.ChunkPhase("initiative-1", 0, phase)
+	items, err := ChunkPhase("initiative-1", 0, phase, nil)
 	if err != nil {
 		t.Fatalf("ChunkPhase() error = %v", err)
 	}
@@ -604,9 +528,7 @@ func TestStrategy_ChunkPhase_WithChanges(t *testing.T) {
 }
 
 // Test extractFeatures with different operation types
-func TestStrategy_ExtractFeatures_RemoveOperation(t *testing.T) {
-	s := New()
-
+func TestChunk_ExtractFeatures_RemoveOperation(t *testing.T) {
 	cr := &domain.ChangeRequest{
 		ID:   "remove-test",
 		Type: domain.CRTypeRemoval,
@@ -619,7 +541,7 @@ func TestStrategy_ExtractFeatures_RemoveOperation(t *testing.T) {
 		},
 	}
 
-	items, err := s.Chunk(cr)
+	items, err := Chunk(cr, nil)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
@@ -639,9 +561,7 @@ func TestStrategy_ExtractFeatures_RemoveOperation(t *testing.T) {
 	}
 }
 
-func TestStrategy_ExtractFeatures_ModifyOperation(t *testing.T) {
-	s := New()
-
+func TestChunk_ExtractFeatures_ModifyOperation(t *testing.T) {
 	cr := &domain.ChangeRequest{
 		ID:   "modify-test",
 		Type: domain.CRTypeEnhancement,
@@ -657,7 +577,7 @@ func TestStrategy_ExtractFeatures_ModifyOperation(t *testing.T) {
 		},
 	}
 
-	items, err := s.Chunk(cr)
+	items, err := Chunk(cr, nil)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
@@ -677,9 +597,7 @@ func TestStrategy_ExtractFeatures_ModifyOperation(t *testing.T) {
 	}
 }
 
-func TestStrategy_ExtractFeatures_DeleteSpecOperation(t *testing.T) {
-	s := New()
-
+func TestChunk_ExtractFeatures_DeleteSpecOperation(t *testing.T) {
 	cr := &domain.ChangeRequest{
 		ID:   "delete-spec-test",
 		Type: domain.CRTypeRemoval,
@@ -692,7 +610,7 @@ func TestStrategy_ExtractFeatures_DeleteSpecOperation(t *testing.T) {
 		},
 	}
 
-	items, err := s.Chunk(cr)
+	items, err := Chunk(cr, nil)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
@@ -733,10 +651,8 @@ func TestBugfixSystemConstraints_RequiredText(t *testing.T) {
 	}
 }
 
-// TestStrategy_Chunk_BugfixCR_InjectsConstraints verifies that bugfix CRs get bugfix constraints
-func TestStrategy_Chunk_BugfixCR_InjectsConstraints(t *testing.T) {
-	s := New()
-
+// TestChunk_BugfixCR_InjectsConstraints verifies that bugfix CRs get bugfix constraints
+func TestChunk_BugfixCR_InjectsConstraints(t *testing.T) {
 	// Create a bugfix change request
 	cr := &domain.ChangeRequest{
 		ID:    "bugfix-test",
@@ -752,7 +668,7 @@ func TestStrategy_Chunk_BugfixCR_InjectsConstraints(t *testing.T) {
 		},
 	}
 
-	items, err := s.Chunk(cr)
+	items, err := Chunk(cr, nil)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
@@ -786,8 +702,8 @@ func TestStrategy_Chunk_BugfixCR_InjectsConstraints(t *testing.T) {
 	}
 }
 
-// TestStrategy_Chunk_BugfixCR_WithSpecReference verifies that bugfix CRs load and inject referenced features
-func TestStrategy_Chunk_BugfixCR_WithSpecReference(t *testing.T) {
+// TestChunk_BugfixCR_WithSpecReference verifies that bugfix CRs load and inject referenced features
+func TestChunk_BugfixCR_WithSpecReference(t *testing.T) {
 	// Create a mock spec loader that returns a test spec
 	testSpec := &domain.Spec{
 		ID:    "auth-spec",
@@ -811,8 +727,6 @@ func TestStrategy_Chunk_BugfixCR_WithSpecReference(t *testing.T) {
 		return nil, nil
 	}
 
-	s := NewWithDeps(specLoader)
-
 	cr := &domain.ChangeRequest{
 		ID:    "bugfix-login",
 		Type:  domain.CRTypeBugfix,
@@ -828,7 +742,7 @@ func TestStrategy_Chunk_BugfixCR_WithSpecReference(t *testing.T) {
 		},
 	}
 
-	items, err := s.Chunk(cr)
+	items, err := Chunk(cr, specLoader)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
@@ -849,13 +763,11 @@ func TestStrategy_Chunk_BugfixCR_WithSpecReference(t *testing.T) {
 	}
 }
 
-// TestStrategy_Chunk_BugfixCR_MissingSpec verifies chunking fails when spec not found
-func TestStrategy_Chunk_BugfixCR_MissingSpec(t *testing.T) {
+// TestChunk_BugfixCR_MissingSpec verifies chunking fails when spec not found
+func TestChunk_BugfixCR_MissingSpec(t *testing.T) {
 	specLoader := func(specID string) (*domain.Spec, error) {
 		return nil, nil // Spec not found
 	}
-
-	s := NewWithDeps(specLoader)
 
 	cr := &domain.ChangeRequest{
 		ID:    "bugfix-missing",
@@ -872,7 +784,7 @@ func TestStrategy_Chunk_BugfixCR_MissingSpec(t *testing.T) {
 		},
 	}
 
-	_, err := s.Chunk(cr)
+	_, err := Chunk(cr, specLoader)
 	if err == nil {
 		t.Fatal("Chunk() should return error when referenced spec not found")
 	}
@@ -882,8 +794,8 @@ func TestStrategy_Chunk_BugfixCR_MissingSpec(t *testing.T) {
 	}
 }
 
-// TestStrategy_Chunk_BugfixCR_MissingFeature verifies chunking fails when feature not in spec
-func TestStrategy_Chunk_BugfixCR_MissingFeature(t *testing.T) {
+// TestChunk_BugfixCR_MissingFeature verifies chunking fails when feature not in spec
+func TestChunk_BugfixCR_MissingFeature(t *testing.T) {
 	testSpec := &domain.Spec{
 		ID:       "auth-spec",
 		Features: []domain.Feature{},
@@ -892,8 +804,6 @@ func TestStrategy_Chunk_BugfixCR_MissingFeature(t *testing.T) {
 	specLoader := func(specID string) (*domain.Spec, error) {
 		return testSpec, nil
 	}
-
-	s := NewWithDeps(specLoader)
 
 	cr := &domain.ChangeRequest{
 		ID:    "bugfix-missing-feature",
@@ -910,7 +820,7 @@ func TestStrategy_Chunk_BugfixCR_MissingFeature(t *testing.T) {
 		},
 	}
 
-	_, err := s.Chunk(cr)
+	_, err := Chunk(cr, specLoader)
 	if err == nil {
 		t.Fatal("Chunk() should return error when referenced feature not found")
 	}
@@ -920,10 +830,8 @@ func TestStrategy_Chunk_BugfixCR_MissingFeature(t *testing.T) {
 	}
 }
 
-// TestStrategy_Chunk_BugfixCR_NoSpecLoader verifies chunking fails when no spec loader configured
-func TestStrategy_Chunk_BugfixCR_NoSpecLoader(t *testing.T) {
-	s := New() // No spec loader
-
+// TestChunk_BugfixCR_NoSpecLoader verifies chunking fails when no spec loader configured
+func TestChunk_BugfixCR_NoSpecLoader(t *testing.T) {
 	cr := &domain.ChangeRequest{
 		ID:    "bugfix-no-loader",
 		Type:  domain.CRTypeBugfix,
@@ -939,7 +847,7 @@ func TestStrategy_Chunk_BugfixCR_NoSpecLoader(t *testing.T) {
 		},
 	}
 
-	_, err := s.Chunk(cr)
+	_, err := Chunk(cr, nil) // No spec loader
 	if err == nil {
 		t.Fatal("Chunk() should return error when spec loader not configured")
 	}
@@ -949,8 +857,8 @@ func TestStrategy_Chunk_BugfixCR_NoSpecLoader(t *testing.T) {
 	}
 }
 
-// TestStrategy_ChunkPhase_BugfixPhase_WithSpecReference verifies bugfix phases work
-func TestStrategy_ChunkPhase_BugfixPhase_WithSpecReference(t *testing.T) {
+// TestChunkPhase_BugfixPhase_WithSpecReference verifies bugfix phases work
+func TestChunkPhase_BugfixPhase_WithSpecReference(t *testing.T) {
 	testSpec := &domain.Spec{
 		ID: "test-spec",
 		Features: []domain.Feature{
@@ -966,8 +874,6 @@ func TestStrategy_ChunkPhase_BugfixPhase_WithSpecReference(t *testing.T) {
 		return testSpec, nil
 	}
 
-	s := NewWithDeps(specLoader)
-
 	phase := &domain.Phase{
 		Type: domain.CRTypeBugfix,
 		Tasks: []domain.Task{
@@ -981,7 +887,7 @@ func TestStrategy_ChunkPhase_BugfixPhase_WithSpecReference(t *testing.T) {
 		},
 	}
 
-	items, err := s.ChunkPhase("initiative-1", 0, phase)
+	items, err := ChunkPhase("initiative-1", 0, phase, specLoader)
 	if err != nil {
 		t.Fatalf("ChunkPhase() error = %v", err)
 	}
@@ -1006,48 +912,112 @@ func TestStrategy_ChunkPhase_BugfixPhase_WithSpecReference(t *testing.T) {
 	}
 }
 
-// TestStrategy_SetSpecLoader verifies the SetSpecLoader method works
-func TestStrategy_SetSpecLoader(t *testing.T) {
-	s := New() // Start with no loader
+// Prompt building tests
 
-	// Initially should fail for bugfix with spec reference
-	cr := &domain.ChangeRequest{
-		ID:   "bugfix",
-		Type: domain.CRTypeBugfix,
-		Tasks: []domain.Task{
-			{
-				ID:                 "task-1",
-				Description:        "Fix",
-				AcceptanceCriteria: []string{"Fixed"},
-				Spec:               "spec",
-				FeatureID:          "feature",
-			},
-		},
+func TestBuildPrompt_BasicPrompt(t *testing.T) {
+	feature := domain.Feature{
+		ID:                 "test",
+		Description:        "Test feature",
+		AcceptanceCriteria: []string{"Criterion 1"},
 	}
 
-	_, err := s.Chunk(cr)
-	if err == nil {
-		t.Fatal("should fail without spec loader")
+	prompt := BuildPrompt(feature, nil)
+
+	if !strings.Contains(prompt, "## TASK") {
+		t.Error("Prompt should contain TASK section")
+	}
+	if !strings.Contains(prompt, "Test feature") {
+		t.Error("Prompt should contain feature description")
+	}
+	if !strings.Contains(prompt, "Criterion 1") {
+		t.Error("Prompt should contain acceptance criteria")
+	}
+	if !strings.Contains(prompt, "## CONSTRAINTS") {
+		t.Error("Prompt should contain CONSTRAINTS section")
+	}
+	if !strings.Contains(prompt, "<COMPLETE>") {
+		t.Error("Prompt should contain completion token")
+	}
+}
+
+func TestBuildPrompt_WithFailures(t *testing.T) {
+	feature := domain.Feature{
+		ID:                 "test",
+		Description:        "Test feature",
+		AcceptanceCriteria: []string{"Criterion 1"},
 	}
 
-	// Set the spec loader
-	testSpec := &domain.Spec{
-		ID: "spec",
-		Features: []domain.Feature{
-			{ID: "feature", Description: "Test", AcceptanceCriteria: []string{"AC"}},
-		},
-	}
-	s.SetSpecLoader(func(specID string) (*domain.Spec, error) {
-		return testSpec, nil
-	})
+	prompt := BuildPrompt(feature, []string{"Error: test failed"})
 
-	// Now should succeed
-	items, err := s.Chunk(cr)
-	if err != nil {
-		t.Fatalf("Chunk() should succeed with spec loader: %v", err)
+	if !strings.Contains(prompt, "## PREVIOUS FAILURES") {
+		t.Error("Prompt should contain PREVIOUS FAILURES section")
+	}
+	if !strings.Contains(prompt, "Error: test failed") {
+		t.Error("Prompt should contain failure output")
+	}
+}
+
+func TestBuildPromptWithConstraints_CustomConstraints(t *testing.T) {
+	feature := domain.Feature{
+		ID:                 "test",
+		Description:        "Test feature",
+		AcceptanceCriteria: []string{"Criterion 1"},
 	}
 
-	if !strings.Contains(items[0].Prompt, "## REFERENCE") {
-		t.Error("should include REFERENCE section after setting spec loader")
+	constraints := []string{"Custom constraint 1", "Custom constraint 2"}
+	prompt := BuildPromptWithConstraints(feature, constraints, nil, nil)
+
+	if !strings.Contains(prompt, "Custom constraint 1") {
+		t.Error("Prompt should contain custom constraint 1")
+	}
+	if !strings.Contains(prompt, "Custom constraint 2") {
+		t.Error("Prompt should contain custom constraint 2")
+	}
+}
+
+func TestBuildPromptWithConstraints_WithReference(t *testing.T) {
+	feature := domain.Feature{
+		ID:                 "test",
+		Description:        "Test bugfix",
+		AcceptanceCriteria: []string{"Fix the bug"},
+	}
+
+	refFeature := &domain.Feature{
+		ID:                 "ref",
+		Description:        "Reference feature",
+		AcceptanceCriteria: []string{"Reference criterion"},
+	}
+
+	prompt := BuildPromptWithConstraints(feature, DefaultConstraints, nil, refFeature)
+
+	if !strings.Contains(prompt, "## REFERENCE") {
+		t.Error("Prompt should contain REFERENCE section")
+	}
+	if !strings.Contains(prompt, "Reference feature") {
+		t.Error("Prompt should contain reference feature description")
+	}
+	if !strings.Contains(prompt, "Reference criterion") {
+		t.Error("Prompt should contain reference feature criteria")
+	}
+}
+
+func TestEscapeTemplateContent(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"normal text", "normal text"},
+		{"{{template}}", "{ {template} }"},
+		{"before {{inside}} after", "before { {inside} } after"},
+		{"", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := escapeTemplateContent(tt.input)
+			if got != tt.expected {
+				t.Errorf("escapeTemplateContent(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
 	}
 }

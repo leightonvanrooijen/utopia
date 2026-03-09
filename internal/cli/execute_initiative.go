@@ -8,10 +8,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/leightonvanrooijen/utopia/internal/chunk"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 	"github.com/leightonvanrooijen/utopia/internal/infra/storage"
-	chunkStrategy "github.com/leightonvanrooijen/utopia/internal/strategies/chunk"
-	executeStrategy "github.com/leightonvanrooijen/utopia/internal/strategies/execute"
+	"github.com/leightonvanrooijen/utopia/internal/ralph"
 	"github.com/spf13/cobra"
 )
 
@@ -35,8 +35,6 @@ func executeInitiativeCore(
 	store *storage.YAMLStore,
 	config *domain.Config,
 	projectDir, utopiaDir string,
-	strategy executeStrategy.Strategy,
-	chunkReg *chunkStrategy.Registry,
 	opts initiativeCoreOpts,
 ) error {
 	// Execute phases continuously until all complete or interrupted
@@ -67,7 +65,7 @@ func executeInitiativeCore(
 				return fmt.Errorf("failed to update CR status: %w", err)
 			}
 
-			items, err = chunkPhase(cr.ID, phaseIndex, &phase, store, config, chunkReg, projectDir)
+			items, err = chunkPhase(cr.ID, phaseIndex, &phase, store, config, projectDir)
 			if err != nil {
 				return err
 			}
@@ -76,19 +74,18 @@ func executeInitiativeCore(
 		}
 
 		fmt.Printf("\nExecuting phase %d/%d (type: %s)\n", phaseIndex+1, len(cr.Phases), phase.Type)
-		fmt.Printf("Using '%s' strategy: %s\n", strategy.Name(), strategy.Description())
 		fmt.Printf("Work items: %d\n", len(items))
 		if opts.showTimeoutDetails && executeTimeoutFlag > 0 {
 			fmt.Printf("Timeout: %d minute(s)\n", executeTimeoutFlag)
 		}
 		fmt.Println()
 
-		// Run the strategy for this phase's work items
-		result, err := strategy.Execute(ctx, phaseWorkDir, store, config, projectDir)
+		// Run the execution for this phase's work items
+		result, err := ralph.Execute(ctx, phaseWorkDir, store, config, projectDir)
 		if err != nil {
 			if opts.showTimeoutDetails && ctx.Err() == context.DeadlineExceeded {
 				sessionDuration := time.Since(opts.sessionStart).Round(time.Second)
-				fmt.Printf("\n⏱  TIMEOUT REACHED\n")
+				fmt.Printf("\n  TIMEOUT REACHED\n")
 				fmt.Printf("Session duration: %s\n", sessionDuration)
 				fmt.Printf("Phase %d completed: %d/%d work items\n", phaseIndex+1, result.Completed, result.Total)
 				if result.StoppedAt != "" {
@@ -144,7 +141,7 @@ func executeInitiativeCore(
 			}
 			marker := " "
 			if p.Status == domain.PhaseStatusComplete {
-				marker = "✓"
+				marker = " "
 			}
 			fmt.Printf("  %s [%d] %s (%s)\n", marker, i+1, p.Type, status)
 		}
@@ -155,7 +152,7 @@ func executeInitiativeCore(
 		fmt.Println()
 		fmt.Println("Merging initiative CR into specs...")
 		if err := AutoMergeCR(cr, cr.ID, store, projectDir, utopiaDir); err != nil {
-			fmt.Printf("\n⚠ Merge failed: %s\n", err)
+			fmt.Printf("\n  Merge failed: %s\n", err)
 			fmt.Printf("Work items remain completed. You can retry merge with: utopia merge %s\n", cr.ID)
 			return nil // Don't return error - work items completed successfully
 		}
@@ -166,7 +163,7 @@ func executeInitiativeCore(
 
 // executeInitiative handles execution for initiative CRs, executing phases in order.
 // Phases execute continuously until all complete or the user interrupts with Ctrl+C.
-func executeInitiative(cmd *cobra.Command, cr *domain.ChangeRequest, store *storage.YAMLStore, config *domain.Config, projectDir, utopiaDir string, execRegistry *executeStrategy.Registry, chunkReg *chunkStrategy.Registry) error {
+func executeInitiative(cmd *cobra.Command, cr *domain.ChangeRequest, store *storage.YAMLStore, config *domain.Config, projectDir, utopiaDir string) error {
 	fmt.Printf("Executing initiative: %s\n", cr.Title)
 	fmt.Printf("Phases: %d total, current: %d\n", len(cr.Phases), cr.CurrentPhase+1)
 
@@ -175,21 +172,6 @@ func executeInitiative(cmd *cobra.Command, cr *domain.ChangeRequest, store *stor
 		fmt.Printf("\nAll phases complete!\n")
 		fmt.Printf("Run 'utopia merge %s' to finalize the initiative\n", cr.ID)
 		return nil
-	}
-
-	// Determine which execution strategy to use (once, outside the loop)
-	strategyName := executeStrategyFlag
-	if strategyName == "" {
-		strategyName = config.Strategies.Execute
-	}
-
-	strategy, ok := execRegistry.Get(strategyName)
-	if !ok {
-		available := execRegistry.List()
-		if len(available) == 0 {
-			return fmt.Errorf("no execution strategies registered")
-		}
-		return fmt.Errorf("unknown strategy %q (available: %v)", strategyName, available)
 	}
 
 	// Track session start time
@@ -215,7 +197,7 @@ func executeInitiative(cmd *cobra.Command, cr *domain.ChangeRequest, store *stor
 	}()
 
 	// Delegate to core function with standalone-mode options
-	err := executeInitiativeCore(ctx, cr, store, config, projectDir, utopiaDir, strategy, chunkReg, initiativeCoreOpts{
+	err := executeInitiativeCore(ctx, cr, store, config, projectDir, utopiaDir, initiativeCoreOpts{
 		showTimeoutDetails: true,
 		showPhaseSummary:   true,
 		sessionStart:       sessionStart,
@@ -231,7 +213,7 @@ func executeInitiative(cmd *cobra.Command, cr *domain.ChangeRequest, store *stor
 
 // executeSingleInitiative handles execution for initiative CRs within batch mode.
 // Similar to executeInitiative but uses the provided context.
-func executeSingleInitiative(ctx context.Context, cr *domain.ChangeRequest, store *storage.YAMLStore, config *domain.Config, projectDir, utopiaDir string, execRegistry *executeStrategy.Registry, chunkRegistry *chunkStrategy.Registry) error {
+func executeSingleInitiative(ctx context.Context, cr *domain.ChangeRequest, store *storage.YAMLStore, config *domain.Config, projectDir, utopiaDir string) error {
 	fmt.Printf("Executing initiative: %s\n", cr.Title)
 	fmt.Printf("Phases: %d total, current: %d\n", len(cr.Phases), cr.CurrentPhase+1)
 
@@ -241,57 +223,21 @@ func executeSingleInitiative(ctx context.Context, cr *domain.ChangeRequest, stor
 		return nil
 	}
 
-	// Determine which execution strategy to use
-	strategyName := executeStrategyFlag
-	if strategyName == "" {
-		strategyName = config.Strategies.Execute
-	}
-
-	strategy, ok := execRegistry.Get(strategyName)
-	if !ok {
-		available := execRegistry.List()
-		if len(available) == 0 {
-			return fmt.Errorf("no execution strategies registered")
-		}
-		return fmt.Errorf("unknown strategy %q (available: %v)", strategyName, available)
-	}
-
 	// Delegate to core function with batch-mode options
-	return executeInitiativeCore(ctx, cr, store, config, projectDir, utopiaDir, strategy, chunkRegistry, initiativeCoreOpts{
+	return executeInitiativeCore(ctx, cr, store, config, projectDir, utopiaDir, initiativeCoreOpts{
 		showTimeoutDetails: false,
 		showPhaseSummary:   false,
 		autoMerge:          true,
 	})
 }
 
-// chunkPhase invokes the chunking strategy to produce work items for a single phase of an initiative.
-func chunkPhase(crID string, phaseIndex int, phase *domain.Phase, store *storage.YAMLStore, config *domain.Config, registry *chunkStrategy.Registry, projectDir string) ([]*domain.WorkItem, error) {
+// chunkPhase invokes the chunking logic to produce work items for a single phase of an initiative.
+func chunkPhase(crID string, phaseIndex int, phase *domain.Phase, store *storage.YAMLStore, config *domain.Config, projectDir string) ([]*domain.WorkItem, error) {
 	fmt.Printf("Chunking phase %d (type: %s)\n", phaseIndex+1, phase.Type)
 
-	// Determine which chunking strategy to use
-	strategyName := executeChunkStrategyFlag
-	if strategyName == "" {
-		strategyName = config.Strategies.Chunk
-	}
-
-	strategy, ok := registry.Get(strategyName)
-	if !ok {
-		available := registry.List()
-		if len(available) == 0 {
-			return nil, fmt.Errorf("no chunking strategies registered")
-		}
-		return nil, fmt.Errorf("unknown chunk strategy %q (available: %v)", strategyName, available)
-	}
-
-	// Configure spec loader if the strategy supports it (needed for bugfix phases)
-	if configurable, ok := strategy.(SpecLoaderConfigurable); ok {
-		configurable.SetSpecLoader(store.LoadSpec)
-	}
-
-	fmt.Printf("Using '%s' chunk strategy: %s\n", strategy.Name(), strategy.Description())
-
-	// Run the chunking strategy on this phase
-	workItems, err := strategy.ChunkPhase(crID, phaseIndex, phase)
+	// Run the chunking on this phase
+	// Pass store.LoadSpec as the spec loader for bugfix phases
+	workItems, err := chunk.ChunkPhase(crID, phaseIndex, phase, store.LoadSpec)
 	if err != nil {
 		return nil, fmt.Errorf("chunking failed: %w", err)
 	}
@@ -309,9 +255,9 @@ func chunkPhase(crID string, phaseIndex int, phase *domain.Phase, store *storage
 	// Commit work items to git
 	if err := gitCommitChunk(projectDir, crID); err != nil {
 		// Log but don't fail - work items are saved, commit is non-critical
-		fmt.Printf("⚠ Git commit warning: %s\n", err)
+		fmt.Printf("  Git commit warning: %s\n", err)
 	} else {
-		fmt.Printf("✓ Committed work items for %s phase %d\n", crID, phaseIndex+1)
+		fmt.Printf("  Committed work items for %s phase %d\n", crID, phaseIndex+1)
 	}
 
 	// Print summary

@@ -11,14 +11,13 @@ import (
 
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 	"github.com/leightonvanrooijen/utopia/internal/infra/storage"
-	chunkStrategy "github.com/leightonvanrooijen/utopia/internal/strategies/chunk"
-	executeStrategy "github.com/leightonvanrooijen/utopia/internal/strategies/execute"
+	"github.com/leightonvanrooijen/utopia/internal/ralph"
 	"github.com/spf13/cobra"
 )
 
 // runExecuteAll executes all CRs in .utopia/change-requests/ in alphabetical order.
 // If any CR fails, execution stops and reports which CR failed.
-func runExecuteAll(cmd *cobra.Command, store *storage.YAMLStore, config *domain.Config, projectDir, utopiaDir string, execRegistry *executeStrategy.Registry, chunkRegistry *chunkStrategy.Registry) error {
+func runExecuteAll(cmd *cobra.Command, store *storage.YAMLStore, config *domain.Config, projectDir, utopiaDir string) error {
 	// List all change requests
 	crs, err := store.ListChangeRequests()
 	if err != nil {
@@ -67,7 +66,7 @@ func runExecuteAll(cmd *cobra.Command, store *storage.YAMLStore, config *domain.
 		if ctx.Err() != nil {
 			if ctx.Err() == context.DeadlineExceeded {
 				sessionDuration := time.Since(sessionStart).Round(time.Second)
-				fmt.Printf("\n⏱  TIMEOUT REACHED\n")
+				fmt.Printf("\n  TIMEOUT REACHED\n")
 				fmt.Printf("Session duration: %s\n", sessionDuration)
 				fmt.Printf("Completed: %d/%d CRs\n", completedCRs, totalCRs)
 				return fmt.Errorf("batch execution timed out after %d minute(s)", executeTimeoutFlag)
@@ -78,17 +77,17 @@ func runExecuteAll(cmd *cobra.Command, store *storage.YAMLStore, config *domain.
 			return nil
 		}
 
-		fmt.Printf("════════════════════════════════════════════════════════════════\n")
+		fmt.Printf("================================================================\n")
 		fmt.Printf("Executing CR %d of %d: %s\n", i+1, totalCRs, cr.Title)
-		fmt.Printf("════════════════════════════════════════════════════════════════\n\n")
+		fmt.Printf("================================================================\n\n")
 
 		// Execute this CR using the shared context
-		if err := executeSingleCR(ctx, cr, store, config, projectDir, utopiaDir, execRegistry, chunkRegistry); err != nil {
+		if err := executeSingleCR(ctx, cr, store, config, projectDir, utopiaDir); err != nil {
 			// Check if it was a context cancellation
 			if ctx.Err() != nil {
 				if ctx.Err() == context.DeadlineExceeded {
 					sessionDuration := time.Since(sessionStart).Round(time.Second)
-					fmt.Printf("\n⏱  TIMEOUT REACHED\n")
+					fmt.Printf("\n  TIMEOUT REACHED\n")
 					fmt.Printf("Session duration: %s\n", sessionDuration)
 					fmt.Printf("Completed: %d/%d CRs\n", completedCRs, totalCRs)
 					return fmt.Errorf("batch execution timed out after %d minute(s)", executeTimeoutFlag)
@@ -100,9 +99,9 @@ func runExecuteAll(cmd *cobra.Command, store *storage.YAMLStore, config *domain.
 			}
 
 			// Actual CR failure - stop batch execution
-			fmt.Printf("\n════════════════════════════════════════════════════════════════\n")
+			fmt.Printf("\n================================================================\n")
 			fmt.Printf("BATCH EXECUTION FAILED\n")
-			fmt.Printf("════════════════════════════════════════════════════════════════\n")
+			fmt.Printf("================================================================\n")
 			fmt.Printf("Failed CR: %s (%s)\n", cr.Title, cr.ID)
 			fmt.Printf("Error: %s\n", err)
 			fmt.Printf("Completed: %d/%d CRs before failure\n", completedCRs, totalCRs)
@@ -111,14 +110,14 @@ func runExecuteAll(cmd *cobra.Command, store *storage.YAMLStore, config *domain.
 		}
 
 		completedCRs++
-		fmt.Printf("\n✓ CR %d of %d completed: %s\n\n", i+1, totalCRs, cr.Title)
+		fmt.Printf("\n  CR %d of %d completed: %s\n\n", i+1, totalCRs, cr.Title)
 	}
 
 	// Success summary
 	sessionDuration := time.Since(sessionStart).Round(time.Second)
-	fmt.Printf("════════════════════════════════════════════════════════════════\n")
+	fmt.Printf("================================================================\n")
 	fmt.Printf("BATCH EXECUTION COMPLETE\n")
-	fmt.Printf("════════════════════════════════════════════════════════════════\n")
+	fmt.Printf("================================================================\n")
 	fmt.Printf("Successfully executed: %d/%d CRs\n", completedCRs, totalCRs)
 	fmt.Printf("Total duration: %s\n", sessionDuration)
 
@@ -127,12 +126,12 @@ func runExecuteAll(cmd *cobra.Command, store *storage.YAMLStore, config *domain.
 
 // executeSingleCR executes a single CR with the given context.
 // This is extracted from runExecute to allow reuse in batch execution.
-func executeSingleCR(ctx context.Context, cr *domain.ChangeRequest, store *storage.YAMLStore, config *domain.Config, projectDir, utopiaDir string, execRegistry *executeStrategy.Registry, chunkRegistry *chunkStrategy.Registry) error {
+func executeSingleCR(ctx context.Context, cr *domain.ChangeRequest, store *storage.YAMLStore, config *domain.Config, projectDir, utopiaDir string) error {
 	crID := cr.ID
 
 	// Check if this is an initiative CR (needs per-phase execution)
 	if cr.Type == domain.CRTypeInitiative {
-		return executeSingleInitiative(ctx, cr, store, config, projectDir, utopiaDir, execRegistry, chunkRegistry)
+		return executeSingleInitiative(ctx, cr, store, config, projectDir, utopiaDir)
 	}
 
 	// Check if work items already exist for this CR
@@ -143,7 +142,7 @@ func executeSingleCR(ctx context.Context, cr *domain.ChangeRequest, store *stora
 
 	// If no work items exist, chunk the CR first
 	if len(items) == 0 {
-		items, err = chunkCR(cr, crID, store, config, chunkRegistry, projectDir)
+		items, err = chunkCR(cr, crID, store, config, projectDir)
 		if err != nil {
 			return err
 		}
@@ -151,26 +150,10 @@ func executeSingleCR(ctx context.Context, cr *domain.ChangeRequest, store *stora
 		fmt.Printf("Found %d existing work item(s) for %s\n", len(items), crID)
 	}
 
-	// Determine which execution strategy to use
-	strategyName := executeStrategyFlag
-	if strategyName == "" {
-		strategyName = config.Strategies.Execute
-	}
-
-	strategy, ok := execRegistry.Get(strategyName)
-	if !ok {
-		available := execRegistry.List()
-		if len(available) == 0 {
-			return fmt.Errorf("no execution strategies registered")
-		}
-		return fmt.Errorf("unknown strategy %q (available: %v)", strategyName, available)
-	}
-
-	fmt.Printf("Using '%s' strategy: %s\n", strategy.Name(), strategy.Description())
 	fmt.Printf("Executing CR: %s (%d work items)\n\n", crID, len(items))
 
-	// Run the strategy with the provided context
-	result, err := strategy.Execute(ctx, crID, store, config, projectDir)
+	// Run the execution with the provided context
+	result, err := ralph.Execute(ctx, crID, store, config, projectDir)
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded || ctx.Err() == context.Canceled {
 			// Context error - let caller handle
@@ -198,7 +181,7 @@ func executeSingleCR(ctx context.Context, cr *domain.ChangeRequest, store *stora
 	fmt.Println()
 	fmt.Println("Merging CR into specs...")
 	if err := AutoMergeCR(cr, crID, store, projectDir, utopiaDir); err != nil {
-		fmt.Printf("\n⚠ Merge failed: %s\n", err)
+		fmt.Printf("\n  Merge failed: %s\n", err)
 		fmt.Printf("Work items remain completed. You can retry merge with: utopia merge %s\n", crID)
 		return nil // Don't fail batch for merge errors - work is done
 	}

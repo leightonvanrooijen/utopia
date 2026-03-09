@@ -1,8 +1,11 @@
-package ralphsequential
+package chunk
 
 import (
+	"bytes"
 	"fmt"
+	"regexp"
 	"strings"
+	"text/template"
 
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 )
@@ -32,59 +35,23 @@ var BugfixSystemConstraints = []string{
 }
 
 // SpecLoader is a function that loads a spec by ID.
-// This allows the chunking strategy to load referenced specs for bugfix tasks
+// This allows the chunking logic to load referenced specs for bugfix tasks
 // without being coupled to a specific storage implementation.
 type SpecLoader func(specID string) (*domain.Spec, error)
 
 // bugfixFeature wraps a feature extracted from a bugfix task with its spec reference.
-// This allows the chunking strategy to load the referenced spec feature.
+// This allows the chunking logic to load the referenced spec feature.
 type bugfixFeature struct {
 	feature   domain.Feature
 	specRef   string // The spec ID to load
 	featureID string // The feature ID within that spec
 }
 
-// Strategy implements the ralph-sequential chunking approach.
-// It creates one WorkItem per feature, executed in spec order.
-type Strategy struct {
-	specLoader SpecLoader
-}
-
-// New creates a new ralph-sequential strategy without pre-configured dependencies.
-// The specLoader is configured at runtime via SetSpecLoader when storage becomes available.
-// For testing with mock dependencies, use NewWithDeps().
-func New() *Strategy {
-	return &Strategy{}
-}
-
-// NewWithDeps creates a new ralph-sequential strategy with injected dependencies.
-// The specLoader is used to load referenced specs during bugfix chunking.
-// This constructor enables testing with mock dependencies.
-func NewWithDeps(specLoader SpecLoader) *Strategy {
-	return &Strategy{specLoader: specLoader}
-}
-
-// SetSpecLoader sets the spec loader for loading referenced specs during bugfix chunking.
-// This allows the spec loader to be set after strategy creation when the storage becomes available.
-// Note: Uses anonymous function type to match SpecLoaderConfigurable interface in execute.go.
-func (s *Strategy) SetSpecLoader(loader func(specID string) (*domain.Spec, error)) {
-	s.specLoader = loader
-}
-
-// Name returns the strategy identifier.
-func (s *Strategy) Name() string {
-	return "ralph-sequential"
-}
-
-// Description returns a human-readable description for CLI help.
-func (s *Strategy) Description() string {
-	return "One WorkItem per feature, executed sequentially in spec order"
-}
-
 // Chunk transforms a change request into work items.
-func (s *Strategy) Chunk(cr *domain.ChangeRequest) ([]*domain.WorkItem, error) {
+// For bugfix CRs that reference specs, specLoader must be provided.
+func Chunk(cr *domain.ChangeRequest, specLoader SpecLoader) ([]*domain.WorkItem, error) {
 	// Extract features from the CR
-	features, bugfixRefs := s.extractFeatures(cr)
+	features, bugfixRefs := extractFeatures(cr)
 
 	// Determine CR type for constraint injection
 	isRefactor := cr.Type == domain.CRTypeRefactor
@@ -94,14 +61,14 @@ func (s *Strategy) Chunk(cr *domain.ChangeRequest) ([]*domain.WorkItem, error) {
 	var refFeatures map[string]*domain.Feature
 	if isBugfix && len(bugfixRefs) > 0 {
 		var err error
-		refFeatures, err = s.loadReferencedFeatures(bugfixRefs)
+		refFeatures, err = loadReferencedFeatures(bugfixRefs, specLoader)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	// Validate before generating any work items
-	if err := s.validateFeatures(features); err != nil {
+	if err := validateFeatures(features); err != nil {
 		return nil, err
 	}
 
@@ -117,7 +84,61 @@ func (s *Strategy) Chunk(cr *domain.ChangeRequest) ([]*domain.WorkItem, error) {
 		)
 
 		// Apply constraints (defaults + type-specific constraints)
-		workItem.Constraints = s.mergeConstraintsForCRType(isRefactor, isBugfix)
+		workItem.Constraints = mergeConstraintsForCRType(isRefactor, isBugfix)
+
+		// Build the prompt with task + criteria + constraints baked in
+		// For bugfix items, include the referenced feature for the REFERENCE section
+		var refFeature *domain.Feature
+		if isBugfix && refFeatures != nil {
+			refFeature = refFeatures[feature.ID]
+		}
+		workItem.Prompt = BuildPromptWithConstraints(feature, workItem.Constraints, nil, refFeature)
+
+		workItems = append(workItems, workItem)
+	}
+
+	return workItems, nil
+}
+
+// ChunkPhase transforms a single phase of an initiative CR into work items.
+// For bugfix phases that reference specs, specLoader must be provided.
+func ChunkPhase(crID string, phaseIndex int, phase *domain.Phase, specLoader SpecLoader) ([]*domain.WorkItem, error) {
+	// Extract features from the phase
+	features, bugfixRefs := extractFeaturesFromPhase(phase)
+
+	// Determine phase type for constraint injection
+	isRefactor := phase.Type == domain.CRTypeRefactor
+	isBugfix := phase.Type == domain.CRTypeBugfix
+
+	// For bugfix phases, validate and load referenced spec features
+	var refFeatures map[string]*domain.Feature
+	if isBugfix && len(bugfixRefs) > 0 {
+		var err error
+		refFeatures, err = loadReferencedFeatures(bugfixRefs, specLoader)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Validate before generating any work items
+	if err := validateFeatures(features); err != nil {
+		return nil, err
+	}
+
+	workItems := make([]*domain.WorkItem, 0, len(features))
+	phaseWorkItemPrefix := fmt.Sprintf("%s-phase-%d", crID, phaseIndex)
+
+	for i, feature := range features {
+		workItem := domain.NewWorkItem(
+			fmt.Sprintf("%s-%s", phaseWorkItemPrefix, feature.ID),
+			phaseWorkItemPrefix,
+			feature.ID,
+			feature,
+			i, // Order is the position in the phase
+		)
+
+		// Apply constraints (defaults + type-specific constraints)
+		workItem.Constraints = mergeConstraintsForCRType(isRefactor, isBugfix)
 
 		// Build the prompt with task + criteria + constraints baked in
 		// For bugfix items, include the referenced feature for the REFERENCE section
@@ -135,7 +156,7 @@ func (s *Strategy) Chunk(cr *domain.ChangeRequest) ([]*domain.WorkItem, error) {
 
 // extractFeatures converts CR tasks and changes into a flat list of features for chunking.
 // For bugfix CRs, the returned bugfixRefs map contains spec/feature references keyed by task ID.
-func (s *Strategy) extractFeatures(cr *domain.ChangeRequest) ([]domain.Feature, map[string]bugfixFeature) {
+func extractFeatures(cr *domain.ChangeRequest) ([]domain.Feature, map[string]bugfixFeature) {
 	var features []domain.Feature
 	bugfixRefs := make(map[string]bugfixFeature)
 
@@ -158,62 +179,9 @@ func (s *Strategy) extractFeatures(cr *domain.ChangeRequest) ([]domain.Feature, 
 	return features, bugfixRefs
 }
 
-// ChunkPhase transforms a single phase of an initiative CR into work items.
-func (s *Strategy) ChunkPhase(crID string, phaseIndex int, phase *domain.Phase) ([]*domain.WorkItem, error) {
-	// Extract features from the phase
-	features, bugfixRefs := s.extractFeaturesFromPhase(phase)
-
-	// Determine phase type for constraint injection
-	isRefactor := phase.Type == domain.CRTypeRefactor
-	isBugfix := phase.Type == domain.CRTypeBugfix
-
-	// For bugfix phases, validate and load referenced spec features
-	var refFeatures map[string]*domain.Feature
-	if isBugfix && len(bugfixRefs) > 0 {
-		var err error
-		refFeatures, err = s.loadReferencedFeatures(bugfixRefs)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	// Validate before generating any work items
-	if err := s.validateFeatures(features); err != nil {
-		return nil, err
-	}
-
-	workItems := make([]*domain.WorkItem, 0, len(features))
-	phaseWorkItemPrefix := fmt.Sprintf("%s-phase-%d", crID, phaseIndex)
-
-	for i, feature := range features {
-		workItem := domain.NewWorkItem(
-			fmt.Sprintf("%s-%s", phaseWorkItemPrefix, feature.ID),
-			phaseWorkItemPrefix,
-			feature.ID,
-			feature,
-			i, // Order is the position in the phase
-		)
-
-		// Apply constraints (defaults + type-specific constraints)
-		workItem.Constraints = s.mergeConstraintsForCRType(isRefactor, isBugfix)
-
-		// Build the prompt with task + criteria + constraints baked in
-		// For bugfix items, include the referenced feature for the REFERENCE section
-		var refFeature *domain.Feature
-		if isBugfix && refFeatures != nil {
-			refFeature = refFeatures[feature.ID]
-		}
-		workItem.Prompt = BuildPromptWithConstraints(feature, workItem.Constraints, nil, refFeature)
-
-		workItems = append(workItems, workItem)
-	}
-
-	return workItems, nil
-}
-
 // extractFeaturesFromPhase converts phase tasks and changes into a flat list of features.
 // For bugfix phases, the returned bugfixRefs map contains spec/feature references keyed by task ID.
-func (s *Strategy) extractFeaturesFromPhase(phase *domain.Phase) ([]domain.Feature, map[string]bugfixFeature) {
+func extractFeaturesFromPhase(phase *domain.Phase) ([]domain.Feature, map[string]bugfixFeature) {
 	var features []domain.Feature
 	bugfixRefs := make(map[string]bugfixFeature)
 
@@ -346,7 +314,7 @@ func convertChangeToFeature(change domain.Change) *domain.Feature {
 }
 
 // validateFeatures checks that the features extracted from a CR are suitable for chunking.
-func (s *Strategy) validateFeatures(features []domain.Feature) error {
+func validateFeatures(features []domain.Feature) error {
 	var errors []string
 
 	for _, feature := range features {
@@ -368,8 +336,8 @@ func (s *Strategy) validateFeatures(features []domain.Feature) error {
 // loadReferencedFeatures loads the spec features referenced by bugfix tasks.
 // Returns a map from task ID to the referenced feature from the spec.
 // Fails with a clear error if the spec or feature is not found.
-func (s *Strategy) loadReferencedFeatures(bugfixRefs map[string]bugfixFeature) (map[string]*domain.Feature, error) {
-	if s.specLoader == nil {
+func loadReferencedFeatures(bugfixRefs map[string]bugfixFeature, specLoader SpecLoader) (map[string]*domain.Feature, error) {
+	if specLoader == nil {
 		return nil, fmt.Errorf("bugfix CR references specs but no spec loader is configured")
 	}
 
@@ -382,7 +350,7 @@ func (s *Strategy) loadReferencedFeatures(bugfixRefs map[string]bugfixFeature) (
 		spec, ok := specCache[ref.specRef]
 		if !ok {
 			var err error
-			spec, err = s.specLoader(ref.specRef)
+			spec, err = specLoader(ref.specRef)
 			if err != nil {
 				return nil, fmt.Errorf("bugfix task %q references spec %q which could not be loaded: %w", taskID, ref.specRef, err)
 			}
@@ -413,7 +381,7 @@ func (s *Strategy) loadReferencedFeatures(bugfixRefs map[string]bugfixFeature) (
 
 // mergeConstraintsForCRType combines default constraints, adding type-specific
 // system constraints for refactor or bugfix types.
-func (s *Strategy) mergeConstraintsForCRType(isRefactor, isBugfix bool) []string {
+func mergeConstraintsForCRType(isRefactor, isBugfix bool) []string {
 	seen := make(map[string]bool)
 	var result []string
 
@@ -473,4 +441,154 @@ type ValidationError struct {
 
 func (e *ValidationError) Error() string {
 	return fmt.Sprintf("spec validation failed:\n  - %s", strings.Join(e.Errors, "\n  - "))
+}
+
+// PromptTemplate is the minimal template for Ralph execution.
+// It uses {{handlebars}} style syntax.
+const PromptTemplate = `## TASK
+
+{{.Task}}
+{{if .Reference}}
+
+## REFERENCE
+
+The following spec feature defines the correct behavior:
+
+{{.Reference}}
+{{end}}
+
+## CONSTRAINTS
+
+{{range .Constraints}}- {{.}}
+{{end}}
+{{if .PreviousFailures}}
+## PREVIOUS FAILURES
+
+The previous attempt failed with the following output:
+
+{{.PreviousFailures}}
+
+Please address these failures in your implementation.
+{{end}}
+---
+
+When complete, commit your changes and output: <COMPLETE>`
+
+// PromptData holds the data for rendering the prompt template.
+type PromptData struct {
+	Task             string
+	Reference        string // Optional: for bugfix items, the referenced spec feature content
+	Constraints      []string
+	PreviousFailures string
+}
+
+// BuildPrompt creates a prompt for a feature, optionally including previous failures.
+// For first iteration, pass nil for failures.
+// For retry iterations, pass the extracted failure output.
+func BuildPrompt(feature domain.Feature, failures []string) string {
+	return BuildPromptWithConstraints(feature, DefaultConstraints, failures, nil)
+}
+
+// BuildPromptWithConstraints creates a prompt with custom constraints.
+// For bugfix items, refFeature contains the spec feature that defines correct behavior.
+func BuildPromptWithConstraints(feature domain.Feature, constraints []string, failures []string, refFeature *domain.Feature) string {
+	task := buildTaskWithCriteria(feature)
+
+	data := PromptData{
+		Task:        task,
+		Constraints: constraints,
+	}
+
+	// For bugfix items, include the referenced feature content
+	if refFeature != nil {
+		data.Reference = buildReferenceSection(refFeature)
+	}
+
+	if len(failures) > 0 {
+		data.PreviousFailures = strings.Join(failures, "\n\n")
+	}
+
+	return renderTemplate(data)
+}
+
+// buildReferenceSection formats a spec feature for the REFERENCE section.
+func buildReferenceSection(feature *domain.Feature) string {
+	var sb strings.Builder
+
+	sb.WriteString(feature.Description)
+	sb.WriteString("\n\n")
+
+	sb.WriteString("Acceptance criteria:\n")
+	for _, criterion := range feature.AcceptanceCriteria {
+		sb.WriteString("- ")
+		sb.WriteString(criterion)
+		sb.WriteString("\n")
+	}
+
+	return strings.TrimSpace(sb.String())
+}
+
+// RebuildPromptWithFailures updates a work item's prompt to include failure output.
+// Note: This rebuilds without the reference feature. For bugfix items that need
+// the reference feature on retry, caller should use BuildPromptWithConstraints directly.
+func RebuildPromptWithFailures(workItem *domain.WorkItem, feature domain.Feature, failures []string) {
+	workItem.Prompt = BuildPromptWithConstraints(feature, workItem.Constraints, failures, nil)
+}
+
+// buildTaskWithCriteria merges feature description with acceptance criteria
+// into a single TASK block.
+func buildTaskWithCriteria(feature domain.Feature) string {
+	var sb strings.Builder
+
+	// Feature description becomes the task headline
+	sb.WriteString(feature.Description)
+	sb.WriteString("\n\n")
+
+	// Acceptance criteria are listed as bullet points
+	sb.WriteString("Acceptance criteria:\n")
+	for _, criterion := range feature.AcceptanceCriteria {
+		sb.WriteString("- ")
+		sb.WriteString(criterion)
+		sb.WriteString("\n")
+	}
+
+	return strings.TrimSpace(sb.String())
+}
+
+// renderTemplate executes the prompt template with the given data.
+func renderTemplate(data PromptData) string {
+	// Escape any template syntax in user content
+	data.Task = escapeTemplateContent(data.Task)
+	data.Reference = escapeTemplateContent(data.Reference)
+	data.PreviousFailures = escapeTemplateContent(data.PreviousFailures)
+
+	tmpl, err := template.New("prompt").Parse(PromptTemplate)
+	if err != nil {
+		// This should never happen with a valid template
+		panic("invalid prompt template: " + err.Error())
+	}
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		// This should never happen with valid data
+		panic("failed to execute template: " + err.Error())
+	}
+
+	return buf.String()
+}
+
+// escapeTemplateContent escapes Go template syntax in user-provided content.
+// This prevents user content from being interpreted as template directives.
+func escapeTemplateContent(s string) string {
+	if s == "" {
+		return s
+	}
+	// Escape {{ and }} to prevent template injection
+	re := regexp.MustCompile(`\{\{|\}\}`)
+	return re.ReplaceAllStringFunc(s, func(match string) string {
+		if match == "{{" {
+			return "{ {"
+		}
+		return "} }"
+	})
 }

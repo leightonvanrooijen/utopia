@@ -1,4 +1,4 @@
-package sequential
+package ralph
 
 import (
 	"strings"
@@ -8,29 +8,6 @@ import (
 	"github.com/leightonvanrooijen/utopia/internal/testutil"
 )
 
-func TestStrategy_Name(t *testing.T) {
-	s := New()
-
-	if got := s.Name(); got != "sequential" {
-		t.Errorf("Name() = %q, want %q", got, "sequential")
-	}
-}
-
-func TestStrategy_Description(t *testing.T) {
-	s := New()
-
-	desc := s.Description()
-	if desc == "" {
-		t.Error("Description() returned empty string")
-	}
-
-	// Should mention key characteristics
-	if !strings.Contains(strings.ToLower(desc), "sequential") &&
-		!strings.Contains(strings.ToLower(desc), "order") {
-		t.Error("Description should mention sequential execution")
-	}
-}
-
 func TestCompletionToken(t *testing.T) {
 	// Verify the completion token constant
 	if CompletionToken != "<COMPLETE>" {
@@ -38,12 +15,10 @@ func TestCompletionToken(t *testing.T) {
 	}
 }
 
-func TestStrategy_BuildPrompt_NoFailures(t *testing.T) {
-	s := &Strategy{}
-
+func TestBuildPrompt_NoFailures(t *testing.T) {
 	item := testutil.NewTestWorkItem("test-item", "## TASK\n\nImplement feature X\n\n## CONSTRAINTS\n\n- Keep it simple\n\n---\n\nWhen complete, output: <COMPLETE>")
 
-	prompt := s.buildPrompt(item)
+	prompt := buildPrompt(item)
 
 	// Should return the original prompt unchanged
 	if prompt != item.Prompt {
@@ -56,13 +31,11 @@ func TestStrategy_BuildPrompt_NoFailures(t *testing.T) {
 	}
 }
 
-func TestStrategy_BuildPrompt_WithFailures(t *testing.T) {
-	s := &Strategy{}
-
+func TestBuildPrompt_WithFailures(t *testing.T) {
 	item := testutil.NewTestWorkItem("test-item", "## TASK\n\nImplement feature X\n\n## CONSTRAINTS\n\n- Keep it simple\n\n---\n\nWhen complete, output: <COMPLETE>")
 	item.LastFailureOutput = "Error: test failed\nExpected 1 but got 2"
 
-	prompt := s.buildPrompt(item)
+	prompt := buildPrompt(item)
 
 	// Should contain original prompt
 	if !strings.Contains(prompt, "## TASK") {
@@ -89,13 +62,11 @@ func TestStrategy_BuildPrompt_WithFailures(t *testing.T) {
 	}
 }
 
-func TestStrategy_BuildPrompt_EmptyFailureOutput(t *testing.T) {
-	s := &Strategy{}
-
+func TestBuildPrompt_EmptyFailureOutput(t *testing.T) {
 	item := testutil.NewTestWorkItem("test-item", "Original prompt")
 	// LastFailureOutput defaults to empty string
 
-	prompt := s.buildPrompt(item)
+	prompt := buildPrompt(item)
 
 	// Should not add PREVIOUS FAILURES for empty failure output
 	if strings.Contains(prompt, "PREVIOUS FAILURES") {
@@ -103,9 +74,7 @@ func TestStrategy_BuildPrompt_EmptyFailureOutput(t *testing.T) {
 	}
 }
 
-func TestStrategy_BuildPrompt_PreservesOriginalPrompt(t *testing.T) {
-	s := &Strategy{}
-
+func TestBuildPrompt_PreservesOriginalPrompt(t *testing.T) {
 	originalPrompt := `## TASK
 
 Build a REST API endpoint
@@ -126,7 +95,7 @@ When complete, commit your changes and output: <COMPLETE>`
 	item := testutil.NewTestWorkItem("api-endpoint", originalPrompt)
 	item.LastFailureOutput = "404 Not Found"
 
-	prompt := s.buildPrompt(item)
+	prompt := buildPrompt(item)
 
 	// Original content should be preserved
 	if !strings.HasPrefix(prompt, originalPrompt) {
@@ -139,13 +108,11 @@ When complete, commit your changes and output: <COMPLETE>`
 	}
 }
 
-func TestStrategy_BuildPrompt_FailureInCodeBlock(t *testing.T) {
-	s := &Strategy{}
-
+func TestBuildPrompt_FailureInCodeBlock(t *testing.T) {
 	item := testutil.NewTestWorkItem("test-item", "Original prompt")
 	item.LastFailureOutput = "some failure output"
 
-	prompt := s.buildPrompt(item)
+	prompt := buildPrompt(item)
 
 	// Failure should be wrapped in code block for readability
 	if !strings.Contains(prompt, "```") {
@@ -359,5 +326,30 @@ func TestExtractCRID(t *testing.T) {
 				t.Errorf("extractCRID(%q) = %q, want %q", tt.specID, got, tt.expected)
 			}
 		})
+	}
+}
+
+func TestResult_Fields(t *testing.T) {
+	result := &Result{
+		Completed: 5,
+		Total:     10,
+		StoppedAt: "work-item-6",
+		Reason:    "max iterations reached",
+	}
+
+	if result.Completed != 5 {
+		t.Errorf("Completed = %d, want %d", result.Completed, 5)
+	}
+
+	if result.Total != 10 {
+		t.Errorf("Total = %d, want %d", result.Total, 10)
+	}
+
+	if result.StoppedAt != "work-item-6" {
+		t.Errorf("StoppedAt = %q, want %q", result.StoppedAt, "work-item-6")
+	}
+
+	if result.Reason != "max iterations reached" {
+		t.Errorf("Reason = %q, want %q", result.Reason, "max iterations reached")
 	}
 }

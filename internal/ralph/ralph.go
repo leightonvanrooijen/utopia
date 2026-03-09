@@ -1,4 +1,4 @@
-package sequential
+package ralph
 
 import (
 	"bytes"
@@ -12,51 +12,28 @@ import (
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 	"github.com/leightonvanrooijen/utopia/internal/infra/claude"
 	"github.com/leightonvanrooijen/utopia/internal/infra/storage"
-	"github.com/leightonvanrooijen/utopia/internal/strategies/execute"
 	"github.com/leightonvanrooijen/utopia/internal/verification"
 )
 
 // CompletionToken is the marker that indicates Claude has finished the task.
 const CompletionToken = "<COMPLETE>"
 
-// Strategy implements sequential work item execution.
-// It processes work items one at a time, in order, retrying until
-// verification passes or max iterations is reached.
-type Strategy struct {
-	claudeCLI *claude.CLI
-	verifier  *verification.Runner
-}
-
-// New creates a new sequential execution strategy without pre-configured dependencies.
-// Dependencies will be created during Execute with appropriate defaults.
-// For better testability with mock dependencies, use NewWithDeps().
-func New() *Strategy {
-	return &Strategy{}
-}
-
-// NewWithDeps creates a new sequential execution strategy with injected dependencies.
-// The claudeCLI and verifier are used for Claude invocation and verification command
-// execution respectively. If nil, defaults will be created during Execute.
-// This constructor enables testing with mock dependencies.
-func NewWithDeps(claudeCLI *claude.CLI, verifier *verification.Runner) *Strategy {
-	return &Strategy{
-		claudeCLI: claudeCLI,
-		verifier:  verifier,
-	}
-}
-
-// Name returns the strategy identifier.
-func (s *Strategy) Name() string {
-	return "sequential"
-}
-
-// Description returns a human-readable description for CLI help.
-func (s *Strategy) Description() string {
-	return "Execute work items one at a time, in order, with retry on failure"
+// Result represents the outcome of executing work items.
+type Result struct {
+	// Completed is the count of successfully completed work items
+	Completed int
+	// Total is the total number of work items attempted
+	Total int
+	// StoppedAt is the ID of the work item where execution stopped (if not all completed)
+	StoppedAt string
+	// Reason explains why execution stopped (if not all completed)
+	Reason string
 }
 
 // Execute runs all work items for a spec sequentially.
-func (s *Strategy) Execute(ctx context.Context, specID string, store *storage.YAMLStore, config *domain.Config, projectDir string) (*execute.Result, error) {
+// Work items are processed one at a time, in order, retrying until
+// verification passes or max iterations is reached.
+func Execute(ctx context.Context, specID string, store *storage.YAMLStore, config *domain.Config, projectDir string) (*Result, error) {
 	// Load work items for this spec
 	items, err := store.ListWorkItemsForSpec(specID)
 	if err != nil {
@@ -64,7 +41,7 @@ func (s *Strategy) Execute(ctx context.Context, specID string, store *storage.YA
 	}
 
 	if len(items) == 0 {
-		return &execute.Result{
+		return &Result{
 			Completed: 0,
 			Total:     0,
 			Reason:    "no work items found",
@@ -76,19 +53,13 @@ func (s *Strategy) Execute(ctx context.Context, specID string, store *storage.YA
 		return items[i].Order < items[j].Order
 	})
 
-	result := &execute.Result{
+	result := &Result{
 		Total: len(items),
 	}
 
-	// Use injected dependencies or create defaults
-	cli := s.claudeCLI
-	if cli == nil {
-		cli = claude.NewCLI().WithVerbose(true)
-	}
-	verifier := s.verifier
-	if verifier == nil {
-		verifier = verification.NewRunner(projectDir)
-	}
+	// Create dependencies
+	cli := claude.NewCLI().WithVerbose(true)
+	verifier := verification.NewRunner(projectDir)
 
 	// Execute each work item in order
 	for i, item := range items {
@@ -102,7 +73,7 @@ func (s *Strategy) Execute(ctx context.Context, specID string, store *storage.YA
 		fmt.Printf("[%d/%d] %s - starting execution\n", i+1, len(items), item.ID)
 
 		// Execute this work item with the Ralph loop
-		err := s.executeWorkItem(ctx, item, specID, store, cli, verifier, config, projectDir)
+		err := executeWorkItem(ctx, item, specID, store, cli, verifier, config, projectDir)
 		if err != nil {
 			result.StoppedAt = item.ID
 			result.Reason = err.Error()
@@ -117,7 +88,7 @@ func (s *Strategy) Execute(ctx context.Context, specID string, store *storage.YA
 }
 
 // executeWorkItem runs the Ralph loop for a single work item until completion.
-func (s *Strategy) executeWorkItem(
+func executeWorkItem(
 	ctx context.Context,
 	item *domain.WorkItem,
 	specID string,
@@ -166,7 +137,7 @@ func (s *Strategy) executeWorkItem(
 		}
 
 		// Build the prompt (includes failure injection if applicable)
-		prompt := s.buildPrompt(item)
+		prompt := buildPrompt(item)
 
 		fmt.Printf("  Iteration %d: invoking Claude...\n", item.IterationCount)
 
@@ -227,7 +198,7 @@ func (s *Strategy) executeWorkItem(
 }
 
 // buildPrompt constructs the prompt for Claude, including failure injection.
-func (s *Strategy) buildPrompt(item *domain.WorkItem) string {
+func buildPrompt(item *domain.WorkItem) string {
 	// Start with the base prompt from the work item
 	prompt := item.Prompt
 
@@ -295,7 +266,7 @@ func logExecutionEntry(store *storage.YAMLStore, crID string, item *domain.WorkI
 		CompletedAt: time.Now(),
 	}
 	if err := store.AppendExecutionLogEntry(crID, entry); err != nil {
-		fmt.Printf("  ⚠ failed to log execution entry: %v\n", err)
+		fmt.Printf("  warning: failed to log execution entry: %v\n", err)
 	}
 }
 
@@ -313,7 +284,7 @@ func gitCommitWorkItem(projectDir string, item *domain.WorkItem, crTitle string)
 	var addStderr bytes.Buffer
 	addCmd.Stderr = &addStderr
 	if err := addCmd.Run(); err != nil {
-		fmt.Printf("  ⚠ git add failed: %v (%s)\n", err, strings.TrimSpace(addStderr.String()))
+		fmt.Printf("  warning: git add failed: %v (%s)\n", err, strings.TrimSpace(addStderr.String()))
 		return
 	}
 
@@ -331,9 +302,9 @@ func gitCommitWorkItem(projectDir string, item *domain.WorkItem, crTitle string)
 	var commitStderr bytes.Buffer
 	commitCmd.Stderr = &commitStderr
 	if err := commitCmd.Run(); err != nil {
-		fmt.Printf("  ⚠ git commit failed: %v (%s)\n", err, strings.TrimSpace(commitStderr.String()))
+		fmt.Printf("  warning: git commit failed: %v (%s)\n", err, strings.TrimSpace(commitStderr.String()))
 		return
 	}
 
-	fmt.Printf("  ✓ Created commit for %s\n", item.ID)
+	fmt.Printf("  Created commit for %s\n", item.ID)
 }
