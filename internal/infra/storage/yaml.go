@@ -11,20 +11,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Compile-time interface assertions.
-// These ensure YAMLStore implements all repository interfaces from the domain package.
-var (
-	_ domain.SpecRepository                 = (*YAMLStore)(nil)
-	_ domain.ChangeRequestRepository        = (*YAMLStore)(nil)
-	_ domain.WorkItemRepository             = (*YAMLStore)(nil)
-	_ domain.ConversationRepository         = (*YAMLStore)(nil)
-	_ domain.ConfigRepository               = (*YAMLStore)(nil)
-	_ domain.DraftRepository                = (*YAMLStore)(nil)
-	_ domain.DiscoveryStateRepository       = (*YAMLStore)(nil)
-	_ domain.DraftDomainDocRepository       = (*YAMLStore)(nil)
-	_ domain.DomainDiscoveryStateRepository = (*YAMLStore)(nil)
-)
-
 // YAMLStore handles reading and writing YAML files
 type YAMLStore struct {
 	baseDir string
@@ -35,7 +21,85 @@ func NewYAMLStore(baseDir string) *YAMLStore {
 	return &YAMLStore{baseDir: baseDir}
 }
 
+// Storable is implemented by types that can be persisted to the store.
+// Types must have an ID field that determines the filename.
+type Storable interface {
+	GetID() string
+}
+
+// Load reads a YAML file and unmarshals it into T.
+// The path should be relative to the store's base directory (e.g., "specs/my-spec.yaml").
+func Load[T any](s *YAMLStore, path string) (*T, error) {
+	fullPath := filepath.Join(s.baseDir, path)
+
+	var dest T
+	if err := s.readYAML(fullPath, &dest); err != nil {
+		return nil, err
+	}
+
+	return &dest, nil
+}
+
+// Save marshals data to YAML and writes it to the specified path.
+// Creates parent directories if they don't exist.
+// The path should be relative to the store's base directory.
+func Save[T any](s *YAMLStore, path string, data *T) error {
+	fullPath := filepath.Join(s.baseDir, path)
+	dir := filepath.Dir(fullPath)
+
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory %s: %w", dir, err)
+	}
+
+	return s.writeYAML(fullPath, data)
+}
+
+// List reads all YAML files in a directory and returns them as a slice.
+// Skips directories and non-YAML files.
+// The dir should be relative to the store's base directory.
+func List[T any](s *YAMLStore, dir string) ([]*T, error) {
+	fullDir := filepath.Join(s.baseDir, dir)
+
+	entries, err := os.ReadDir(fullDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []*T{}, nil
+		}
+		return nil, fmt.Errorf("failed to read directory %s: %w", dir, err)
+	}
+
+	var items []*T
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
+			continue
+		}
+
+		path := filepath.Join(dir, entry.Name())
+		item, err := Load[T](s, path)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load %s: %w", entry.Name(), err)
+		}
+		items = append(items, item)
+	}
+
+	return items, nil
+}
+
+// Delete removes a file at the specified path.
+// The path should be relative to the store's base directory.
+func Delete(s *YAMLStore, path string, resourceType, id string) error {
+	fullPath := filepath.Join(s.baseDir, path)
+	if err := os.Remove(fullPath); err != nil {
+		if os.IsNotExist(err) {
+			return &domain.NotFoundError{Resource: resourceType, ID: id}
+		}
+		return fmt.Errorf("failed to delete %s %s: %w", resourceType, id, err)
+	}
+	return nil
+}
+
 // SaveSpec writes a spec to .utopia/specs/{id}.yaml
+// Uses custom marshaling to preserve feature spacing and block style.
 func (s *YAMLStore) SaveSpec(spec *domain.Spec) error {
 	dir := filepath.Join(s.baseDir, "specs")
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -66,130 +130,42 @@ func (s *YAMLStore) writeSpecYAML(path string, spec *domain.Spec) error {
 
 // LoadSpec reads a spec from .utopia/specs/{id}.yaml
 func (s *YAMLStore) LoadSpec(id string) (*domain.Spec, error) {
-	path := filepath.Join(s.baseDir, "specs", id+".yaml")
-
-	var spec domain.Spec
-	if err := s.readYAML(path, &spec); err != nil {
-		return nil, err
-	}
-
-	return &spec, nil
+	return Load[domain.Spec](s, filepath.Join("specs", id+".yaml"))
 }
 
 // DeleteSpec removes a spec file from .utopia/specs/{id}.yaml
 func (s *YAMLStore) DeleteSpec(id string) error {
-	path := filepath.Join(s.baseDir, "specs", id+".yaml")
-	if err := os.Remove(path); err != nil {
-		if os.IsNotExist(err) {
-			return &domain.NotFoundError{Resource: "spec", ID: id}
-		}
-		return fmt.Errorf("failed to delete spec %s: %w", id, err)
-	}
-	return nil
+	return Delete(s, filepath.Join("specs", id+".yaml"), "spec", id)
 }
 
 // ListSpecs returns all specs in the specs directory
 func (s *YAMLStore) ListSpecs() ([]*domain.Spec, error) {
-	dir := filepath.Join(s.baseDir, "specs")
-
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return []*domain.Spec{}, nil
-		}
-		return nil, fmt.Errorf("failed to read specs directory: %w", err)
-	}
-
-	var specs []*domain.Spec
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
-			continue
-		}
-
-		id := strings.TrimSuffix(entry.Name(), ".yaml")
-		spec, err := s.LoadSpec(id)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load spec %s: %w", id, err)
-		}
-		specs = append(specs, spec)
-	}
-
-	return specs, nil
+	return List[domain.Spec](s, "specs")
 }
 
 // SaveWorkItem writes a work item to .utopia/work-items/{id}.yaml
 func (s *YAMLStore) SaveWorkItem(item *domain.WorkItem) error {
-	dir := filepath.Join(s.baseDir, "work-items")
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create work-items directory: %w", err)
-	}
-
-	path := filepath.Join(dir, item.ID+".yaml")
-	return s.writeYAML(path, item)
+	return Save(s, filepath.Join("work-items", item.ID+".yaml"), item)
 }
 
 // SaveWorkItemForSpec writes a work item to .utopia/work-items/{specID}/{id}.yaml
 func (s *YAMLStore) SaveWorkItemForSpec(specID string, item *domain.WorkItem) error {
-	dir := filepath.Join(s.baseDir, "work-items", specID)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create work-items directory for spec %s: %w", specID, err)
-	}
-
-	path := filepath.Join(dir, item.ID+".yaml")
-	return s.writeYAML(path, item)
+	return Save(s, filepath.Join("work-items", specID, item.ID+".yaml"), item)
 }
 
 // ListWorkItemsForSpec returns all work items for a specific spec
 func (s *YAMLStore) ListWorkItemsForSpec(specID string) ([]*domain.WorkItem, error) {
-	dir := filepath.Join(s.baseDir, "work-items", specID)
-
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return []*domain.WorkItem{}, nil
-		}
-		return nil, fmt.Errorf("failed to read work-items directory for spec %s: %w", specID, err)
-	}
-
-	var items []*domain.WorkItem
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
-			continue
-		}
-
-		id := strings.TrimSuffix(entry.Name(), ".yaml")
-		item, err := s.LoadWorkItemForSpec(specID, id)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load work item %s: %w", id, err)
-		}
-		items = append(items, item)
-	}
-
-	return items, nil
+	return List[domain.WorkItem](s, filepath.Join("work-items", specID))
 }
 
 // LoadWorkItemForSpec reads a work item from .utopia/work-items/{specID}/{id}.yaml
 func (s *YAMLStore) LoadWorkItemForSpec(specID, id string) (*domain.WorkItem, error) {
-	path := filepath.Join(s.baseDir, "work-items", specID, id+".yaml")
-
-	var item domain.WorkItem
-	if err := s.readYAML(path, &item); err != nil {
-		return nil, err
-	}
-
-	return &item, nil
+	return Load[domain.WorkItem](s, filepath.Join("work-items", specID, id+".yaml"))
 }
 
 // LoadWorkItem reads a work item from .utopia/work-items/{id}.yaml
 func (s *YAMLStore) LoadWorkItem(id string) (*domain.WorkItem, error) {
-	path := filepath.Join(s.baseDir, "work-items", id+".yaml")
-
-	var item domain.WorkItem
-	if err := s.readYAML(path, &item); err != nil {
-		return nil, err
-	}
-
-	return &item, nil
+	return Load[domain.WorkItem](s, filepath.Join("work-items", id+".yaml"))
 }
 
 // ListWorkItems returns all work items from both flat and nested structures.
@@ -235,55 +211,31 @@ func (s *YAMLStore) ListWorkItems() ([]*domain.WorkItem, error) {
 
 // SaveConfig writes the project configuration
 func (s *YAMLStore) SaveConfig(config *domain.Config) error {
-	path := filepath.Join(s.baseDir, "config.yaml")
-	return s.writeYAML(path, config)
+	return Save(s, "config.yaml", config)
 }
 
 // LoadConfig reads the project configuration
 func (s *YAMLStore) LoadConfig() (*domain.Config, error) {
-	path := filepath.Join(s.baseDir, "config.yaml")
-
-	var config domain.Config
-	if err := s.readYAML(path, &config); err != nil {
-		return nil, err
-	}
-
-	return &config, nil
+	return Load[domain.Config](s, "config.yaml")
 }
 
 // SaveChangeRequest writes a change request to .utopia/change-requests/{id}.yaml
 func (s *YAMLStore) SaveChangeRequest(cr *domain.ChangeRequest) error {
-	dir := filepath.Join(s.baseDir, "change-requests")
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create change requests directory: %w", err)
-	}
-
-	path := filepath.Join(dir, cr.ID+".yaml")
-	return s.writeYAML(path, cr)
+	return Save(s, filepath.Join("change-requests", cr.ID+".yaml"), cr)
 }
 
 // LoadChangeRequest reads a change request from .utopia/change-requests/{id}.yaml
 func (s *YAMLStore) LoadChangeRequest(id string) (*domain.ChangeRequest, error) {
-	path := filepath.Join(s.baseDir, "change-requests", id+".yaml")
-
-	var cr domain.ChangeRequest
-	if err := s.readYAML(path, &cr); err != nil {
-		return nil, err
-	}
-
-	return &cr, nil
+	return Load[domain.ChangeRequest](s, filepath.Join("change-requests", id+".yaml"))
 }
 
 // DeleteChangeRequest removes a change request file from .utopia/change-requests/{id}.yaml
 func (s *YAMLStore) DeleteChangeRequest(id string) error {
-	path := filepath.Join(s.baseDir, "change-requests", id+".yaml")
-	if err := os.Remove(path); err != nil {
-		return fmt.Errorf("failed to delete change request %s: %w", id, err)
-	}
-	return nil
+	return Delete(s, filepath.Join("change-requests", id+".yaml"), "change request", id)
 }
 
-// ListChangeRequests returns all change requests in the change-requests directory
+// ListChangeRequests returns all change requests in the change-requests directory.
+// Skips _template.yaml if present.
 func (s *YAMLStore) ListChangeRequests() ([]*domain.ChangeRequest, error) {
 	dir := filepath.Join(s.baseDir, "change-requests")
 
@@ -468,54 +420,17 @@ func (s *YAMLStore) readYAML(path string, dest interface{}) error {
 
 // SaveConversation writes a conversation to .utopia/conversations/{id}.yaml
 func (s *YAMLStore) SaveConversation(conv *domain.Conversation) error {
-	dir := filepath.Join(s.baseDir, "conversations")
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create conversations directory: %w", err)
-	}
-
-	path := filepath.Join(dir, conv.ID+".yaml")
-	return s.writeYAML(path, conv)
+	return Save(s, filepath.Join("conversations", conv.ID+".yaml"), conv)
 }
 
 // LoadConversation reads a conversation from .utopia/conversations/{id}.yaml
 func (s *YAMLStore) LoadConversation(id string) (*domain.Conversation, error) {
-	path := filepath.Join(s.baseDir, "conversations", id+".yaml")
-
-	var conv domain.Conversation
-	if err := s.readYAML(path, &conv); err != nil {
-		return nil, err
-	}
-
-	return &conv, nil
+	return Load[domain.Conversation](s, filepath.Join("conversations", id+".yaml"))
 }
 
 // ListConversations returns all conversations in the conversations directory
 func (s *YAMLStore) ListConversations() ([]*domain.Conversation, error) {
-	dir := filepath.Join(s.baseDir, "conversations")
-
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return []*domain.Conversation{}, nil
-		}
-		return nil, fmt.Errorf("failed to read conversations directory: %w", err)
-	}
-
-	var convs []*domain.Conversation
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
-			continue
-		}
-
-		id := strings.TrimSuffix(entry.Name(), ".yaml")
-		conv, err := s.LoadConversation(id)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load conversation %s: %w", id, err)
-		}
-		convs = append(convs, conv)
-	}
-
-	return convs, nil
+	return List[domain.Conversation](s, "conversations")
 }
 
 // ListUnprocessedConversations returns conversations with status "unprocessed"
@@ -631,107 +546,32 @@ func (s *YAMLStore) SaveADR(adr *domain.ADR) error {
 	if err := adr.Validate(); err != nil {
 		return fmt.Errorf("ADR validation failed: %w", err)
 	}
-
-	dir := filepath.Join(s.baseDir, "adrs")
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create adrs directory: %w", err)
-	}
-
-	path := filepath.Join(dir, adr.ID+".yaml")
-	return s.writeYAML(path, adr)
+	return Save(s, filepath.Join("adrs", adr.ID+".yaml"), adr)
 }
 
 // LoadADR reads an ADR from .utopia/adrs/{id}.yaml
 func (s *YAMLStore) LoadADR(id string) (*domain.ADR, error) {
-	path := filepath.Join(s.baseDir, "adrs", id+".yaml")
-
-	var adr domain.ADR
-	if err := s.readYAML(path, &adr); err != nil {
-		return nil, err
-	}
-
-	return &adr, nil
+	return Load[domain.ADR](s, filepath.Join("adrs", id+".yaml"))
 }
 
 // ListADRs returns all ADRs in the adrs directory
 func (s *YAMLStore) ListADRs() ([]*domain.ADR, error) {
-	dir := filepath.Join(s.baseDir, "adrs")
-
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return []*domain.ADR{}, nil
-		}
-		return nil, fmt.Errorf("failed to read adrs directory: %w", err)
-	}
-
-	var adrs []*domain.ADR
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
-			continue
-		}
-
-		id := strings.TrimSuffix(entry.Name(), ".yaml")
-		adr, err := s.LoadADR(id)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load ADR %s: %w", id, err)
-		}
-		adrs = append(adrs, adr)
-	}
-
-	return adrs, nil
+	return List[domain.ADR](s, "adrs")
 }
 
 // SaveDomainDoc writes a domain doc to .utopia/domain/{id}.yaml
 func (s *YAMLStore) SaveDomainDoc(doc *domain.DomainDoc) error {
-	dir := filepath.Join(s.baseDir, "domain")
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create domain directory: %w", err)
-	}
-
-	path := filepath.Join(dir, doc.ID+".yaml")
-	return s.writeYAML(path, doc)
+	return Save(s, filepath.Join("domain", doc.ID+".yaml"), doc)
 }
 
 // LoadDomainDoc reads a domain doc from .utopia/domain/{id}.yaml
 func (s *YAMLStore) LoadDomainDoc(id string) (*domain.DomainDoc, error) {
-	path := filepath.Join(s.baseDir, "domain", id+".yaml")
-
-	var doc domain.DomainDoc
-	if err := s.readYAML(path, &doc); err != nil {
-		return nil, err
-	}
-
-	return &doc, nil
+	return Load[domain.DomainDoc](s, filepath.Join("domain", id+".yaml"))
 }
 
 // ListDomainDocs returns all domain docs in the domain directory
 func (s *YAMLStore) ListDomainDocs() ([]*domain.DomainDoc, error) {
-	dir := filepath.Join(s.baseDir, "domain")
-
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return []*domain.DomainDoc{}, nil
-		}
-		return nil, fmt.Errorf("failed to read domain directory: %w", err)
-	}
-
-	var docs []*domain.DomainDoc
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
-			continue
-		}
-
-		id := strings.TrimSuffix(entry.Name(), ".yaml")
-		doc, err := s.LoadDomainDoc(id)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load domain doc %s: %w", id, err)
-		}
-		docs = append(docs, doc)
-	}
-
-	return docs, nil
+	return List[domain.DomainDoc](s, "domain")
 }
 
 // SaveConceptDoc writes a concept doc to .utopia/concepts/{id}.md
@@ -828,125 +668,51 @@ func (s *YAMLStore) ListConceptDocs() ([]*domain.ConceptDoc, error) {
 
 // SaveDraft writes a draft spec to .utopia/drafts/specs/{id}.yaml
 func (s *YAMLStore) SaveDraft(draft *domain.DraftSpec) error {
-	dir := filepath.Join(s.baseDir, "drafts", "specs")
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create drafts/specs directory: %w", err)
-	}
-
-	path := filepath.Join(dir, draft.ID+".yaml")
-	return s.writeYAML(path, draft)
+	return Save(s, filepath.Join("drafts", "specs", draft.ID+".yaml"), draft)
 }
 
 // LoadDraft reads a draft spec from .utopia/drafts/specs/{id}.yaml
 func (s *YAMLStore) LoadDraft(id string) (*domain.DraftSpec, error) {
-	path := filepath.Join(s.baseDir, "drafts", "specs", id+".yaml")
-
-	var draft domain.DraftSpec
-	if err := s.readYAML(path, &draft); err != nil {
-		if os.IsNotExist(err) {
-			return nil, &domain.NotFoundError{Resource: "draft", ID: id}
-		}
-		return nil, err
-	}
-
-	return &draft, nil
+	return Load[domain.DraftSpec](s, filepath.Join("drafts", "specs", id+".yaml"))
 }
 
 // ListDrafts returns all draft specs in the drafts/specs directory
 func (s *YAMLStore) ListDrafts() ([]*domain.DraftSpec, error) {
-	dir := filepath.Join(s.baseDir, "drafts", "specs")
-
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return []*domain.DraftSpec{}, nil
-		}
-		return nil, fmt.Errorf("failed to read drafts directory: %w", err)
-	}
-
-	var drafts []*domain.DraftSpec
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
-			continue
-		}
-
-		id := strings.TrimSuffix(entry.Name(), ".yaml")
-		draft, err := s.LoadDraft(id)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load draft %s: %w", id, err)
-		}
-		drafts = append(drafts, draft)
-	}
-
-	return drafts, nil
+	return List[domain.DraftSpec](s, filepath.Join("drafts", "specs"))
 }
 
 // DeleteDraft removes a draft spec file from .utopia/drafts/specs/{id}.yaml
 func (s *YAMLStore) DeleteDraft(id string) error {
-	path := filepath.Join(s.baseDir, "drafts", "specs", id+".yaml")
-	if err := os.Remove(path); err != nil {
-		if os.IsNotExist(err) {
-			return &domain.NotFoundError{Resource: "draft", ID: id}
-		}
-		return fmt.Errorf("failed to delete draft %s: %w", id, err)
-	}
-	return nil
+	return Delete(s, filepath.Join("drafts", "specs", id+".yaml"), "draft", id)
 }
 
 // LoadDiscoveryState reads discovery state from .utopia/drafts/specs/.discovery-state
+// Returns nil (no error) if no previous state exists.
 func (s *YAMLStore) LoadDiscoveryState() (*domain.DiscoveryState, error) {
-	path := filepath.Join(s.baseDir, "drafts", "specs", ".discovery-state")
-
-	var state domain.DiscoveryState
-	if err := s.readYAML(path, &state); err != nil {
-		// Check for not-found using errors.Is to handle wrapped errors
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil // No previous state exists
-		}
-		return nil, err
+	state, err := Load[domain.DiscoveryState](s, filepath.Join("drafts", "specs", ".discovery-state"))
+	if err != nil && errors.Is(err, os.ErrNotExist) {
+		return nil, nil // No previous state exists
 	}
-
-	return &state, nil
+	return state, err
 }
 
 // SaveDiscoveryState writes discovery state to .utopia/drafts/specs/.discovery-state
 func (s *YAMLStore) SaveDiscoveryState(state *domain.DiscoveryState) error {
-	dir := filepath.Join(s.baseDir, "drafts", "specs")
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create drafts/specs directory: %w", err)
-	}
-
-	path := filepath.Join(dir, ".discovery-state")
-	return s.writeYAML(path, state)
+	return Save(s, filepath.Join("drafts", "specs", ".discovery-state"), state)
 }
 
 // SaveDraftDomainDoc writes a draft domain doc to .utopia/drafts/domain/{id}.yaml
 func (s *YAMLStore) SaveDraftDomainDoc(draft *domain.DraftDomainDoc) error {
-	dir := filepath.Join(s.baseDir, "drafts", "domain")
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create drafts/domain directory: %w", err)
-	}
-
-	path := filepath.Join(dir, draft.ID+".yaml")
-	return s.writeYAML(path, draft)
+	return Save(s, filepath.Join("drafts", "domain", draft.ID+".yaml"), draft)
 }
 
 // LoadDraftDomainDoc reads a draft domain doc from .utopia/drafts/domain/{id}.yaml
 func (s *YAMLStore) LoadDraftDomainDoc(id string) (*domain.DraftDomainDoc, error) {
-	path := filepath.Join(s.baseDir, "drafts", "domain", id+".yaml")
-
-	var draft domain.DraftDomainDoc
-	if err := s.readYAML(path, &draft); err != nil {
-		if os.IsNotExist(err) {
-			return nil, &domain.NotFoundError{Resource: "draft domain doc", ID: id}
-		}
-		return nil, err
-	}
-
-	return &draft, nil
+	return Load[domain.DraftDomainDoc](s, filepath.Join("drafts", "domain", id+".yaml"))
 }
 
-// ListDraftDomainDocs returns all draft domain docs in the drafts/domain directory
+// ListDraftDomainDocs returns all draft domain docs in the drafts/domain directory.
+// Skips the .discovery-state file.
 func (s *YAMLStore) ListDraftDomainDocs() ([]*domain.DraftDomainDoc, error) {
 	dir := filepath.Join(s.baseDir, "drafts", "domain")
 
@@ -981,39 +747,20 @@ func (s *YAMLStore) ListDraftDomainDocs() ([]*domain.DraftDomainDoc, error) {
 
 // DeleteDraftDomainDoc removes a draft domain doc file from .utopia/drafts/domain/{id}.yaml
 func (s *YAMLStore) DeleteDraftDomainDoc(id string) error {
-	path := filepath.Join(s.baseDir, "drafts", "domain", id+".yaml")
-	if err := os.Remove(path); err != nil {
-		if os.IsNotExist(err) {
-			return &domain.NotFoundError{Resource: "draft domain doc", ID: id}
-		}
-		return fmt.Errorf("failed to delete draft domain doc %s: %w", id, err)
-	}
-	return nil
+	return Delete(s, filepath.Join("drafts", "domain", id+".yaml"), "draft domain doc", id)
 }
 
 // LoadDomainDiscoveryState reads domain discovery state from .utopia/drafts/domain/.discovery-state
+// Returns nil (no error) if no previous state exists.
 func (s *YAMLStore) LoadDomainDiscoveryState() (*domain.DomainDiscoveryState, error) {
-	path := filepath.Join(s.baseDir, "drafts", "domain", ".discovery-state")
-
-	var state domain.DomainDiscoveryState
-	if err := s.readYAML(path, &state); err != nil {
-		// Check for not-found using errors.Is to handle wrapped errors
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil // No previous state exists
-		}
-		return nil, err
+	state, err := Load[domain.DomainDiscoveryState](s, filepath.Join("drafts", "domain", ".discovery-state"))
+	if err != nil && errors.Is(err, os.ErrNotExist) {
+		return nil, nil // No previous state exists
 	}
-
-	return &state, nil
+	return state, err
 }
 
 // SaveDomainDiscoveryState writes domain discovery state to .utopia/drafts/domain/.discovery-state
 func (s *YAMLStore) SaveDomainDiscoveryState(state *domain.DomainDiscoveryState) error {
-	dir := filepath.Join(s.baseDir, "drafts", "domain")
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create drafts/domain directory: %w", err)
-	}
-
-	path := filepath.Join(dir, ".discovery-state")
-	return s.writeYAML(path, state)
+	return Save(s, filepath.Join("drafts", "domain", ".discovery-state"), state)
 }
