@@ -182,4 +182,3 @@ func TestGenericTermFilter_EmptyTerm(t *testing.T) {
 		t.Errorf("expected reason 'empty term', got %q", result.Reason)
 	}
 }
-
