@@ -70,6 +70,20 @@ func GetProjectDir(cmd *cobra.Command) string {
 	return dir
 }
 
+// ResolveProjectDir resolves the project directory to an absolute path.
+// Unlike ResolveProject, this does NOT check for .utopia existence,
+// making it suitable for 'init' which creates the .utopia directory.
+func ResolveProjectDir(cmd *cobra.Command) (string, error) {
+	projectDir := GetProjectDir(cmd)
+
+	absPath, err := filepath.Abs(projectDir)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve project path: %w", err)
+	}
+
+	return absPath, nil
+}
+
 // ResolveProject resolves the project path, checks for .utopia directory,
 // and returns the initialized store. This handles the common pattern used
 // by most CLI commands that require an initialized Utopia project.

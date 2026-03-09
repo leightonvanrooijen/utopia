@@ -36,15 +36,12 @@ func init() {
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
-	projectDir := GetProjectDir(cmd)
-
-	// Resolve to absolute path
-	absPath, err := filepath.Abs(projectDir)
+	projectDir, err := ResolveProjectDir(cmd)
 	if err != nil {
-		return fmt.Errorf("failed to resolve project path: %w", err)
+		return err
 	}
 
-	utopiaDir := filepath.Join(absPath, ".utopia")
+	utopiaDir := filepath.Join(projectDir, ".utopia")
 	store := internal.NewYAMLStore(utopiaDir)
 
 	// Check if config already exists
