@@ -3,7 +3,9 @@ package cli
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
+	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/spf13/cobra"
 )
 
@@ -66,4 +68,27 @@ Built:   ` + BuildDate + `
 func GetProjectDir(cmd *cobra.Command) string {
 	dir, _ := cmd.Flags().GetString("project")
 	return dir
+}
+
+// ResolveProject resolves the project path, checks for .utopia directory,
+// and returns the initialized store. This handles the common pattern used
+// by most CLI commands that require an initialized Utopia project.
+func ResolveProject(cmd *cobra.Command) (projectDir, utopiaDir string, store *internal.YAMLStore, err error) {
+	projectDir = GetProjectDir(cmd)
+
+	projectDir, err = filepath.Abs(projectDir)
+	if err != nil {
+		return "", "", nil, fmt.Errorf("failed to resolve project path: %w", err)
+	}
+
+	utopiaDir = filepath.Join(projectDir, ".utopia")
+
+	// Check if initialized
+	if _, err := os.Stat(utopiaDir); os.IsNotExist(err) {
+		return "", "", nil, fmt.Errorf("not a Utopia project (run 'utopia init' first)")
+	}
+
+	store = internal.NewYAMLStore(utopiaDir)
+
+	return projectDir, utopiaDir, store, nil
 }
