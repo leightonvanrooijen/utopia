@@ -506,20 +506,6 @@ func (s *YAMLStore) AppendExecutionLogEntry(crID string, entry domain.ExecutionL
 	return nil
 }
 
-// SaveADR writes an ADR to .utopia/adrs/{id}.yaml
-// Returns an error if the ADR fails validation (e.g., invalid category).
-func (s *YAMLStore) SaveADR(adr *domain.ADR) error {
-	if err := adr.Validate(); err != nil {
-		return fmt.Errorf("ADR validation failed: %w", err)
-	}
-	return Save(s, filepath.Join("adrs", adr.ID+".yaml"), adr)
-}
-
-// LoadADR reads an ADR from .utopia/adrs/{id}.yaml
-func (s *YAMLStore) LoadADR(id string) (*domain.ADR, error) {
-	return Load[domain.ADR](s, filepath.Join("adrs", id+".yaml"))
-}
-
 // ListADRs returns all ADRs in the adrs directory
 func (s *YAMLStore) ListADRs() ([]*domain.ADR, error) {
 	return List[domain.ADR](s, "adrs")
