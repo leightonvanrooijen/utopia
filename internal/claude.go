@@ -45,18 +45,6 @@ func NewCLI() *CLI {
 	}
 }
 
-// WithBinaryPath sets a custom path to the claude binary
-func (c *CLI) WithBinaryPath(path string) *CLI {
-	c.binaryPath = path
-	return c
-}
-
-// WithPermissionMode sets the permission mode
-func (c *CLI) WithPermissionMode(mode PermissionMode) *CLI {
-	c.permissionMode = mode
-	return c
-}
-
 // WithAllowedTools sets a whitelist of allowed tools
 func (c *CLI) WithAllowedTools(tools []string) *CLI {
 	c.allowedTools = tools

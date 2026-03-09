@@ -26,35 +26,6 @@ func TestNewCLI(t *testing.T) {
 	}
 }
 
-func TestCLI_WithBinaryPath(t *testing.T) {
-	cli := NewCLI().WithBinaryPath("/custom/path/claude")
-
-	if cli.binaryPath != "/custom/path/claude" {
-		t.Errorf("binaryPath = %q, want %q", cli.binaryPath, "/custom/path/claude")
-	}
-}
-
-func TestCLI_WithPermissionMode(t *testing.T) {
-	tests := []struct {
-		mode PermissionMode
-	}{
-		{PermissionDefault},
-		{PermissionBypass},
-		{PermissionAcceptEdits},
-		{PermissionDontAsk},
-	}
-
-	for _, tt := range tests {
-		t.Run(string(tt.mode), func(t *testing.T) {
-			cli := NewCLI().WithPermissionMode(tt.mode)
-
-			if cli.permissionMode != tt.mode {
-				t.Errorf("permissionMode = %q, want %q", cli.permissionMode, tt.mode)
-			}
-		})
-	}
-}
-
 func TestCLI_WithAllowedTools(t *testing.T) {
 	tools := []string{"Read", "Write", "Bash"}
 	cli := NewCLI().WithAllowedTools(tools)
@@ -86,18 +57,8 @@ func TestCLI_WithVerbose(t *testing.T) {
 
 func TestCLI_Chaining(t *testing.T) {
 	cli := NewCLI().
-		WithBinaryPath("/usr/bin/claude").
-		WithPermissionMode(PermissionDontAsk).
 		WithAllowedTools([]string{"Read"}).
 		WithVerbose(true)
-
-	if cli.binaryPath != "/usr/bin/claude" {
-		t.Errorf("binaryPath = %q, want %q", cli.binaryPath, "/usr/bin/claude")
-	}
-
-	if cli.permissionMode != PermissionDontAsk {
-		t.Errorf("permissionMode = %q, want %q", cli.permissionMode, PermissionDontAsk)
-	}
 
 	if len(cli.allowedTools) != 1 || cli.allowedTools[0] != "Read" {
 		t.Error("allowedTools not set correctly")
@@ -127,7 +88,8 @@ func TestCLI_baseArgs_Default(t *testing.T) {
 }
 
 func TestCLI_baseArgs_PermissionDefault(t *testing.T) {
-	cli := NewCLI().WithPermissionMode(PermissionDefault)
+	cli := NewCLI()
+	cli.permissionMode = PermissionDefault
 	args := cli.baseArgs()
 
 	// PermissionDefault should NOT add --permission-mode flag
@@ -216,7 +178,8 @@ func TestCLI_Prompt_NonVerbose(t *testing.T) {
 
 // Test context cancellation handling
 func TestCLI_Prompt_ContextCancellation(t *testing.T) {
-	cli := NewCLI().WithBinaryPath("nonexistent-binary")
+	cli := NewCLI()
+	cli.binaryPath = "nonexistent-binary"
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
