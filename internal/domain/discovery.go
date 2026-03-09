@@ -2,7 +2,6 @@ package domain
 
 import (
 	"fmt"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -54,41 +53,6 @@ func DefaultConfig() *Config {
 	}
 }
 
-// UtopiaDir returns the .utopia directory path
-func (p *Project) UtopiaDir() string {
-	return filepath.Join(p.RootDir, ".utopia")
-}
-
-// SpecsDir returns the specs directory path
-func (p *Project) SpecsDir() string {
-	return filepath.Join(p.UtopiaDir(), "specs")
-}
-
-// WorkItemsDir returns the work-items directory path
-func (p *Project) WorkItemsDir() string {
-	return filepath.Join(p.UtopiaDir(), "work-items")
-}
-
-// ConfigPath returns the config file path
-func (p *Project) ConfigPath() string {
-	return filepath.Join(p.UtopiaDir(), "config.yaml")
-}
-
-// RefactorsDir returns the refactors directory path
-func (p *Project) RefactorsDir() string {
-	return filepath.Join(p.UtopiaDir(), "refactors")
-}
-
-// ChangeRequestsDir returns the change-requests directory path
-func (p *Project) ChangeRequestsDir() string {
-	return filepath.Join(p.UtopiaDir(), "change-requests")
-}
-
-// ConversationsDir returns the conversations directory path
-func (p *Project) ConversationsDir() string {
-	return filepath.Join(p.UtopiaDir(), "conversations")
-}
-
 // =============================================================================
 // Error Types
 // =============================================================================
@@ -106,56 +70,6 @@ func (e *NotFoundError) Error() string {
 // Is allows errors.Is to match any NotFoundError regardless of resource/id.
 func (e *NotFoundError) Is(target error) bool {
 	_, ok := target.(*NotFoundError)
-	return ok
-}
-
-// ValidationError holds multiple validation errors.
-type ValidationError struct {
-	Errors []string
-}
-
-func (e *ValidationError) Error() string {
-	if len(e.Errors) == 1 {
-		return fmt.Sprintf("validation failed: %s", e.Errors[0])
-	}
-	result := "validation failed:"
-	for _, err := range e.Errors {
-		result += "\n  - " + err
-	}
-	return result
-}
-
-// Is allows errors.Is to match any ValidationError.
-func (e *ValidationError) Is(target error) bool {
-	_, ok := target.(*ValidationError)
-	return ok
-}
-
-// ExecutionError captures context about a failure during work item execution.
-type ExecutionError struct {
-	Phase      string
-	WorkItemID string
-	Iteration  int
-	Cause      error
-}
-
-func (e *ExecutionError) Error() string {
-	if e.Iteration > 0 {
-		return fmt.Sprintf("execution failed in phase %q for work item %s (iteration %d): %v",
-			e.Phase, e.WorkItemID, e.Iteration, e.Cause)
-	}
-	return fmt.Sprintf("execution failed in phase %q for work item %s: %v",
-		e.Phase, e.WorkItemID, e.Cause)
-}
-
-// Unwrap returns the underlying cause for errors.Unwrap.
-func (e *ExecutionError) Unwrap() error {
-	return e.Cause
-}
-
-// Is allows errors.Is to match any ExecutionError.
-func (e *ExecutionError) Is(target error) bool {
-	_, ok := target.(*ExecutionError)
 	return ok
 }
 
@@ -325,18 +239,6 @@ type DraftEvidence struct {
 	DocFiles []string `yaml:"doc_files,omitempty"`
 	// Comments captures relevant code comments that describe intent
 	Comments []string `yaml:"comments,omitempty"`
-}
-
-// NewDraftSpec creates a new draft spec with sensible defaults
-func NewDraftSpec(id, title string, confidence DraftConfidence) *DraftSpec {
-	return &DraftSpec{
-		ID:         id,
-		Title:      title,
-		Created:    time.Now(),
-		Confidence: confidence,
-		Evidence:   DraftEvidence{},
-		Features:   []Feature{},
-	}
 }
 
 // AddFeature adds a proposed feature to the draft spec

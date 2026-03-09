@@ -488,23 +488,6 @@ func (s *SchemaAnalyzer) ToDiscoveredRelationships(entities []*SchemaEntity) []*
 	return result
 }
 
-// SchemaFilePaths returns common schema file path patterns to scan
-func SchemaFilePaths() []string {
-	return []string{
-		"migrations/*.sql",
-		"migrations/**/*.sql",
-		"db/migrations/*.sql",
-		"db/migrations/**/*.sql",
-		"database/migrations/*.sql",
-		"database/migrations/**/*.sql",
-		"schema.sql",
-		"db/schema.sql",
-		"database/schema.sql",
-		"schema.prisma",
-		"prisma/schema.prisma",
-	}
-}
-
 // IsSchemaFile returns true if the file path matches common schema file patterns
 func IsSchemaFile(filePath string) bool {
 	base := filepath.Base(filePath)

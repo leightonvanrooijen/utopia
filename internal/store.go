@@ -143,11 +143,6 @@ func (s *YAMLStore) ListSpecs() ([]*domain.Spec, error) {
 	return List[domain.Spec](s, "specs")
 }
 
-// SaveWorkItem writes a work item to .utopia/work-items/{id}.yaml
-func (s *YAMLStore) SaveWorkItem(item *domain.WorkItem) error {
-	return Save(s, filepath.Join("work-items", item.ID+".yaml"), item)
-}
-
 // SaveWorkItemForSpec writes a work item to .utopia/work-items/{specID}/{id}.yaml
 func (s *YAMLStore) SaveWorkItemForSpec(specID string, item *domain.WorkItem) error {
 	return Save(s, filepath.Join("work-items", specID, item.ID+".yaml"), item)
@@ -156,11 +151,6 @@ func (s *YAMLStore) SaveWorkItemForSpec(specID string, item *domain.WorkItem) er
 // ListWorkItemsForSpec returns all work items for a specific spec
 func (s *YAMLStore) ListWorkItemsForSpec(specID string) ([]*domain.WorkItem, error) {
 	return List[domain.WorkItem](s, filepath.Join("work-items", specID))
-}
-
-// LoadWorkItemForSpec reads a work item from .utopia/work-items/{specID}/{id}.yaml
-func (s *YAMLStore) LoadWorkItemForSpec(specID, id string) (*domain.WorkItem, error) {
-	return Load[domain.WorkItem](s, filepath.Join("work-items", specID, id+".yaml"))
 }
 
 // LoadWorkItem reads a work item from .utopia/work-items/{id}.yaml
@@ -423,11 +413,6 @@ func (s *YAMLStore) SaveConversation(conv *domain.Conversation) error {
 	return Save(s, filepath.Join("conversations", conv.ID+".yaml"), conv)
 }
 
-// LoadConversation reads a conversation from .utopia/conversations/{id}.yaml
-func (s *YAMLStore) LoadConversation(id string) (*domain.Conversation, error) {
-	return Load[domain.Conversation](s, filepath.Join("conversations", id+".yaml"))
-}
-
 // ListConversations returns all conversations in the conversations directory
 func (s *YAMLStore) ListConversations() ([]*domain.Conversation, error) {
 	return List[domain.Conversation](s, "conversations")
@@ -448,25 +433,6 @@ func (s *YAMLStore) ListUnprocessedConversations() ([]*domain.Conversation, erro
 	}
 
 	return unprocessed, nil
-}
-
-// ListUnprocessedConversationsByType returns unprocessed conversations filtered by type.
-// Use domain.ConversationSystemTruth for conversations with executed CRs.
-// Use domain.ConversationExploratory for conversations without CRs.
-func (s *YAMLStore) ListUnprocessedConversationsByType(convType domain.ConversationType) ([]*domain.Conversation, error) {
-	unprocessed, err := s.ListUnprocessedConversations()
-	if err != nil {
-		return nil, err
-	}
-
-	var filtered []*domain.Conversation
-	for _, conv := range unprocessed {
-		if conv.Type() == convType {
-			filtered = append(filtered, conv)
-		}
-	}
-
-	return filtered, nil
 }
 
 // MarkConversationsReadyForHarvest transitions conversations that reference the given CR
@@ -574,31 +540,6 @@ func (s *YAMLStore) ListDomainDocs() ([]*domain.DomainDoc, error) {
 	return List[domain.DomainDoc](s, "domain")
 }
 
-// SaveConceptDoc writes a concept doc to .utopia/concepts/{id}.md
-// Concepts use Markdown with YAML frontmatter for readability and sharing.
-func (s *YAMLStore) SaveConceptDoc(doc *domain.ConceptDoc) error {
-	dir := filepath.Join(s.baseDir, "concepts")
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create concepts directory: %w", err)
-	}
-
-	// Build YAML frontmatter
-	frontmatter, err := yaml.Marshal(doc)
-	if err != nil {
-		return fmt.Errorf("failed to marshal concept frontmatter: %w", err)
-	}
-
-	// Combine frontmatter and content
-	content := fmt.Sprintf("---\n%s---\n\n%s", string(frontmatter), doc.Content)
-
-	path := filepath.Join(dir, doc.ID+".md")
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		return fmt.Errorf("failed to write concept file %s: %w", path, err)
-	}
-
-	return nil
-}
-
 // LoadConceptDoc reads a concept doc from .utopia/concepts/{id}.md
 func (s *YAMLStore) LoadConceptDoc(id string) (*domain.ConceptDoc, error) {
 	path := filepath.Join(s.baseDir, "concepts", id+".md")
@@ -684,21 +625,6 @@ func (s *YAMLStore) ListDrafts() ([]*domain.DraftSpec, error) {
 // DeleteDraft removes a draft spec file from .utopia/drafts/specs/{id}.yaml
 func (s *YAMLStore) DeleteDraft(id string) error {
 	return Delete(s, filepath.Join("drafts", "specs", id+".yaml"), "draft", id)
-}
-
-// LoadDiscoveryState reads discovery state from .utopia/drafts/specs/.discovery-state
-// Returns nil (no error) if no previous state exists.
-func (s *YAMLStore) LoadDiscoveryState() (*domain.DiscoveryState, error) {
-	state, err := Load[domain.DiscoveryState](s, filepath.Join("drafts", "specs", ".discovery-state"))
-	if err != nil && errors.Is(err, os.ErrNotExist) {
-		return nil, nil // No previous state exists
-	}
-	return state, err
-}
-
-// SaveDiscoveryState writes discovery state to .utopia/drafts/specs/.discovery-state
-func (s *YAMLStore) SaveDiscoveryState(state *domain.DiscoveryState) error {
-	return Save(s, filepath.Join("drafts", "specs", ".discovery-state"), state)
 }
 
 // SaveDraftDomainDoc writes a draft domain doc to .utopia/drafts/domain/{id}.yaml

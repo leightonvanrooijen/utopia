@@ -64,27 +64,6 @@ func WithParentSpec(specID string) CROption {
 	}
 }
 
-// WithChanges sets the changes for feature/enhancement/removal CRs.
-func WithChanges(changes ...domain.Change) CROption {
-	return func(cr *domain.ChangeRequest) {
-		cr.Changes = changes
-	}
-}
-
-// WithTasks sets the tasks for refactor/bugfix CRs.
-func WithTasks(tasks ...domain.Task) CROption {
-	return func(cr *domain.ChangeRequest) {
-		cr.Tasks = tasks
-	}
-}
-
-// WithPhases sets the phases for initiative CRs.
-func WithPhases(phases ...domain.Phase) CROption {
-	return func(cr *domain.ChangeRequest) {
-		cr.Phases = phases
-	}
-}
-
 // WithAddFeatures is a convenience option that creates add operations for features.
 func WithAddFeatures(specID string, features ...domain.Feature) CROption {
 	return func(cr *domain.ChangeRequest) {

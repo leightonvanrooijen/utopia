@@ -528,13 +528,6 @@ func buildReferenceSection(feature *domain.Feature) string {
 	return strings.TrimSpace(sb.String())
 }
 
-// RebuildPromptWithFailures updates a work item's prompt to include failure output.
-// Note: This rebuilds without the reference feature. For bugfix items that need
-// the reference feature on retry, caller should use BuildPromptWithConstraints directly.
-func RebuildPromptWithFailures(workItem *domain.WorkItem, feature domain.Feature, failures []string) {
-	workItem.Prompt = BuildPromptWithConstraints(feature, workItem.Constraints, failures, nil)
-}
-
 // buildTaskWithCriteria merges feature description with acceptance criteria
 // into a single TASK block.
 func buildTaskWithCriteria(feature domain.Feature) string {

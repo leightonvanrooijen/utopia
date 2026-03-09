@@ -112,16 +112,6 @@ func NewAnalyzerWithFilter(filter *GenericTermFilter) *Analyzer {
 	}
 }
 
-// SetIncludeFiltered enables including filtered terms in results for review
-func (a *Analyzer) SetIncludeFiltered(include bool) {
-	a.filter.IncludeFiltered = include
-}
-
-// GetFilter returns the analyzer's generic term filter
-func (a *Analyzer) GetFilter() *GenericTermFilter {
-	return a.filter
-}
-
 // AnalyzeGoFile extracts type definitions from Go source code
 func (a *Analyzer) AnalyzeGoFile(filePath, content string) []*DiscoveredType {
 	var types []*DiscoveredType

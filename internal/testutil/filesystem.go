@@ -31,11 +31,3 @@ func SetupTestProject(t *testing.T) (string, func()) {
 	return dir, cleanup
 }
 
-// SetupTestDir creates a temporary directory with the necessary subdirectories
-// for testing YAML storage operations. Returns the directory path and a cleanup function.
-//
-// Deprecated: Use SetupTestProject instead.
-func SetupTestDir(t *testing.T) (string, func()) {
-	t.Helper()
-	return SetupTestProject(t)
-}

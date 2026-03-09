@@ -188,21 +188,6 @@ func TestPermissionMode_Constants(t *testing.T) {
 	}
 }
 
-func TestSessionResult_Fields(t *testing.T) {
-	result := &SessionResult{
-		Output: "test output",
-		Err:    nil,
-	}
-
-	if result.Output != "test output" {
-		t.Errorf("Output = %q, want %q", result.Output, "test output")
-	}
-
-	if result.Err != nil {
-		t.Errorf("Err = %v, want nil", result.Err)
-	}
-}
-
 // Integration-style tests that verify command construction
 // These don't actually run Claude but verify args are built correctly
 

@@ -153,21 +153,6 @@ type HarvestResult struct {
 	READMESignals  []HarvestSignal `yaml:"readme_signals,omitempty"`
 }
 
-// TotalSignals returns the total count of all signals
-func (h *HarvestResult) TotalSignals() int {
-	return len(h.ADRSignals) + len(h.ConceptSignals) + len(h.DomainSignals) + len(h.READMESignals)
-}
-
-// AllSignals returns all signals as a flat slice
-func (h *HarvestResult) AllSignals() []HarvestSignal {
-	all := make([]HarvestSignal, 0, h.TotalSignals())
-	all = append(all, h.ADRSignals...)
-	all = append(all, h.ConceptSignals...)
-	all = append(all, h.DomainSignals...)
-	all = append(all, h.READMESignals...)
-	return all
-}
-
 // =============================================================================
 // ADR (Architecture Decision Record) Types
 // =============================================================================
@@ -440,20 +425,6 @@ type DraftDomainEvidence struct {
 	SchemaFiles []string `yaml:"schema_files,omitempty"`
 	// Comments captures relevant code comments explaining domain concepts
 	Comments []string `yaml:"comments,omitempty"`
-}
-
-// NewDraftDomainDoc creates a new draft domain doc with sensible defaults
-func NewDraftDomainDoc(id, title, boundedContext string, confidence DraftDomainConfidence) *DraftDomainDoc {
-	return &DraftDomainDoc{
-		ID:             id,
-		Title:          title,
-		BoundedContext: boundedContext,
-		Confidence:     confidence,
-		Created:        time.Now(),
-		Evidence:       DraftDomainEvidence{},
-		Terms:          []DomainTerm{},
-		Entities:       []DomainEntity{},
-	}
 }
 
 // HasTypeDefinitions returns true if the draft has type file evidence
