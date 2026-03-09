@@ -5,7 +5,6 @@ package types
 import (
 	"bufio"
 	"regexp"
-	"sort"
 	"strings"
 )
 
@@ -793,60 +792,6 @@ func (a *Analyzer) isCommonMethodName(name string) bool {
 	return commonMethods[strings.ToLower(name)]
 }
 
-// AggregateTerms collects all discovered types and computes confidence based on occurrences
-func (a *Analyzer) AggregateTerms(types []*DiscoveredType) map[string]*TermOccurrence {
-	termMap := make(map[string]*TermOccurrence)
-
-	for _, t := range types {
-		// Add the type name as a term
-		term := t.Name
-		if _, exists := termMap[term]; !exists {
-			termMap[term] = &TermOccurrence{
-				Term:  term,
-				Files: []string{},
-				Lines: []string{},
-			}
-		}
-
-		occ := termMap[term]
-		lineRef := formatLineReference(t.FilePath, t.LineNumber)
-
-		// Add file if not already present
-		if !containsString(occ.Files, t.FilePath) {
-			occ.Files = append(occ.Files, t.FilePath)
-		}
-		occ.Lines = append(occ.Lines, lineRef)
-		occ.Types = append(occ.Types, t)
-
-		// Also track field names as potential terms
-		for _, field := range t.Fields {
-			fieldTerm := field.Name
-			if _, exists := termMap[fieldTerm]; !exists {
-				termMap[fieldTerm] = &TermOccurrence{
-					Term:  fieldTerm,
-					Files: []string{},
-					Lines: []string{},
-				}
-			}
-
-			fieldOcc := termMap[fieldTerm]
-			fieldLineRef := formatLineReference(t.FilePath, field.LineNumber)
-
-			if !containsString(fieldOcc.Files, t.FilePath) {
-				fieldOcc.Files = append(fieldOcc.Files, t.FilePath)
-			}
-			fieldOcc.Lines = append(fieldOcc.Lines, fieldLineRef)
-		}
-	}
-
-	// Calculate confidence for each term
-	for _, occ := range termMap {
-		occ.Confidence = a.calculateConfidence(occ)
-	}
-
-	return termMap
-}
-
 // calculateConfidence determines confidence based on occurrence patterns
 func (a *Analyzer) calculateConfidence(occ *TermOccurrence) TermConfidence {
 	fileCount := len(occ.Files)
@@ -864,35 +809,6 @@ func (a *Analyzer) calculateConfidence(occ *TermOccurrence) TermConfidence {
 
 	// Low: Only appears as field in one file
 	return TermConfidenceLow
-}
-
-// GetHighConfidenceTerms returns terms sorted by confidence (high first)
-func (a *Analyzer) GetHighConfidenceTerms(termMap map[string]*TermOccurrence) []*TermOccurrence {
-	var terms []*TermOccurrence
-	for _, occ := range termMap {
-		terms = append(terms, occ)
-	}
-
-	// Sort by confidence (high > medium > low), then by file count, then alphabetically
-	sort.Slice(terms, func(i, j int) bool {
-		confidenceOrder := map[TermConfidence]int{
-			TermConfidenceHigh:   0,
-			TermConfidenceMedium: 1,
-			TermConfidenceLow:    2,
-		}
-
-		if confidenceOrder[terms[i].Confidence] != confidenceOrder[terms[j].Confidence] {
-			return confidenceOrder[terms[i].Confidence] < confidenceOrder[terms[j].Confidence]
-		}
-
-		if len(terms[i].Files) != len(terms[j].Files) {
-			return len(terms[i].Files) > len(terms[j].Files)
-		}
-
-		return terms[i].Term < terms[j].Term
-	})
-
-	return terms
 }
 
 // formatLineReference creates a file:line reference string

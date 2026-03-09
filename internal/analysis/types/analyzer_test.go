@@ -290,67 +290,6 @@ export interface User {
 	}
 }
 
-func TestAggregateTerms_CalculatesConfidence(t *testing.T) {
-	analyzer := NewAnalyzer()
-
-	// Simulate types from multiple files
-	types := []*DiscoveredType{
-		{Name: "Order", Kind: "struct", FilePath: "internal/order/order.go", LineNumber: 10},
-		{Name: "Order", Kind: "interface", FilePath: "internal/api/order.go", LineNumber: 5},
-		{Name: "LineItem", Kind: "struct", FilePath: "internal/order/order.go", LineNumber: 20},
-		{Name: "Customer", Kind: "struct", FilePath: "internal/customer/customer.go", LineNumber: 8},
-	}
-
-	termMap := analyzer.AggregateTerms(types)
-
-	// Order appears in 2 files - should be high confidence
-	orderTerm := termMap["Order"]
-	if orderTerm == nil {
-		t.Fatal("expected Order term to exist")
-	}
-	if orderTerm.Confidence != TermConfidenceHigh {
-		t.Errorf("expected Order to have high confidence, got %s", orderTerm.Confidence)
-	}
-	if len(orderTerm.Files) != 2 {
-		t.Errorf("expected Order to appear in 2 files, got %d", len(orderTerm.Files))
-	}
-
-	// LineItem appears in 1 file as a type - should be medium confidence
-	lineItemTerm := termMap["LineItem"]
-	if lineItemTerm == nil {
-		t.Fatal("expected LineItem term to exist")
-	}
-	if lineItemTerm.Confidence != TermConfidenceMedium {
-		t.Errorf("expected LineItem to have medium confidence, got %s", lineItemTerm.Confidence)
-	}
-}
-
-func TestGetHighConfidenceTerms_SortsCorrectly(t *testing.T) {
-	analyzer := NewAnalyzer()
-
-	types := []*DiscoveredType{
-		{Name: "Order", Kind: "struct", FilePath: "file1.go", LineNumber: 1},
-		{Name: "Order", Kind: "struct", FilePath: "file2.go", LineNumber: 1},
-		{Name: "Customer", Kind: "struct", FilePath: "file1.go", LineNumber: 10},
-		{Name: "Product", Kind: "struct", FilePath: "file3.go", LineNumber: 5},
-	}
-
-	termMap := analyzer.AggregateTerms(types)
-	sorted := analyzer.GetHighConfidenceTerms(termMap)
-
-	if len(sorted) == 0 {
-		t.Fatal("expected sorted terms")
-	}
-
-	// Order should be first (high confidence, appears in 2 files)
-	if sorted[0].Term != "Order" {
-		t.Errorf("expected Order first, got %s", sorted[0].Term)
-	}
-	if sorted[0].Confidence != TermConfidenceHigh {
-		t.Errorf("expected high confidence first, got %s", sorted[0].Confidence)
-	}
-}
-
 // TODO: Implement this test to verify field extraction tracks line numbers correctly
 func TestAnalyzeGoFile_ExtractsFieldLineNumbers(t *testing.T) {
 	// This test verifies that field line numbers are correctly captured
