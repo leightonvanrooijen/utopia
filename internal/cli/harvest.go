@@ -11,10 +11,379 @@ import (
 
 	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
-	"github.com/leightonvanrooijen/utopia/internal/strategies/readme"
-	"github.com/leightonvanrooijen/utopia/internal/strategies/readme/comparison"
 	"github.com/spf13/cobra"
 )
+
+// ============================================================================
+// README SIGNAL DETECTION (inlined from strategies/readme)
+// ============================================================================
+
+// readmeDocumented captures what's already documented in the README
+type readmeDocumented struct {
+	Commands      []string // Commands documented in README (e.g., "utopia cr", "utopia execute")
+	ArtifactTypes []string // ArtifactTypes documented (e.g., "ADRs", "Concepts", "Domain")
+	Directories   []string // Directories documented in the project structure section
+	WorkflowSteps []string // WorkflowSteps documented in "The Loop" section
+}
+
+// readmeSignalCandidate represents a potential README documentation signal
+type readmeSignalCandidate struct {
+	SpecID           string
+	FeatureID        string
+	Title            string
+	Category         string // "command", "artifact", "workflow", "directory"
+	Confidence       domain.SignalConfidence
+	SuggestedSection string
+}
+
+// detectREADMESignals scans specs and compares against documented items to find signals.
+// Uses comparison-based detection: compares README content against spec features.
+func detectREADMESignals(specs []*domain.Spec, documented *readmeDocumented) []readmeSignalCandidate {
+	var candidates []readmeSignalCandidate
+
+	for _, spec := range specs {
+		for _, feature := range spec.Features {
+			if candidate := qualifyFeatureForREADME(spec, feature, documented); candidate != nil {
+				candidates = append(candidates, *candidate)
+			}
+		}
+	}
+
+	return candidates
+}
+
+// qualifyFeatureForREADME applies strict qualification criteria to determine if a feature
+// should be documented in the README.
+func qualifyFeatureForREADME(spec *domain.Spec, feature domain.Feature, documented *readmeDocumented) *readmeSignalCandidate {
+	desc := strings.ToLower(feature.Description)
+	featureID := strings.ToLower(feature.ID)
+
+	// DISQUALIFICATION CHECKS (any of these excludes)
+	if isEnhancementToExisting(feature, documented) {
+		return nil
+	}
+	if isInternalImplementation(feature) {
+		return nil
+	}
+	if isConfigOption(feature) {
+		return nil
+	}
+	if isSpecOnlyChange(feature) {
+		return nil
+	}
+
+	// QUALIFICATION CHECKS (must meet at least one)
+
+	// Check 1: New primary CLI command
+	if isNewPrimaryCLICommand(feature, documented) {
+		return &readmeSignalCandidate{
+			SpecID:           spec.ID,
+			FeatureID:        feature.ID,
+			Title:            extractCommandName(feature),
+			Category:         "command",
+			Confidence:       domain.SignalConfidenceHigh,
+			SuggestedSection: "Quick Start / The Loop",
+		}
+	}
+
+	// Check 2: New knowledge artifact type
+	if isNewArtifactType(feature, documented) {
+		return &readmeSignalCandidate{
+			SpecID:           spec.ID,
+			FeatureID:        feature.ID,
+			Title:            extractArtifactName(feature),
+			Category:         "artifact",
+			Confidence:       domain.SignalConfidenceHigh,
+			SuggestedSection: "Knowledge Artifacts",
+		}
+	}
+
+	// Check 3: Change to core workflow/loop
+	if isCoreWorkflowChange(feature, documented) {
+		return &readmeSignalCandidate{
+			SpecID:           spec.ID,
+			FeatureID:        feature.ID,
+			Title:            fmt.Sprintf("Workflow change: %s", feature.ID),
+			Category:         "workflow",
+			Confidence:       domain.SignalConfidenceMedium,
+			SuggestedSection: "The Solution / Quick Start",
+		}
+	}
+
+	// Check 4: New top-level .utopia/ directory
+	if isNewTopLevelDirectory(desc, featureID, documented) {
+		return &readmeSignalCandidate{
+			SpecID:           spec.ID,
+			FeatureID:        feature.ID,
+			Title:            extractDirectoryName(feature),
+			Category:         "directory",
+			Confidence:       domain.SignalConfidenceHigh,
+			SuggestedSection: "Project Structure",
+		}
+	}
+
+	return nil
+}
+
+// Disqualification helpers
+
+func isEnhancementToExisting(feature domain.Feature, documented *readmeDocumented) bool {
+	desc := strings.ToLower(feature.Description)
+	featureID := strings.ToLower(feature.ID)
+
+	// Check if this enhances an already-documented command
+	for _, cmd := range documented.Commands {
+		cmdLower := strings.ToLower(cmd)
+		// If the feature ID or description mentions an existing command, it's likely an enhancement
+		if strings.Contains(featureID, cmdLower) || strings.Contains(desc, "utopia "+cmdLower) {
+			// Only disqualify if it's clearly an enhancement, not a new command definition
+			if !strings.Contains(desc, "new command") && !strings.Contains(desc, "cli command to") {
+				return true
+			}
+		}
+	}
+
+	// Check for enhancement language
+	enhancementPatterns := []string{
+		"extend", "improve", "add to existing", "enhance",
+		"modify the", "update the", "additional", "also include",
+	}
+	for _, pattern := range enhancementPatterns {
+		if strings.Contains(desc, pattern) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isInternalImplementation(feature domain.Feature) bool {
+	desc := strings.ToLower(feature.Description)
+	featureID := strings.ToLower(feature.ID)
+
+	// Internal implementation markers
+	internalPatterns := []string{
+		"internal", "implementation detail", "helper", "utility",
+		"private", "refactor", "cleanup", "storage layer",
+		"marshaler", "parser", "validator",
+	}
+	for _, pattern := range internalPatterns {
+		if strings.Contains(desc, pattern) || strings.Contains(featureID, pattern) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isConfigOption(feature domain.Feature) bool {
+	desc := strings.ToLower(feature.Description)
+	featureID := strings.ToLower(feature.ID)
+
+	// Config option markers
+	configPatterns := []string{
+		"config option", "configuration", "setting", "flag",
+		"parameter", "yaml field", "option field",
+	}
+	for _, pattern := range configPatterns {
+		if strings.Contains(desc, pattern) || strings.Contains(featureID, pattern) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isSpecOnlyChange(feature domain.Feature) bool {
+	desc := strings.ToLower(feature.Description)
+
+	// Spec-only markers
+	specOnlyPatterns := []string{
+		"spec format", "spec structure", "acceptance criteria format",
+		"domain knowledge field", "spec validation",
+	}
+	for _, pattern := range specOnlyPatterns {
+		if strings.Contains(desc, pattern) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// Qualification helpers
+
+func isNewPrimaryCLICommand(feature domain.Feature, documented *readmeDocumented) bool {
+	desc := strings.ToLower(feature.Description)
+	featureID := strings.ToLower(feature.ID)
+
+	// Must indicate it's a CLI command
+	if !strings.Contains(desc, "command") && !strings.Contains(featureID, "command") {
+		return false
+	}
+
+	// Must be a primary command (not a flag or subcommand)
+	if strings.Contains(desc, "flag") || strings.Contains(desc, "subcommand") ||
+		strings.Contains(desc, "option") {
+		return false
+	}
+
+	// Check it's not already documented
+	cmdPattern := regexp.MustCompile(`utopia\s+(\w+)`)
+	matches := cmdPattern.FindAllStringSubmatch(desc, -1)
+	for _, match := range matches {
+		cmdName := strings.ToLower(match[1])
+		isDocumented := false
+		for _, docCmd := range documented.Commands {
+			if strings.ToLower(docCmd) == cmdName {
+				isDocumented = true
+				break
+			}
+		}
+		// Found a command that's not in README
+		if !isDocumented {
+			return true
+		}
+	}
+
+	// Also check feature ID for command names
+	if strings.HasSuffix(featureID, "-command") {
+		cmdName := strings.TrimSuffix(featureID, "-command")
+		for _, docCmd := range documented.Commands {
+			if strings.ToLower(docCmd) == cmdName {
+				return false
+			}
+		}
+		return true
+	}
+
+	return false
+}
+
+func isNewArtifactType(feature domain.Feature, documented *readmeDocumented) bool {
+	desc := strings.ToLower(feature.Description)
+
+	// Must indicate it's a knowledge artifact type
+	artifactIndicators := []string{
+		"knowledge artifact", "document type", "documentation type",
+		"harvested from", "extracted from conversation",
+	}
+
+	hasArtifactIndicator := false
+	for _, indicator := range artifactIndicators {
+		if strings.Contains(desc, indicator) {
+			hasArtifactIndicator = true
+			break
+		}
+	}
+
+	if !hasArtifactIndicator {
+		return false
+	}
+
+	// Check it's not one of the existing types
+	existingTypes := []string{"adr", "concept", "domain"}
+	for _, existing := range existingTypes {
+		if strings.Contains(desc, existing) {
+			return false // Enhancement to existing type
+		}
+	}
+
+	return true
+}
+
+func isCoreWorkflowChange(feature domain.Feature, documented *readmeDocumented) bool {
+	desc := strings.ToLower(feature.Description)
+
+	// Must be about the core workflow/loop
+	workflowIndicators := []string{
+		"core loop", "workflow", "the loop", "main flow",
+		"fundamental change", "new phase", "new step",
+	}
+
+	hasWorkflowIndicator := false
+	for _, indicator := range workflowIndicators {
+		if strings.Contains(desc, indicator) {
+			hasWorkflowIndicator = true
+			break
+		}
+	}
+
+	if !hasWorkflowIndicator {
+		return false
+	}
+
+	// Must be a change to the loop, not just mentioning it
+	changeIndicators := []string{
+		"add", "new", "introduce", "change", "modify",
+	}
+	for _, change := range changeIndicators {
+		if strings.Contains(desc, change) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isNewTopLevelDirectory(desc, featureID string, documented *readmeDocumented) bool {
+	// Look for directory creation patterns
+	dirPattern := regexp.MustCompile(`\.utopia/(\w+)/?`)
+	matches := dirPattern.FindAllStringSubmatch(desc, -1)
+
+	for _, match := range matches {
+		dirName := match[1]
+		// Check if this is a new directory (not already in README)
+		isNew := true
+		for _, docDir := range documented.Directories {
+			if strings.EqualFold(docDir, dirName) || strings.EqualFold(docDir, dirName+"/") {
+				isNew = false
+				break
+			}
+		}
+		if isNew {
+			// Check it's top-level (no subdirectory pattern)
+			if !strings.Contains(match[0], "/"+dirName+"/") {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// Extraction helpers
+
+func extractCommandName(feature domain.Feature) string {
+	desc := feature.Description
+	cmdPattern := regexp.MustCompile(`utopia\s+(\w+)`)
+	if matches := cmdPattern.FindStringSubmatch(desc); len(matches) > 1 {
+		return fmt.Sprintf("utopia %s command", matches[1])
+	}
+	if strings.HasSuffix(strings.ToLower(feature.ID), "-command") {
+		cmdName := strings.TrimSuffix(feature.ID, "-command")
+		return fmt.Sprintf("utopia %s command", cmdName)
+	}
+	return feature.ID
+}
+
+func extractArtifactName(feature domain.Feature) string {
+	// Try to extract artifact type name from description
+	return fmt.Sprintf("New artifact type: %s", feature.ID)
+}
+
+func extractDirectoryName(feature domain.Feature) string {
+	desc := feature.Description
+	dirPattern := regexp.MustCompile(`\.utopia/(\w+)/?`)
+	if matches := dirPattern.FindStringSubmatch(desc); len(matches) > 1 {
+		return fmt.Sprintf(".utopia/%s/", matches[1])
+	}
+	return feature.ID
+}
+
+// ============================================================================
+// HARVEST COMMAND
+// ============================================================================
 
 var harvestCmd = &cobra.Command{
 	Use:   "harvest",
@@ -529,9 +898,8 @@ func runHarvest(cmd *cobra.Command, args []string) error {
 	domainDocsSummary := buildHarvestDomainDocsSummary(existingDomainDocs)
 	nextADRID := getNextADRID(existingADRs)
 
-	// Build README signals summary using the default strategy
-	readmeStrategy := getDefaultREADMEStrategy()
-	readmeSignalsSummary := buildREADMESignalsSummaryWithStrategy(absPath, store, readmeStrategy)
+	// Build README signals summary
+	readmeSignalsSummary := buildREADMESignalsSummary(absPath, store)
 
 	// Inject all summaries into the system prompt
 	systemPrompt := fmt.Sprintf(harvestSystemPrompt,
@@ -557,7 +925,7 @@ func runHarvest(cmd *cobra.Command, args []string) error {
 	}
 
 	// Count README signal candidates
-	readmeSignalCount := countREADMESignalsWithStrategy(absPath, store, readmeStrategy)
+	readmeSignalCount := countREADMESignals(absPath, store)
 
 	// Display harvest summary
 	fmt.Println("Starting unified harvest session...")
@@ -780,8 +1148,7 @@ func getNextADRID(existingADRs []*domain.ADR) string {
 }
 
 // buildREADMESignalsSummary scans specs against the README to find documentation candidates.
-// Uses the provided strategy for detection, allowing different detection approaches.
-func buildREADMESignalsSummaryWithStrategy(projectDir string, store *internal.YAMLStore, strategy readme.Strategy) string {
+func buildREADMESignalsSummary(projectDir string, store *internal.YAMLStore) string {
 	// Try to read README.md from project root
 	readmePath := filepath.Join(projectDir, "README.md")
 	readmeContent, err := os.ReadFile(readmePath)
@@ -790,7 +1157,7 @@ func buildREADMESignalsSummaryWithStrategy(projectDir string, store *internal.YA
 	}
 
 	// Parse what's documented in README
-	documented := ParseREADMEDocumented(string(readmeContent))
+	documented := parseREADMEDocumented(string(readmeContent))
 
 	// Load all specs
 	specs, err := store.ListSpecs()
@@ -798,34 +1165,28 @@ func buildREADMESignalsSummaryWithStrategy(projectDir string, store *internal.YA
 		return "(Could not load specs - README signals skipped)"
 	}
 
-	// Detect candidates using the strategy
-	candidates := strategy.Detect(specs, documented)
+	// Detect candidates
+	candidates := detectREADMESignals(specs, documented)
 
-	return BuildREADMESignalsSummary(candidates)
+	return formatREADMESignalsSummary(candidates)
 }
 
-// countREADMESignalsWithStrategy returns the count of README signal candidates.
-// Uses the provided strategy for detection.
-func countREADMESignalsWithStrategy(projectDir string, store *internal.YAMLStore, strategy readme.Strategy) int {
+// countREADMESignals returns the count of README signal candidates.
+func countREADMESignals(projectDir string, store *internal.YAMLStore) int {
 	readmePath := filepath.Join(projectDir, "README.md")
 	readmeContent, err := os.ReadFile(readmePath)
 	if err != nil {
 		return 0
 	}
 
-	documented := ParseREADMEDocumented(string(readmeContent))
+	documented := parseREADMEDocumented(string(readmeContent))
 	specs, err := store.ListSpecs()
 	if err != nil {
 		return 0
 	}
 
-	candidates := strategy.Detect(specs, documented)
+	candidates := detectREADMESignals(specs, documented)
 	return len(candidates)
-}
-
-// getDefaultREADMEStrategy returns the default README detection strategy (comparison-based).
-func getDefaultREADMEStrategy() readme.Strategy {
-	return comparison.New()
 }
 
 // formatSignalCount returns a formatted count string (e.g., "1", "3", or "0")
@@ -845,10 +1206,9 @@ func pluralize(count int) string {
 // README PARSING
 // ============================================================================
 
-// ParseREADMEDocumented extracts documented elements from README content.
-// Returns a READMEDocumented struct that can be passed to detection strategies.
-func ParseREADMEDocumented(readmeContent string) *readme.READMEDocumented {
-	doc := &readme.READMEDocumented{
+// parseREADMEDocumented extracts documented elements from README content.
+func parseREADMEDocumented(readmeContent string) *readmeDocumented {
+	doc := &readmeDocumented{
 		Commands:      []string{},
 		ArtifactTypes: []string{},
 		Directories:   []string{},
@@ -896,8 +1256,8 @@ func ParseREADMEDocumented(readmeContent string) *readme.READMEDocumented {
 	return doc
 }
 
-// BuildREADMESignalsSummary creates a summary of README signal candidates for the harvest prompt.
-func BuildREADMESignalsSummary(candidates []readme.SignalCandidate) string {
+// formatREADMESignalsSummary creates a summary of README signal candidates for the harvest prompt.
+func formatREADMESignalsSummary(candidates []readmeSignalCandidate) string {
 	if len(candidates) == 0 {
 		return "(No README documentation signals found - all qualifying features are already documented)"
 	}
@@ -905,7 +1265,7 @@ func BuildREADMESignalsSummary(candidates []readme.SignalCandidate) string {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("**%d potential README documentation signals found:**\n\n", len(candidates)))
 
-	byCategory := make(map[string][]readme.SignalCandidate)
+	byCategory := make(map[string][]readmeSignalCandidate)
 	for _, c := range candidates {
 		byCategory[c.Category] = append(byCategory[c.Category], c)
 	}
