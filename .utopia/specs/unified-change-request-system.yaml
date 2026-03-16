@@ -1,7 +1,7 @@
 id: unified-change-request-system
 title: Unified Change Request System
 created: "0001-01-01T00:00:00+00:00"
-updated: "2026-03-05T07:39:19.919527+11:00"
+updated: "2026-03-17T09:21:05.973359+11:00"
 description: |
     A unified system where all work flows through Change Requests. CRs are standalone
     documents that describe work to be done. Each change within a CR can target a
@@ -206,3 +206,16 @@ features:
         - Notes folder location is .utopia/notes/
         - CR assistant system prompt includes guidance on saving notes to the notes folder
         - Notes are saved as markdown files with descriptive filenames
+
+    - id: implementation-hints
+      description: |
+        Optional hints field on features and tasks that provides technical
+        implementation guidance to workers. Hints are ephemeral - they guide
+        execution but are not persisted to specs after merge.
+      acceptance_criteria:
+        - Features in add operations can have optional hints field (array of strings)
+        - Tasks in refactor/bugfix CRs can have optional hints field (array of strings)
+        - Hints are injected into WorkItem prompts during chunking
+        - Hints appear in a HINTS section after TASK, before CONSTRAINTS
+        - Hints are ignored during merge (not written to spec)
+        - CR assistant system prompt documents hints field usage
