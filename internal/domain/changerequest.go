@@ -63,6 +63,9 @@ type Task struct {
 	Spec string `yaml:"spec,omitempty"`
 	// FeatureID references the feature that defines correct behavior (required for bugfix tasks)
 	FeatureID string `yaml:"feature_id,omitempty"`
+	// Hints provide ephemeral implementation guidance to workers.
+	// These are injected into work item prompts but NOT persisted to specs after merge.
+	Hints []string `yaml:"hints,omitempty"`
 }
 
 // ChangeRequest represents a set of changes to apply to specs

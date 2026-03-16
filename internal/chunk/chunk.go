@@ -92,7 +92,7 @@ func Chunk(cr *domain.ChangeRequest, specLoader SpecLoader) ([]*domain.WorkItem,
 		if isBugfix && refFeatures != nil {
 			refFeature = refFeatures[feature.ID]
 		}
-		workItem.Prompt = BuildPromptWithConstraints(feature, workItem.Constraints, nil, refFeature)
+		workItem.Prompt = BuildPromptWithConstraints(feature, workItem.Constraints, nil, refFeature, feature.Hints)
 
 		workItems = append(workItems, workItem)
 	}
@@ -146,7 +146,7 @@ func ChunkPhase(crID string, phaseIndex int, phase *domain.Phase, specLoader Spe
 		if isBugfix && refFeatures != nil {
 			refFeature = refFeatures[feature.ID]
 		}
-		workItem.Prompt = BuildPromptWithConstraints(feature, workItem.Constraints, nil, refFeature)
+		workItem.Prompt = BuildPromptWithConstraints(feature, workItem.Constraints, nil, refFeature, feature.Hints)
 
 		workItems = append(workItems, workItem)
 	}
@@ -206,11 +206,13 @@ func extractFeaturesFromPhase(phase *domain.Phase) ([]domain.Feature, map[string
 
 // convertTaskToFeature converts a Task to a Feature and optionally tracks bugfix references.
 // If the task has Spec and FeatureID set, it returns a bugfixFeature for reference loading.
+// Task hints are preserved in the returned Feature for injection into work item prompts.
 func convertTaskToFeature(task domain.Task) (domain.Feature, *bugfixFeature) {
 	feature := domain.Feature{
 		ID:                 task.ID,
 		Description:        task.Description,
 		AcceptanceCriteria: task.AcceptanceCriteria,
+		Hints:              task.Hints,
 	}
 
 	// For bugfix tasks, track the spec/feature reference
@@ -441,7 +443,13 @@ The following spec feature defines the correct behavior:
 
 {{.Reference}}
 {{end}}
+{{if .Hints}}
 
+## HINTS
+
+{{range .Hints}}- {{.}}
+{{end}}
+{{end}}
 ## CONSTRAINTS
 
 {{range .Constraints}}- {{.}}
@@ -463,17 +471,20 @@ When complete, commit your changes and output: <COMPLETE>`
 type PromptData struct {
 	Task             string
 	Reference        string // Optional: for bugfix items, the referenced spec feature content
+	Hints            []string
 	Constraints      []string
 	PreviousFailures string
 }
 
 // BuildPromptWithConstraints creates a prompt with custom constraints.
 // For bugfix items, refFeature contains the spec feature that defines correct behavior.
-func BuildPromptWithConstraints(feature domain.Feature, constraints []string, failures []string, refFeature *domain.Feature) string {
+// Hints provide ephemeral implementation guidance and appear in a HINTS section after TASK.
+func BuildPromptWithConstraints(feature domain.Feature, constraints []string, failures []string, refFeature *domain.Feature, hints []string) string {
 	task := buildTaskWithCriteria(feature)
 
 	data := PromptData{
 		Task:        task,
+		Hints:       hints,
 		Constraints: constraints,
 	}
 
@@ -532,6 +543,9 @@ func renderTemplate(data PromptData) string {
 	data.Task = escapeTemplateContent(data.Task)
 	data.Reference = escapeTemplateContent(data.Reference)
 	data.PreviousFailures = escapeTemplateContent(data.PreviousFailures)
+	for i, hint := range data.Hints {
+		data.Hints[i] = escapeTemplateContent(hint)
+	}
 
 	tmpl, err := template.New("prompt").Parse(PromptTemplate)
 	if err != nil {

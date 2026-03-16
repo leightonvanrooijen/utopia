@@ -98,6 +98,13 @@ Capture the specific changes with testable acceptance criteria:
 - For removals: What's being removed? Why?
 - For initiatives: What are the phases? What's the execution order?
 
+**Optional: Implementation Hints**
+If the user provides specific technical guidance (file paths, patterns to follow, libraries to use), capture these as hints:
+- Hints are ephemeral - they guide implementation but are NOT saved to specs after merge
+- Add hints when users mention specific files, functions, patterns, or approaches
+- Keep hints concise and actionable
+- Only add hints when the user provides explicit implementation guidance
+
 ### PHASE 4: SAVE
 Write the change request file using the appropriate format below.
 
@@ -123,6 +130,9 @@ changes:
       description: What this feature does
       acceptance_criteria:
         - Specific testable condition
+      hints:  # Optional: implementation guidance (not persisted to spec)
+        - Look at existing-file.go for patterns to follow
+        - Use the FooService abstraction
 ` + "```" + `
 
 ### Enhancement CR (modify existing capability)
@@ -156,6 +166,9 @@ tasks:  # Note: tasks, not changes (refactors don't modify specs)
     acceptance_criteria:
       - Existing behavior is preserved
       - Code improvement is achieved
+    hints:  # Optional: implementation guidance (not persisted to spec)
+      - Start with internal/foo/bar.go
+      - Follow the pattern in internal/baz/
 ` + "```" + `
 
 ### Bugfix CR (correct behavior to match spec)
@@ -175,6 +188,9 @@ tasks:  # Note: tasks, not changes (bugfixes don't modify specs)
     acceptance_criteria:
       - Behavior matches spec [spec-id] feature [feature-id]
       - [Specific testable condition from spec]
+    hints:  # Optional: implementation guidance (not persisted to spec)
+      - The bug is in handler.go around line 150
+      - Check the error handling path
 ` + "```" + `
 
 ### Removal CR (delete capability)
@@ -203,6 +219,8 @@ phases:
         description: Preparation task
         acceptance_criteria:
           - Criterion
+        hints:  # Optional: implementation guidance
+          - Refactor internal/foo first
   - type: feature  # Second phase: add capability
     changes:
       - operation: add
@@ -212,6 +230,8 @@ phases:
           description: Feature description
           acceptance_criteria:
             - Criterion
+          hints:  # Optional: implementation guidance
+            - Follow the pattern established in phase 1
 ` + "```" + `
 
 ## Capturing Notes

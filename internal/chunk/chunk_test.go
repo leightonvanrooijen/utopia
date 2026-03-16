@@ -938,7 +938,7 @@ func TestBuildPromptWithConstraints_CustomConstraints(t *testing.T) {
 	}
 
 	constraints := []string{"Custom constraint 1", "Custom constraint 2"}
-	prompt := BuildPromptWithConstraints(feature, constraints, nil, nil)
+	prompt := BuildPromptWithConstraints(feature, constraints, nil, nil, nil)
 
 	if !strings.Contains(prompt, "Custom constraint 1") {
 		t.Error("Prompt should contain custom constraint 1")
@@ -961,7 +961,7 @@ func TestBuildPromptWithConstraints_WithReference(t *testing.T) {
 		AcceptanceCriteria: []string{"Reference criterion"},
 	}
 
-	prompt := BuildPromptWithConstraints(feature, DefaultConstraints, nil, refFeature)
+	prompt := BuildPromptWithConstraints(feature, DefaultConstraints, nil, refFeature, nil)
 
 	if !strings.Contains(prompt, "## REFERENCE") {
 		t.Error("Prompt should contain REFERENCE section")
@@ -971,6 +971,116 @@ func TestBuildPromptWithConstraints_WithReference(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "Reference criterion") {
 		t.Error("Prompt should contain reference feature criteria")
+	}
+}
+
+func TestBuildPromptWithConstraints_WithHints(t *testing.T) {
+	feature := domain.Feature{
+		ID:                 "test",
+		Description:        "Test feature",
+		AcceptanceCriteria: []string{"Criterion 1"},
+	}
+
+	hints := []string{"Look at foo.go for patterns", "Use the BarService"}
+	prompt := BuildPromptWithConstraints(feature, DefaultConstraints, nil, nil, hints)
+
+	if !strings.Contains(prompt, "## HINTS") {
+		t.Error("Prompt should contain HINTS section")
+	}
+	if !strings.Contains(prompt, "Look at foo.go for patterns") {
+		t.Error("Prompt should contain first hint")
+	}
+	if !strings.Contains(prompt, "Use the BarService") {
+		t.Error("Prompt should contain second hint")
+	}
+	// Verify HINTS section appears before CONSTRAINTS
+	hintsIdx := strings.Index(prompt, "## HINTS")
+	constraintsIdx := strings.Index(prompt, "## CONSTRAINTS")
+	if hintsIdx > constraintsIdx {
+		t.Error("HINTS section should appear before CONSTRAINTS section")
+	}
+}
+
+func TestBuildPromptWithConstraints_NoHints(t *testing.T) {
+	feature := domain.Feature{
+		ID:                 "test",
+		Description:        "Test feature",
+		AcceptanceCriteria: []string{"Criterion 1"},
+	}
+
+	prompt := BuildPromptWithConstraints(feature, DefaultConstraints, nil, nil, nil)
+
+	if strings.Contains(prompt, "## HINTS") {
+		t.Error("Prompt should not contain HINTS section when no hints provided")
+	}
+}
+
+func TestChunk_PreservesTaskHints(t *testing.T) {
+	cr := &domain.ChangeRequest{
+		ID:   "test-cr",
+		Type: domain.CRTypeRefactor,
+		Tasks: []domain.Task{
+			{
+				ID:                 "task-1",
+				Description:        "Refactor the thing",
+				AcceptanceCriteria: []string{"Behavior preserved"},
+				Hints:              []string{"Start with internal/foo.go"},
+			},
+		},
+	}
+
+	workItems, err := Chunk(cr, nil)
+	if err != nil {
+		t.Fatalf("Chunk failed: %v", err)
+	}
+
+	if len(workItems) != 1 {
+		t.Fatalf("Expected 1 work item, got %d", len(workItems))
+	}
+
+	if !strings.Contains(workItems[0].Prompt, "## HINTS") {
+		t.Error("Work item prompt should contain HINTS section")
+	}
+	if !strings.Contains(workItems[0].Prompt, "Start with internal/foo.go") {
+		t.Error("Work item prompt should contain task hint")
+	}
+}
+
+func TestChunk_PreservesFeatureHints(t *testing.T) {
+	cr := &domain.ChangeRequest{
+		ID:   "test-cr",
+		Type: domain.CRTypeFeature,
+		Changes: []domain.Change{
+			{
+				Operation: "add",
+				Spec:      "test-spec",
+				Feature: &domain.Feature{
+					ID:                 "new-feature",
+					Description:        "Add new capability",
+					AcceptanceCriteria: []string{"Feature works"},
+					Hints:              []string{"Follow pattern in existing.go", "Use FooService"},
+				},
+			},
+		},
+	}
+
+	workItems, err := Chunk(cr, nil)
+	if err != nil {
+		t.Fatalf("Chunk failed: %v", err)
+	}
+
+	if len(workItems) != 1 {
+		t.Fatalf("Expected 1 work item, got %d", len(workItems))
+	}
+
+	if !strings.Contains(workItems[0].Prompt, "## HINTS") {
+		t.Error("Work item prompt should contain HINTS section")
+	}
+	if !strings.Contains(workItems[0].Prompt, "Follow pattern in existing.go") {
+		t.Error("Work item prompt should contain first feature hint")
+	}
+	if !strings.Contains(workItems[0].Prompt, "Use FooService") {
+		t.Error("Work item prompt should contain second feature hint")
 	}
 }
 

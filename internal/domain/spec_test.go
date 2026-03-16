@@ -31,6 +31,45 @@ func TestApplyAddChange_Feature(t *testing.T) {
 	}
 }
 
+func TestApplyAddChange_StripsHints(t *testing.T) {
+	spec := NewSpec("test-spec", "Test Spec")
+
+	change := Change{
+		Operation: "add",
+		Feature: &Feature{
+			ID:                 "feature-with-hints",
+			Description:        "Feature with hints",
+			AcceptanceCriteria: []string{"It works"},
+			Hints:              []string{"Look at foo.go", "Use BarService"},
+		},
+	}
+
+	err := spec.ApplyAddChange(change)
+	if err != nil {
+		t.Fatalf("ApplyAddChange failed: %v", err)
+	}
+
+	if len(spec.Features) != 1 {
+		t.Errorf("expected 1 feature, got %d", len(spec.Features))
+	}
+
+	// Verify hints are NOT persisted to the spec
+	if len(spec.Features[0].Hints) != 0 {
+		t.Errorf("expected hints to be stripped, but got %v", spec.Features[0].Hints)
+	}
+
+	// Verify other fields are preserved
+	if spec.Features[0].ID != "feature-with-hints" {
+		t.Errorf("expected feature ID 'feature-with-hints', got %q", spec.Features[0].ID)
+	}
+	if spec.Features[0].Description != "Feature with hints" {
+		t.Errorf("expected description 'Feature with hints', got %q", spec.Features[0].Description)
+	}
+	if len(spec.Features[0].AcceptanceCriteria) != 1 {
+		t.Errorf("expected 1 acceptance criterion, got %d", len(spec.Features[0].AcceptanceCriteria))
+	}
+}
+
 func TestApplyAddChange_DuplicateFeatureID_Idempotent(t *testing.T) {
 	spec := NewSpec("test-spec", "Test Spec")
 	spec.AddFeature(Feature{

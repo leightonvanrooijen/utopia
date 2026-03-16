@@ -30,6 +30,10 @@ type Feature struct {
 	ID                 string   `yaml:"id"`
 	Description        string   `yaml:"description"`
 	AcceptanceCriteria []string `yaml:"acceptance_criteria"`
+	// Hints provide ephemeral implementation guidance to workers.
+	// These are parsed from CR YAML but NOT persisted to specs after merge.
+	// The addFeatureWithValidation method strips hints before saving.
+	Hints []string `yaml:"hints,omitempty"`
 }
 
 // NewSpec creates a new spec with sensible defaults
@@ -103,7 +107,8 @@ func (s *Spec) ApplyAddChange(change Change) error {
 	return nil
 }
 
-// addFeatureWithValidation adds a feature only if its ID is unique
+// addFeatureWithValidation adds a feature only if its ID is unique.
+// Hints are stripped before saving - they are ephemeral execution guidance, not spec content.
 func (s *Spec) addFeatureWithValidation(f Feature) error {
 	for _, existing := range s.Features {
 		if existing.ID == f.ID {
@@ -111,7 +116,14 @@ func (s *Spec) addFeatureWithValidation(f Feature) error {
 			return nil
 		}
 	}
-	s.AddFeature(f)
+	// Strip hints before adding to spec - hints are ephemeral
+	cleanFeature := Feature{
+		ID:                 f.ID,
+		Description:        f.Description,
+		AcceptanceCriteria: f.AcceptanceCriteria,
+		// Hints intentionally omitted - not persisted to specs
+	}
+	s.AddFeature(cleanFeature)
 	return nil
 }
 
