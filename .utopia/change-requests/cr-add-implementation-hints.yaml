@@ -1,0 +1,33 @@
+id: cr-add-implementation-hints
+type: feature
+title: Add implementation hints to CRs
+status: draft
+changes:
+  - operation: add
+    spec: unified-change-request-system
+    feature:
+      id: implementation-hints
+      description: |
+        Optional hints field on features and tasks that provides technical
+        implementation guidance to workers. Hints are ephemeral - they guide
+        execution but are not persisted to specs after merge.
+      acceptance_criteria:
+        - Features in add operations can have optional hints field (array of strings)
+        - Tasks in refactor/bugfix CRs can have optional hints field (array of strings)
+        - Hints are injected into WorkItem prompts during chunking
+        - Hints appear in a HINTS section after TASK, before CONSTRAINTS
+        - Hints are ignored during merge (not written to spec)
+        - CR assistant system prompt documents hints field usage
+
+  - operation: add
+    spec: chunking-ralph-sequential
+    feature:
+      id: hints-injection
+      description: |
+        Inject hints from CR features/tasks into WorkItem prompts.
+      acceptance_criteria:
+        - Chunker reads hints field from features and tasks
+        - Hints are rendered as a HINTS section in the prompt template
+        - HINTS section appears after TASK section, before CONSTRAINTS
+        - If no hints, HINTS section is omitted entirely
+        - Each hint is rendered as a bullet point
