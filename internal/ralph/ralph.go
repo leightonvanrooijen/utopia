@@ -95,6 +95,14 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 		fmt.Printf("[%d/%d] %s - completed in %d iteration(s)\n", i+1, len(items), item.ID, item.IterationCount)
 	}
 
+	// Run after-phase validators once all work items are complete
+	if result.Completed == result.Total && len(validatorList) > 0 {
+		if err := runAfterPhaseValidators(ctx, validatorRunner, validatorList); err != nil {
+			result.Reason = err.Error()
+			return result, err
+		}
+	}
+
 	return result, nil
 }
 
@@ -455,4 +463,33 @@ func gitCommitWorkItem(projectDir string, item *domain.WorkItem, crTitle string)
 	}
 
 	fmt.Printf("  Created commit for %s\n", item.ID)
+}
+
+// runAfterPhaseValidators executes validators with the "after-phase" trigger.
+// These validators run once after all work items in a phase have completed.
+// Returns an error if any after-phase validator fails.
+func runAfterPhaseValidators(
+	ctx context.Context,
+	validatorRunner *validators.Runner,
+	validatorList []*domain.Validator,
+) error {
+	// Run validators with after-phase trigger
+	results := validatorRunner.RunAll(ctx, validatorList, domain.RunAfterPhase)
+
+	if len(results) == 0 {
+		// No after-phase validators configured
+		return nil
+	}
+
+	fmt.Printf("Running %d after-phase validator(s)...\n", len(results))
+
+	// Aggregate results
+	aggregate := validators.AggregateResults(results)
+
+	if !aggregate.Passed {
+		return fmt.Errorf("after-phase validators failed:\n%s", aggregate.Feedback)
+	}
+
+	fmt.Println("All after-phase validators passed!")
+	return nil
 }
