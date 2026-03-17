@@ -13,6 +13,38 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// validatorTemplate is a reference template for creating validators.
+// The underscore prefix indicates it's not active (must be copied and renamed).
+const validatorTemplate = `---
+# Validator ID (required) - used in feedback messages
+id: my-validator
+
+# When to run (optional, default: after-workitem)
+#   after-workitem - After each work item passes verification
+#   after-phase    - Only after initiative phase completes
+#   on-demand      - Skipped during normal execution (run manually)
+run: after-workitem
+
+# Tools the validator can use (optional, default: [Read, Glob, Grep])
+# These are read-only tools. Add Write, Edit, Bash for validators that fix issues.
+allowed_tools: [Read, Glob, Grep]
+---
+
+Review the following changes for [YOUR STANDARDS HERE]:
+
+{{changed_files}}
+
+Check for:
+- [Standard 1: e.g., All exported functions have documentation]
+- [Standard 2: e.g., Error messages include context]
+- [Standard 3: e.g., No TODO comments without ticket references]
+
+If ALL standards are met, output ONLY: <PASSED>
+
+Otherwise, list each violation:
+- file.go:42 - Missing documentation for exported function Foo
+`
+
 var initCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Initialize a new Utopia project",
@@ -22,6 +54,7 @@ This is the first step in the Utopia workflow. It creates a .utopia directory wi
   - config.yaml       Project configuration (verification command, strategies)
   - specs/            Living specifications (your system's source of truth)
   - work-items/       Auto-chunked work items for Ralph execution
+  - validators/       Custom validators for enforcing project standards
 
 You'll be prompted to configure:
   - Verification command (e.g., "npm test", "go test ./...")
@@ -53,11 +86,20 @@ func runInit(cmd *cobra.Command, args []string) error {
 		utopiaDir,
 		filepath.Join(utopiaDir, "specs"),
 		filepath.Join(utopiaDir, "work-items"),
+		filepath.Join(utopiaDir, "validators"),
 	}
 
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("failed to create directory %s: %w", dir, err)
+		}
+	}
+
+	// Create validator template file (idempotent - only if it doesn't exist)
+	templatePath := filepath.Join(utopiaDir, "validators", "_template.md")
+	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
+		if err := os.WriteFile(templatePath, []byte(validatorTemplate), 0644); err != nil {
+			return fmt.Errorf("failed to create validator template: %w", err)
 		}
 	}
 
@@ -147,9 +189,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Initialized Utopia project at %s\n", utopiaDir)
 		fmt.Println()
 		fmt.Println("Created:")
-		fmt.Println("  .utopia/config.yaml    - Project configuration")
-		fmt.Println("  .utopia/specs/         - Living specifications")
-		fmt.Println("  .utopia/work-items/    - Work items for Ralph")
+		fmt.Println("  .utopia/config.yaml              - Project configuration")
+		fmt.Println("  .utopia/specs/                   - Living specifications")
+		fmt.Println("  .utopia/work-items/              - Work items for Ralph")
+		fmt.Println("  .utopia/validators/_template.md  - Validator template (copy to create validators)")
 		fmt.Println()
 		fmt.Println("Next steps:")
 		fmt.Println("  utopia cr              - Create a change request")
