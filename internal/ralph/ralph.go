@@ -263,8 +263,13 @@ func buildPrompt(item *domain.WorkItem) string {
 	}
 
 	// Inject validator feedback as a separate section if present
+	// This section is only reached when verification passed but validators failed
 	if item.LastValidatorFeedback != "" {
-		prompt = prompt + "\n\n## PROJECT STANDARDS FEEDBACK\n\nThe previous attempt did not meet project standards:\n\n" + item.LastValidatorFeedback + "\n\nPlease address these standards violations in your implementation."
+		prompt = prompt + "\n\n## PROJECT STANDARDS FEEDBACK\n\n" +
+			"**Your implementation meets all acceptance criteria** (tests pass), but violates project standards.\n\n" +
+			"The following validators detected standards issues:\n\n" +
+			item.LastValidatorFeedback + "\n" +
+			"Please fix these standards violations while preserving all functionality. Do not break any tests."
 	}
 
 	return prompt

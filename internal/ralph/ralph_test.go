@@ -513,8 +513,8 @@ func TestBuildPrompt_ValidatorFeedbackNotInCodeBlock(t *testing.T) {
 	prompt := buildPrompt(item)
 
 	// Validator feedback is already formatted by validators, not wrapped in additional code block
-	// The feedback should appear directly after the section header
-	if !strings.Contains(prompt, "project standards:\n\nValidator feedback here") {
+	// The feedback should appear directly in the issues section
+	if !strings.Contains(prompt, "standards issues:\n\nValidator feedback here") {
 		t.Error("validator feedback should be included without additional code block wrapping")
 	}
 }
