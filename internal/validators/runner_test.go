@@ -407,3 +407,119 @@ func TestRunner_RunAll_DefaultTrigger(t *testing.T) {
 		t.Errorf("expected v1, got %s", results[0].ID)
 	}
 }
+
+func TestAggregateResults_AllPassed(t *testing.T) {
+	results := []ValidatorResult{
+		{ID: "v1", Result: &Result{Passed: true}},
+		{ID: "v2", Result: &Result{Passed: true}},
+		{ID: "v3", Result: &Result{Passed: true}},
+	}
+
+	aggregate := AggregateResults(results)
+
+	if !aggregate.Passed {
+		t.Error("aggregate should pass when all validators pass")
+	}
+
+	if aggregate.Feedback != "" {
+		t.Errorf("feedback should be empty when all pass, got %q", aggregate.Feedback)
+	}
+}
+
+func TestAggregateResults_OneFailed(t *testing.T) {
+	results := []ValidatorResult{
+		{ID: "v1", Result: &Result{Passed: true}},
+		{ID: "v2", Result: &Result{Passed: false, Feedback: "naming violation"}},
+		{ID: "v3", Result: &Result{Passed: true}},
+	}
+
+	aggregate := AggregateResults(results)
+
+	if aggregate.Passed {
+		t.Error("aggregate should fail when any validator fails")
+	}
+
+	if !strings.Contains(aggregate.Feedback, "v2") {
+		t.Errorf("feedback should contain failed validator ID, got %q", aggregate.Feedback)
+	}
+
+	if !strings.Contains(aggregate.Feedback, "naming violation") {
+		t.Errorf("feedback should contain failure message, got %q", aggregate.Feedback)
+	}
+
+	// Should not contain passing validators
+	if strings.Contains(aggregate.Feedback, "v1") || strings.Contains(aggregate.Feedback, "v3") {
+		t.Errorf("feedback should not contain passing validators, got %q", aggregate.Feedback)
+	}
+}
+
+func TestAggregateResults_MultipleFailed(t *testing.T) {
+	results := []ValidatorResult{
+		{ID: "v1", Result: &Result{Passed: false, Feedback: "style error"}},
+		{ID: "v2", Result: &Result{Passed: true}},
+		{ID: "v3", Result: &Result{Passed: false, Feedback: "security issue"}},
+	}
+
+	aggregate := AggregateResults(results)
+
+	if aggregate.Passed {
+		t.Error("aggregate should fail when multiple validators fail")
+	}
+
+	if !strings.Contains(aggregate.Feedback, "v1") || !strings.Contains(aggregate.Feedback, "style error") {
+		t.Errorf("feedback should contain v1 failure, got %q", aggregate.Feedback)
+	}
+
+	if !strings.Contains(aggregate.Feedback, "v3") || !strings.Contains(aggregate.Feedback, "security issue") {
+		t.Errorf("feedback should contain v3 failure, got %q", aggregate.Feedback)
+	}
+}
+
+func TestAggregateResults_WithErrors(t *testing.T) {
+	results := []ValidatorResult{
+		{ID: "v1", Result: &Result{Passed: true}},
+		{ID: "v2", Err: context.DeadlineExceeded},
+		{ID: "v3", Result: &Result{Passed: false, Feedback: "check failed"}},
+	}
+
+	aggregate := AggregateResults(results)
+
+	if aggregate.Passed {
+		t.Error("aggregate should fail when any validator has error")
+	}
+
+	if !strings.Contains(aggregate.Feedback, "v2") || !strings.Contains(aggregate.Feedback, "error") {
+		t.Errorf("feedback should contain error validator, got %q", aggregate.Feedback)
+	}
+
+	if !strings.Contains(aggregate.Feedback, "v3") {
+		t.Errorf("feedback should contain failed validator, got %q", aggregate.Feedback)
+	}
+}
+
+func TestAggregateResults_Empty(t *testing.T) {
+	aggregate := AggregateResults(nil)
+
+	if !aggregate.Passed {
+		t.Error("aggregate should pass with no validators")
+	}
+
+	if aggregate.Feedback != "" {
+		t.Errorf("feedback should be empty with no validators, got %q", aggregate.Feedback)
+	}
+}
+
+func TestAggregateResults_NilResult(t *testing.T) {
+	// Edge case: ValidatorResult with nil Result and nil Err
+	results := []ValidatorResult{
+		{ID: "v1", Result: nil, Err: nil},
+		{ID: "v2", Result: &Result{Passed: true}},
+	}
+
+	aggregate := AggregateResults(results)
+
+	// A nil Result with nil Err should be treated as passed (no failure detected)
+	if !aggregate.Passed {
+		t.Error("aggregate should pass when Result is nil with no error")
+	}
+}

@@ -211,3 +211,33 @@ func (r *Runner) getGitDiff(ctx context.Context) (string, error) {
 
 	return stdout.String(), nil
 }
+
+// AggregateResult holds the combined outcome of multiple validator runs
+type AggregateResult struct {
+	// Passed is true only if ALL validators passed
+	Passed bool
+	// Feedback contains combined failure messages from failed validators only
+	Feedback string
+}
+
+// AggregateResults combines results from parallel validator execution.
+// Overall pass requires ALL validators to pass (output <PASSED>).
+// Only failed validators are included in feedback to reduce noise.
+func AggregateResults(results []ValidatorResult) *AggregateResult {
+	aggregate := &AggregateResult{Passed: true}
+
+	var feedback strings.Builder
+	for _, vr := range results {
+		if vr.Err != nil {
+			aggregate.Passed = false
+			feedback.WriteString(fmt.Sprintf("Validator %s error: %v\n\n", vr.ID, vr.Err))
+		} else if vr.Result != nil && !vr.Result.Passed {
+			aggregate.Passed = false
+			feedback.WriteString(fmt.Sprintf("Validator %s failed:\n%s\n\n", vr.ID, vr.Result.Feedback))
+		}
+		// Passing validators are not included in feedback
+	}
+
+	aggregate.Feedback = strings.TrimSpace(feedback.String())
+	return aggregate
+}
