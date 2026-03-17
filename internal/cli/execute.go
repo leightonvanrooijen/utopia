@@ -18,6 +18,7 @@ import (
 	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/chunk"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
+	"github.com/leightonvanrooijen/utopia/internal/git"
 	"github.com/leightonvanrooijen/utopia/internal/ralph"
 	"github.com/spf13/cobra"
 )
@@ -588,29 +589,8 @@ func selectChangeRequest(store *internal.YAMLStore) (string, error) {
 
 func gitCommitChunk(projectDir, crID string) error {
 	workItemsDir := filepath.Join(projectDir, ".utopia", "work-items", crID)
-	addCmd := exec.Command("git", "add", workItemsDir)
-	addCmd.Dir = projectDir
-	var addStderr bytes.Buffer
-	addCmd.Stderr = &addStderr
-	if err := addCmd.Run(); err != nil {
-		return fmt.Errorf("git add failed: %w (%s)", err, addStderr.String())
-	}
-
-	diffCmd := exec.Command("git", "diff", "--cached", "--quiet")
-	diffCmd.Dir = projectDir
-	if err := diffCmd.Run(); err == nil {
-		return nil
-	}
-
 	msg := fmt.Sprintf("chunk: %s", crID)
-	commitCmd := exec.Command("git", "commit", "-m", msg)
-	commitCmd.Dir = projectDir
-	var commitStderr bytes.Buffer
-	commitCmd.Stderr = &commitStderr
-	if err := commitCmd.Run(); err != nil {
-		return fmt.Errorf("git commit failed: %w (%s)", err, commitStderr.String())
-	}
-	return nil
+	return git.CommitIfChanged(projectDir, msg, workItemsDir)
 }
 
 func gitCommitCleanup(projectDir, crID, utopiaDir string) error {
