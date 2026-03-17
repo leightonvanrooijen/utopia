@@ -595,33 +595,9 @@ func gitCommitChunk(projectDir, crID string) error {
 
 func gitCommitCleanup(projectDir, crID, utopiaDir string) error {
 	workItemsDir := filepath.Join(utopiaDir, "work-items", crID)
-	addWorkItemsCmd := exec.Command("git", "add", workItemsDir)
-	addWorkItemsCmd.Dir = projectDir
-	var addStderr bytes.Buffer
-	addWorkItemsCmd.Stderr = &addStderr
-	addWorkItemsCmd.Run()
-
 	crFile := filepath.Join(utopiaDir, "change-requests", crID+".yaml")
-	addCRCmd := exec.Command("git", "add", crFile)
-	addCRCmd.Dir = projectDir
-	addCRCmd.Stderr = &addStderr
-	addCRCmd.Run()
-
-	diffCmd := exec.Command("git", "diff", "--cached", "--quiet")
-	diffCmd.Dir = projectDir
-	if err := diffCmd.Run(); err == nil {
-		return nil
-	}
-
 	msg := fmt.Sprintf("cleanup: complete %s", crID)
-	commitCmd := exec.Command("git", "commit", "-m", msg)
-	commitCmd.Dir = projectDir
-	var commitStderr bytes.Buffer
-	commitCmd.Stderr = &commitStderr
-	if err := commitCmd.Run(); err != nil {
-		return fmt.Errorf("git commit failed: %w (%s)", err, commitStderr.String())
-	}
-	return nil
+	return git.CommitIfChanged(projectDir, msg, workItemsDir, crFile)
 }
 
 func GitCommitCR(projectDir, crID string) (string, error) {
