@@ -168,6 +168,7 @@ func executeWorkItem(
 			// No completion token - Claude hit step limit or got stuck
 			// Clear any previous failure since this is a different failure mode
 			item.LastFailureOutput = ""
+			item.LastValidatorFeedback = ""
 			continue
 		}
 
@@ -179,6 +180,7 @@ func executeWorkItem(
 			fmt.Printf("  Iteration %d: no verification command configured, marking complete\n", item.IterationCount)
 			item.Status = domain.WorkItemCompleted
 			item.LastFailureOutput = ""
+			item.LastValidatorFeedback = ""
 			if err := store.SaveWorkItemForSpec(specID, item); err != nil {
 				return err
 			}
@@ -204,6 +206,7 @@ func executeWorkItem(
 			// Validators were cancelled, their feedback is discarded
 			fmt.Printf("  Iteration %d: verification failed, will retry with failure output\n", item.IterationCount)
 			item.LastFailureOutput = result.VerifyOutput
+			item.LastValidatorFeedback = "" // Clear any previous validator feedback
 			continue
 		}
 
@@ -228,14 +231,17 @@ func executeWorkItem(
 
 		if !allValidatorsPassed {
 			// Validators failed - inject their feedback and retry
+			// Test failures are cleared since verification passed
 			fmt.Printf("  Iteration %d: validators failed, will retry with feedback\n", item.IterationCount)
-			item.LastFailureOutput = validatorFeedback.String()
+			item.LastFailureOutput = "" // Tests passed, clear test failures
+			item.LastValidatorFeedback = validatorFeedback.String()
 			continue
 		}
 
 		// All checks passed!
 		item.Status = domain.WorkItemCompleted
 		item.LastFailureOutput = ""
+		item.LastValidatorFeedback = ""
 		if err := store.SaveWorkItemForSpec(specID, item); err != nil {
 			return err
 		}
@@ -246,16 +252,19 @@ func executeWorkItem(
 }
 
 // buildPrompt constructs the prompt for Claude, including failure injection.
+// Test failures and validator feedback are injected as separate sections.
 func buildPrompt(item *domain.WorkItem) string {
 	// Start with the base prompt from the work item
 	prompt := item.Prompt
 
-	// If there's a previous failure, inject it
+	// Inject test failures (verification failures) if present
 	if item.LastFailureOutput != "" {
-		// The prompt template already has a PREVIOUS FAILURES section placeholder.
-		// However, for execution we need to dynamically inject failures into
-		// an already-baked prompt. We'll append a new section.
-		prompt = prompt + "\n\n## PREVIOUS FAILURES\n\nThe previous attempt failed with the following output:\n\n```\n" + item.LastFailureOutput + "\n```\n\nPlease address these failures in your implementation."
+		prompt = prompt + "\n\n## PREVIOUS FAILURES\n\nThe previous attempt failed with the following test output:\n\n```\n" + item.LastFailureOutput + "\n```\n\nPlease fix the test failures in your implementation."
+	}
+
+	// Inject validator feedback as a separate section if present
+	if item.LastValidatorFeedback != "" {
+		prompt = prompt + "\n\n## PROJECT STANDARDS FEEDBACK\n\nThe previous attempt did not meet project standards:\n\n" + item.LastValidatorFeedback + "\n\nPlease address these standards violations in your implementation."
 	}
 
 	return prompt

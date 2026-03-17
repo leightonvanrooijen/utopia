@@ -50,6 +50,10 @@ type WorkItem struct {
 	// LastFailureOutput stores the verification failure from the previous iteration.
 	// Only the most recent failure is kept (not accumulated).
 	LastFailureOutput string `yaml:"last_failure_output,omitempty"`
+
+	// LastValidatorFeedback stores feedback from validators that failed in the previous iteration.
+	// Kept separate from LastFailureOutput to allow distinct prompt sections.
+	LastValidatorFeedback string `yaml:"last_validator_feedback,omitempty"`
 }
 
 // NewWorkItem creates a work item from a spec feature.

@@ -65,9 +65,9 @@ func TestBuildPrompt_WithFailures(t *testing.T) {
 		t.Error("prompt should contain full failure output")
 	}
 
-	// Should have instruction to address failures
-	if !strings.Contains(prompt, "address these failures") {
-		t.Error("prompt should instruct to address failures")
+	// Should have instruction to fix test failures
+	if !strings.Contains(prompt, "fix the test failures") {
+		t.Error("prompt should instruct to fix test failures")
 	}
 }
 
@@ -380,5 +380,141 @@ func TestResult_Fields(t *testing.T) {
 
 	if result.Reason != "max iterations reached" {
 		t.Errorf("Reason = %q, want %q", result.Reason, "max iterations reached")
+	}
+}
+
+func TestBuildPrompt_WithValidatorFeedbackOnly(t *testing.T) {
+	item := &domain.WorkItem{
+		ID:                    "test-item",
+		Prompt:                "## TASK\n\nImplement feature X",
+		Status:                domain.WorkItemPending,
+		Complexity:            domain.ComplexityMedium,
+		LastValidatorFeedback: "Validator code-style failed:\nMissing error handling in handler.go",
+	}
+
+	prompt := buildPrompt(item)
+
+	// Should contain original prompt
+	if !strings.Contains(prompt, "## TASK") {
+		t.Error("prompt should contain original TASK section")
+	}
+
+	// Should contain PROJECT STANDARDS FEEDBACK section (not PREVIOUS FAILURES)
+	if !strings.Contains(prompt, "## PROJECT STANDARDS FEEDBACK") {
+		t.Error("prompt should contain PROJECT STANDARDS FEEDBACK section")
+	}
+
+	// Should NOT contain PREVIOUS FAILURES section
+	if strings.Contains(prompt, "## PREVIOUS FAILURES") {
+		t.Error("prompt should not contain PREVIOUS FAILURES when only validator feedback exists")
+	}
+
+	// Should contain the validator feedback
+	if !strings.Contains(prompt, "Missing error handling") {
+		t.Error("prompt should contain the validator feedback")
+	}
+
+	// Should have instruction to address standards
+	if !strings.Contains(prompt, "standards violations") {
+		t.Error("prompt should instruct to address standards violations")
+	}
+}
+
+func TestBuildPrompt_WithBothFailuresAndValidatorFeedback(t *testing.T) {
+	item := &domain.WorkItem{
+		ID:                    "test-item",
+		Prompt:                "## TASK\n\nImplement feature X",
+		Status:                domain.WorkItemPending,
+		Complexity:            domain.ComplexityMedium,
+		LastFailureOutput:     "FAIL: TestHandler\nExpected 200 but got 500",
+		LastValidatorFeedback: "Validator security-check failed:\nSQL injection vulnerability detected",
+	}
+
+	prompt := buildPrompt(item)
+
+	// Should contain both sections
+	if !strings.Contains(prompt, "## PREVIOUS FAILURES") {
+		t.Error("prompt should contain PREVIOUS FAILURES section")
+	}
+
+	if !strings.Contains(prompt, "## PROJECT STANDARDS FEEDBACK") {
+		t.Error("prompt should contain PROJECT STANDARDS FEEDBACK section")
+	}
+
+	// PREVIOUS FAILURES should come before PROJECT STANDARDS FEEDBACK
+	failuresIndex := strings.Index(prompt, "## PREVIOUS FAILURES")
+	standardsIndex := strings.Index(prompt, "## PROJECT STANDARDS FEEDBACK")
+	if failuresIndex > standardsIndex {
+		t.Error("PREVIOUS FAILURES section should come before PROJECT STANDARDS FEEDBACK section")
+	}
+
+	// Should contain both types of feedback
+	if !strings.Contains(prompt, "Expected 200 but got 500") {
+		t.Error("prompt should contain test failure output")
+	}
+
+	if !strings.Contains(prompt, "SQL injection vulnerability") {
+		t.Error("prompt should contain validator feedback")
+	}
+}
+
+func TestBuildPrompt_NoFeedback(t *testing.T) {
+	item := &domain.WorkItem{
+		ID:         "test-item",
+		Prompt:     "Original prompt",
+		Status:     domain.WorkItemPending,
+		Complexity: domain.ComplexityMedium,
+		// Both fields empty/default
+	}
+
+	prompt := buildPrompt(item)
+
+	// Should not contain either section
+	if strings.Contains(prompt, "PREVIOUS FAILURES") {
+		t.Error("prompt should not contain PREVIOUS FAILURES when empty")
+	}
+
+	if strings.Contains(prompt, "PROJECT STANDARDS FEEDBACK") {
+		t.Error("prompt should not contain PROJECT STANDARDS FEEDBACK when empty")
+	}
+
+	// Should just be the original prompt
+	if prompt != item.Prompt {
+		t.Errorf("prompt should be unchanged, got %q", prompt)
+	}
+}
+
+func TestBuildPrompt_TestFailuresInCodeBlock(t *testing.T) {
+	item := &domain.WorkItem{
+		ID:                "test-item",
+		Prompt:            "Original prompt",
+		Status:            domain.WorkItemPending,
+		Complexity:        domain.ComplexityMedium,
+		LastFailureOutput: "test failure",
+	}
+
+	prompt := buildPrompt(item)
+
+	// Test failures should be in a code block
+	if !strings.Contains(prompt, "```\ntest failure\n```") {
+		t.Error("test failure output should be wrapped in code blocks")
+	}
+}
+
+func TestBuildPrompt_ValidatorFeedbackNotInCodeBlock(t *testing.T) {
+	item := &domain.WorkItem{
+		ID:                    "test-item",
+		Prompt:                "Original prompt",
+		Status:                domain.WorkItemPending,
+		Complexity:            domain.ComplexityMedium,
+		LastValidatorFeedback: "Validator feedback here",
+	}
+
+	prompt := buildPrompt(item)
+
+	// Validator feedback is already formatted by validators, not wrapped in additional code block
+	// The feedback should appear directly after the section header
+	if !strings.Contains(prompt, "project standards:\n\nValidator feedback here") {
+		t.Error("validator feedback should be included without additional code block wrapping")
 	}
 }
