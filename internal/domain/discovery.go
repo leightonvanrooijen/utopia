@@ -27,6 +27,10 @@ type Project struct {
 type Config struct {
 	ProjectContext string             `yaml:"project_context,omitempty"`
 	Verification   VerificationConfig `yaml:"verification"`
+	// Validators is an explicit list of validator file paths relative to .utopia/
+	// Example: ["validators/component-standards.md"]
+	// Only listed files are loaded - no auto-discovery.
+	Validators []string `yaml:"validators,omitempty"`
 }
 
 // VerificationConfig holds verification command settings

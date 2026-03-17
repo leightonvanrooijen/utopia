@@ -676,3 +676,25 @@ func (s *YAMLStore) LoadDomainDiscoveryState() (*domain.DomainDiscoveryState, er
 func (s *YAMLStore) SaveDomainDiscoveryState(state *domain.DomainDiscoveryState) error {
 	return Save(s, filepath.Join("drafts", "domain", ".discovery-state"), state)
 }
+
+// ValidateValidatorPaths checks that all configured validator file paths exist.
+// Returns nil if all paths exist (or if validators slice is empty).
+// Returns a clear error message listing any missing files.
+func (s *YAMLStore) ValidateValidatorPaths(validators []string) error {
+	var missing []string
+	for _, path := range validators {
+		fullPath := filepath.Join(s.baseDir, path)
+		if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+			missing = append(missing, path)
+		}
+	}
+
+	if len(missing) > 0 {
+		if len(missing) == 1 {
+			return fmt.Errorf("validator file not found: %s", missing[0])
+		}
+		return fmt.Errorf("validator files not found: %s", strings.Join(missing, ", "))
+	}
+
+	return nil
+}

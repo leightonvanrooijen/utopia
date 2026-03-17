@@ -385,6 +385,160 @@ func TestDeleteSpec_NotFound(t *testing.T) {
 	}
 }
 
+func TestValidateValidatorPaths_AllExist(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	// Create validators directory and files
+	validatorDir := filepath.Join(store.baseDir, "validators")
+	if err := os.MkdirAll(validatorDir, 0755); err != nil {
+		t.Fatalf("failed to create validators dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(validatorDir, "test1.md"), []byte("content"), 0644); err != nil {
+		t.Fatalf("failed to create test1.md: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(validatorDir, "test2.md"), []byte("content"), 0644); err != nil {
+		t.Fatalf("failed to create test2.md: %v", err)
+	}
+
+	validators := []string{
+		"validators/test1.md",
+		"validators/test2.md",
+	}
+
+	err := store.ValidateValidatorPaths(validators)
+	if err != nil {
+		t.Errorf("expected no error when all files exist, got: %v", err)
+	}
+}
+
+func TestValidateValidatorPaths_EmptyList(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	// Empty validators list should succeed (validators are optional)
+	err := store.ValidateValidatorPaths([]string{})
+	if err != nil {
+		t.Errorf("expected no error for empty validators list, got: %v", err)
+	}
+
+	// Nil validators list should also succeed
+	err = store.ValidateValidatorPaths(nil)
+	if err != nil {
+		t.Errorf("expected no error for nil validators list, got: %v", err)
+	}
+}
+
+func TestValidateValidatorPaths_SingleMissing(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	validators := []string{"validators/nonexistent.md"}
+
+	err := store.ValidateValidatorPaths(validators)
+	if err == nil {
+		t.Fatal("expected error when validator file is missing")
+	}
+
+	if !strings.Contains(err.Error(), "validator file not found") {
+		t.Errorf("error should mention 'validator file not found', got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "validators/nonexistent.md") {
+		t.Errorf("error should include the missing file path, got: %v", err)
+	}
+}
+
+func TestValidateValidatorPaths_MultipleMissing(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	// Create one file but reference multiple
+	validatorDir := filepath.Join(store.baseDir, "validators")
+	if err := os.MkdirAll(validatorDir, 0755); err != nil {
+		t.Fatalf("failed to create validators dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(validatorDir, "exists.md"), []byte("content"), 0644); err != nil {
+		t.Fatalf("failed to create exists.md: %v", err)
+	}
+
+	validators := []string{
+		"validators/exists.md",
+		"validators/missing1.md",
+		"validators/missing2.md",
+	}
+
+	err := store.ValidateValidatorPaths(validators)
+	if err == nil {
+		t.Fatal("expected error when validator files are missing")
+	}
+
+	if !strings.Contains(err.Error(), "validator files not found") {
+		t.Errorf("error should mention 'validator files not found' (plural), got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "missing1.md") {
+		t.Errorf("error should include missing1.md, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "missing2.md") {
+		t.Errorf("error should include missing2.md, got: %v", err)
+	}
+}
+
+func TestConfigValidators_LoadFromYAML(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	// Write config with validators
+	configContent := `project_context: Test context
+verification:
+    command: ./test.sh
+validators:
+    - validators/code-standards.md
+    - validators/naming.md
+`
+	if err := os.WriteFile(filepath.Join(store.baseDir, "config.yaml"), []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	config, err := store.LoadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error loading config: %v", err)
+	}
+
+	if len(config.Validators) != 2 {
+		t.Errorf("expected 2 validators, got %d", len(config.Validators))
+	}
+	if config.Validators[0] != "validators/code-standards.md" {
+		t.Errorf("expected first validator 'validators/code-standards.md', got %q", config.Validators[0])
+	}
+	if config.Validators[1] != "validators/naming.md" {
+		t.Errorf("expected second validator 'validators/naming.md', got %q", config.Validators[1])
+	}
+}
+
+func TestConfigValidators_OmittedWhenEmpty(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	// Write config without validators (older config format)
+	configContent := `project_context: Test context
+verification:
+    command: ./test.sh
+`
+	if err := os.WriteFile(filepath.Join(store.baseDir, "config.yaml"), []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	config, err := store.LoadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error loading config: %v", err)
+	}
+
+	// Validators should be nil/empty when not configured
+	if len(config.Validators) != 0 {
+		t.Errorf("expected empty validators when not configured, got %d", len(config.Validators))
+	}
+}
+
 func TestMergeWorkflow_FullScenario(t *testing.T) {
 	store, cleanup := SetupTestStore(t)
 	defer cleanup()
