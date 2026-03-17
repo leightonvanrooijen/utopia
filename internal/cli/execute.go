@@ -2,11 +2,9 @@ package cli
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"sort"
@@ -633,26 +631,5 @@ func GitCommitSpecMerge(projectDir string, cr *domain.ChangeRequest, mergeResult
 	}
 
 	specsDir := filepath.Join(projectDir, ".utopia", "specs")
-	addCmd := exec.Command("git", "add", specsDir)
-	addCmd.Dir = projectDir
-	var addStderr bytes.Buffer
-	addCmd.Stderr = &addStderr
-	if err := addCmd.Run(); err != nil {
-		return fmt.Errorf("git add failed: %w (%s)", err, addStderr.String())
-	}
-
-	diffCmd := exec.Command("git", "diff", "--cached", "--quiet")
-	diffCmd.Dir = projectDir
-	if err := diffCmd.Run(); err == nil {
-		return nil
-	}
-
-	commitCmd := exec.Command("git", "commit", "-m", msg)
-	commitCmd.Dir = projectDir
-	var commitStderr bytes.Buffer
-	commitCmd.Stderr = &commitStderr
-	if err := commitCmd.Run(); err != nil {
-		return fmt.Errorf("git commit failed: %w (%s)", err, commitStderr.String())
-	}
-	return nil
+	return git.CommitIfChanged(projectDir, msg, specsDir)
 }
