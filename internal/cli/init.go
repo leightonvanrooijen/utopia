@@ -16,22 +16,72 @@ import (
 // validatorTemplate is a reference template for creating validators.
 // The underscore prefix indicates it's not active (must be copied and renamed).
 const validatorTemplate = `---
-# Validator ID (required) - used in feedback messages
+# ============================================================================
+# VALIDATOR TEMPLATE
+# ============================================================================
+# Validators enforce project standards by reviewing changes after verification
+# passes. Copy this file (remove the underscore prefix) and customize it.
+#
+# Example: cp _template.md code-standards.md
+# Then add to .utopia/config.yaml:
+#   validators:
+#     - validators/code-standards.md
+# ============================================================================
+
+# Validator ID (required)
+# A unique identifier for this validator. Used in feedback messages to help
+# identify which validator flagged an issue.
+# Examples: "code-standards", "security-review", "api-consistency"
 id: my-validator
 
 # When to run (optional, default: after-workitem)
-#   after-workitem - After each work item passes verification
-#   after-phase    - Only after initiative phase completes
-#   on-demand      - Skipped during normal execution (run manually)
+# Controls when this validator executes in the workflow:
+#
+#   after-workitem  - Runs after EACH work item passes verification.
+#                     Best for: Standards that should be checked incrementally.
+#                     Feedback is injected into the next retry if violations found.
+#
+#   after-phase     - Runs ONCE after all work items in a phase complete.
+#                     Best for: Cross-cutting concerns, architecture reviews,
+#                     or checks that need to see the full picture.
+#
+#   on-demand       - Never runs automatically. Must be invoked manually.
+#                     Best for: Expensive checks, optional audits, or reviews
+#                     that don't need to block normal workflow.
+#
 run: after-workitem
 
 # Tools the validator can use (optional, default: [Read, Glob, Grep])
-# These are read-only tools. Add Write, Edit, Bash for validators that fix issues.
+# By default, validators are read-only for safety. Available tools:
+#
+#   Read-only (default): [Read, Glob, Grep]
+#   - Read:  Read file contents
+#   - Glob:  Find files matching patterns (e.g., "**/*.go")
+#   - Grep:  Search for patterns in files
+#
+#   Write tools (for auto-fixing validators):
+#   - Write: Create or overwrite files
+#   - Edit:  Make targeted edits to existing files
+#   - Bash:  Execute shell commands
+#
+# Example auto-fixing validator:
+#   allowed_tools: [Read, Glob, Grep, Edit]
+#
 allowed_tools: [Read, Glob, Grep]
 ---
 
+<!-- =========================================================================
+VALIDATOR PROMPT SECTION
+============================================================================
+Everything below the frontmatter (---) is the prompt sent to Claude.
+Write clear instructions for what to check and how to report issues.
+========================================================================== -->
+
 Review the following changes for [YOUR STANDARDS HERE]:
 
+<!-- The {{changed_files}} placeholder is replaced with the git diff of changes.
+     This shows exactly what code was added, modified, or deleted.
+     Format: unified diff with file paths, line numbers, and context. -->
 {{changed_files}}
 
 Check for:
@@ -39,10 +89,24 @@ Check for:
 - [Standard 2: e.g., Error messages include context]
 - [Standard 3: e.g., No TODO comments without ticket references]
 
+<!-- =========================================================================
+OUTPUT FORMAT (IMPORTANT)
+============================================================================
+Your validator MUST follow this output format:
+
+SUCCESS: Output ONLY the token <PASSED> with nothing else.
+         This signals all standards are met.
+
+FAILURE: List each violation with actionable details.
+         Include file path, line number, and specific issue.
+         The feedback is injected into the LLM's next attempt.
+========================================================================== -->
+
 If ALL standards are met, output ONLY: <PASSED>
 
-Otherwise, list each violation:
+Otherwise, list each violation with file and line number:
 - file.go:42 - Missing documentation for exported function Foo
+- internal/api/handler.go:156 - Error message lacks context: "failed" should include operation name
 `
 
 var initCmd = &cobra.Command{
