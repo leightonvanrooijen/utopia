@@ -1,6 +1,6 @@
 module github.com/leightonvanrooijen/utopia
 
-go 1.24.4
+go 1.25.0
 
 require (
 	github.com/google/yamlfmt v0.21.0
@@ -17,6 +17,7 @@ require (
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
+	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/term v0.40.0 // indirect
 )
