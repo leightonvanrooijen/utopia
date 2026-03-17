@@ -1,16 +1,15 @@
 package ralph
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"os/exec"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
+	"github.com/leightonvanrooijen/utopia/internal/git"
 	"github.com/leightonvanrooijen/utopia/internal/validators"
 	"github.com/leightonvanrooijen/utopia/internal/verification"
 )
@@ -427,38 +426,27 @@ func logExecutionEntry(store *internal.YAMLStore, crID string, item *domain.Work
 }
 
 // gitCommitWorkItem creates a git commit after a work item passes verification.
-// Returns nil on success, logs warning and returns nil on failure (non-blocking).
+// Logs warning and returns on failure (non-blocking).
 func gitCommitWorkItem(projectDir string, item *domain.WorkItem, crTitle string) {
 	// Build commit message: subject line + body with CR title
 	subject := fmt.Sprintf("workitem: %s", item.ID)
 	body := crTitle
 	message := fmt.Sprintf("%s\n\n%s", subject, body)
 
-	// Stage all changes
-	addCmd := exec.Command("git", "add", "-A")
-	addCmd.Dir = projectDir
-	var addStderr bytes.Buffer
-	addCmd.Stderr = &addStderr
-	if err := addCmd.Run(); err != nil {
-		fmt.Printf("  warning: git add failed: %v (%s)\n", err, strings.TrimSpace(addStderr.String()))
+	// Stage all changes first to check if there's anything to commit
+	if err := git.Add(projectDir, "-A"); err != nil {
+		fmt.Printf("  warning: git add failed: %v\n", err)
 		return
 	}
 
 	// Check if there are changes to commit
-	diffCmd := exec.Command("git", "diff", "--cached", "--quiet")
-	diffCmd.Dir = projectDir
-	if err := diffCmd.Run(); err == nil {
-		// No changes to commit (exit code 0 means no diff)
+	if !git.HasStagedChanges(projectDir) {
 		return
 	}
 
 	// Commit
-	commitCmd := exec.Command("git", "commit", "-m", message)
-	commitCmd.Dir = projectDir
-	var commitStderr bytes.Buffer
-	commitCmd.Stderr = &commitStderr
-	if err := commitCmd.Run(); err != nil {
-		fmt.Printf("  warning: git commit failed: %v (%s)\n", err, strings.TrimSpace(commitStderr.String()))
+	if err := git.Commit(projectDir, message); err != nil {
+		fmt.Printf("  warning: git commit failed: %v\n", err)
 		return
 	}
 
