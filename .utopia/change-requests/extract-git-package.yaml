@@ -1,164 +1,156 @@
 id: extract-git-package
 type: refactor
 title: Extract git operations into internal/git package
-status: draft
+status: in-progress
 tasks:
-  - id: create-git-package
-    description: |
-      Create internal/git/git.go with reusable git operations.
+    - id: create-git-package
+      description: |
+        Create internal/git/git.go with reusable git operations.
 
-      Functions to implement:
-      - Add(projectDir string, paths ...string) error
-        Stages files for commit. Wraps "git add".
+        Functions to implement:
+        - Add(projectDir string, paths ...string) error
+          Stages files for commit. Wraps "git add".
 
-      - HasStagedChanges(projectDir string) bool
-        Returns true if there are staged changes. Wraps "git diff --cached --quiet".
+        - HasStagedChanges(projectDir string) bool
+          Returns true if there are staged changes. Wraps "git diff --cached --quiet".
 
-      - Commit(projectDir, message string) error
-        Creates a commit. Wraps "git commit -m".
+        - Commit(projectDir, message string) error
+          Creates a commit. Wraps "git commit -m".
 
-      - CommitIfChanged(projectDir, message string, paths ...string) error
-        Convenience function: stages paths and commits if there are changes.
-        This is the most common pattern used throughout the codebase.
+        - CommitIfChanged(projectDir, message string, paths ...string) error
+          Convenience function: stages paths and commits if there are changes.
+          This is the most common pattern used throughout the codebase.
 
-      - CurrentBranch(projectDir string) string
-        Returns current branch name. Wraps "git rev-parse --abbrev-ref HEAD".
+        - CurrentBranch(projectDir string) string
+          Returns current branch name. Wraps "git rev-parse --abbrev-ref HEAD".
 
-      - HeadSHA(projectDir string) (string, error)
-        Returns current HEAD SHA. Wraps "git rev-parse HEAD".
+        - HeadSHA(projectDir string) (string, error)
+          Returns current HEAD SHA. Wraps "git rev-parse HEAD".
 
-      All functions should:
-      - Set cmd.Dir to projectDir
-      - Capture stderr for error messages
-      - Return clear error messages on failure
-    acceptance_criteria:
-      - internal/git/git.go exists
-      - All 6 functions are implemented
-      - Functions handle errors consistently
-      - Build succeeds
+        All functions should:
+        - Set cmd.Dir to projectDir
+        - Capture stderr for error messages
+        - Return clear error messages on failure
+      acceptance_criteria:
+        - internal/git/git.go exists
+        - All 6 functions are implemented
+        - Functions handle errors consistently
+        - Build succeeds
+    - id: refactor-git-commit-chunk
+      description: |
+        Refactor gitCommitChunk in execute.go to use git package.
 
-  - id: refactor-git-commit-chunk
-    description: |
-      Refactor gitCommitChunk in execute.go to use git package.
+        Current implementation (lines 589-614) does:
+        1. git add workItemsDir
+        2. git diff --cached --quiet (check for changes)
+        3. git commit -m "chunk: {crID}"
 
-      Current implementation (lines 589-614) does:
-      1. git add workItemsDir
-      2. git diff --cached --quiet (check for changes)
-      3. git commit -m "chunk: {crID}"
+        Replace with: git.CommitIfChanged(projectDir, msg, workItemsDir)
+      acceptance_criteria:
+        - gitCommitChunk uses git.CommitIfChanged
+        - Function reduced to ~5 lines
+        - Behavior unchanged
+        - Build succeeds
+    - id: refactor-git-commit-cleanup
+      description: |
+        Refactor gitCommitCleanup in execute.go to use git package.
 
-      Replace with: git.CommitIfChanged(projectDir, msg, workItemsDir)
-    acceptance_criteria:
-      - gitCommitChunk uses git.CommitIfChanged
-      - Function reduced to ~5 lines
-      - Behavior unchanged
-      - Build succeeds
+        Current implementation (lines 616-645) does:
+        1. git add workItemsDir (ignoring errors)
+        2. git add crFile (ignoring errors)
+        3. git diff --cached --quiet
+        4. git commit -m "cleanup: complete {crID}"
 
-  - id: refactor-git-commit-cleanup
-    description: |
-      Refactor gitCommitCleanup in execute.go to use git package.
+        Replace with: git.CommitIfChanged(projectDir, msg, workItemsDir, crFile)
+      acceptance_criteria:
+        - gitCommitCleanup uses git.CommitIfChanged
+        - Function reduced to ~5 lines
+        - Behavior unchanged
+        - Build succeeds
+    - id: refactor-git-commit-cr
+      description: |
+        Refactor GitCommitCR in execute.go to use git package.
 
-      Current implementation (lines 616-645) does:
-      1. git add workItemsDir (ignoring errors)
-      2. git add crFile (ignoring errors)
-      3. git diff --cached --quiet
-      4. git commit -m "cleanup: complete {crID}"
+        Current implementation (lines 647-686) does:
+        1. git add crFile
+        2. git diff --cached --quiet
+        3. git commit -m "cr: create {crID}"
+        4. git rev-parse HEAD (get SHA)
 
-      Replace with: git.CommitIfChanged(projectDir, msg, workItemsDir, crFile)
-    acceptance_criteria:
-      - gitCommitCleanup uses git.CommitIfChanged
-      - Function reduced to ~5 lines
-      - Behavior unchanged
-      - Build succeeds
+        Replace with: git.CommitIfChanged + git.HeadSHA
+      acceptance_criteria:
+        - GitCommitCR uses git package functions
+        - Function reduced significantly
+        - Still returns commit SHA
+        - Behavior unchanged
+        - Build succeeds
+    - id: refactor-get-git-branch
+      description: |
+        Refactor getGitBranch in execute.go to use git package.
 
-  - id: refactor-git-commit-cr
-    description: |
-      Refactor GitCommitCR in execute.go to use git package.
+        Current implementation (lines 688-697) wraps "git rev-parse --abbrev-ref HEAD".
 
-      Current implementation (lines 647-686) does:
-      1. git add crFile
-      2. git diff --cached --quiet
-      3. git commit -m "cr: create {crID}"
-      4. git rev-parse HEAD (get SHA)
+        Replace with: git.CurrentBranch(projectDir)
+      acceptance_criteria:
+        - getGitBranch uses git.CurrentBranch or is removed entirely
+        - Behavior unchanged
+        - Build succeeds
+    - id: refactor-git-commit-spec-merge
+      description: |
+        Refactor GitCommitSpecMerge in execute.go to use git package.
 
-      Replace with: git.CommitIfChanged + git.HeadSHA
-    acceptance_criteria:
-      - GitCommitCR uses git package functions
-      - Function reduced significantly
-      - Still returns commit SHA
-      - Behavior unchanged
-      - Build succeeds
+        Current implementation (lines 699-739) does:
+        1. Build commit message based on merge result
+        2. git add specsDir
+        3. git diff --cached --quiet
+        4. git commit -m msg
 
-  - id: refactor-get-git-branch
-    description: |
-      Refactor getGitBranch in execute.go to use git package.
+        Replace with: git.CommitIfChanged(projectDir, msg, specsDir)
+      acceptance_criteria:
+        - GitCommitSpecMerge uses git.CommitIfChanged
+        - Message building logic preserved
+        - Function reduced significantly
+        - Behavior unchanged
+        - Build succeeds
+    - id: refactor-ralph-commit-work-item
+      description: |
+        Refactor commitWorkItem in ralph.go to use git package.
 
-      Current implementation (lines 688-697) wraps "git rev-parse --abbrev-ref HEAD".
+        Current implementation (lines 275-309) does:
+        1. Build commit message with subject + body
+        2. git add -A
+        3. git diff --cached --quiet
+        4. git commit -m message
 
-      Replace with: git.CurrentBranch(projectDir)
-    acceptance_criteria:
-      - getGitBranch uses git.CurrentBranch or is removed entirely
-      - Behavior unchanged
-      - Build succeeds
+        Note: This uses "git add -A" (all files) not specific paths.
+        May need git.AddAll or pass "-A" as path.
+      acceptance_criteria:
+        - commitWorkItem uses git package functions
+        - Function reduced significantly
+        - Still stages all files (git add -A behavior)
+        - Behavior unchanged
+        - Build succeeds
+    - id: cleanup-imports
+      description: |
+        Remove unused imports from execute.go and ralph.go after refactoring.
 
-  - id: refactor-git-commit-spec-merge
-    description: |
-      Refactor GitCommitSpecMerge in execute.go to use git package.
+        Likely removals:
+        - "bytes" (if no longer building stderr buffers)
+        - "os/exec" (if all exec.Command calls moved to git package)
+      acceptance_criteria:
+        - No unused imports
+        - Build succeeds
+        - go fmt passes
+    - id: verify-git-operations
+      description: |
+        Test that all git operations still work correctly.
 
-      Current implementation (lines 699-739) does:
-      1. Build commit message based on merge result
-      2. git add specsDir
-      3. git diff --cached --quiet
-      4. git commit -m msg
-
-      Replace with: git.CommitIfChanged(projectDir, msg, specsDir)
-    acceptance_criteria:
-      - GitCommitSpecMerge uses git.CommitIfChanged
-      - Message building logic preserved
-      - Function reduced significantly
-      - Behavior unchanged
-      - Build succeeds
-
-  - id: refactor-ralph-commit-work-item
-    description: |
-      Refactor commitWorkItem in ralph.go to use git package.
-
-      Current implementation (lines 275-309) does:
-      1. Build commit message with subject + body
-      2. git add -A
-      3. git diff --cached --quiet
-      4. git commit -m message
-
-      Note: This uses "git add -A" (all files) not specific paths.
-      May need git.AddAll or pass "-A" as path.
-    acceptance_criteria:
-      - commitWorkItem uses git package functions
-      - Function reduced significantly
-      - Still stages all files (git add -A behavior)
-      - Behavior unchanged
-      - Build succeeds
-
-  - id: cleanup-imports
-    description: |
-      Remove unused imports from execute.go and ralph.go after refactoring.
-
-      Likely removals:
-      - "bytes" (if no longer building stderr buffers)
-      - "os/exec" (if all exec.Command calls moved to git package)
-    acceptance_criteria:
-      - No unused imports
-      - Build succeeds
-      - go fmt passes
-
-  - id: verify-git-operations
-    description: |
-      Test that all git operations still work correctly.
-
-      Manual verification:
-      1. Create a CR (tests GitCommitCR)
-      2. Run execute on a CR (tests commitWorkItem, gitCommitChunk)
-      3. Let it complete and merge (tests GitCommitSpecMerge, gitCommitCleanup)
-    acceptance_criteria:
-      - All git commits are created correctly
-      - Commit messages match expected format
-      - Build succeeds
-      - All tests pass
+        Manual verification:
+        1. Create a CR (tests GitCommitCR)
+        2. Run execute on a CR (tests commitWorkItem, gitCommitChunk)
+        3. Let it complete and merge (tests GitCommitSpecMerge, gitCommitCleanup)
+      acceptance_criteria:
+        - All git commits are created correctly
+        - Commit messages match expected format
+        - Build succeeds
+        - All tests pass
