@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -638,6 +639,229 @@ func TestMergeWorkflow_FullScenario(t *testing.T) {
 			if !found {
 				t.Error("ralph-loop should have the new criterion added")
 			}
+		}
+	}
+}
+
+func TestLoadValidator_FullFormat(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	// Create validators directory and file with full frontmatter
+	validatorDir := filepath.Join(store.baseDir, "validators")
+	if err := os.MkdirAll(validatorDir, 0755); err != nil {
+		t.Fatalf("failed to create validators dir: %v", err)
+	}
+
+	content := `---
+id: code-standards
+run: after-workitem
+allowed_tools: [Read, Glob, Grep, WebFetch]
+---
+Review the following changes for code standards:
+
+{{changed_files}}
+
+Check for naming conventions and patterns.
+If all standards are met, output: <PASSED>
+`
+	if err := os.WriteFile(filepath.Join(validatorDir, "code-standards.md"), []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create validator file: %v", err)
+	}
+
+	validator, err := store.LoadValidator("validators/code-standards.md")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if validator.ID != "code-standards" {
+		t.Errorf("expected ID 'code-standards', got %q", validator.ID)
+	}
+	if validator.Run != domain.RunAfterWorkitem {
+		t.Errorf("expected Run 'after-workitem', got %q", validator.Run)
+	}
+	if len(validator.AllowedTools) != 4 {
+		t.Errorf("expected 4 allowed tools, got %d", len(validator.AllowedTools))
+	}
+	if validator.AllowedTools[0] != "Read" {
+		t.Errorf("expected first tool 'Read', got %q", validator.AllowedTools[0])
+	}
+	if !strings.Contains(validator.Prompt, "Review the following changes") {
+		t.Errorf("prompt should contain expected text, got: %s", validator.Prompt)
+	}
+	if !strings.Contains(validator.Prompt, "{{changed_files}}") {
+		t.Errorf("prompt should contain placeholder, got: %s", validator.Prompt)
+	}
+}
+
+func TestLoadValidator_MinimalFormat(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	// Create validator with only required field (id)
+	validatorDir := filepath.Join(store.baseDir, "validators")
+	if err := os.MkdirAll(validatorDir, 0755); err != nil {
+		t.Fatalf("failed to create validators dir: %v", err)
+	}
+
+	content := `---
+id: minimal-validator
+---
+Simple prompt with {{changed_files}} placeholder.
+`
+	if err := os.WriteFile(filepath.Join(validatorDir, "minimal.md"), []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create validator file: %v", err)
+	}
+
+	validator, err := store.LoadValidator("validators/minimal.md")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if validator.ID != "minimal-validator" {
+		t.Errorf("expected ID 'minimal-validator', got %q", validator.ID)
+	}
+
+	// Verify defaults are applied via getter methods
+	if validator.GetRun() != domain.RunAfterWorkitem {
+		t.Errorf("expected default run 'after-workitem', got %q", validator.GetRun())
+	}
+	expectedTools := domain.DefaultAllowedTools()
+	gotTools := validator.GetAllowedTools()
+	if len(gotTools) != len(expectedTools) {
+		t.Errorf("expected %d default tools, got %d", len(expectedTools), len(gotTools))
+	}
+}
+
+func TestLoadValidator_MissingID(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	validatorDir := filepath.Join(store.baseDir, "validators")
+	if err := os.MkdirAll(validatorDir, 0755); err != nil {
+		t.Fatalf("failed to create validators dir: %v", err)
+	}
+
+	// Missing id field should error
+	content := `---
+run: after-workitem
+---
+Prompt without id.
+`
+	if err := os.WriteFile(filepath.Join(validatorDir, "no-id.md"), []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create validator file: %v", err)
+	}
+
+	_, err := store.LoadValidator("validators/no-id.md")
+	if err == nil {
+		t.Fatal("expected error for validator missing id")
+	}
+	if !strings.Contains(err.Error(), "missing required 'id' field") {
+		t.Errorf("error should mention missing id field, got: %v", err)
+	}
+}
+
+func TestLoadValidator_MissingFrontmatter(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	validatorDir := filepath.Join(store.baseDir, "validators")
+	if err := os.MkdirAll(validatorDir, 0755); err != nil {
+		t.Fatalf("failed to create validators dir: %v", err)
+	}
+
+	// No frontmatter at all
+	content := `Just a plain markdown file without frontmatter.`
+	if err := os.WriteFile(filepath.Join(validatorDir, "plain.md"), []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create validator file: %v", err)
+	}
+
+	_, err := store.LoadValidator("validators/plain.md")
+	if err == nil {
+		t.Fatal("expected error for validator missing frontmatter")
+	}
+	if !strings.Contains(err.Error(), "missing YAML frontmatter") {
+		t.Errorf("error should mention missing frontmatter, got: %v", err)
+	}
+}
+
+func TestLoadValidator_UnclosedFrontmatter(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	validatorDir := filepath.Join(store.baseDir, "validators")
+	if err := os.MkdirAll(validatorDir, 0755); err != nil {
+		t.Fatalf("failed to create validators dir: %v", err)
+	}
+
+	// Frontmatter without closing ---
+	content := `---
+id: broken
+Some content without closing delimiter.`
+	if err := os.WriteFile(filepath.Join(validatorDir, "unclosed.md"), []byte(content), 0644); err != nil {
+		t.Fatalf("failed to create validator file: %v", err)
+	}
+
+	_, err := store.LoadValidator("validators/unclosed.md")
+	if err == nil {
+		t.Fatal("expected error for unclosed frontmatter")
+	}
+	if !strings.Contains(err.Error(), "unclosed YAML frontmatter") {
+		t.Errorf("error should mention unclosed frontmatter, got: %v", err)
+	}
+}
+
+func TestLoadValidator_FileNotFound(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	_, err := store.LoadValidator("validators/nonexistent.md")
+	if err == nil {
+		t.Fatal("expected error for nonexistent file")
+	}
+	if !strings.Contains(err.Error(), "failed to read validator file") {
+		t.Errorf("error should mention failed to read, got: %v", err)
+	}
+}
+
+func TestLoadValidator_DifferentRunTriggers(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	validatorDir := filepath.Join(store.baseDir, "validators")
+	if err := os.MkdirAll(validatorDir, 0755); err != nil {
+		t.Fatalf("failed to create validators dir: %v", err)
+	}
+
+	tests := []struct {
+		name     string
+		run      string
+		expected domain.RunTrigger
+	}{
+		{"after-workitem", "after-workitem", domain.RunAfterWorkitem},
+		{"after-phase", "after-phase", domain.RunAfterPhase},
+		{"on-demand", "on-demand", domain.RunOnDemand},
+	}
+
+	for _, tc := range tests {
+		content := fmt.Sprintf(`---
+id: test-%s
+run: %s
+---
+Test prompt.
+`, tc.name, tc.run)
+		filename := fmt.Sprintf("test-%s.md", tc.name)
+		if err := os.WriteFile(filepath.Join(validatorDir, filename), []byte(content), 0644); err != nil {
+			t.Fatalf("failed to create validator file: %v", err)
+		}
+
+		validator, err := store.LoadValidator("validators/" + filename)
+		if err != nil {
+			t.Fatalf("unexpected error for %s: %v", tc.name, err)
+		}
+
+		if validator.GetRun() != tc.expected {
+			t.Errorf("for %s: expected run %q, got %q", tc.name, tc.expected, validator.GetRun())
 		}
 	}
 }

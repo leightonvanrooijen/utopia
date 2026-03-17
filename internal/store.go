@@ -698,3 +698,48 @@ func (s *YAMLStore) ValidateValidatorPaths(validators []string) error {
 
 	return nil
 }
+
+// LoadValidator reads a validator from a .md file with YAML frontmatter.
+// The path should be relative to the store's base directory (e.g., "validators/component-standards.md").
+// Returns the validator with frontmatter fields populated and Prompt containing the markdown body.
+func (s *YAMLStore) LoadValidator(path string) (*domain.Validator, error) {
+	fullPath := filepath.Join(s.baseDir, path)
+
+	bytes, err := os.ReadFile(fullPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read validator file %s: %w", path, err)
+	}
+
+	content := string(bytes)
+
+	// Parse frontmatter (between --- markers)
+	if !strings.HasPrefix(content, "---\n") {
+		return nil, fmt.Errorf("validator file %s missing YAML frontmatter", path)
+	}
+
+	// Find the closing ---
+	endMarker := strings.Index(content[4:], "\n---")
+	if endMarker == -1 {
+		return nil, fmt.Errorf("validator file %s has unclosed YAML frontmatter", path)
+	}
+
+	frontmatterStr := content[4 : 4+endMarker]
+	bodyStart := 4 + endMarker + 4 // Skip past "\n---"
+
+	var validator domain.Validator
+	if err := yaml.Unmarshal([]byte(frontmatterStr), &validator); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal validator frontmatter from %s: %w", path, err)
+	}
+
+	// Validate required fields
+	if validator.ID == "" {
+		return nil, fmt.Errorf("validator file %s missing required 'id' field in frontmatter", path)
+	}
+
+	// Extract body content (skip leading newlines)
+	if bodyStart < len(content) {
+		validator.Prompt = strings.TrimPrefix(content[bodyStart:], "\n")
+	}
+
+	return &validator, nil
+}
