@@ -615,17 +615,6 @@ func GitCommitCR(projectDir, crID string) (string, error) {
 	return git.HeadSHA(projectDir)
 }
 
-func getGitBranch(projectDir string) string {
-	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
-	cmd.Dir = projectDir
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	if err := cmd.Run(); err != nil {
-		return "unknown"
-	}
-	return strings.TrimSpace(out.String())
-}
-
 func GitCommitSpecMerge(projectDir string, cr *domain.ChangeRequest, mergeResult *MergeResult) error {
 	var msg string
 	if mergeResult.IsRefactor {

@@ -10,6 +10,7 @@ import (
 
 	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
+	"github.com/leightonvanrooijen/utopia/internal/git"
 	"github.com/spf13/cobra"
 )
 
@@ -330,7 +331,7 @@ func runCR(cmd *cobra.Command, args []string) error {
 	cli := internal.NewCLI()
 
 	// Get git branch for metadata before session
-	branch := getGitBranch(absPath)
+	branch := git.CurrentBranch(absPath)
 	sessionStart := time.Now()
 
 	// Capture transcript - this persists even on Ctrl+C due to defer in SessionWithCapture
