@@ -1,0 +1,236 @@
+id: add-agentic-validators
+type: feature
+title: Add agentic validators for project standards enforcement
+status: draft
+changes:
+  - operation: add
+    spec: agentic-validators
+    spec_metadata:
+      title: Agentic Validators
+      description: |
+        A pluggable system for running Claude-powered validators between work items.
+        Validators enforce project-specific standards (coding conventions, patterns,
+        accessibility, etc.) that can't be caught by traditional tests.
+
+        Validators run after verification passes, using separate Claude sessions
+        to review changes against user-defined prompts. They output <PASSED> on
+        success or detailed feedback on failure, which gets injected into the
+        retry prompt.
+    feature:
+      id: validator-config
+      description: |
+        Configure validators in project config with explicit file list (no auto-discovery).
+      acceptance_criteria:
+        - Config has optional validators array
+        - Each entry is a file path relative to .utopia/ (e.g., validators/component-standards.md)
+        - Validators array is explicit list - only listed files are loaded
+        - No auto-discovery of validator files (no magic)
+        - Validators are optional - execution works without any configured
+        - Missing validator file produces clear error message
+      hints:
+        - Extend domain.Config struct with Validators []string field
+        - Load each file explicitly from the list
+        - "Example config: validators: [\"validators/component-standards.md\"]"
+
+  - operation: add
+    spec: agentic-validators
+    feature:
+      id: validator-file-format
+      description: |
+        Self-contained validator files using YAML frontmatter + markdown body.
+      acceptance_criteria:
+        - Each validator is a single .md file with YAML frontmatter
+        - Frontmatter contains id (required), run (optional), allowed_tools (optional)
+        - Markdown body is the prompt sent to Claude
+        - Prompt can reference {{changed_files}} placeholder for diff injection
+        - Files are loaded at execution time (not cached)
+        - run defaults to "after-workitem" if not specified
+        - allowed_tools defaults to ["Read", "Glob", "Grep"] if not specified
+      hints:
+        - Use gopkg.in/yaml.v3 or similar for frontmatter parsing
+        - Split on "---" delimiter to separate frontmatter from body
+        - text/template for {{changed_files}} placeholder expansion
+
+  - operation: add
+    spec: agentic-validators
+    feature:
+      id: validator-runner
+      description: |
+        Execute a validator by invoking Claude with the prompt and changed files.
+      acceptance_criteria:
+        - Runner loads prompt from configured file
+        - Runner injects git diff of changed files into prompt
+        - Runner invokes Claude CLI with constructed prompt
+        - Runner checks output for <PASSED> token
+        - If <PASSED> found, validator passes
+        - If <PASSED> not found, entire output is the failure feedback
+        - Runner returns structured result (passed bool, feedback string)
+        - Validators run with read-only tools by default (Read, Glob, Grep)
+        - Validators cannot modify files - they only review and report
+      hints:
+        - Reuse internal.CLI with WithAllowedTools([]string{"Read", "Glob", "Grep"})
+        - Use WithVerbose(false) - no streaming needed for validators
+        - Use git diff HEAD~1 to get changed files from last commit
+        - Create new package internal/validators/
+
+  - operation: add
+    spec: agentic-validators
+    feature:
+      id: validator-parallel-execution
+      description: |
+        Run all validators concurrently for faster feedback.
+      acceptance_criteria:
+        - All validators with matching run trigger execute in parallel
+        - Each validator runs in its own goroutine
+        - Results are collected via channels or errgroup
+        - Execution waits for all validators to complete before proceeding
+        - Individual validator timeouts don't block other validators
+        - Context cancellation (Ctrl+C) stops all running validators
+      hints:
+        - Use golang.org/x/sync/errgroup with context for structured concurrency
+        - Each validator gets same git diff input (computed once, shared)
+        - Channel of ValidatorResult structs for collecting outcomes
+
+  - operation: add
+    spec: agentic-validators
+    feature:
+      id: validator-early-start
+      description: |
+        Start validators in parallel with verification for faster overall execution.
+        If verification fails, cancel validators immediately since their feedback
+        would be discarded anyway.
+      acceptance_criteria:
+        - Verification and all validators start concurrently
+        - All share a cancellable context derived from parent
+        - If verification fails, context is cancelled immediately
+        - Cancelled validators stop as soon as possible (no wasted compute)
+        - If verification passes, wait for all validators to complete
+        - Validator results only processed when verification passes
+      hints:
+        - Use context.WithCancel to create shared cancellable context
+        - Verification runs in one goroutine, validators in others
+        - On verification failure, call cancel() before returning
+        - errgroup.WithContext handles this pattern well
+        - Compute git diff ONCE before spawning goroutines, share immutable diff string
+        - Use buffered channels for results to avoid blocking goroutines
+
+  - operation: add
+    spec: agentic-validators
+    feature:
+      id: validator-result-aggregation
+      description: |
+        Aggregate results from parallel validators and determine overall pass/fail.
+      acceptance_criteria:
+        - Collect all validator results after parallel execution completes
+        - Overall pass requires ALL validators to pass (output <PASSED>)
+        - If any validator fails, aggregate all failure feedback
+        - Failed validators are listed with their IDs and feedback
+        - Passing validators are not included in feedback (reduce noise)
+      hints:
+        - Simple loop over results slice checking Passed field
+        - Build combined feedback string from failures only
+
+  - operation: add
+    spec: agentic-validators
+    feature:
+      id: validator-execution-hook
+      description: |
+        Integrate validators into Ralph execution loop with early-start optimization.
+      acceptance_criteria:
+        - Verification and validators start together after <COMPLETE> token found
+        - If verification fails, validators are cancelled and test failures injected
+        - If verification passes, wait for validators and process results
+        - If all validators pass, work item is complete
+        - If any validator fails, aggregated feedback injected for retry
+        - Standards feedback is separate section from test failures
+      hints:
+        - Replace sequential verify-then-validate with concurrent execution
+        - Hook into ralph.go where verification currently runs
+        - New prompt section "PROJECT STANDARDS FEEDBACK" distinct from "PREVIOUS FAILURES"
+
+  - operation: add
+    spec: agentic-validators
+    feature:
+      id: validator-feedback-injection
+      description: |
+        Inject validator feedback into retry prompt with clear context.
+      acceptance_criteria:
+        - Feedback section clearly states acceptance criteria passed
+        - Feedback section explains these are project standards issues
+        - Each validator's feedback is labeled with validator ID
+        - Prompt guides Claude to fix standards while preserving functionality
+      hints:
+        - Template like "Implementation meets acceptance criteria but violates project standards..."
+        - Include validator ID so Claude knows which standard failed
+
+  - operation: add
+    spec: agentic-validators
+    feature:
+      id: validator-run-triggers
+      description: |
+        Support different trigger points for when validators run.
+      acceptance_criteria:
+        - '"after-workitem" runs after each work item passes verification'
+        - '"after-phase" runs only after initiative phase completes'
+        - '"on-demand" validators are skipped during normal execution'
+        - 'Default is "after-workitem" if run field not specified'
+      hints:
+        - Start with after-workitem only, add others as needed
+        - on-demand could be used by a future "utopia validate" command
+
+  - operation: add
+    spec: agentic-validators
+    feature:
+      id: validator-init-template
+      description: |
+        Create a _template.md file in validators directory during utopia init.
+      acceptance_criteria:
+        - '"utopia init" creates .utopia/validators/ directory'
+        - '"utopia init" creates .utopia/validators/_template.md file'
+        - Template file is a working example with frontmatter and placeholder prompt
+        - Template includes comments explaining each frontmatter field
+        - Template is NOT added to config validators list (just a reference)
+        - Template filename starts with underscore to indicate it's not active
+      hints:
+        - Add to existing init command logic
+        - Template should be copy-paste ready for creating real validators
+        - Include example for common use case (code standards, naming conventions)
+
+  - operation: add
+    spec: agentic-validators
+    feature:
+      id: validator-template-content
+      description: |
+        Define the content of the _template.md validator file.
+      acceptance_criteria:
+        - Template frontmatter includes all available fields with comments
+        - Template prompt explains the expected input ({{changed_files}})
+        - Template prompt explains the expected output (<PASSED> or feedback)
+        - Template is educational - helps users understand how to write validators
+      hints:
+        - |
+          Example template content:
+          ---
+          # Validator ID (required) - used in feedback messages
+          id: my-validator
+
+          # When to run (optional): after-workitem, after-phase, on-demand
+          # Default: after-workitem
+          run: after-workitem
+
+          # Tools the validator can use (optional)
+          # Default: [Read, Glob, Grep] (read-only)
+          allowed_tools: [Read, Glob, Grep]
+          ---
+
+          Review the following changes for [YOUR STANDARDS HERE]:
+
+          {{changed_files}}
+
+          Check for:
+          - [Standard 1]
+          - [Standard 2]
+
+          If ALL standards are met, output ONLY: <PASSED>
+
+          Otherwise, list each violation with file and line number.
