@@ -11,6 +11,7 @@ import (
 
 	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
+	"github.com/leightonvanrooijen/utopia/internal/validators"
 	"github.com/leightonvanrooijen/utopia/internal/verification"
 )
 
@@ -59,6 +60,17 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 	// Create dependencies
 	cli := internal.NewCLI().WithVerbose(true)
 	verifier := verification.NewRunner(projectDir)
+	validatorRunner := validators.NewRunner(projectDir)
+
+	// Load validators from config
+	var validatorList []*domain.Validator
+	for _, path := range config.Validators {
+		v, err := store.LoadValidator(path)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load validator %s: %w", path, err)
+		}
+		validatorList = append(validatorList, v)
+	}
 
 	// Execute each work item in order
 	for i, item := range items {
@@ -72,7 +84,7 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 		fmt.Printf("[%d/%d] %s - starting execution\n", i+1, len(items), item.ID)
 
 		// Execute this work item with the Ralph loop
-		err := executeWorkItem(ctx, item, specID, store, cli, verifier, config, projectDir)
+		err := executeWorkItem(ctx, item, specID, store, cli, verifier, validatorRunner, validatorList, config, projectDir)
 		if err != nil {
 			result.StoppedAt = item.ID
 			result.Reason = err.Error()
@@ -94,6 +106,8 @@ func executeWorkItem(
 	store *internal.YAMLStore,
 	cli *internal.CLI,
 	verifier *verification.Runner,
+	validatorRunner *validators.Runner,
+	validatorList []*domain.Validator,
 	config *domain.Config,
 	projectDir string,
 ) error {
@@ -173,26 +187,61 @@ func executeWorkItem(
 			return nil
 		}
 
-		verifyResult, err := verifier.Run(ctx, verifyCommand)
-		if err != nil {
-			return fmt.Errorf("verification command failed to execute: %w", err)
+		// Compute git diff ONCE before spawning parallel operations
+		// This is shared between verification (for context) and validators
+		gitDiff, _ := validatorRunner.GetGitDiff(ctx)
+
+		// Run verification and validators in parallel
+		// If verification fails, validators are cancelled immediately
+		result := runVerificationWithValidators(ctx, verifier, verifyCommand, validatorRunner, validatorList, gitDiff)
+
+		if result.VerifyErr != nil {
+			return fmt.Errorf("verification command failed to execute: %w", result.VerifyErr)
 		}
 
-		if verifyResult.Passed {
-			fmt.Printf("  Iteration %d: verification passed!\n", item.IterationCount)
-			item.Status = domain.WorkItemCompleted
-			item.LastFailureOutput = ""
-			if err := store.SaveWorkItemForSpec(specID, item); err != nil {
-				return err
+		if !result.VerifyPassed {
+			// Verification failed - inject failure and retry
+			// Validators were cancelled, their feedback is discarded
+			fmt.Printf("  Iteration %d: verification failed, will retry with failure output\n", item.IterationCount)
+			item.LastFailureOutput = result.VerifyOutput
+			continue
+		}
+
+		fmt.Printf("  Iteration %d: verification passed!\n", item.IterationCount)
+
+		// Verification passed - check validator results
+		allValidatorsPassed := true
+		var validatorFeedback strings.Builder
+		for _, vr := range result.ValidatorResults {
+			if vr.Err != nil {
+				fmt.Printf("  Iteration %d: validator %s error: %v\n", item.IterationCount, vr.ID, vr.Err)
+				allValidatorsPassed = false
+				validatorFeedback.WriteString(fmt.Sprintf("Validator %s error: %v\n\n", vr.ID, vr.Err))
+			} else if vr.Result != nil && !vr.Result.Passed {
+				fmt.Printf("  Iteration %d: validator %s failed\n", item.IterationCount, vr.ID)
+				allValidatorsPassed = false
+				validatorFeedback.WriteString(fmt.Sprintf("Validator %s failed:\n%s\n\n", vr.ID, vr.Result.Feedback))
+			} else {
+				fmt.Printf("  Iteration %d: validator %s passed\n", item.IterationCount, vr.ID)
 			}
-			logExecutionEntry(store, crID, item, operationType)
-			gitCommitWorkItem(projectDir, item, crTitle)
-			return nil
 		}
 
-		// Verification failed - inject failure and retry
-		fmt.Printf("  Iteration %d: verification failed, will retry with failure output\n", item.IterationCount)
-		item.LastFailureOutput = verifyResult.Output
+		if !allValidatorsPassed {
+			// Validators failed - inject their feedback and retry
+			fmt.Printf("  Iteration %d: validators failed, will retry with feedback\n", item.IterationCount)
+			item.LastFailureOutput = validatorFeedback.String()
+			continue
+		}
+
+		// All checks passed!
+		item.Status = domain.WorkItemCompleted
+		item.LastFailureOutput = ""
+		if err := store.SaveWorkItemForSpec(specID, item); err != nil {
+			return err
+		}
+		logExecutionEntry(store, crID, item, operationType)
+		gitCommitWorkItem(projectDir, item, crTitle)
+		return nil
 	}
 }
 
@@ -210,6 +259,92 @@ func buildPrompt(item *domain.WorkItem) string {
 	}
 
 	return prompt
+}
+
+// VerificationWithValidation holds the result of running verification and validators in parallel.
+type VerificationWithValidation struct {
+	// VerifyPassed is true if the verification command succeeded
+	VerifyPassed bool
+	// VerifyOutput contains verification output (for failure injection)
+	VerifyOutput string
+	// VerifyErr is set if verification failed to execute (not just failed tests)
+	VerifyErr error
+	// ValidatorResults contains results from all validators (only populated if verification passed)
+	ValidatorResults []validators.ValidatorResult
+}
+
+// runVerificationWithValidators runs verification and validators concurrently.
+// If verification fails, validators are cancelled immediately to save compute.
+// Validators only run when there are validators configured and verification passes.
+func runVerificationWithValidators(
+	ctx context.Context,
+	verifier *verification.Runner,
+	verifyCommand string,
+	validatorRunner *validators.Runner,
+	validatorList []*domain.Validator,
+	gitDiff string,
+) *VerificationWithValidation {
+	result := &VerificationWithValidation{}
+
+	// Create a cancellable context for validators
+	// If verification fails, we'll cancel this to stop validators early
+	validatorCtx, cancelValidators := context.WithCancel(ctx)
+	defer cancelValidators()
+
+	// Channel for verification result (buffered to prevent blocking)
+	verifyCh := make(chan struct {
+		result *verification.Result
+		err    error
+	}, 1)
+
+	// Channel for validator results (buffered to prevent blocking)
+	validatorsCh := make(chan []validators.ValidatorResult, 1)
+
+	// Start verification in a goroutine
+	go func() {
+		verifyResult, err := verifier.Run(ctx, verifyCommand)
+		verifyCh <- struct {
+			result *verification.Result
+			err    error
+		}{verifyResult, err}
+	}()
+
+	// Start validators in a goroutine (only if we have validators)
+	hasValidators := len(validatorList) > 0
+	if hasValidators {
+		go func() {
+			results := validatorRunner.RunAllWithDiff(validatorCtx, validatorList, domain.RunAfterWorkitem, gitDiff)
+			validatorsCh <- results
+		}()
+	}
+
+	// Wait for verification result first
+	verifyResult := <-verifyCh
+
+	if verifyResult.err != nil {
+		// Verification command failed to execute - cancel validators
+		cancelValidators()
+		result.VerifyErr = verifyResult.err
+		return result
+	}
+
+	if !verifyResult.result.Passed {
+		// Verification failed - cancel validators immediately
+		cancelValidators()
+		result.VerifyPassed = false
+		result.VerifyOutput = verifyResult.result.Output
+		return result
+	}
+
+	// Verification passed
+	result.VerifyPassed = true
+
+	// Wait for validators if we started them
+	if hasValidators {
+		result.ValidatorResults = <-validatorsCh
+	}
+
+	return result
 }
 
 // extractCRID extracts the change request ID from a specID.

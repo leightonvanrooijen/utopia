@@ -90,6 +90,30 @@ func (r *Runner) Run(ctx context.Context, validator *domain.Validator) (*Result,
 // Each validator runs in its own goroutine with independent timeouts.
 // Context cancellation (e.g., Ctrl+C) stops all running validators.
 func (r *Runner) RunAll(ctx context.Context, validators []*domain.Validator, trigger domain.RunTrigger) []ValidatorResult {
+	// Compute git diff once, shared across all validators
+	changedFiles, diffErr := r.getGitDiff(ctx)
+	if diffErr != nil {
+		// If diff failed, return error for all matching validators
+		var results []ValidatorResult
+		for _, v := range validators {
+			if v.GetRun() == trigger {
+				results = append(results, ValidatorResult{
+					ID:  v.ID,
+					Err: fmt.Errorf("failed to get git diff: %w", diffErr),
+				})
+			}
+		}
+		return results
+	}
+
+	return r.RunAllWithDiff(ctx, validators, trigger, changedFiles)
+}
+
+// RunAllWithDiff executes multiple validators concurrently with a pre-computed git diff.
+// This allows the caller to compute the diff once and share it, which is useful when
+// running validators in parallel with other operations that also need the diff.
+// Each validator runs in its own goroutine. Context cancellation stops all validators.
+func (r *Runner) RunAllWithDiff(ctx context.Context, validators []*domain.Validator, trigger domain.RunTrigger, changedFiles string) []ValidatorResult {
 	// Filter validators matching the trigger
 	var matching []*domain.Validator
 	for _, v := range validators {
@@ -101,9 +125,6 @@ func (r *Runner) RunAll(ctx context.Context, validators []*domain.Validator, tri
 	if len(matching) == 0 {
 		return nil
 	}
-
-	// Compute git diff once, shared across all validators
-	changedFiles, diffErr := r.getGitDiff(ctx)
 
 	var (
 		results []ValidatorResult
@@ -118,15 +139,6 @@ func (r *Runner) RunAll(ctx context.Context, validators []*domain.Validator, tri
 		g.Go(func() error {
 			var vr ValidatorResult
 			vr.ID = v.ID
-
-			// If diff failed, record error for this validator
-			if diffErr != nil {
-				vr.Err = fmt.Errorf("failed to get git diff: %w", diffErr)
-				mu.Lock()
-				results = append(results, vr)
-				mu.Unlock()
-				return nil // don't fail the group, collect the error
-			}
 
 			// Run the validator
 			result, err := r.runWithDiff(gctx, v, changedFiles)
@@ -175,6 +187,13 @@ func (r *Runner) runWithDiff(ctx context.Context, validator *domain.Validator, c
 	}
 
 	return result, nil
+}
+
+// GetGitDiff returns the diff of changes from the last commit.
+// This is useful when you need to compute the diff once and share it
+// across multiple operations (e.g., parallel verification and validation).
+func (r *Runner) GetGitDiff(ctx context.Context) (string, error) {
+	return r.getGitDiff(ctx)
 }
 
 // getGitDiff returns the diff of changes from the last commit
