@@ -1,6 +1,13 @@
 package cli
 
 import (
+	"context"
+	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/leightonvanrooijen/utopia/internal/validators"
 	"github.com/spf13/cobra"
 )
 
@@ -56,8 +63,27 @@ func init() {
 }
 
 func runValidatorCreate(cmd *cobra.Command, args []string) error {
-	// TODO: Implement validator creation with AI assistance
-	return nil
+	// Get the project directory (current working directory)
+	projectDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get working directory: %w", err)
+	}
+
+	// Create a context that cancels on interrupt signals
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Handle Ctrl+C gracefully
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		cancel()
+	}()
+
+	// Run the validator creation assistant
+	creator := validators.NewCreator(projectDir)
+	return creator.Run(ctx)
 }
 
 // ============================================================================
