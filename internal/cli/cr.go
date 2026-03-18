@@ -12,6 +12,7 @@ import (
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 	"github.com/leightonvanrooijen/utopia/internal/git"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 var crCmd = &cobra.Command{
@@ -41,6 +42,88 @@ Tip: Run a file watcher to see updates in real-time:
 
 func init() {
 	rootCmd.AddCommand(crCmd)
+}
+
+// ============================================================================
+// VALIDATE - Validate change request files
+// ============================================================================
+
+var crValidateCmd = &cobra.Command{
+	Use:   "validate [file]",
+	Short: "Validate change request files",
+	Long: `Validate change request YAML files for syntax and required fields.
+
+If no file is specified, validates all CRs in .utopia/change-requests/.
+If a file path is specified, validates only that single CR file.
+
+Returns exit code 0 on success, non-zero on validation failure.
+
+Examples:
+  utopia cr validate                                          # Validate all CRs
+  utopia cr validate .utopia/change-requests/my-feature.yaml  # Validate single file`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: runCRValidate,
+}
+
+func init() {
+	crCmd.AddCommand(crValidateCmd)
+}
+
+func runCRValidate(cmd *cobra.Command, args []string) error {
+	_, utopiaDir, store, err := ResolveProject(cmd)
+	if err != nil {
+		return err
+	}
+
+	if len(args) == 1 {
+		// Validate a single file
+		return validateSingleCR(args[0], utopiaDir)
+	}
+
+	// Validate all CRs
+	if err := validateChangeRequests(store); err != nil {
+		fmt.Printf("✗ %s\n", err)
+		os.Exit(1)
+	}
+
+	crs, _ := store.ListChangeRequests()
+	fmt.Printf("✓ All %d change request(s) are valid\n", len(crs))
+	return nil
+}
+
+// validateSingleCR validates a single CR file by path.
+func validateSingleCR(filePath, utopiaDir string) error {
+	// Handle both absolute and relative paths
+	absPath := filePath
+	if !filepath.IsAbs(filePath) {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("failed to get working directory: %w", err)
+		}
+		absPath = filepath.Join(cwd, filePath)
+	}
+
+	// Read and parse the file
+	bytes, err := os.ReadFile(absPath)
+	if err != nil {
+		fmt.Printf("✗ Failed to read file: %s\n", err)
+		os.Exit(1)
+	}
+
+	var cr domain.ChangeRequest
+	if err := yaml.Unmarshal(bytes, &cr); err != nil {
+		fmt.Printf("✗ Invalid YAML syntax: %s\n", err)
+		os.Exit(1)
+	}
+
+	// Validate the CR
+	if validationErr := domain.ValidateChangeRequest(&cr); validationErr != nil {
+		fmt.Printf("✗ %s: %s\n", filepath.Base(absPath), validationErr)
+		os.Exit(1)
+	}
+
+	fmt.Printf("✓ %s is valid\n", filepath.Base(absPath))
+	return nil
 }
 
 // crSystemPrompt guides Claude through change request creation
