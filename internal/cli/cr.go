@@ -192,6 +192,13 @@ If the user provides specific technical guidance (file paths, patterns to follow
 ### PHASE 4: SAVE
 Write the change request file using the appropriate format below.
 
+### PHASE 5: VALIDATE
+After writing the CR file, you MUST validate it:
+1. Run: ` + "`utopia cr validate <file-path>`" + ` (e.g., ` + "`utopia cr validate .utopia/change-requests/my-feature.yaml`" + `)
+2. If validation fails, fix the errors in the CR file
+3. Re-run validation until it passes
+4. Do NOT end the session until validation succeeds
+
 ## Output Formats
 
 Save to: %s/{cr-id}.yaml
@@ -332,6 +339,7 @@ During conversations, users may mention ideas, future improvements, or thoughts 
 - Acceptance criteria must be testable (not vague)
 - ALWAYS use the Write tool with the path: %s/{cr-id}.yaml
 - CR IDs should be kebab-case and descriptive
+- ALWAYS validate after saving: run ` + "`utopia cr validate <file>`" + ` and fix any errors before ending the session
 
 ## IMPORTANT: Spec Files Are Read-Only During CR Creation
 **NEVER write to .utopia/specs/ directly.** This is critical for workflow integrity.
