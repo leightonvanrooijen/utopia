@@ -1,29 +1,29 @@
 id: unified-change-request-system-add-cr-validate-command
 type: feature
 title: Add inline CR validation command for CR agent use
-status: draft
+status: in-progress
 changes:
-  - operation: add
-    spec: unified-change-request-system
-    feature:
-      id: cr-validate-command
-      description: |
-        CLI command to validate CR files during creation. Allows the CR agent
-        to catch validation errors before the session ends rather than after.
-      acceptance_criteria:
-        - Command is "utopia cr validate" with optional file path argument
-        - If no file specified, validates all CRs in .utopia/change-requests/
-        - If file specified, validates that single CR file
-        - Uses existing domain.ValidateChangeRequest() logic
-        - Outputs validation errors in human-readable format
-        - Returns exit code 0 on success, non-zero on failure
-      hints:
-        - Reuse validateChangeRequests() from cr.go
-        - Add as subcommand to existing cr command
-  - operation: modify
-    spec: unified-change-request-system
-    feature_id: cr-command
-    criteria:
-      add:
-        - CR system prompt includes instructions to run "utopia cr validate <file>" after writing a CR
-        - Prompt instructs agent to fix validation errors before ending the session
+    - operation: add
+      spec: unified-change-request-system
+      feature:
+        id: cr-validate-command
+        description: |
+            CLI command to validate CR files during creation. Allows the CR agent
+            to catch validation errors before the session ends rather than after.
+        acceptance_criteria:
+            - Command is "utopia cr validate" with optional file path argument
+            - If no file specified, validates all CRs in .utopia/change-requests/
+            - If file specified, validates that single CR file
+            - Uses existing domain.ValidateChangeRequest() logic
+            - Outputs validation errors in human-readable format
+            - Returns exit code 0 on success, non-zero on failure
+        hints:
+            - Reuse validateChangeRequests() from cr.go
+            - Add as subcommand to existing cr command
+    - operation: modify
+      spec: unified-change-request-system
+      feature_id: cr-command
+      criteria:
+        add:
+            - CR system prompt includes instructions to run "utopia cr validate <file>" after writing a CR
+            - Prompt instructs agent to fix validation errors before ending the session
