@@ -226,12 +226,16 @@ var validatorDeleteCmd = &cobra.Command{
 	Short: "Delete a validator",
 	Long: `Delete a validator from the project.
 
+If no validator ID is provided, lists all configured validators and
+prompts for selection. You can select by number or by validator ID.
+
 This removes the validator file from .utopia/validators/ and
 updates the config to remove references to it.
 
 Examples:
+  utopia validator delete                    # List and select
   utopia validator delete old-validator`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.MaximumNArgs(1),
 	RunE: runValidatorDelete,
 }
 
@@ -240,6 +244,85 @@ func init() {
 }
 
 func runValidatorDelete(cmd *cobra.Command, args []string) error {
-	// TODO: Implement validator deletion
+	// Get the project directory (current working directory)
+	projectDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get working directory: %w", err)
+	}
+
+	// Create the editor to list validators
+	editor := validators.NewEditor(projectDir)
+
+	// List available validators
+	validatorList, err := editor.ListValidators()
+	if err != nil {
+		return err
+	}
+
+	// Determine which validator to delete
+	var selectedPath string
+	var selectedValidator *validators.ValidatorInfo
+	if len(args) > 0 {
+		// User provided a validator ID - find it in the list
+		selectedPath, err = findValidatorByID(validatorList, args[0])
+		if err != nil {
+			return err
+		}
+		// Find the validator info for display
+		for i := range validatorList {
+			if validatorList[i].Path == selectedPath {
+				selectedValidator = &validatorList[i]
+				break
+			}
+		}
+	} else {
+		// No argument provided - show list and prompt for selection
+		selectedPath, err = promptValidatorSelection(validatorList)
+		if err != nil {
+			return err
+		}
+		// Find the validator info for display
+		for i := range validatorList {
+			if validatorList[i].Path == selectedPath {
+				selectedValidator = &validatorList[i]
+				break
+			}
+		}
+	}
+
+	if selectedValidator == nil {
+		return fmt.Errorf("validator not found")
+	}
+
+	// Display what will be deleted
+	fmt.Printf("\nValidator to delete:\n")
+	fmt.Printf("  ID:   %s\n", selectedValidator.Validator.ID)
+	fmt.Printf("  Run:  %s\n", selectedValidator.Validator.GetRun())
+	fmt.Printf("  File: .utopia/%s\n", selectedPath)
+
+	// Prompt for confirmation
+	fmt.Print("\nAre you sure you want to delete this validator? [y/N]: ")
+	reader := bufio.NewReader(os.Stdin)
+	input, err := reader.ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("failed to read input: %w", err)
+	}
+
+	input = strings.TrimSpace(strings.ToLower(input))
+	if input != "y" && input != "yes" {
+		fmt.Println("Deletion cancelled.")
+		return nil
+	}
+
+	// Delete the validator using the deleter
+	deleter := validators.NewDeleter(projectDir)
+	if err := deleter.Delete(selectedPath); err != nil {
+		return err
+	}
+
+	fmt.Printf("\n✓ Deleted validator: %s\n", selectedValidator.Validator.ID)
+	fmt.Printf("  Removed file: .utopia/%s\n", selectedPath)
+	fmt.Printf("  Updated config: .utopia/config.yaml\n")
+
 	return nil
 }

@@ -699,6 +699,12 @@ func (s *YAMLStore) ValidateValidatorPaths(validators []string) error {
 	return nil
 }
 
+// DeleteValidator removes a validator file from .utopia/validators/.
+// The path should be relative to the store's base directory (e.g., "validators/my-validator.md").
+func (s *YAMLStore) DeleteValidator(path string) error {
+	return Delete(s, path, "validator", path)
+}
+
 // LoadValidator reads a validator from a .md file with YAML frontmatter.
 // The path should be relative to the store's base directory (e.g., "validators/component-standards.md").
 // Returns the validator with frontmatter fields populated and Prompt containing the markdown body.
