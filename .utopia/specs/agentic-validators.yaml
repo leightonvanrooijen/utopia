@@ -1,7 +1,7 @@
 id: agentic-validators
 title: agentic-validators
 created: "2026-03-17T19:24:58.958332+11:00"
-updated: "2026-03-17T19:24:58.958341+11:00"
+updated: "2026-03-18T20:01:11.459601+11:00"
 description: ""
 features:
     - id: validator-config
@@ -123,3 +123,68 @@ features:
         - Template prompt explains the expected input ({{changed_files}})
         - Template prompt explains the expected output (<PASSED> or feedback)
         - Template is educational - helps users understand how to write validators
+
+    - id: validator-command
+      description: |
+        Base command for managing validators with subcommands for create, edit, and delete.
+      acceptance_criteria:
+        - Running `utopia validator` with no subcommand shows help with available subcommands
+        - Subcommands are create, edit, and delete
+        - Command follows existing CLI patterns in the codebase
+
+    - id: validator-create-command
+      description: |
+        Interactive AI assistant that guides users through creating new validators.
+        The AI understands best practices for writing effective validation prompts
+        and can ingest existing documents or code as reference material.
+      acceptance_criteria:
+        - Running `utopia validator create` starts an interactive AI conversation
+        - AI asks what aspect of code the user wants to validate
+        - AI can read existing files when user references them (docs, code examples)
+        - AI extracts patterns from referenced files to inform validator creation
+        - AI generates a complete validator .md file with frontmatter and prompt
+        - AI explains its choices and asks for confirmation before writing
+        - Created validator is saved to .utopia/validators/ directory
+        - User is prompted to add validator to config if not already listed
+
+    - id: validator-edit-command
+      description: |
+        Interactive AI assistant for modifying existing validators.
+        Lists available validators, lets user select one, then provides
+        AI-assisted editing with the same knowledge as the create command.
+      acceptance_criteria:
+        - Running `utopia validator edit` lists all configured validators
+        - User can select a validator by number or name
+        - AI loads the selected validator and understands its current state
+        - AI asks what changes the user wants to make
+        - AI can read additional files if user references them for context
+        - AI shows proposed changes and asks for confirmation before saving
+        - Original validator is updated in place
+
+    - id: validator-delete-command
+      description: |
+        Remove a validator file and optionally update the project config.
+      acceptance_criteria:
+        - Running `utopia validator delete` lists all configured validators
+        - User can select a validator by number or name
+        - Command asks for confirmation before deleting
+        - Validator file is removed from .utopia/validators/
+        - User is prompted to remove validator from config if still listed
+        - Provides clear feedback on what was deleted
+
+    - id: validator-assistant-prompt
+      description: |
+        The system prompt that powers the AI assistant for create and edit commands.
+        Encodes best practices for writing effective validation agents including
+        prompt engineering, agent evaluation patterns, and verbose feedback.
+      acceptance_criteria:
+        - Prompt includes knowledge of validator file format (YAML frontmatter + markdown)
+        - Prompt includes best practices for grading outputs vs. prescribing paths
+        - Prompt includes guidance on writing verbose, actionable feedback messages
+        - Prompt includes guidance on unambiguous pass/fail criteria
+        - Prompt includes knowledge of run triggers (after-workitem, after-phase, on-demand)
+        - Prompt includes knowledge of allowed_tools options and their purposes
+        - Prompt instructs AI to read referenced files when user mentions them
+        - Prompt instructs AI to extract patterns from example code/docs
+        - Prompt instructs AI to explain trade-offs and ask clarifying questions
+        - Prompt is stored as an embedded template (not hardcoded in Go)
