@@ -1,10 +1,13 @@
 package cli
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 
 	"github.com/leightonvanrooijen/utopia/internal/validators"
@@ -95,13 +98,17 @@ var validatorEditCmd = &cobra.Command{
 	Short: "Edit an existing validator",
 	Long: `Edit an existing validator with AI assistance.
 
+If no validator ID is provided, lists all configured validators and
+prompts for selection. You can select by number or by validator ID.
+
 Opens a conversation to modify the validator's prompt, run trigger,
 or allowed tools.
 
 Examples:
+  utopia validator edit                    # List and select
   utopia validator edit component-standards
   utopia validator edit api-contracts`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.MaximumNArgs(1),
 	RunE: runValidatorEdit,
 }
 
@@ -110,8 +117,104 @@ func init() {
 }
 
 func runValidatorEdit(cmd *cobra.Command, args []string) error {
-	// TODO: Implement validator editing with AI assistance
-	return nil
+	// Get the project directory (current working directory)
+	projectDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get working directory: %w", err)
+	}
+
+	// Create the editor
+	editor := validators.NewEditor(projectDir)
+
+	// List available validators
+	validatorList, err := editor.ListValidators()
+	if err != nil {
+		return err
+	}
+
+	// Determine which validator to edit
+	var selectedPath string
+	if len(args) > 0 {
+		// User provided a validator ID - find it in the list
+		selectedPath, err = findValidatorByID(validatorList, args[0])
+		if err != nil {
+			return err
+		}
+	} else {
+		// No argument provided - show list and prompt for selection
+		selectedPath, err = promptValidatorSelection(validatorList)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Create a context that cancels on interrupt signals
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Handle Ctrl+C gracefully
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		cancel()
+	}()
+
+	// Run the validator edit assistant
+	return editor.Run(ctx, selectedPath)
+}
+
+// findValidatorByID finds a validator by its ID in the list.
+// Returns the path if found, or an error with helpful suggestions.
+func findValidatorByID(validatorList []validators.ValidatorInfo, id string) (string, error) {
+	for _, v := range validatorList {
+		if v.Validator.ID == id {
+			return v.Path, nil
+		}
+	}
+
+	// Build helpful error message with available validators
+	var ids []string
+	for _, v := range validatorList {
+		ids = append(ids, v.Validator.ID)
+	}
+	return "", fmt.Errorf("validator %q not found. Available validators: %s", id, strings.Join(ids, ", "))
+}
+
+// promptValidatorSelection displays the list of validators and prompts the user to select one.
+func promptValidatorSelection(validatorList []validators.ValidatorInfo) (string, error) {
+	fmt.Println("Available validators:")
+	fmt.Println()
+
+	for i, v := range validatorList {
+		runTrigger := v.Validator.GetRun()
+		fmt.Printf("  %d. %s (%s)\n", i+1, v.Validator.ID, runTrigger)
+	}
+
+	fmt.Println()
+	fmt.Print("Select validator (number or ID): ")
+
+	reader := bufio.NewReader(os.Stdin)
+	input, err := reader.ReadString('\n')
+	if err != nil {
+		return "", fmt.Errorf("failed to read input: %w", err)
+	}
+
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return "", fmt.Errorf("no validator selected")
+	}
+
+	// Try to parse as number first
+	if num, err := strconv.Atoi(input); err == nil {
+		if num < 1 || num > len(validatorList) {
+			return "", fmt.Errorf("invalid selection: %d (must be 1-%d)", num, len(validatorList))
+		}
+		return validatorList[num-1].Path, nil
+	}
+
+	// Otherwise treat as validator ID
+	return findValidatorByID(validatorList, input)
 }
 
 // ============================================================================
