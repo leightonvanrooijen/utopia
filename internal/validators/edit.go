@@ -166,7 +166,7 @@ func NewEditor(projectDir string) *Editor {
 
 // ValidatorInfo contains information about an available validator for selection.
 type ValidatorInfo struct {
-	Path      string           // Path relative to .utopia/
+	Path      string            // Path relative to .utopia/
 	Validator *domain.Validator // Loaded validator
 }
 
