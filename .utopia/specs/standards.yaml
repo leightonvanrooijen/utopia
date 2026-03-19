@@ -1,7 +1,7 @@
 id: standards
 title: standards
 created: "2026-03-20T08:34:39.184962+11:00"
-updated: "2026-03-20T08:34:39.184965+11:00"
+updated: "2026-03-20T08:43:47.576633+11:00"
 description: ""
 features:
     - id: standards-generation
@@ -17,6 +17,6 @@ features:
         - Generated docs are saved to `.utopia/standards/` directory
         - Generated docs include YAML frontmatter with id, title, description, and tags
         - Generated docs include sections for Stack, File Structure, Patterns, Anti-Patterns, Rationale, and Examples
-        - "Anti-Patterns section uses a table format with severity levels (\U0001F534 Error, \U0001F7E1 Warning)"
+        - Anti-Patterns section uses a table format with severity levels (Error, Warning)
         - Patterns section includes code examples showing both good and bad approaches
         - Command works in codebases without existing Utopia specs
