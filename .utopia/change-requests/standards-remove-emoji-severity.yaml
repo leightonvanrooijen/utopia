@@ -1,0 +1,12 @@
+id: standards-remove-emoji-severity
+type: enhancement
+title: Remove emojis from severity level indicators
+status: draft
+changes:
+  - operation: modify
+    spec: standards
+    feature_id: standards-generation
+    criteria:
+      edit:
+        - old: "Anti-Patterns section uses a table format with severity levels (🔴 Error, 🟡 Warning)"
+          new: "Anti-Patterns section uses a table format with severity levels (Error, Warning)"
