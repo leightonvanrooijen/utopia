@@ -1,0 +1,30 @@
+id: refactor
+title: refactor
+created: "2026-03-20T09:06:23.73557+11:00"
+updated: "2026-03-20T09:06:23.735574+11:00"
+description: ""
+features:
+    - id: refactor-command
+      description: |
+        Command `utopia refactor` launches a Claude session with a refactor-focused
+        prompt. The prompt only teaches the refactor CR format (type: refactor with
+        tasks array) and guides users toward behavior-preserving code improvements.
+
+        Reuses existing CR infrastructure:
+        - CR validation (domain.ValidateChangeRequest)
+        - CR storage (.utopia/change-requests/)
+        - Git commit logic (GitCommitCR)
+        - Conversation capture (saveConversation)
+        - Execution via `utopia execute`
+      acceptance_criteria:
+        - Command `utopia refactor` launches a Claude session
+        - System prompt only describes refactor CR format (no feature/enhancement/removal/bugfix/initiative)
+        - System prompt focuses on behavior preservation and scope identification
+        - System prompt guides toward testable acceptance criteria
+        - Generated CRs are saved to .utopia/change-requests/ (same as utopia cr)
+        - Generated CRs use type refactor with tasks array
+        - CR validation runs after session ends (reuses validateChangeRequests)
+        - Valid CRs are auto-committed (reuses GitCommitCR)
+        - Conversation transcript is captured (reuses saveConversation)
+        - Command works in codebases without existing Utopia specs
+        - No spec context is injected into the prompt (unlike utopia cr)
