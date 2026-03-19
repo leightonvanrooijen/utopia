@@ -1,0 +1,30 @@
+id: standards-add-generation
+type: feature
+title: Add standards generation for codebase refactoring
+status: draft
+changes:
+  - operation: add
+    spec: standards
+    spec_metadata:
+      title: Standards System
+      description: |
+        A system for defining and enforcing codebase standards through
+        conversational generation. Standards docs guide refactoring efforts
+        and can be enforced by validators and agents.
+    feature:
+      id: standards-generation
+      description: |
+        A conversational flow that helps users define what "good code" looks
+        like for their codebase. Launched via `utopia standards generate`,
+        Claude guides the user through defining standards for a specific area
+        (e.g., styling, data fetching, state management) and generates a
+        focused markdown document.
+      acceptance_criteria:
+        - Command `utopia standards generate` launches a Claude session with a specialized prompt
+        - Claude conversationally discovers what area the user wants to define standards for
+        - Generated docs are saved to `.utopia/standards/` directory
+        - Generated docs include YAML frontmatter with id, title, description, and tags
+        - Generated docs include sections for Stack, File Structure, Patterns, Anti-Patterns, Rationale, and Examples
+        - Anti-Patterns section uses a table format with severity levels (🔴 Error, 🟡 Warning)
+        - Patterns section includes code examples showing both good and bad approaches
+        - Command works in codebases without existing Utopia specs
