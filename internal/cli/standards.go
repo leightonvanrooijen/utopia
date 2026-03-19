@@ -112,7 +112,7 @@ Use a kebab-case ID based on the area (e.g., "styling", "data-fetching", "state-
 ## Critical Guidelines
 - Ask ONE question at a time - keep the conversation focused
 - Draw out specific examples from their codebase when possible
-- Anti-patterns should have severity levels: 🔴 Error (must fix) or 🟡 Warning (should improve)
+- Anti-patterns should have severity levels: Error (must fix) or Warning (should improve)
 - Code examples should be realistic and specific to their stack
 - The document should be immediately useful to a new team member
 - ALWAYS use the Write tool to save the final document
@@ -170,8 +170,8 @@ tags:
 
 | Don't | Do Instead | Severity |
 |-------|------------|----------|
-| {anti-pattern} | {correct approach} | 🔴 Error |
-| {anti-pattern} | {correct approach} | 🟡 Warning |
+| {anti-pattern} | {correct approach} | Error |
+| {anti-pattern} | {correct approach} | Warning |
 
 ## Rationale
 
