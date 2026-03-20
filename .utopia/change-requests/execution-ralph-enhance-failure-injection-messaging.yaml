@@ -1,0 +1,11 @@
+id: execution-ralph-enhance-failure-injection-messaging
+type: enhancement
+title: Add explicit fix-all-failures instruction to failure injection
+status: draft
+changes:
+  - operation: modify
+    spec: execution-ralph
+    feature_id: failure-injection
+    criteria:
+      add:
+        - Failure injection includes instruction that failures must be fixed regardless of whether they were introduced by this work item
