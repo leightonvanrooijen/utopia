@@ -1,0 +1,39 @@
+id: agentic-validators-sequential-execution-with-concurrency-limit
+type: enhancement
+title: Run validators after verification with configurable concurrency limit
+status: draft
+changes:
+  - operation: modify
+    spec: agentic-validators
+    feature_id: validator-early-start
+    description: |
+      Run validators sequentially after verification passes, not in parallel with it.
+      This reduces resource usage on constrained machines by avoiding concurrent
+      verification + validator execution.
+    criteria:
+      remove:
+        - Verification and all validators start concurrently
+        - All share a cancellable context derived from parent
+        - If verification fails, context is cancelled immediately
+        - Cancelled validators stop as soon as possible (no wasted compute)
+        - If verification passes, wait for all validators to complete
+        - Validator results only processed when verification passes
+      add:
+        - Verification runs first, validators do not start until verification passes
+        - If verification fails, validators are skipped entirely (no wasted compute)
+        - If verification passes, validators are started with concurrency limit
+        - Validators run in parallel up to the configured concurrency limit
+        - Default concurrency limit is 4 if not configured
+
+  - operation: modify
+    spec: agentic-validators
+    feature_id: validator-config
+    description: |
+      Add optional validator_concurrency config option to control how many validators
+      run in parallel.
+    criteria:
+      add:
+        - Config has optional validator_concurrency field (integer, default 4)
+        - validator_concurrency controls max parallel validator executions
+        - Setting validator_concurrency to 1 runs validators sequentially
+        - Default is applied at runtime when field is missing or zero (no config file migration)
