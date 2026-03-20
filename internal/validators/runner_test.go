@@ -523,3 +523,122 @@ func TestAggregateResults_NilResult(t *testing.T) {
 		t.Error("aggregate should pass when Result is nil with no error")
 	}
 }
+
+func TestRunner_RunAllWithDiffLimited_DefaultConcurrency(t *testing.T) {
+	// Verify that concurrencyLimit <= 0 defaults to DefaultValidatorConcurrency
+	validators := []*domain.Validator{
+		{ID: "v1", Run: domain.RunAfterWorkitem},
+		{ID: "v2", Run: domain.RunAfterWorkitem},
+	}
+
+	r := NewRunner("/nonexistent")
+
+	// Test with 0 (should use default)
+	results := r.RunAllWithDiffLimited(context.Background(), validators, domain.RunAfterWorkitem, "fake diff", 0)
+	if len(results) != 2 {
+		t.Errorf("expected 2 results with limit 0, got %d", len(results))
+	}
+
+	// Test with -1 (should also use default)
+	results = r.RunAllWithDiffLimited(context.Background(), validators, domain.RunAfterWorkitem, "fake diff", -1)
+	if len(results) != 2 {
+		t.Errorf("expected 2 results with limit -1, got %d", len(results))
+	}
+}
+
+func TestRunner_RunAllWithDiffLimited_ConcurrencyLimit(t *testing.T) {
+	// Test that setting concurrencyLimit to 1 runs validators sequentially
+	validators := []*domain.Validator{
+		{ID: "v1", Run: domain.RunAfterWorkitem},
+		{ID: "v2", Run: domain.RunAfterWorkitem},
+		{ID: "v3", Run: domain.RunAfterWorkitem},
+	}
+
+	r := NewRunner("/nonexistent")
+
+	// Run with limit of 1 (sequential)
+	results := r.RunAllWithDiffLimited(context.Background(), validators, domain.RunAfterWorkitem, "fake diff", 1)
+
+	// All validators should be processed
+	if len(results) != 3 {
+		t.Errorf("expected 3 results with limit 1, got %d", len(results))
+	}
+
+	// Verify all validator IDs are present
+	ids := make(map[string]bool)
+	for _, vr := range results {
+		ids[vr.ID] = true
+	}
+
+	if !ids["v1"] || !ids["v2"] || !ids["v3"] {
+		t.Errorf("expected v1, v2, v3, got %v", ids)
+	}
+}
+
+func TestRunner_RunAllWithDiffLimited_ExplicitLimit(t *testing.T) {
+	// Test that explicit concurrency limits are respected
+	validators := []*domain.Validator{
+		{ID: "v1", Run: domain.RunAfterWorkitem},
+		{ID: "v2", Run: domain.RunAfterWorkitem},
+		{ID: "v3", Run: domain.RunAfterWorkitem},
+		{ID: "v4", Run: domain.RunAfterWorkitem},
+	}
+
+	r := NewRunner("/nonexistent")
+
+	// Run with limit of 2
+	results := r.RunAllWithDiffLimited(context.Background(), validators, domain.RunAfterWorkitem, "fake diff", 2)
+
+	// All validators should be processed despite concurrency limit
+	if len(results) != 4 {
+		t.Errorf("expected 4 results with limit 2, got %d", len(results))
+	}
+}
+
+func TestRunner_RunAllWithDiffLimited_FiltersByTrigger(t *testing.T) {
+	validators := []*domain.Validator{
+		{ID: "v1", Run: domain.RunAfterWorkitem},
+		{ID: "v2", Run: domain.RunAfterPhase},
+		{ID: "v3", Run: domain.RunAfterWorkitem},
+	}
+
+	r := NewRunner("/nonexistent")
+	results := r.RunAllWithDiffLimited(context.Background(), validators, domain.RunAfterWorkitem, "fake diff", 4)
+
+	// Should only include v1 and v3
+	if len(results) != 2 {
+		t.Errorf("expected 2 results, got %d", len(results))
+	}
+
+	ids := make(map[string]bool)
+	for _, vr := range results {
+		ids[vr.ID] = true
+	}
+
+	if !ids["v1"] || !ids["v3"] {
+		t.Errorf("expected v1 and v3, got %v", ids)
+	}
+
+	if ids["v2"] {
+		t.Error("v2 should not be included (wrong trigger)")
+	}
+}
+
+func TestRunner_RunAllWithDiffLimited_EmptyReturnsNil(t *testing.T) {
+	r := NewRunner("/tmp")
+
+	// Empty validators list
+	results := r.RunAllWithDiffLimited(context.Background(), nil, domain.RunAfterWorkitem, "diff", 4)
+	if results != nil {
+		t.Errorf("expected nil for empty validators, got %v", results)
+	}
+
+	// No matching trigger
+	validators := []*domain.Validator{
+		{ID: "v1", Run: domain.RunOnDemand},
+	}
+	results = r.RunAllWithDiffLimited(context.Background(), validators, domain.RunAfterWorkitem, "diff", 4)
+	if results != nil {
+		t.Errorf("expected nil for no matching trigger, got %v", results)
+	}
+}
