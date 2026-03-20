@@ -266,7 +266,7 @@ func buildPrompt(item *domain.WorkItem) string {
 
 	// Inject test failures (verification failures) if present
 	if item.LastFailureOutput != "" {
-		prompt = prompt + "\n\n## PREVIOUS FAILURES\n\nThe previous attempt failed with the following test output:\n\n```\n" + item.LastFailureOutput + "\n```\n\nPlease fix the test failures in your implementation."
+		prompt = prompt + "\n\n## PREVIOUS FAILURES\n\nThe previous attempt failed with the following test output:\n\n```\n" + item.LastFailureOutput + "\n```\n\nYou must fix all failures regardless of whether they were introduced by this work item. The verification command must pass before this work item can be completed."
 	}
 
 	// Inject validator feedback as a separate section if present

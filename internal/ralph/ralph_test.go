@@ -65,9 +65,9 @@ func TestBuildPrompt_WithFailures(t *testing.T) {
 		t.Error("prompt should contain full failure output")
 	}
 
-	// Should have instruction to fix test failures
-	if !strings.Contains(prompt, "fix the test failures") {
-		t.Error("prompt should instruct to fix test failures")
+	// Should have instruction to fix failures regardless of origin
+	if !strings.Contains(prompt, "fix all failures regardless of whether they were introduced by this work item") {
+		t.Error("prompt should instruct to fix all failures regardless of origin")
 	}
 }
 
