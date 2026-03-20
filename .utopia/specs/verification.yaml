@@ -1,7 +1,7 @@
 id: verification
 title: Verification System
-created: 0001-01-01T00:00:00Z
-updated: 2026-02-08T09:25:39.234256+11:00
+created: "0001-01-01T00:00:00+00:00"
+updated: "2026-03-20T22:26:41.987882+11:00"
 description: |
     The verification system runs user-provided commands to check if work is correct.
 
@@ -50,3 +50,12 @@ features:
         - Shows "utopia cr" for creating change requests
         - Shows "utopia status" for viewing project status
         - Does not reference deprecated or renamed commands
+
+    - id: failure-stdout-logging
+      description: |
+        Print verification failure output to stdout so humans can see the same
+        information that gets fed to the AI runner.
+      acceptance_criteria:
+        - When verification fails, captured output is printed to stdout
+        - Output is printed before being injected into the AI retry prompt
+        - Uses the same content that would be fed to the AI (truncated if applicable)

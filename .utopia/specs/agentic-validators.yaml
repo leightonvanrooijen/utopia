@@ -1,7 +1,7 @@
 id: agentic-validators
 title: agentic-validators
 created: "2026-03-17T19:24:58.958332+11:00"
-updated: "2026-03-20T21:20:50.683238+11:00"
+updated: "2026-03-20T22:26:41.987881+11:00"
 description: ""
 features:
     - id: validator-config
@@ -192,3 +192,12 @@ features:
         - Prompt instructs AI to extract patterns from example code/docs
         - Prompt instructs AI to explain trade-offs and ask clarifying questions
         - Prompt is stored as an embedded template (not hardcoded in Go)
+
+    - id: failure-stdout-logging
+      description: |
+        Print validator failure output to stdout so humans can see the same
+        information that gets fed to the AI runner.
+      acceptance_criteria:
+        - When a validator fails, its ID and failure feedback are printed to stdout
+        - Output is printed before being injected into the AI retry prompt
+        - Uses the same content that would be fed to the AI for retry
