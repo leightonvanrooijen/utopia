@@ -1,7 +1,7 @@
 id: execution-ralph
 title: Ralph Execution Loop
 created: "0001-01-01T00:00:00+00:00"
-updated: "2026-03-20T18:48:11.777864+11:00"
+updated: "2026-03-21T04:47:43.865068+11:00"
 description: |
     The Ralph execution loop runs WorkItems produced by the chunker.
 
@@ -158,3 +158,16 @@ features:
         - If a CR fails, execution stops and reports which CR failed
         - 'Progress shows "Executing CR N of M: <cr-title>"'
         - Summary at end shows how many CRs completed successfully
+
+    - id: rate-limit-handling
+      description: |
+        Detect Claude API rate limit errors and automatically wait until the reset time
+        before retrying, rather than burning iterations on failed requests.
+      acceptance_criteria:
+        - Detects "Limit reached · resets {time} ({timezone})" pattern in Claude invocation stderr/stdout
+        - Parses reset time with timezone awareness (e.g., "1am (Australia/Sydney)")
+        - Calculates sleep duration until reset time plus 2 minute buffer
+        - Prints message indicating rate limit hit and wait time (e.g., "Rate limit hit, waiting until 1:02am Australia/Sydney to resume...")
+        - Sleeps until calculated time then retries the iteration
+        - Rate-limited attempts do not count against max iterations limit
+        - Falls back to 10 minute retry delay if time parsing fails
