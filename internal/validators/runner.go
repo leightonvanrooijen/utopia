@@ -114,6 +114,17 @@ func (r *Runner) RunAll(ctx context.Context, validators []*domain.Validator, tri
 // running validators in parallel with other operations that also need the diff.
 // Each validator runs in its own goroutine. Context cancellation stops all validators.
 func (r *Runner) RunAllWithDiff(ctx context.Context, validators []*domain.Validator, trigger domain.RunTrigger, changedFiles string) []ValidatorResult {
+	return r.RunAllWithDiffLimited(ctx, validators, trigger, changedFiles, 0)
+}
+
+// DefaultValidatorConcurrency is the default number of validators that run in parallel
+const DefaultValidatorConcurrency = 4
+
+// RunAllWithDiffLimited executes multiple validators with a concurrency limit.
+// If concurrencyLimit <= 0, defaults to DefaultValidatorConcurrency.
+// Validators run in parallel up to the limit, then wait for slots to free.
+// Context cancellation stops all validators.
+func (r *Runner) RunAllWithDiffLimited(ctx context.Context, validators []*domain.Validator, trigger domain.RunTrigger, changedFiles string, concurrencyLimit int) []ValidatorResult {
 	// Filter validators matching the trigger
 	var matching []*domain.Validator
 	for _, v := range validators {
@@ -126,13 +137,19 @@ func (r *Runner) RunAllWithDiff(ctx context.Context, validators []*domain.Valida
 		return nil
 	}
 
+	// Apply default concurrency limit
+	if concurrencyLimit <= 0 {
+		concurrencyLimit = DefaultValidatorConcurrency
+	}
+
 	var (
 		results []ValidatorResult
 		mu      sync.Mutex
 	)
 
-	// Use errgroup for structured concurrency with context cancellation
+	// Use errgroup with concurrency limit for structured concurrency
 	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(concurrencyLimit)
 
 	for _, validator := range matching {
 		v := validator // capture for goroutine

@@ -196,13 +196,12 @@ func executeWorkItem(
 			return nil
 		}
 
-		// Compute git diff ONCE before spawning parallel operations
-		// This is shared between verification (for context) and validators
+		// Compute git diff once before verification/validation
 		gitDiff, _ := validatorRunner.GetGitDiff(ctx)
 
-		// Run verification and validators in parallel
-		// If verification fails, validators are cancelled immediately
-		result := runVerificationWithValidators(ctx, verifier, verifyCommand, validatorRunner, validatorList, gitDiff)
+		// Run verification first, then validators if verification passes
+		// Validators run in parallel up to the configured concurrency limit
+		result := runVerificationWithValidators(ctx, verifier, verifyCommand, validatorRunner, validatorList, gitDiff, config.Verification.ValidatorConcurrency)
 
 		if result.VerifyErr != nil {
 			return fmt.Errorf("verification command failed to execute: %w", result.VerifyErr)
@@ -294,9 +293,9 @@ type VerificationWithValidation struct {
 	ValidatorResults []validators.ValidatorResult
 }
 
-// runVerificationWithValidators runs verification and validators concurrently.
-// If verification fails, validators are cancelled immediately to save compute.
-// Validators only run when there are validators configured and verification passes.
+// runVerificationWithValidators runs verification first, then validators sequentially.
+// Validators only start after verification passes, avoiding wasted compute.
+// Validators run in parallel up to the configured concurrency limit.
 func runVerificationWithValidators(
 	ctx context.Context,
 	verifier *verification.Runner,
@@ -304,65 +303,32 @@ func runVerificationWithValidators(
 	validatorRunner *validators.Runner,
 	validatorList []*domain.Validator,
 	gitDiff string,
+	validatorConcurrency int,
 ) *VerificationWithValidation {
 	result := &VerificationWithValidation{}
 
-	// Create a cancellable context for validators
-	// If verification fails, we'll cancel this to stop validators early
-	validatorCtx, cancelValidators := context.WithCancel(ctx)
-	defer cancelValidators()
+	// Run verification first
+	verifyResult, err := verifier.Run(ctx, verifyCommand)
 
-	// Channel for verification result (buffered to prevent blocking)
-	verifyCh := make(chan struct {
-		result *verification.Result
-		err    error
-	}, 1)
-
-	// Channel for validator results (buffered to prevent blocking)
-	validatorsCh := make(chan []validators.ValidatorResult, 1)
-
-	// Start verification in a goroutine
-	go func() {
-		verifyResult, err := verifier.Run(ctx, verifyCommand)
-		verifyCh <- struct {
-			result *verification.Result
-			err    error
-		}{verifyResult, err}
-	}()
-
-	// Start validators in a goroutine (only if we have validators)
-	hasValidators := len(validatorList) > 0
-	if hasValidators {
-		go func() {
-			results := validatorRunner.RunAllWithDiff(validatorCtx, validatorList, domain.RunAfterWorkitem, gitDiff)
-			validatorsCh <- results
-		}()
-	}
-
-	// Wait for verification result first
-	verifyResult := <-verifyCh
-
-	if verifyResult.err != nil {
-		// Verification command failed to execute - cancel validators
-		cancelValidators()
-		result.VerifyErr = verifyResult.err
+	if err != nil {
+		// Verification command failed to execute
+		result.VerifyErr = err
 		return result
 	}
 
-	if !verifyResult.result.Passed {
-		// Verification failed - cancel validators immediately
-		cancelValidators()
+	if !verifyResult.Passed {
+		// Verification failed - skip validators entirely (no wasted compute)
 		result.VerifyPassed = false
-		result.VerifyOutput = verifyResult.result.Output
+		result.VerifyOutput = verifyResult.Output
 		return result
 	}
 
 	// Verification passed
 	result.VerifyPassed = true
 
-	// Wait for validators if we started them
-	if hasValidators {
-		result.ValidatorResults = <-validatorsCh
+	// Run validators only if verification passed
+	if len(validatorList) > 0 {
+		result.ValidatorResults = validatorRunner.RunAllWithDiffLimited(ctx, validatorList, domain.RunAfterWorkitem, gitDiff, validatorConcurrency)
 	}
 
 	return result

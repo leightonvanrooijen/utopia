@@ -40,6 +40,8 @@ type VerificationConfig struct {
 	Command string `yaml:"command"`
 	// MaxIterations limits retry attempts per work item (0 = unlimited)
 	MaxIterations int `yaml:"max_iterations,omitempty"`
+	// ValidatorConcurrency limits how many validators run in parallel (default: 4)
+	ValidatorConcurrency int `yaml:"validator_concurrency,omitempty"`
 }
 
 // DefaultConfig returns sensible defaults
