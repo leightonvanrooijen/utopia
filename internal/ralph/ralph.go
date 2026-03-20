@@ -238,9 +238,12 @@ func executeWorkItem(
 		if !allValidatorsPassed {
 			// Validators failed - inject their feedback and retry
 			// Test failures are cleared since verification passed
+			feedback := validatorFeedback.String()
 			fmt.Printf("  Iteration %d: validators failed, will retry with feedback\n", item.IterationCount)
+			// Print validator feedback to stdout so humans can see the same content fed to the AI
+			fmt.Printf("\n--- Validator Failure Feedback ---\n%s\n--- End Validator Feedback ---\n\n", feedback)
 			item.LastFailureOutput = "" // Tests passed, clear test failures
-			item.LastValidatorFeedback = validatorFeedback.String()
+			item.LastValidatorFeedback = feedback
 			continue
 		}
 
