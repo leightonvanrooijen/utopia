@@ -1,7 +1,7 @@
 id: execution-ralph
 title: Ralph Execution Loop
-created: 0001-01-01T00:00:00Z
-updated: 2026-02-17T18:55:58.872952+11:00
+created: "0001-01-01T00:00:00+00:00"
+updated: "2026-03-20T18:48:11.777864+11:00"
 description: |
     The Ralph execution loop runs WorkItems produced by the chunker.
 
@@ -43,6 +43,7 @@ features:
         - Subsequent iterations include PREVIOUS FAILURES with verification output
         - Only failures from immediately previous iteration (not accumulated)
         - Failures are injected as raw text in code block
+        - Failure injection includes instruction that failures must be fixed regardless of whether they were introduced by this work item
 
     - id: work-item-status
       description: |
