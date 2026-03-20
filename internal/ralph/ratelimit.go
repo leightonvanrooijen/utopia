@@ -49,8 +49,8 @@ func ParseRateLimitWait(stdout, stderr string) (time.Duration, error) {
 		return DefaultRateLimitWait, fmt.Errorf("no rate limit pattern found in output")
 	}
 
-	timeStr := matches[1]   // e.g., "1am" or "12:30pm"
-	tzStr := matches[2]     // e.g., "Australia/Sydney"
+	timeStr := matches[1] // e.g., "1am" or "12:30pm"
+	tzStr := matches[2]   // e.g., "Australia/Sydney"
 
 	resetTime, err := parseResetTime(timeStr, tzStr)
 	if err != nil {

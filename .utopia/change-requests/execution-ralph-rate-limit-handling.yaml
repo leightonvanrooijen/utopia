@@ -1,20 +1,20 @@
 id: execution-ralph-rate-limit-handling
 type: feature
 title: Add rate limit detection and automatic retry with sleep
-status: draft
+status: in-progress
 changes:
-  - operation: add
-    spec: execution-ralph
-    feature:
-      id: rate-limit-handling
-      description: |
-        Detect Claude API rate limit errors and automatically wait until the reset time
-        before retrying, rather than burning iterations on failed requests.
-      acceptance_criteria:
-        - Detects "Limit reached · resets {time} ({timezone})" pattern in Claude invocation stderr/stdout
-        - Parses reset time with timezone awareness (e.g., "1am (Australia/Sydney)")
-        - Calculates sleep duration until reset time plus 2 minute buffer
-        - Prints message indicating rate limit hit and wait time (e.g., "Rate limit hit, waiting until 1:02am Australia/Sydney to resume...")
-        - Sleeps until calculated time then retries the iteration
-        - Rate-limited attempts do not count against max iterations limit
-        - Falls back to 10 minute retry delay if time parsing fails
+    - operation: add
+      spec: execution-ralph
+      feature:
+        id: rate-limit-handling
+        description: |
+            Detect Claude API rate limit errors and automatically wait until the reset time
+            before retrying, rather than burning iterations on failed requests.
+        acceptance_criteria:
+            - Detects "Limit reached · resets {time} ({timezone})" pattern in Claude invocation stderr/stdout
+            - Parses reset time with timezone awareness (e.g., "1am (Australia/Sydney)")
+            - Calculates sleep duration until reset time plus 2 minute buffer
+            - Prints message indicating rate limit hit and wait time (e.g., "Rate limit hit, waiting until 1:02am Australia/Sydney to resume...")
+            - Sleeps until calculated time then retries the iteration
+            - Rate-limited attempts do not count against max iterations limit
+            - Falls back to 10 minute retry delay if time parsing fails
