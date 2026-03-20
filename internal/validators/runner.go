@@ -65,13 +65,13 @@ func (r *Runner) Run(ctx context.Context, validator *domain.Validator) (*Result,
 	cli := r.cli.WithAllowedTools(validator.GetAllowedTools())
 
 	// Invoke Claude with the constructed prompt
-	output, err := cli.Prompt(ctx, prompt)
+	promptResult, err := cli.Prompt(ctx, prompt)
 	if err != nil {
 		return nil, fmt.Errorf("claude invocation failed: %w", err)
 	}
 
 	// Check for <PASSED> token in output
-	passed := strings.Contains(output, PassedToken)
+	passed := strings.Contains(promptResult.Stdout, PassedToken)
 
 	result := &Result{
 		Passed: passed,
@@ -79,7 +79,7 @@ func (r *Runner) Run(ctx context.Context, validator *domain.Validator) (*Result,
 
 	// If failed, include the full output as feedback
 	if !passed {
-		result.Feedback = output
+		result.Feedback = promptResult.Stdout
 	}
 
 	return result, nil
@@ -186,13 +186,13 @@ func (r *Runner) runWithDiff(ctx context.Context, validator *domain.Validator, c
 	cli := r.cli.WithAllowedTools(validator.GetAllowedTools())
 
 	// Invoke Claude with the constructed prompt
-	output, err := cli.Prompt(ctx, prompt)
+	promptResult, err := cli.Prompt(ctx, prompt)
 	if err != nil {
 		return nil, fmt.Errorf("claude invocation failed: %w", err)
 	}
 
 	// Check for <PASSED> token in output
-	passed := strings.Contains(output, PassedToken)
+	passed := strings.Contains(promptResult.Stdout, PassedToken)
 
 	result := &Result{
 		Passed: passed,
@@ -200,7 +200,7 @@ func (r *Runner) runWithDiff(ctx context.Context, validator *domain.Validator, c
 
 	// If failed, include the full output as feedback
 	if !passed {
-		result.Feedback = output
+		result.Feedback = promptResult.Stdout
 	}
 
 	return result, nil

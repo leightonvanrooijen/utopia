@@ -232,17 +232,17 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 
 	progress.startPhase(2, "Stage 1: Identifying and qualifying candidates")
 	stage1Prompt := buildIdentifyQualifyPrompt(codebaseContext, specsSummary)
-	qualifiedOutput, err := cli.Prompt(ctx, stage1Prompt)
+	qualifiedResult, err := cli.Prompt(ctx, stage1Prompt)
 	if err != nil {
 		return fmt.Errorf("identify and qualify failed: %w", err)
 	}
-	qualifiedCount := countYAMLItems(qualifiedOutput, "qualified")
-	disqualifiedCount := countYAMLItems(qualifiedOutput, "disqualified")
+	qualifiedCount := countYAMLItems(qualifiedResult.Stdout, "qualified")
+	disqualifiedCount := countYAMLItems(qualifiedResult.Stdout, "disqualified")
 	progress.endPhase(fmt.Sprintf("%d qualified, %d disqualified", qualifiedCount, disqualifiedCount))
 
-	disqualified := parseDisqualifiedCandidates(qualifiedOutput)
+	disqualified := parseDisqualifiedCandidates(qualifiedResult.Stdout)
 	logDisqualifiedCandidates(disqualified, discoverVerboseFlag)
-	qualified := parseQualifiedCandidates(qualifiedOutput)
+	qualified := parseQualifiedCandidates(qualifiedResult.Stdout)
 
 	if len(qualified) == 0 {
 		fmt.Println("\nNo candidates passed qualification criteria.")
@@ -302,12 +302,12 @@ func runParallelRefinement(ctx context.Context, candidates []qualifiedCandidate,
 			var lastErr error
 			for i := 1; i <= iterations; i++ {
 				prompt := buildRefinementAgentPrompt(c, i, iterations)
-				output, err := refinementCLI.Prompt(ctx, prompt)
+				result, err := refinementCLI.Prompt(ctx, prompt)
 				if err != nil {
 					lastErr = fmt.Errorf("refinement failed for %s (iteration %d): %w", c.ID, i, err)
 					continue
 				}
-				lastOutput = output
+				lastOutput = result.Stdout
 				lastErr = nil
 				if verbose {
 					fmt.Printf("  ✓ %s iteration %d/%d complete\n", c.ID, i, iterations)
@@ -896,14 +896,14 @@ func runDiscoverDomain(cmd *cobra.Command, args []string) error {
 	progress.startPhase(2, "Analyzing codebase with Claude")
 	ctx := context.Background()
 	cli := internal.NewCLI().WithVerbose(true)
-	output, err := cli.Prompt(ctx, systemPrompt)
+	result, err := cli.Prompt(ctx, systemPrompt)
 	if err != nil {
 		return fmt.Errorf("claude analysis failed: %w", err)
 	}
 	progress.endPhase("")
 
 	progress.startPhase(3, "Parsing draft domain documents")
-	drafts, err := parseDomainDraftsFromOutput(output)
+	drafts, err := parseDomainDraftsFromOutput(result.Stdout)
 	if err != nil {
 		return fmt.Errorf("failed to parse drafts: %w", err)
 	}

@@ -162,15 +162,39 @@ func executeWorkItem(
 		fmt.Printf("  Iteration %d: invoking Claude...\n", item.IterationCount)
 
 		// Invoke Claude
-		output, err := cli.Prompt(ctx, prompt)
+		claudeResult, err := cli.Prompt(ctx, prompt)
 		if err != nil {
+			// Check for rate limit before counting this as a failed iteration
+			if claudeResult != nil && DetectRateLimit(claudeResult.Stdout, claudeResult.Stderr) {
+				// Rate limit detected - wait and retry without counting this iteration
+				item.IterationCount-- // Undo the increment since this shouldn't count
+
+				waitDuration, parseErr := ParseRateLimitWait(claudeResult.Stdout, claudeResult.Stderr)
+				if parseErr != nil {
+					fmt.Printf("  Rate limit detected but failed to parse reset time: %v\n", parseErr)
+					fmt.Printf("  Falling back to %v wait...\n", DefaultRateLimitWait)
+				}
+
+				fmt.Printf("  %s\n", FormatWaitMessage(claudeResult.Stdout, claudeResult.Stderr))
+
+				// Sleep until rate limit resets
+				select {
+				case <-ctx.Done():
+					_ = store.SaveWorkItemForSpec(specID, item)
+					return ctx.Err()
+				case <-time.After(waitDuration):
+					// Rate limit should have reset, retry
+					continue
+				}
+			}
+
 			fmt.Printf("  Iteration %d: Claude invocation failed: %v\n", item.IterationCount, err)
 			// Continue to next iteration - Claude may have hit an error
 			continue
 		}
 
 		// Check for completion token
-		if !strings.Contains(output, CompletionToken) {
+		if !strings.Contains(claudeResult.Stdout, CompletionToken) {
 			fmt.Printf("  Iteration %d: no %s token found, retrying...\n", item.IterationCount, CompletionToken)
 			// No completion token - Claude hit step limit or got stuck
 			// Clear any previous failure since this is a different failure mode

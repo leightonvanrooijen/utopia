@@ -2,6 +2,7 @@ package internal
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -14,6 +15,14 @@ import (
 
 	"github.com/google/uuid"
 )
+
+// PromptResult contains the output from a Claude prompt invocation.
+type PromptResult struct {
+	// Stdout contains the standard output from Claude
+	Stdout string
+	// Stderr contains the standard error output from Claude (for rate limit detection, etc.)
+	Stderr string
+}
 
 // PermissionMode controls how Claude handles permission prompts
 type PermissionMode string
@@ -75,7 +84,8 @@ func (c *CLI) baseArgs() []string {
 // Prompt sends a one-shot prompt to Claude and returns the response.
 // Uses --print flag for non-interactive output.
 // If verbose mode is enabled, streams output in real-time while capturing.
-func (c *CLI) Prompt(ctx context.Context, prompt string) (string, error) {
+// Returns PromptResult containing both stdout and stderr for rate limit detection.
+func (c *CLI) Prompt(ctx context.Context, prompt string) (*PromptResult, error) {
 	args := c.baseArgs()
 	args = append(args, "--print", prompt)
 
@@ -86,16 +96,25 @@ func (c *CLI) Prompt(ctx context.Context, prompt string) (string, error) {
 
 	cmd := exec.CommandContext(ctx, c.binaryPath, args...)
 
+	// Capture both stdout and stderr
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
 	output, err := cmd.Output()
+	result := &PromptResult{
+		Stdout: string(output),
+		Stderr: stderr.String(),
+	}
 	if err != nil {
-		return "", fmt.Errorf("claude prompt failed: %w", err)
+		return result, fmt.Errorf("claude prompt failed: %w", err)
 	}
 
-	return string(output), nil
+	return result, nil
 }
 
 // streamingPrompt runs Claude with --verbose and streams output while capturing it.
-func (c *CLI) streamingPrompt(ctx context.Context, args []string) (string, error) {
+// Returns PromptResult with both stdout and stderr captured.
+func (c *CLI) streamingPrompt(ctx context.Context, args []string) (*PromptResult, error) {
 	// Add verbose flag for real-time output
 	args = append(args, "--verbose")
 
@@ -104,20 +123,21 @@ func (c *CLI) streamingPrompt(ctx context.Context, args []string) (string, error
 	// Create pipes for stdout and stderr
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return "", fmt.Errorf("failed to create stdout pipe: %w", err)
+		return nil, fmt.Errorf("failed to create stdout pipe: %w", err)
 	}
 
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
-		return "", fmt.Errorf("failed to create stderr pipe: %w", err)
+		return nil, fmt.Errorf("failed to create stderr pipe: %w", err)
 	}
 
 	if err := cmd.Start(); err != nil {
-		return "", fmt.Errorf("failed to start claude: %w", err)
+		return nil, fmt.Errorf("failed to start claude: %w", err)
 	}
 
 	// Capture output while streaming to terminal
-	var outputBuilder strings.Builder
+	var stdoutBuilder strings.Builder
+	var stderrBuilder strings.Builder
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 
@@ -132,7 +152,7 @@ func (c *CLI) streamingPrompt(ctx context.Context, args []string) (string, error
 			if len(line) > 0 {
 				fmt.Print(line) // Stream to terminal
 				mu.Lock()
-				outputBuilder.WriteString(line)
+				stdoutBuilder.WriteString(line)
 				mu.Unlock()
 			}
 			if err != nil {
@@ -141,7 +161,7 @@ func (c *CLI) streamingPrompt(ctx context.Context, args []string) (string, error
 		}
 	}()
 
-	// Stream stderr (verbose output goes here)
+	// Stream stderr (verbose output goes here) - now also captures for rate limit detection
 	go func() {
 		defer wg.Done()
 		reader := bufio.NewReader(stderr)
@@ -149,6 +169,9 @@ func (c *CLI) streamingPrompt(ctx context.Context, args []string) (string, error
 			line, err := reader.ReadString('\n')
 			if len(line) > 0 {
 				fmt.Fprint(os.Stderr, line) // Stream to terminal stderr
+				mu.Lock()
+				stderrBuilder.WriteString(line)
+				mu.Unlock()
 			}
 			if err != nil {
 				break
@@ -160,12 +183,16 @@ func (c *CLI) streamingPrompt(ctx context.Context, args []string) (string, error
 	wg.Wait()
 
 	// Wait for command to complete
+	result := &PromptResult{
+		Stdout: stdoutBuilder.String(),
+		Stderr: stderrBuilder.String(),
+	}
 	err = cmd.Wait()
 	if err != nil {
-		return outputBuilder.String(), fmt.Errorf("claude prompt failed: %w", err)
+		return result, fmt.Errorf("claude prompt failed: %w", err)
 	}
 
-	return outputBuilder.String(), nil
+	return result, nil
 }
 
 // SessionWithCapture runs an interactive Claude session and captures the full transcript.
