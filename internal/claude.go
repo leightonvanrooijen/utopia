@@ -209,9 +209,6 @@ func (c *CLI) SessionWithCapture(ctx context.Context, systemPrompt string) (tran
 		args = append(args, "--system-prompt", systemPrompt)
 	}
 
-	// Add initial prompt to trigger Claude's first response.
-	// Without this, Claude CLI waits for user input before responding.
-	args = append(args, ".")
 
 	cmd := exec.CommandContext(ctx, c.binaryPath, args...)
 
