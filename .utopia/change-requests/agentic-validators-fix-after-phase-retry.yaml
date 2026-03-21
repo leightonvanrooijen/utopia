@@ -1,30 +1,30 @@
 id: agentic-validators-fix-after-phase-retry
 type: bugfix
 title: Fix after-phase validators to retry on failure instead of exiting
-status: draft
+status: in-progress
 tasks:
-  - id: after-phase-validator-retry-loop
-    spec: agentic-validators
-    feature_id: validator-execution-hook
-    description: |
-      Fix after-phase validators to match spec behavior for validator-execution-hook.
+    - id: after-phase-validator-retry-loop
+      description: |
+        Fix after-phase validators to match spec behavior for validator-execution-hook.
 
-      Current behavior: When after-phase validators fail, runAfterPhaseValidators
-      returns an error immediately, causing execution to exit with failure.
+        Current behavior: When after-phase validators fail, runAfterPhaseValidators
+        returns an error immediately, causing execution to exit with failure.
 
-      Expected behavior: Per the spec "If any validator fails, aggregated feedback
-      injected for retry" - after-phase validators should follow the same pattern
-      as after-workitem validators: inject feedback into a prompt, start a Claude
-      session to fix issues, re-run validators, and loop until pass or max iterations.
-    acceptance_criteria:
-      - Behavior matches spec agentic-validators feature validator-execution-hook
-      - When after-phase validators fail, aggregated feedback is injected into a prompt
-      - A Claude session is started to fix the standards issues
-      - After-phase validators are re-run after Claude completes
-      - Loop continues until all after-phase validators pass or max iterations reached
-      - Feedback injection uses the same format as work item loop (PROJECT STANDARDS FEEDBACK section)
-      - Commits are created after each successful fix iteration
-    hints:
-      - The fix is in runAfterPhaseValidators in internal/ralph/ralph.go
-      - Follow the same loop pattern used in executeWorkItem for validator retries (lines 262-271)
-      - Use buildPrompt pattern for feedback injection or create similar for phase-level fixes
+        Expected behavior: Per the spec "If any validator fails, aggregated feedback
+        injected for retry" - after-phase validators should follow the same pattern
+        as after-workitem validators: inject feedback into a prompt, start a Claude
+        session to fix issues, re-run validators, and loop until pass or max iterations.
+      acceptance_criteria:
+        - Behavior matches spec agentic-validators feature validator-execution-hook
+        - When after-phase validators fail, aggregated feedback is injected into a prompt
+        - A Claude session is started to fix the standards issues
+        - After-phase validators are re-run after Claude completes
+        - Loop continues until all after-phase validators pass or max iterations reached
+        - Feedback injection uses the same format as work item loop (PROJECT STANDARDS FEEDBACK section)
+        - Commits are created after each successful fix iteration
+      spec: agentic-validators
+      feature_id: validator-execution-hook
+      hints:
+        - The fix is in runAfterPhaseValidators in internal/ralph/ralph.go
+        - Follow the same loop pattern used in executeWorkItem for validator retries (lines 262-271)
+        - Use buildPrompt pattern for feedback injection or create similar for phase-level fixes
