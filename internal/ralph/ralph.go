@@ -96,7 +96,7 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 
 	// Run after-phase validators once all work items are complete
 	if result.Completed == result.Total && len(validatorList) > 0 {
-		if err := runAfterPhaseValidators(ctx, validatorRunner, validatorList); err != nil {
+		if err := runAfterPhaseValidators(ctx, validatorRunner, validatorList, cli, config, projectDir); err != nil {
 			result.Reason = err.Error()
 			return result, err
 		}
@@ -448,29 +448,140 @@ func gitCommitWorkItem(projectDir string, item *domain.WorkItem, crTitle string)
 
 // runAfterPhaseValidators executes validators with the "after-phase" trigger.
 // These validators run once after all work items in a phase have completed.
-// Returns an error if any after-phase validator fails.
+// If validators fail, aggregated feedback is injected into a prompt, Claude is
+// invoked to fix the issues, and validators are re-run. This loop continues
+// until all validators pass or max iterations is reached.
 func runAfterPhaseValidators(
 	ctx context.Context,
 	validatorRunner *validators.Runner,
 	validatorList []*domain.Validator,
+	cli *internal.CLI,
+	config *domain.Config,
+	projectDir string,
 ) error {
-	// Run validators with after-phase trigger
-	results := validatorRunner.RunAll(ctx, validatorList, domain.RunAfterPhase)
+	maxIterations := config.Verification.MaxIterations
+	iteration := 0
+	var lastValidatorFeedback string
 
-	if len(results) == 0 {
-		// No after-phase validators configured
-		return nil
+	for {
+		// Check context cancellation (Ctrl+C)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		iteration++
+
+		// Check max iterations
+		if maxIterations > 0 && iteration > maxIterations {
+			return fmt.Errorf("max iterations (%d) reached for after-phase validators", maxIterations)
+		}
+
+		// Run validators with after-phase trigger
+		results := validatorRunner.RunAll(ctx, validatorList, domain.RunAfterPhase)
+
+		if len(results) == 0 {
+			// No after-phase validators configured
+			return nil
+		}
+
+		fmt.Printf("Running %d after-phase validator(s) (iteration %d)...\n", len(results), iteration)
+
+		// Aggregate results
+		aggregate := validators.AggregateResults(results)
+
+		if aggregate.Passed {
+			fmt.Println("All after-phase validators passed!")
+			// Create commit for successful fix if this wasn't the first iteration
+			if iteration > 1 {
+				gitCommitAfterPhase(projectDir)
+			}
+			return nil
+		}
+
+		// Validators failed - inject feedback and retry with Claude
+		lastValidatorFeedback = aggregate.Feedback
+		fmt.Printf("  After-phase iteration %d: validators failed, will retry with feedback\n", iteration)
+		fmt.Printf("\n--- Validator Failure Feedback ---\n%s\n--- End Validator Feedback ---\n\n", lastValidatorFeedback)
+
+		// Build prompt for Claude to fix standards issues
+		prompt := buildAfterPhasePrompt(lastValidatorFeedback)
+
+		fmt.Printf("  After-phase iteration %d: invoking Claude to fix standards issues...\n", iteration)
+
+		// Invoke Claude
+		claudeResult, err := cli.Prompt(ctx, prompt)
+		if err != nil {
+			// Check for rate limit before counting this as a failed iteration
+			if claudeResult != nil && DetectRateLimit(claudeResult.Stdout, claudeResult.Stderr) {
+				// Rate limit detected - wait and retry without counting this iteration
+				iteration-- // Undo the increment since this shouldn't count
+
+				waitDuration, parseErr := ParseRateLimitWait(claudeResult.Stdout, claudeResult.Stderr)
+				if parseErr != nil {
+					fmt.Printf("  Rate limit detected but failed to parse reset time: %v\n", parseErr)
+					fmt.Printf("  Falling back to %v wait...\n", DefaultRateLimitWait)
+				}
+
+				fmt.Printf("  %s\n", FormatWaitMessage(claudeResult.Stdout, claudeResult.Stderr))
+
+				// Sleep until rate limit resets
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(waitDuration):
+					// Rate limit should have reset, retry
+					continue
+				}
+			}
+
+			fmt.Printf("  After-phase iteration %d: Claude invocation failed: %v\n", iteration, err)
+			// Continue to next iteration - Claude may have hit an error
+			continue
+		}
+
+		// Check for completion token
+		if !strings.Contains(claudeResult.Stdout, CompletionToken) {
+			fmt.Printf("  After-phase iteration %d: no %s token found, retrying...\n", iteration, CompletionToken)
+			continue
+		}
+
+		fmt.Printf("  After-phase iteration %d: %s token found, re-running validators...\n", iteration, CompletionToken)
+		// Loop continues to re-run validators
+	}
+}
+
+// buildAfterPhasePrompt constructs a prompt for Claude to fix after-phase validator failures.
+func buildAfterPhasePrompt(validatorFeedback string) string {
+	return "## TASK\n\n" +
+		"Fix the project standards violations identified by the after-phase validators.\n\n" +
+		"## PROJECT STANDARDS FEEDBACK\n\n" +
+		"The following validators detected standards issues:\n\n" +
+		validatorFeedback + "\n" +
+		"Please fix these standards violations. When complete, output: <COMPLETE>"
+}
+
+// gitCommitAfterPhase creates a git commit after fixing after-phase validator issues.
+func gitCommitAfterPhase(projectDir string) {
+	message := "fix: after-phase validator standards issues"
+
+	// Stage all changes first
+	if err := git.Add(projectDir, "-A"); err != nil {
+		fmt.Printf("  warning: git add failed: %v\n", err)
+		return
 	}
 
-	fmt.Printf("Running %d after-phase validator(s)...\n", len(results))
-
-	// Aggregate results
-	aggregate := validators.AggregateResults(results)
-
-	if !aggregate.Passed {
-		return fmt.Errorf("after-phase validators failed:\n%s", aggregate.Feedback)
+	// Check if there are changes to commit
+	if !git.HasStagedChanges(projectDir) {
+		return
 	}
 
-	fmt.Println("All after-phase validators passed!")
-	return nil
+	// Commit
+	if err := git.Commit(projectDir, message); err != nil {
+		fmt.Printf("  warning: git commit failed: %v\n", err)
+		return
+	}
+
+	fmt.Println("  Created commit for after-phase validator fixes")
 }
