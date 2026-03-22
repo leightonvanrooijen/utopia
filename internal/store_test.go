@@ -753,9 +753,9 @@ func TestLoadValidator_FullFormat(t *testing.T) {
 		t.Fatalf("failed to create validators dir: %v", err)
 	}
 
+	// Note: run field is deprecated in validator files but should still load without error
 	content := `---
 id: code-standards
-run: after-workitem
 allowed_tools: [Read, Glob, Grep, WebFetch]
 ---
 Review the following changes for code standards:
@@ -777,8 +777,9 @@ If all standards are met, output: <PASSED>
 	if validator.ID != "code-standards" {
 		t.Errorf("expected ID 'code-standards', got %q", validator.ID)
 	}
-	if validator.Run != domain.RunAfterWorkitem {
-		t.Errorf("expected Run 'after-workitem', got %q", validator.Run)
+	// Run should default since it's not configured (run in file is deprecated/ignored)
+	if validator.GetRun() != domain.RunAfterWorkitem {
+		t.Errorf("expected Run default 'after-workitem', got %q", validator.GetRun())
 	}
 	if len(validator.AllowedTools) != 4 {
 		t.Errorf("expected 4 allowed tools, got %d", len(validator.AllowedTools))
@@ -924,7 +925,7 @@ func TestLoadValidator_FileNotFound(t *testing.T) {
 	}
 }
 
-func TestLoadValidator_DifferentRunTriggers(t *testing.T) {
+func TestLoadValidator_DeprecatedRunFieldIgnored(t *testing.T) {
 	store, cleanup := SetupTestStore(t)
 	defer cleanup()
 
@@ -933,14 +934,15 @@ func TestLoadValidator_DifferentRunTriggers(t *testing.T) {
 		t.Fatalf("failed to create validators dir: %v", err)
 	}
 
+	// Test that validators with deprecated 'run' field still load without error
+	// but the run field is ignored (defaults to after-workitem)
 	tests := []struct {
-		name     string
-		run      string
-		expected domain.RunTrigger
+		name string
+		run  string
 	}{
-		{"after-workitem", "after-workitem", domain.RunAfterWorkitem},
-		{"after-phase", "after-phase", domain.RunAfterPhase},
-		{"on-demand", "on-demand", domain.RunOnDemand},
+		{"after-workitem", "after-workitem"},
+		{"after-phase", "after-phase"},
+		{"on-demand", "on-demand"},
 	}
 
 	for _, tc := range tests {
@@ -960,8 +962,10 @@ Test prompt.
 			t.Fatalf("unexpected error for %s: %v", tc.name, err)
 		}
 
-		if validator.GetRun() != tc.expected {
-			t.Errorf("for %s: expected run %q, got %q", tc.name, tc.expected, validator.GetRun())
+		// Run field in file is deprecated and ignored - should always default
+		if validator.GetRun() != domain.RunAfterWorkitem {
+			t.Errorf("for %s: expected default run %q (run in file is deprecated), got %q",
+				tc.name, domain.RunAfterWorkitem, validator.GetRun())
 		}
 	}
 }

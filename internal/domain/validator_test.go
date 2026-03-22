@@ -121,22 +121,20 @@ func TestDefaultAllowedTools(t *testing.T) {
 	}
 }
 
-func TestValidator_GetRun_WithOverride(t *testing.T) {
+func TestValidator_GetRun(t *testing.T) {
 	tests := []struct {
-		name        string
-		run         RunTrigger
-		runOverride RunTrigger
-		expected    RunTrigger
+		name     string
+		run      RunTrigger
+		expected RunTrigger
 	}{
-		{"override takes precedence over frontmatter", RunAfterWorkitem, RunAfterPhase, RunAfterPhase},
-		{"override takes precedence over empty frontmatter", "", RunOnDemand, RunOnDemand},
-		{"frontmatter used when override is empty", RunAfterPhase, "", RunAfterPhase},
-		{"default used when both empty", "", "", RunAfterWorkitem},
+		{"returns run when set", RunAfterPhase, RunAfterPhase},
+		{"returns on-demand when set", RunOnDemand, RunOnDemand},
+		{"returns default when empty", "", RunAfterWorkitem},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			v := Validator{Run: tc.run, RunOverride: tc.runOverride}
+			v := Validator{Run: tc.run}
 			if got := v.GetRun(); got != tc.expected {
 				t.Errorf("GetRun() = %q, want %q", got, tc.expected)
 			}

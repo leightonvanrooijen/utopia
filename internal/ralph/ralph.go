@@ -77,7 +77,7 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 			v.ModelOverride = vc.GetModel()
 		}
 		if vc.GetRun() != "" {
-			v.RunOverride = domain.RunTrigger(vc.GetRun())
+			v.Run = domain.RunTrigger(vc.GetRun())
 		}
 		validatorList = append(validatorList, v)
 	}

@@ -21,12 +21,12 @@ func DefaultAllowedTools() []string {
 
 // Validator represents a project standards validator loaded from a .md file.
 // Validators use YAML frontmatter for configuration and markdown body for the prompt.
+//
+// Valid frontmatter fields: id, allowed_tools, prompt
+// The "run" field should be configured in config.yaml, not in the validator file.
 type Validator struct {
 	// ID is the unique identifier for this validator (required)
 	ID string `yaml:"id"`
-
-	// Run specifies when the validator should execute (optional, defaults to "after-workitem")
-	Run RunTrigger `yaml:"run,omitempty"`
 
 	// AllowedTools specifies which tools the validator can use (optional, defaults to ["Read", "Glob", "Grep"])
 	AllowedTools []string `yaml:"allowed_tools,omitempty"`
@@ -38,17 +38,14 @@ type Validator struct {
 	// This is not stored in the validator file's frontmatter.
 	ModelOverride string `yaml:"-"`
 
-	// RunOverride is set from config.yaml to override the run trigger from frontmatter.
-	// This is not stored in the validator file's frontmatter.
-	RunOverride RunTrigger `yaml:"-"`
+	// Run is set from config.yaml to specify when the validator should execute.
+	// Defaults to "after-workitem" if not configured.
+	// This is not stored in the validator file's frontmatter (deprecated there).
+	Run RunTrigger `yaml:"-"`
 }
 
-// GetRun returns the run trigger, checking override first, then frontmatter, then default.
-// Priority: RunOverride (from config) > Run (from frontmatter) > "after-workitem" (default)
+// GetRun returns the run trigger from config, defaulting to "after-workitem".
 func (v *Validator) GetRun() RunTrigger {
-	if v.RunOverride != "" {
-		return v.RunOverride
-	}
 	if v.Run == "" {
 		return RunAfterWorkitem
 	}

@@ -716,9 +716,21 @@ func (s *YAMLStore) DeleteValidator(path string) error {
 	return Delete(s, path, "validator", path)
 }
 
+// validatorFrontmatter is used for parsing validator file frontmatter.
+// It includes the deprecated 'run' field to detect and warn about its usage.
+type validatorFrontmatter struct {
+	ID           string   `yaml:"id"`
+	AllowedTools []string `yaml:"allowed_tools,omitempty"`
+	Run          string   `yaml:"run,omitempty"` // deprecated: configure in config.yaml instead
+}
+
 // LoadValidator reads a validator from a .md file with YAML frontmatter.
 // The path should be relative to the store's base directory (e.g., "validators/component-standards.md").
 // Returns the validator with frontmatter fields populated and Prompt containing the markdown body.
+//
+// Valid frontmatter fields: id, allowed_tools
+// The "run" field is deprecated in validator files and should be configured in config.yaml.
+// If "run" is found in the file, a warning is logged but the file continues to load.
 func (s *YAMLStore) LoadValidator(path string) (*domain.Validator, error) {
 	fullPath := filepath.Join(s.baseDir, path)
 
@@ -743,14 +755,25 @@ func (s *YAMLStore) LoadValidator(path string) (*domain.Validator, error) {
 	frontmatterStr := content[4 : 4+endMarker]
 	bodyStart := 4 + endMarker + 4 // Skip past "\n---"
 
-	var validator domain.Validator
-	if err := yaml.Unmarshal([]byte(frontmatterStr), &validator); err != nil {
+	var fm validatorFrontmatter
+	if err := yaml.Unmarshal([]byte(frontmatterStr), &fm); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal validator frontmatter from %s: %w", path, err)
 	}
 
 	// Validate required fields
-	if validator.ID == "" {
+	if fm.ID == "" {
 		return nil, fmt.Errorf("validator file %s missing required 'id' field in frontmatter", path)
+	}
+
+	// Warn if deprecated 'run' field is present
+	if fm.Run != "" {
+		fmt.Fprintf(os.Stderr, "Warning: validator file %s contains 'run' field which is deprecated; configure 'run' in config.yaml instead\n", path)
+	}
+
+	// Build validator (without deprecated run field)
+	validator := &domain.Validator{
+		ID:           fm.ID,
+		AllowedTools: fm.AllowedTools,
 	}
 
 	// Extract body content (skip leading newlines)
@@ -758,5 +781,5 @@ func (s *YAMLStore) LoadValidator(path string) (*domain.Validator, error) {
 		validator.Prompt = strings.TrimPrefix(content[bodyStart:], "\n")
 	}
 
-	return &validator, nil
+	return validator, nil
 }
