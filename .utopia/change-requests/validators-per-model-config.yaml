@@ -1,0 +1,38 @@
+id: validators-per-model-config
+type: enhancement
+title: Add per-validator model configuration with haiku support
+status: draft
+changes:
+  - operation: modify
+    spec: ai-providers
+    feature_id: provider-model-mapping
+    criteria:
+      edit:
+        - old: "claude-code provider supports opus (claude-opus-4-20250514) and sonnet (claude-sonnet-4-20250514) models"
+          new: "claude-code provider supports haiku (claude-3-5-haiku-20241022), opus (claude-opus-4-20250514), and sonnet (claude-sonnet-4-20250514) models"
+        - old: "Model names in config are user-friendly (opus, sonnet, kimi)"
+          new: "Model names in config are user-friendly (haiku, opus, sonnet, kimi)"
+
+  - operation: add
+    spec: agentic-validators
+    feature:
+      id: validator-model-override
+      description: |
+        Allow individual validators to specify their own model, overriding the
+        validation phase model configuration. This enables cost optimization by
+        running simple validators with cheaper models (e.g., haiku) while complex
+        validators can use more capable models (e.g., opus or sonnet).
+      acceptance_criteria:
+        - Validator YAML frontmatter supports optional model field
+        - Model field accepts provider-specific model names (haiku, opus, sonnet for claude-code)
+        - When model is specified, it overrides the validation phase model for that validator
+        - When model is not specified, validator uses the validation phase model configuration
+        - Invalid model name for the configured provider produces clear error message
+        - Model override only affects the specific validator, not other validators
+        - Model selection respects the provider from validation phase config (cannot override provider)
+      hints:
+        - Update validator file format parsing to include model field
+        - Modify validator runner to check for model override before using phase config
+        - Use existing ResolveModel function from internal/domain/models.go
+        - Add model validation when loading validator files
+        - Update validator template to document the new model field
