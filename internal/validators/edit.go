@@ -143,15 +143,15 @@ func (e *Editor) ListValidators() ([]ValidatorInfo, error) {
 	}
 
 	var validators []ValidatorInfo
-	for _, path := range config.Validators {
-		validator, err := e.store.LoadValidator(path)
+	for _, vc := range config.Validators {
+		validator, err := e.store.LoadValidator(vc.GetPath())
 		if err != nil {
 			// Include the error but continue listing others
-			fmt.Fprintf(os.Stderr, "Warning: failed to load validator %s: %v\n", path, err)
+			fmt.Fprintf(os.Stderr, "Warning: failed to load validator %s: %v\n", vc.GetPath(), err)
 			continue
 		}
 		validators = append(validators, ValidatorInfo{
-			Path:      path,
+			Path:      vc.GetPath(),
 			Validator: validator,
 		})
 	}

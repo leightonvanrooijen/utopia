@@ -33,14 +33,32 @@ type Validator struct {
 
 	// Prompt is the markdown body sent to Claude (not stored in frontmatter)
 	Prompt string `yaml:"-"`
+
+	// ModelOverride is set from config.yaml to override the models.validators default.
+	// This is not stored in the validator file's frontmatter.
+	ModelOverride string `yaml:"-"`
+
+	// RunOverride is set from config.yaml to override the run trigger from frontmatter.
+	// This is not stored in the validator file's frontmatter.
+	RunOverride RunTrigger `yaml:"-"`
 }
 
-// GetRun returns the run trigger, defaulting to "after-workitem" if not specified
+// GetRun returns the run trigger, checking override first, then frontmatter, then default.
+// Priority: RunOverride (from config) > Run (from frontmatter) > "after-workitem" (default)
 func (v *Validator) GetRun() RunTrigger {
+	if v.RunOverride != "" {
+		return v.RunOverride
+	}
 	if v.Run == "" {
 		return RunAfterWorkitem
 	}
 	return v.Run
+}
+
+// GetModel returns the model override if set, otherwise empty string.
+// Callers should fall back to models.validators or the global default if empty.
+func (v *Validator) GetModel() string {
+	return v.ModelOverride
 }
 
 // GetAllowedTools returns the allowed tools, defaulting to read-only tools if not specified

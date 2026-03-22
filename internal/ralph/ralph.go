@@ -67,10 +67,17 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 
 	// Load validators from config
 	var validatorList []*domain.Validator
-	for _, path := range config.Validators {
-		v, err := store.LoadValidator(path)
+	for _, vc := range config.Validators {
+		v, err := store.LoadValidator(vc.GetPath())
 		if err != nil {
-			return nil, fmt.Errorf("failed to load validator %s: %w", path, err)
+			return nil, fmt.Errorf("failed to load validator %s: %w", vc.GetPath(), err)
+		}
+		// Apply config overrides
+		if vc.GetModel() != "" {
+			v.ModelOverride = vc.GetModel()
+		}
+		if vc.GetRun() != "" {
+			v.RunOverride = domain.RunTrigger(vc.GetRun())
 		}
 		validatorList = append(validatorList, v)
 	}

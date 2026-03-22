@@ -61,8 +61,11 @@ func (r *Runner) Run(ctx context.Context, validator *domain.Validator) (*Result,
 	// Expand the prompt with changed files
 	prompt := validator.ExpandPrompt(changedFiles)
 
-	// Configure CLI with validator's allowed tools
+	// Configure CLI with validator's allowed tools and optional model override
 	cli := r.cli.WithAllowedTools(validator.GetAllowedTools())
+	if model := validator.GetModel(); model != "" {
+		cli = cli.WithModel(model)
+	}
 
 	// Invoke Claude with the constructed prompt
 	promptResult, err := cli.Prompt(ctx, prompt)
@@ -182,8 +185,11 @@ func (r *Runner) runWithDiff(ctx context.Context, validator *domain.Validator, c
 	// Expand the prompt with changed files
 	prompt := validator.ExpandPrompt(changedFiles)
 
-	// Configure CLI with validator's allowed tools
+	// Configure CLI with validator's allowed tools and optional model override
 	cli := r.cli.WithAllowedTools(validator.GetAllowedTools())
+	if model := validator.GetModel(); model != "" {
+		cli = cli.WithModel(model)
+	}
 
 	// Invoke Claude with the constructed prompt
 	promptResult, err := cli.Prompt(ctx, prompt)

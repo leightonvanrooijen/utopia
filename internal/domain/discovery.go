@@ -27,13 +27,66 @@ type Project struct {
 type Config struct {
 	ProjectContext string             `yaml:"project_context,omitempty"`
 	Verification   VerificationConfig `yaml:"verification"`
-	// Validators is an explicit list of validator file paths relative to .utopia/
-	// Example: ["validators/component-standards.md"]
+	// Validators is an explicit list of validator configurations relative to .utopia/
+	// Supports both string format (path only) and object format (path, model, run).
+	// Example: ["validators/component-standards.md", {path: "validators/security.md", model: "opus"}]
 	// Only listed files are loaded - no auto-discovery.
-	Validators []string `yaml:"validators,omitempty"`
+	Validators []ValidatorConfig `yaml:"validators,omitempty"`
 	// Models configures which Claude model to use for each command.
 	// If omitted entirely, sonnet is used as the implicit default.
 	Models *ModelConfig `yaml:"models,omitempty"`
+}
+
+// ValidatorConfig specifies a validator with optional model and run overrides.
+// Can be specified as a string (path only) or object (path with options).
+//
+// String format: "validators/code-standards.md"
+// Object format: {path: "validators/code-standards.md", model: "opus", run: "after-phase"}
+type ValidatorConfig struct {
+	// Path is the file path relative to .utopia/ (required)
+	Path string `yaml:"path"`
+	// Model overrides the models.validators default for this specific validator
+	Model string `yaml:"model,omitempty"`
+	// Run specifies when this validator should execute (after-workitem, after-phase, on-demand)
+	// If set, overrides the run trigger specified in the validator file's frontmatter
+	Run string `yaml:"run,omitempty"`
+}
+
+// UnmarshalYAML implements custom unmarshaling to support both string and object formats.
+// String values are converted to ValidatorConfig{Path: value, Run: "after-workitem"}.
+func (vc *ValidatorConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	// Try string format first
+	var path string
+	if err := unmarshal(&path); err == nil {
+		vc.Path = path
+		// String format defaults run to after-workitem (matching existing behavior)
+		return nil
+	}
+
+	// Try object format
+	type rawValidatorConfig ValidatorConfig // avoid recursion
+	var raw rawValidatorConfig
+	if err := unmarshal(&raw); err != nil {
+		return err
+	}
+
+	*vc = ValidatorConfig(raw)
+	return nil
+}
+
+// GetPath returns the validator file path.
+func (vc *ValidatorConfig) GetPath() string {
+	return vc.Path
+}
+
+// GetModel returns the model override, or empty string if not set.
+func (vc *ValidatorConfig) GetModel() string {
+	return vc.Model
+}
+
+// GetRun returns the run trigger override, or empty string if not set.
+func (vc *ValidatorConfig) GetRun() string {
+	return vc.Run
 }
 
 // ModelConfig specifies model selection for commands.

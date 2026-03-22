@@ -402,9 +402,9 @@ func TestValidateValidatorPaths_AllExist(t *testing.T) {
 		t.Fatalf("failed to create test2.md: %v", err)
 	}
 
-	validators := []string{
-		"validators/test1.md",
-		"validators/test2.md",
+	validators := []domain.ValidatorConfig{
+		{Path: "validators/test1.md"},
+		{Path: "validators/test2.md"},
 	}
 
 	err := store.ValidateValidatorPaths(validators)
@@ -418,7 +418,7 @@ func TestValidateValidatorPaths_EmptyList(t *testing.T) {
 	defer cleanup()
 
 	// Empty validators list should succeed (validators are optional)
-	err := store.ValidateValidatorPaths([]string{})
+	err := store.ValidateValidatorPaths([]domain.ValidatorConfig{})
 	if err != nil {
 		t.Errorf("expected no error for empty validators list, got: %v", err)
 	}
@@ -434,7 +434,7 @@ func TestValidateValidatorPaths_SingleMissing(t *testing.T) {
 	store, cleanup := SetupTestStore(t)
 	defer cleanup()
 
-	validators := []string{"validators/nonexistent.md"}
+	validators := []domain.ValidatorConfig{{Path: "validators/nonexistent.md"}}
 
 	err := store.ValidateValidatorPaths(validators)
 	if err == nil {
@@ -462,10 +462,10 @@ func TestValidateValidatorPaths_MultipleMissing(t *testing.T) {
 		t.Fatalf("failed to create exists.md: %v", err)
 	}
 
-	validators := []string{
-		"validators/exists.md",
-		"validators/missing1.md",
-		"validators/missing2.md",
+	validators := []domain.ValidatorConfig{
+		{Path: "validators/exists.md"},
+		{Path: "validators/missing1.md"},
+		{Path: "validators/missing2.md"},
 	}
 
 	err := store.ValidateValidatorPaths(validators)
@@ -488,7 +488,7 @@ func TestConfigValidators_LoadFromYAML(t *testing.T) {
 	store, cleanup := SetupTestStore(t)
 	defer cleanup()
 
-	// Write config with validators
+	// Write config with validators (string format - backward compatible)
 	configContent := `project_context: Test context
 verification:
     command: ./test.sh
@@ -508,11 +508,11 @@ validators:
 	if len(config.Validators) != 2 {
 		t.Errorf("expected 2 validators, got %d", len(config.Validators))
 	}
-	if config.Validators[0] != "validators/code-standards.md" {
-		t.Errorf("expected first validator 'validators/code-standards.md', got %q", config.Validators[0])
+	if config.Validators[0].GetPath() != "validators/code-standards.md" {
+		t.Errorf("expected first validator path 'validators/code-standards.md', got %q", config.Validators[0].GetPath())
 	}
-	if config.Validators[1] != "validators/naming.md" {
-		t.Errorf("expected second validator 'validators/naming.md', got %q", config.Validators[1])
+	if config.Validators[1].GetPath() != "validators/naming.md" {
+		t.Errorf("expected second validator path 'validators/naming.md', got %q", config.Validators[1].GetPath())
 	}
 }
 
@@ -537,6 +537,106 @@ verification:
 	// Validators should be nil/empty when not configured
 	if len(config.Validators) != 0 {
 		t.Errorf("expected empty validators when not configured, got %d", len(config.Validators))
+	}
+}
+
+func TestConfigValidators_ObjectFormat(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	// Write config with validators in object format
+	configContent := `project_context: Test context
+verification:
+    command: ./test.sh
+validators:
+    - path: validators/security.md
+      model: opus
+      run: after-phase
+    - path: validators/naming.md
+      model: haiku
+`
+	if err := os.WriteFile(filepath.Join(store.baseDir, "config.yaml"), []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	config, err := store.LoadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error loading config: %v", err)
+	}
+
+	if len(config.Validators) != 2 {
+		t.Fatalf("expected 2 validators, got %d", len(config.Validators))
+	}
+
+	// Check first validator
+	if config.Validators[0].GetPath() != "validators/security.md" {
+		t.Errorf("expected first validator path 'validators/security.md', got %q", config.Validators[0].GetPath())
+	}
+	if config.Validators[0].GetModel() != "opus" {
+		t.Errorf("expected first validator model 'opus', got %q", config.Validators[0].GetModel())
+	}
+	if config.Validators[0].GetRun() != "after-phase" {
+		t.Errorf("expected first validator run 'after-phase', got %q", config.Validators[0].GetRun())
+	}
+
+	// Check second validator
+	if config.Validators[1].GetPath() != "validators/naming.md" {
+		t.Errorf("expected second validator path 'validators/naming.md', got %q", config.Validators[1].GetPath())
+	}
+	if config.Validators[1].GetModel() != "haiku" {
+		t.Errorf("expected second validator model 'haiku', got %q", config.Validators[1].GetModel())
+	}
+	if config.Validators[1].GetRun() != "" {
+		t.Errorf("expected second validator run to be empty, got %q", config.Validators[1].GetRun())
+	}
+}
+
+func TestConfigValidators_MixedFormat(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	// Write config with validators in mixed format (string and object)
+	configContent := `project_context: Test context
+verification:
+    command: ./test.sh
+validators:
+    - validators/code-standards.md
+    - path: validators/security.md
+      model: opus
+    - validators/naming.md
+`
+	if err := os.WriteFile(filepath.Join(store.baseDir, "config.yaml"), []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	config, err := store.LoadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error loading config: %v", err)
+	}
+
+	if len(config.Validators) != 3 {
+		t.Fatalf("expected 3 validators, got %d", len(config.Validators))
+	}
+
+	// First validator: string format
+	if config.Validators[0].GetPath() != "validators/code-standards.md" {
+		t.Errorf("expected first validator path 'validators/code-standards.md', got %q", config.Validators[0].GetPath())
+	}
+	if config.Validators[0].GetModel() != "" {
+		t.Errorf("expected first validator model to be empty, got %q", config.Validators[0].GetModel())
+	}
+
+	// Second validator: object format with model
+	if config.Validators[1].GetPath() != "validators/security.md" {
+		t.Errorf("expected second validator path 'validators/security.md', got %q", config.Validators[1].GetPath())
+	}
+	if config.Validators[1].GetModel() != "opus" {
+		t.Errorf("expected second validator model 'opus', got %q", config.Validators[1].GetModel())
+	}
+
+	// Third validator: string format
+	if config.Validators[2].GetPath() != "validators/naming.md" {
+		t.Errorf("expected third validator path 'validators/naming.md', got %q", config.Validators[2].GetPath())
 	}
 }
 

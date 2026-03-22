@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/leightonvanrooijen/utopia/internal"
+	"github.com/leightonvanrooijen/utopia/internal/domain"
 )
 
 // Deleter handles the deletion of validators.
@@ -32,14 +33,14 @@ func (d *Deleter) Delete(validatorPath string) error {
 	}
 
 	// Remove the validator from the config
-	var updatedValidators []string
+	var updatedValidators []domain.ValidatorConfig
 	found := false
-	for _, v := range config.Validators {
-		if v == validatorPath {
+	for _, vc := range config.Validators {
+		if vc.GetPath() == validatorPath {
 			found = true
 			continue
 		}
-		updatedValidators = append(updatedValidators, v)
+		updatedValidators = append(updatedValidators, vc)
 	}
 
 	if !found {

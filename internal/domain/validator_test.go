@@ -2,6 +2,8 @@ package domain
 
 import (
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestValidator_GetRun_Defaults(t *testing.T) {
@@ -116,5 +118,156 @@ func TestDefaultAllowedTools(t *testing.T) {
 		if tools[i] != tool {
 			t.Errorf("DefaultAllowedTools()[%d] = %q, want %q", i, tools[i], tool)
 		}
+	}
+}
+
+func TestValidator_GetRun_WithOverride(t *testing.T) {
+	tests := []struct {
+		name        string
+		run         RunTrigger
+		runOverride RunTrigger
+		expected    RunTrigger
+	}{
+		{"override takes precedence over frontmatter", RunAfterWorkitem, RunAfterPhase, RunAfterPhase},
+		{"override takes precedence over empty frontmatter", "", RunOnDemand, RunOnDemand},
+		{"frontmatter used when override is empty", RunAfterPhase, "", RunAfterPhase},
+		{"default used when both empty", "", "", RunAfterWorkitem},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			v := Validator{Run: tc.run, RunOverride: tc.runOverride}
+			if got := v.GetRun(); got != tc.expected {
+				t.Errorf("GetRun() = %q, want %q", got, tc.expected)
+			}
+		})
+	}
+}
+
+func TestValidator_GetModel(t *testing.T) {
+	tests := []struct {
+		name          string
+		modelOverride string
+		expected      string
+	}{
+		{"returns model when set", "opus", "opus"},
+		{"returns empty when not set", "", ""},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			v := Validator{ModelOverride: tc.modelOverride}
+			if got := v.GetModel(); got != tc.expected {
+				t.Errorf("GetModel() = %q, want %q", got, tc.expected)
+			}
+		})
+	}
+}
+
+func TestValidatorConfig_UnmarshalYAML_StringFormat(t *testing.T) {
+	yamlContent := `validators/code-standards.md`
+
+	var vc ValidatorConfig
+	err := yaml.Unmarshal([]byte(yamlContent), &vc)
+	if err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	if vc.GetPath() != "validators/code-standards.md" {
+		t.Errorf("expected path 'validators/code-standards.md', got %q", vc.GetPath())
+	}
+	if vc.GetModel() != "" {
+		t.Errorf("expected empty model, got %q", vc.GetModel())
+	}
+	if vc.GetRun() != "" {
+		t.Errorf("expected empty run, got %q", vc.GetRun())
+	}
+}
+
+func TestValidatorConfig_UnmarshalYAML_ObjectFormat(t *testing.T) {
+	yamlContent := `
+path: validators/security.md
+model: opus
+run: after-phase
+`
+
+	var vc ValidatorConfig
+	err := yaml.Unmarshal([]byte(yamlContent), &vc)
+	if err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	if vc.GetPath() != "validators/security.md" {
+		t.Errorf("expected path 'validators/security.md', got %q", vc.GetPath())
+	}
+	if vc.GetModel() != "opus" {
+		t.Errorf("expected model 'opus', got %q", vc.GetModel())
+	}
+	if vc.GetRun() != "after-phase" {
+		t.Errorf("expected run 'after-phase', got %q", vc.GetRun())
+	}
+}
+
+func TestValidatorConfig_UnmarshalYAML_ObjectPartial(t *testing.T) {
+	// Object format with only path (model and run optional)
+	yamlContent := `
+path: validators/naming.md
+`
+
+	var vc ValidatorConfig
+	err := yaml.Unmarshal([]byte(yamlContent), &vc)
+	if err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	if vc.GetPath() != "validators/naming.md" {
+		t.Errorf("expected path 'validators/naming.md', got %q", vc.GetPath())
+	}
+	if vc.GetModel() != "" {
+		t.Errorf("expected empty model, got %q", vc.GetModel())
+	}
+	if vc.GetRun() != "" {
+		t.Errorf("expected empty run, got %q", vc.GetRun())
+	}
+}
+
+func TestValidatorConfig_UnmarshalYAML_MixedList(t *testing.T) {
+	// Test unmarshaling a list with mixed formats
+	yamlContent := `
+- validators/code-standards.md
+- path: validators/security.md
+  model: opus
+- validators/naming.md
+`
+
+	var configs []ValidatorConfig
+	err := yaml.Unmarshal([]byte(yamlContent), &configs)
+	if err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	if len(configs) != 3 {
+		t.Fatalf("expected 3 configs, got %d", len(configs))
+	}
+
+	// First: string format
+	if configs[0].GetPath() != "validators/code-standards.md" {
+		t.Errorf("expected first path 'validators/code-standards.md', got %q", configs[0].GetPath())
+	}
+	if configs[0].GetModel() != "" {
+		t.Errorf("expected first model to be empty, got %q", configs[0].GetModel())
+	}
+
+	// Second: object format
+	if configs[1].GetPath() != "validators/security.md" {
+		t.Errorf("expected second path 'validators/security.md', got %q", configs[1].GetPath())
+	}
+	if configs[1].GetModel() != "opus" {
+		t.Errorf("expected second model 'opus', got %q", configs[1].GetModel())
+	}
+
+	// Third: string format
+	if configs[2].GetPath() != "validators/naming.md" {
+		t.Errorf("expected third path 'validators/naming.md', got %q", configs[2].GetPath())
 	}
 }
