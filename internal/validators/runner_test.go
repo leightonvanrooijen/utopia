@@ -679,46 +679,46 @@ func TestRunner_WithModelConfig(t *testing.T) {
 
 func TestRunner_resolveModel(t *testing.T) {
 	tests := []struct {
-		name          string
-		modelConfig   *domain.ModelConfig
+		name           string
+		modelConfig    *domain.ModelConfig
 		validatorModel string
-		expected      string
+		expected       string
 	}{
 		{
-			name:          "validator override takes priority",
-			modelConfig:   &domain.ModelConfig{Default: "haiku", Validators: "sonnet"},
+			name:           "validator override takes priority",
+			modelConfig:    &domain.ModelConfig{Default: "haiku", Validators: "sonnet"},
 			validatorModel: "opus",
-			expected:      "opus",
+			expected:       "opus",
 		},
 		{
-			name:          "falls back to models.validators",
-			modelConfig:   &domain.ModelConfig{Default: "haiku", Validators: "sonnet"},
+			name:           "falls back to models.validators",
+			modelConfig:    &domain.ModelConfig{Default: "haiku", Validators: "sonnet"},
 			validatorModel: "",
-			expected:      "sonnet",
+			expected:       "sonnet",
 		},
 		{
-			name:          "falls back to models.default when validators not set",
-			modelConfig:   &domain.ModelConfig{Default: "haiku"},
+			name:           "falls back to models.default when validators not set",
+			modelConfig:    &domain.ModelConfig{Default: "haiku"},
 			validatorModel: "",
-			expected:      "haiku",
+			expected:       "haiku",
 		},
 		{
-			name:          "falls back to sonnet when nothing configured",
-			modelConfig:   &domain.ModelConfig{},
+			name:           "falls back to sonnet when nothing configured",
+			modelConfig:    &domain.ModelConfig{},
 			validatorModel: "",
-			expected:      "sonnet",
+			expected:       "sonnet",
 		},
 		{
-			name:          "handles nil model config",
-			modelConfig:   nil,
+			name:           "handles nil model config",
+			modelConfig:    nil,
 			validatorModel: "",
-			expected:      "sonnet",
+			expected:       "sonnet",
 		},
 		{
-			name:          "validator override still works with nil config",
-			modelConfig:   nil,
+			name:           "validator override still works with nil config",
+			modelConfig:    nil,
 			validatorModel: "opus",
-			expected:      "opus",
+			expected:       "opus",
 		},
 	}
 
