@@ -1,0 +1,87 @@
+id: model-configuration
+title: model-configuration
+created: "2026-03-23T10:09:13.522167+11:00"
+updated: "2026-03-23T10:09:13.522174+11:00"
+description: ""
+features:
+    - id: model-mapping
+      description: |
+        Map user-friendly model names to Claude model identifiers.
+      acceptance_criteria:
+        - haiku maps to claude-3-5-haiku-20241022
+        - sonnet maps to claude-sonnet-4-20250514
+        - opus maps to claude-opus-4-20250514
+        - Invalid model name produces clear error message
+        - Model resolution is centralized in a single function
+
+    - id: config-structure
+      description: |
+        Define the models section in .utopia/config.yaml with default and
+        per-command overrides.
+      acceptance_criteria:
+        - Config supports optional models section
+        - models.default specifies fallback model for all commands
+        - Per-command keys override the default (cr, harvest, execute, validators, discover, standards, refactor, shape, validator_create, validator_edit)
+        - If models section is missing, sonnet is used as implicit default
+        - If a command key is missing, models.default is used
+        - Invalid model name in config produces clear error at load time
+
+    - id: cli-model-flag
+      description: |
+        Add --model flag to all Claude-invoking commands for runtime override.
+      acceptance_criteria:
+        - Flag is available on cr, harvest, execute, discover, standards, refactor, shape, validator create, validator edit commands
+        - Flag accepts haiku, sonnet, or opus
+        - Flag overrides config for that single invocation
+        - Invalid flag value produces clear error before execution starts
+        - Flag is optional, defaults to config value
+
+    - id: cli-model-injection
+      description: |
+        Pass the resolved model to the Claude CLI wrapper.
+      acceptance_criteria:
+        - CLI struct accepts optional model parameter
+        - Model is passed to claude binary via --model flag
+        - If no model specified, claude CLI uses its default
+        - Model flows through Prompt and SessionWithCapture methods
+
+    - id: validator-config-structure
+      description: |
+        Extend validator config to support object format with path, model, and run.
+      acceptance_criteria:
+        - Validators can be specified as strings (backward compatible) or objects
+        - Object format has path (required), model (optional), run (optional)
+        - String format is equivalent to object with path and run=after-workitem
+        - model in validator config overrides models.validators default
+        - run in validator config specifies trigger (after-workitem, after-phase, on-demand)
+        - run defaults to after-workitem if not specified
+        - Mixed format allowed (some strings, some objects)
+
+    - id: validator-file-format-update
+      description: |
+        Update validator file format to remove run field (now in config).
+      acceptance_criteria:
+        - Validator files contain id, allowed_tools, and prompt
+        - run field in validator file is ignored (config takes precedence)
+        - Existing validator files with run field continue to work (no error)
+        - allowed_tools defaults to [Read, Glob, Grep] if not specified
+
+    - id: validator-runner-model-support
+      description: |
+        Update validator runner to use per-validator model configuration.
+      acceptance_criteria:
+        - Runner accepts model configuration per validator
+        - Each validator runs with its configured model
+        - If validator has no model, uses models.validators from config
+        - If models.validators not set, uses models.default
+        - Model is passed to Claude CLI for each validator invocation
+
+    - id: backward-compatibility
+      description: |
+        Ensure existing configs without models section continue to work.
+      acceptance_criteria:
+        - Config without models section uses sonnet for all commands
+        - Validators as string array work with after-workitem trigger
+        - No migration required for existing projects
+        - No warnings for valid old-format configs
+        - New features only activated when new config is present
