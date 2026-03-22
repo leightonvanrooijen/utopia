@@ -55,10 +55,27 @@ func TestCLI_WithVerbose(t *testing.T) {
 	}
 }
 
+func TestCLI_WithModel(t *testing.T) {
+	cli := NewCLI().WithModel("claude-sonnet-4-20250514")
+
+	if cli.model != "claude-sonnet-4-20250514" {
+		t.Errorf("model = %q, want %q", cli.model, "claude-sonnet-4-20250514")
+	}
+}
+
+func TestCLI_WithModel_Empty(t *testing.T) {
+	cli := NewCLI()
+
+	if cli.model != "" {
+		t.Errorf("model should default to empty string, got %q", cli.model)
+	}
+}
+
 func TestCLI_Chaining(t *testing.T) {
 	cli := NewCLI().
 		WithAllowedTools([]string{"Read"}).
-		WithVerbose(true)
+		WithVerbose(true).
+		WithModel("claude-sonnet-4-20250514")
 
 	if len(cli.allowedTools) != 1 || cli.allowedTools[0] != "Read" {
 		t.Error("allowedTools not set correctly")
@@ -66,6 +83,10 @@ func TestCLI_Chaining(t *testing.T) {
 
 	if !cli.verbose {
 		t.Error("verbose should be true")
+	}
+
+	if cli.model != "claude-sonnet-4-20250514" {
+		t.Errorf("model = %q, want %q", cli.model, "claude-sonnet-4-20250514")
 	}
 }
 
@@ -126,6 +147,36 @@ func TestCLI_baseArgs_EmptyAllowedTools(t *testing.T) {
 	for _, arg := range args {
 		if arg == "--allowedTools" {
 			t.Error("baseArgs should not include --allowedTools for empty tools list")
+		}
+	}
+}
+
+func TestCLI_baseArgs_WithModel(t *testing.T) {
+	cli := NewCLI().WithModel("claude-sonnet-4-20250514")
+	args := cli.baseArgs()
+
+	found := false
+	for i, arg := range args {
+		if arg == "--model" && i+1 < len(args) {
+			if args[i+1] == "claude-sonnet-4-20250514" {
+				found = true
+			}
+			break
+		}
+	}
+
+	if !found {
+		t.Errorf("baseArgs should include --model claude-sonnet-4-20250514, got %v", args)
+	}
+}
+
+func TestCLI_baseArgs_EmptyModel(t *testing.T) {
+	cli := NewCLI()
+	args := cli.baseArgs()
+
+	for _, arg := range args {
+		if arg == "--model" {
+			t.Error("baseArgs should not include --model for empty model")
 		}
 	}
 }
