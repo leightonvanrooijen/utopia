@@ -204,9 +204,20 @@ func (s *YAMLStore) SaveConfig(config *domain.Config) error {
 	return Save(s, "config.yaml", config)
 }
 
-// LoadConfig reads the project configuration
+// LoadConfig reads the project configuration.
+// Returns an error if any configured model names are invalid.
 func (s *YAMLStore) LoadConfig() (*domain.Config, error) {
-	return Load[domain.Config](s, "config.yaml")
+	config, err := Load[domain.Config](s, "config.yaml")
+	if err != nil {
+		return nil, err
+	}
+
+	// Validate model names at load time
+	if err := domain.ValidateModelConfig(config.Models); err != nil {
+		return nil, fmt.Errorf("failed to load config: %w", err)
+	}
+
+	return config, nil
 }
 
 // SaveChangeRequest writes a change request to .utopia/change-requests/{id}.yaml

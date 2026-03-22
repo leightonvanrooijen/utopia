@@ -51,3 +51,70 @@ func (e *InvalidModelError) Is(target error) bool {
 	_, ok := target.(*InvalidModelError)
 	return ok
 }
+
+// ValidateModelConfig validates all model names in a ModelConfig.
+// Returns nil if the config is nil or all model names are valid.
+// Returns an error describing all invalid model names found.
+func ValidateModelConfig(mc *ModelConfig) error {
+	if mc == nil {
+		return nil
+	}
+
+	var invalid []string
+	checkModel := func(name, field string) {
+		if name != "" {
+			if _, err := ResolveModel(name); err != nil {
+				invalid = append(invalid, fmt.Sprintf("%s: %q", field, name))
+			}
+		}
+	}
+
+	checkModel(mc.Default, "models.default")
+	checkModel(mc.CR, "models.cr")
+	checkModel(mc.Harvest, "models.harvest")
+	checkModel(mc.Execute, "models.execute")
+	checkModel(mc.Validators, "models.validators")
+	checkModel(mc.Discover, "models.discover")
+	checkModel(mc.Standards, "models.standards")
+	checkModel(mc.Refactor, "models.refactor")
+	checkModel(mc.Shape, "models.shape")
+	checkModel(mc.ValidatorCreate, "models.validator_create")
+	checkModel(mc.ValidatorEdit, "models.validator_edit")
+
+	if len(invalid) == 0 {
+		return nil
+	}
+
+	return &InvalidModelConfigError{InvalidFields: invalid}
+}
+
+// InvalidModelConfigError indicates one or more invalid model names in config.
+type InvalidModelConfigError struct {
+	InvalidFields []string
+}
+
+func (e *InvalidModelConfigError) Error() string {
+	return fmt.Sprintf("invalid model configuration: %s (valid options: haiku, sonnet, opus)",
+		joinWithComma(e.InvalidFields))
+}
+
+// Is allows errors.Is to match any InvalidModelConfigError.
+func (e *InvalidModelConfigError) Is(target error) bool {
+	_, ok := target.(*InvalidModelConfigError)
+	return ok
+}
+
+// joinWithComma joins strings with ", " separator.
+func joinWithComma(s []string) string {
+	if len(s) == 0 {
+		return ""
+	}
+	if len(s) == 1 {
+		return s[0]
+	}
+	result := s[0]
+	for i := 1; i < len(s); i++ {
+		result += ", " + s[i]
+	}
+	return result
+}

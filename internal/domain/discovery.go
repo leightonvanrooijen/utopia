@@ -31,6 +31,69 @@ type Config struct {
 	// Example: ["validators/component-standards.md"]
 	// Only listed files are loaded - no auto-discovery.
 	Validators []string `yaml:"validators,omitempty"`
+	// Models configures which Claude model to use for each command.
+	// If omitted entirely, sonnet is used as the implicit default.
+	Models *ModelConfig `yaml:"models,omitempty"`
+}
+
+// ModelConfig specifies model selection for commands.
+// Each field corresponds to a Utopia command and accepts model names: haiku, sonnet, opus.
+type ModelConfig struct {
+	// Default model used when a command doesn't have a specific override.
+	// If not set, sonnet is used.
+	Default string `yaml:"default,omitempty"`
+
+	// Per-command model overrides
+	CR             string `yaml:"cr,omitempty"`
+	Harvest        string `yaml:"harvest,omitempty"`
+	Execute        string `yaml:"execute,omitempty"`
+	Validators     string `yaml:"validators,omitempty"`
+	Discover       string `yaml:"discover,omitempty"`
+	Standards      string `yaml:"standards,omitempty"`
+	Refactor       string `yaml:"refactor,omitempty"`
+	Shape          string `yaml:"shape,omitempty"`
+	ValidatorCreate string `yaml:"validator_create,omitempty"`
+	ValidatorEdit  string `yaml:"validator_edit,omitempty"`
+}
+
+// ModelForCommand returns the model name for the given command.
+// Falls back to Default, then to "sonnet" if nothing is configured.
+func (c *ModelConfig) ModelForCommand(command string) string {
+	if c == nil {
+		return string(ModelSonnet)
+	}
+
+	var override string
+	switch command {
+	case "cr":
+		override = c.CR
+	case "harvest":
+		override = c.Harvest
+	case "execute":
+		override = c.Execute
+	case "validators":
+		override = c.Validators
+	case "discover":
+		override = c.Discover
+	case "standards":
+		override = c.Standards
+	case "refactor":
+		override = c.Refactor
+	case "shape":
+		override = c.Shape
+	case "validator_create":
+		override = c.ValidatorCreate
+	case "validator_edit":
+		override = c.ValidatorEdit
+	}
+
+	if override != "" {
+		return override
+	}
+	if c.Default != "" {
+		return c.Default
+	}
+	return string(ModelSonnet)
 }
 
 // VerificationConfig holds verification command settings

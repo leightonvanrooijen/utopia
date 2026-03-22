@@ -865,3 +865,186 @@ Test prompt.
 		}
 	}
 }
+
+func TestConfigModels_LoadWithDefault(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	configContent := `project_context: Test context
+verification:
+    command: ./test.sh
+models:
+    default: opus
+`
+	if err := os.WriteFile(filepath.Join(store.baseDir, "config.yaml"), []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	config, err := store.LoadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error loading config: %v", err)
+	}
+
+	if config.Models == nil {
+		t.Fatal("expected Models to be non-nil")
+	}
+	if config.Models.Default != "opus" {
+		t.Errorf("expected default model 'opus', got %q", config.Models.Default)
+	}
+}
+
+func TestConfigModels_LoadWithPerCommandOverrides(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	configContent := `project_context: Test context
+verification:
+    command: ./test.sh
+models:
+    default: sonnet
+    cr: opus
+    execute: haiku
+    validators: opus
+`
+	if err := os.WriteFile(filepath.Join(store.baseDir, "config.yaml"), []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	config, err := store.LoadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error loading config: %v", err)
+	}
+
+	if config.Models == nil {
+		t.Fatal("expected Models to be non-nil")
+	}
+	if config.Models.Default != "sonnet" {
+		t.Errorf("expected default 'sonnet', got %q", config.Models.Default)
+	}
+	if config.Models.CR != "opus" {
+		t.Errorf("expected cr 'opus', got %q", config.Models.CR)
+	}
+	if config.Models.Execute != "haiku" {
+		t.Errorf("expected execute 'haiku', got %q", config.Models.Execute)
+	}
+	if config.Models.Validators != "opus" {
+		t.Errorf("expected validators 'opus', got %q", config.Models.Validators)
+	}
+}
+
+func TestConfigModels_OmittedWhenMissing(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	configContent := `project_context: Test context
+verification:
+    command: ./test.sh
+`
+	if err := os.WriteFile(filepath.Join(store.baseDir, "config.yaml"), []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	config, err := store.LoadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error loading config: %v", err)
+	}
+
+	// Models should be nil when not configured
+	if config.Models != nil {
+		t.Errorf("expected nil Models when not configured, got %+v", config.Models)
+	}
+}
+
+func TestConfigModels_InvalidModelNameProducesError(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	configContent := `project_context: Test context
+verification:
+    command: ./test.sh
+models:
+    default: gpt4
+`
+	if err := os.WriteFile(filepath.Join(store.baseDir, "config.yaml"), []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	_, err := store.LoadConfig()
+	if err == nil {
+		t.Fatal("expected error for invalid model name, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid model configuration") {
+		t.Errorf("expected error to mention 'invalid model configuration', got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "gpt4") {
+		t.Errorf("expected error to mention invalid model name 'gpt4', got: %v", err)
+	}
+}
+
+func TestConfigModels_MultipleInvalidModelNames(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	configContent := `project_context: Test context
+verification:
+    command: ./test.sh
+models:
+    default: gpt4
+    cr: invalid-model
+`
+	if err := os.WriteFile(filepath.Join(store.baseDir, "config.yaml"), []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	_, err := store.LoadConfig()
+	if err == nil {
+		t.Fatal("expected error for invalid model names, got nil")
+	}
+	if !strings.Contains(err.Error(), "gpt4") {
+		t.Errorf("expected error to mention 'gpt4', got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "invalid-model") {
+		t.Errorf("expected error to mention 'invalid-model', got: %v", err)
+	}
+}
+
+func TestConfigModels_AllValidModelNames(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	// Test all valid model names
+	configContent := `project_context: Test context
+verification:
+    command: ./test.sh
+models:
+    default: sonnet
+    cr: opus
+    harvest: haiku
+    execute: sonnet
+    validators: opus
+    discover: haiku
+    standards: sonnet
+    refactor: opus
+    shape: haiku
+    validator_create: sonnet
+    validator_edit: opus
+`
+	if err := os.WriteFile(filepath.Join(store.baseDir, "config.yaml"), []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	config, err := store.LoadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error loading config with all valid models: %v", err)
+	}
+
+	if config.Models.CR != "opus" {
+		t.Errorf("expected cr 'opus', got %q", config.Models.CR)
+	}
+	if config.Models.ValidatorCreate != "sonnet" {
+		t.Errorf("expected validator_create 'sonnet', got %q", config.Models.ValidatorCreate)
+	}
+	if config.Models.ValidatorEdit != "opus" {
+		t.Errorf("expected validator_edit 'opus', got %q", config.Models.ValidatorEdit)
+	}
+}
