@@ -221,7 +221,6 @@ func (c *CLI) SessionWithCapture(ctx context.Context, systemPrompt string) (tran
 		args = append(args, "--system-prompt", systemPrompt)
 	}
 
-
 	cmd := exec.CommandContext(ctx, c.binaryPath, args...)
 
 	// Connect stdin/stdout/stderr directly for full TUI experience
