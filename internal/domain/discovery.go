@@ -44,16 +44,16 @@ type ModelConfig struct {
 	Default string `yaml:"default,omitempty"`
 
 	// Per-command model overrides
-	CR             string `yaml:"cr,omitempty"`
-	Harvest        string `yaml:"harvest,omitempty"`
-	Execute        string `yaml:"execute,omitempty"`
-	Validators     string `yaml:"validators,omitempty"`
-	Discover       string `yaml:"discover,omitempty"`
-	Standards      string `yaml:"standards,omitempty"`
-	Refactor       string `yaml:"refactor,omitempty"`
-	Shape          string `yaml:"shape,omitempty"`
+	CR              string `yaml:"cr,omitempty"`
+	Harvest         string `yaml:"harvest,omitempty"`
+	Execute         string `yaml:"execute,omitempty"`
+	Validators      string `yaml:"validators,omitempty"`
+	Discover        string `yaml:"discover,omitempty"`
+	Standards       string `yaml:"standards,omitempty"`
+	Refactor        string `yaml:"refactor,omitempty"`
+	Shape           string `yaml:"shape,omitempty"`
 	ValidatorCreate string `yaml:"validator_create,omitempty"`
-	ValidatorEdit  string `yaml:"validator_edit,omitempty"`
+	ValidatorEdit   string `yaml:"validator_edit,omitempty"`
 }
 
 // ModelForCommand returns the model name for the given command.
