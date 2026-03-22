@@ -36,11 +36,13 @@ type ValidatorResult struct {
 
 // Runner executes validators by invoking Claude with read-only tools
 type Runner struct {
-	workDir string
-	cli     *internal.CLI
+	workDir     string
+	cli         *internal.CLI
+	modelConfig *domain.ModelConfig
 }
 
-// NewRunner creates a validator runner that operates in the given directory
+// NewRunner creates a validator runner that operates in the given directory.
+// Use WithModelConfig to configure model fallback for validators.
 func NewRunner(workDir string) *Runner {
 	return &Runner{
 		workDir: workDir,
@@ -48,9 +50,35 @@ func NewRunner(workDir string) *Runner {
 	}
 }
 
+// WithModelConfig sets the model configuration for resolving per-validator models.
+// When a validator runs, the model is resolved in order:
+// 1. Validator's specific model override (from config.yaml validators list)
+// 2. models.validators from config
+// 3. models.default from config
+// 4. "sonnet" as the implicit default
+func (r *Runner) WithModelConfig(mc *domain.ModelConfig) *Runner {
+	return &Runner{
+		workDir:     r.workDir,
+		cli:         r.cli,
+		modelConfig: mc,
+	}
+}
+
+// resolveModel determines which model to use for a validator.
+// Priority: validator override > models.validators > models.default > "sonnet"
+func (r *Runner) resolveModel(validator *domain.Validator) string {
+	// First check validator's specific override
+	if model := validator.GetModel(); model != "" {
+		return model
+	}
+	// Fall back to models.validators or models.default via ModelForCommand
+	return r.modelConfig.ModelForCommand("validators")
+}
+
 // Run executes a validator against the changed files from the last commit.
 // It loads the git diff, expands the validator prompt, invokes Claude,
 // and checks the output for the <PASSED> token.
+// The model used is resolved via: validator override > models.validators > models.default.
 func (r *Runner) Run(ctx context.Context, validator *domain.Validator) (*Result, error) {
 	// Get the git diff of changed files from last commit
 	changedFiles, err := r.getGitDiff(ctx)
@@ -61,11 +89,10 @@ func (r *Runner) Run(ctx context.Context, validator *domain.Validator) (*Result,
 	// Expand the prompt with changed files
 	prompt := validator.ExpandPrompt(changedFiles)
 
-	// Configure CLI with validator's allowed tools and optional model override
+	// Configure CLI with validator's allowed tools and resolved model
 	cli := r.cli.WithAllowedTools(validator.GetAllowedTools())
-	if model := validator.GetModel(); model != "" {
-		cli = cli.WithModel(model)
-	}
+	model := r.resolveModel(validator)
+	cli = cli.WithModel(model)
 
 	// Invoke Claude with the constructed prompt
 	promptResult, err := cli.Prompt(ctx, prompt)
@@ -181,15 +208,15 @@ func (r *Runner) RunAllWithDiffLimited(ctx context.Context, validators []*domain
 
 // runWithDiff executes a single validator with a pre-computed git diff.
 // This is the internal execution method used by RunAll.
+// The model used is resolved via: validator override > models.validators > models.default.
 func (r *Runner) runWithDiff(ctx context.Context, validator *domain.Validator, changedFiles string) (*Result, error) {
 	// Expand the prompt with changed files
 	prompt := validator.ExpandPrompt(changedFiles)
 
-	// Configure CLI with validator's allowed tools and optional model override
+	// Configure CLI with validator's allowed tools and resolved model
 	cli := r.cli.WithAllowedTools(validator.GetAllowedTools())
-	if model := validator.GetModel(); model != "" {
-		cli = cli.WithModel(model)
-	}
+	model := r.resolveModel(validator)
+	cli = cli.WithModel(model)
 
 	// Invoke Claude with the constructed prompt
 	promptResult, err := cli.Prompt(ctx, prompt)

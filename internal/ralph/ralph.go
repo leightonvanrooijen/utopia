@@ -63,7 +63,7 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 		cli = cli.WithModel(model[0])
 	}
 	verifier := verification.NewRunner(projectDir)
-	validatorRunner := validators.NewRunner(projectDir)
+	validatorRunner := validators.NewRunner(projectDir).WithModelConfig(config.Models)
 
 	// Load validators from config
 	var validatorList []*domain.Validator

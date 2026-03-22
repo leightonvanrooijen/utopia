@@ -642,3 +642,98 @@ func TestRunner_RunAllWithDiffLimited_EmptyReturnsNil(t *testing.T) {
 		t.Errorf("expected nil for no matching trigger, got %v", results)
 	}
 }
+
+func TestRunner_WithModelConfig(t *testing.T) {
+	r := NewRunner("/tmp")
+
+	// Initially no model config
+	if r.modelConfig != nil {
+		t.Error("modelConfig should be nil initially")
+	}
+
+	// Apply model config
+	mc := &domain.ModelConfig{
+		Default:    "haiku",
+		Validators: "sonnet",
+	}
+	r2 := r.WithModelConfig(mc)
+
+	// Original runner unchanged
+	if r.modelConfig != nil {
+		t.Error("original runner should not be modified")
+	}
+
+	// New runner has config
+	if r2.modelConfig != mc {
+		t.Error("new runner should have model config")
+	}
+
+	// Verify other fields copied correctly
+	if r2.workDir != r.workDir {
+		t.Errorf("workDir not copied: got %q, want %q", r2.workDir, r.workDir)
+	}
+	if r2.cli != r.cli {
+		t.Error("cli not copied")
+	}
+}
+
+func TestRunner_resolveModel(t *testing.T) {
+	tests := []struct {
+		name          string
+		modelConfig   *domain.ModelConfig
+		validatorModel string
+		expected      string
+	}{
+		{
+			name:          "validator override takes priority",
+			modelConfig:   &domain.ModelConfig{Default: "haiku", Validators: "sonnet"},
+			validatorModel: "opus",
+			expected:      "opus",
+		},
+		{
+			name:          "falls back to models.validators",
+			modelConfig:   &domain.ModelConfig{Default: "haiku", Validators: "sonnet"},
+			validatorModel: "",
+			expected:      "sonnet",
+		},
+		{
+			name:          "falls back to models.default when validators not set",
+			modelConfig:   &domain.ModelConfig{Default: "haiku"},
+			validatorModel: "",
+			expected:      "haiku",
+		},
+		{
+			name:          "falls back to sonnet when nothing configured",
+			modelConfig:   &domain.ModelConfig{},
+			validatorModel: "",
+			expected:      "sonnet",
+		},
+		{
+			name:          "handles nil model config",
+			modelConfig:   nil,
+			validatorModel: "",
+			expected:      "sonnet",
+		},
+		{
+			name:          "validator override still works with nil config",
+			modelConfig:   nil,
+			validatorModel: "opus",
+			expected:      "opus",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := NewRunner("/tmp").WithModelConfig(tt.modelConfig)
+			validator := &domain.Validator{
+				ID:            "test-validator",
+				ModelOverride: tt.validatorModel,
+			}
+
+			result := r.resolveModel(validator)
+			if result != tt.expected {
+				t.Errorf("resolveModel() = %q, want %q", result, tt.expected)
+			}
+		})
+	}
+}
