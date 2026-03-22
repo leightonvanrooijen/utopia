@@ -33,6 +33,8 @@ func init() {
 // GENERATE - Generate a new standards document
 // ============================================================================
 
+var standardsGenerateModelFlag string
+
 var standardsGenerateCmd = &cobra.Command{
 	Use:   "generate",
 	Short: "Generate a new standards document via guided conversation",
@@ -57,6 +59,7 @@ Standards are saved to .utopia/standards/`,
 
 func init() {
 	standardsCmd.AddCommand(standardsGenerateCmd)
+	standardsGenerateCmd.Flags().StringVar(&standardsGenerateModelFlag, "model", "", "model to use (haiku, sonnet, opus)")
 }
 
 // standardsSystemPrompt guides Claude through standards document creation
@@ -193,6 +196,12 @@ tags:
 ` + "```" + ``
 
 func runStandardsGenerate(cmd *cobra.Command, args []string) error {
+	// Validate model flag early before any work
+	modelID, err := ResolveModelFlag(cmd)
+	if err != nil {
+		return err
+	}
+
 	_, utopiaDir, _, err := ResolveProject(cmd)
 	if err != nil {
 		return err
@@ -215,6 +224,9 @@ func runStandardsGenerate(cmd *cobra.Command, args []string) error {
 	// Run interactive Claude session
 	ctx := context.Background()
 	cli := internal.NewCLI()
+	if modelID != "" {
+		cli = cli.WithModel(modelID)
+	}
 
 	_, sessionErr := cli.SessionWithCapture(ctx, systemPrompt)
 

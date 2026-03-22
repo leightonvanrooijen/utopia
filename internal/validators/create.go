@@ -60,6 +60,7 @@ Start by asking the user what they want to validate.`
 type Creator struct {
 	projectDir string
 	cli        *internal.CLI
+	model      string
 }
 
 // NewCreator creates a new validator creator for the given project directory.
@@ -68,6 +69,13 @@ func NewCreator(projectDir string) *Creator {
 		projectDir: projectDir,
 		cli:        internal.NewCLI(),
 	}
+}
+
+// WithModel sets the Claude model to use for this creator.
+func (c *Creator) WithModel(model string) *Creator {
+	c.model = model
+	c.cli = c.cli.WithModel(model)
+	return c
 }
 
 // Run starts an interactive session to create a new validator.

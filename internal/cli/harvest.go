@@ -385,6 +385,8 @@ func extractDirectoryName(feature domain.Feature) string {
 // HARVEST COMMAND
 // ============================================================================
 
+var harvestModelFlag string
+
 var harvestCmd = &cobra.Command{
 	Use:   "harvest",
 	Short: "Qualification-based analysis of conversations for documentation candidates",
@@ -413,6 +415,7 @@ Benefits over individual commands (/adr, /concept, /domain):
 
 func init() {
 	rootCmd.AddCommand(harvestCmd)
+	harvestCmd.Flags().StringVar(&harvestModelFlag, "model", "", "model to use (haiku, sonnet, opus)")
 }
 
 // harvestSystemPrompt guides Claude through unified signal detection and doc creation
@@ -831,6 +834,12 @@ After harvest completion (whether or not docs were created):
 Start by presenting a summary of ALL qualified candidates found across ALL unprocessed conversations, grouped by type with counts.`
 
 func runHarvest(cmd *cobra.Command, args []string) error {
+	// Validate model flag early before any work
+	modelID, err := ResolveModelFlag(cmd)
+	if err != nil {
+		return err
+	}
+
 	absPath, utopiaDir, store, err := ResolveProject(cmd)
 	if err != nil {
 		return err
@@ -934,6 +943,9 @@ func runHarvest(cmd *cobra.Command, args []string) error {
 	// Run interactive Claude session
 	ctx := context.Background()
 	cli := internal.NewCLI()
+	if modelID != "" {
+		cli = cli.WithModel(modelID)
+	}
 
 	_, sessionErr := cli.SessionWithCapture(ctx, systemPrompt)
 

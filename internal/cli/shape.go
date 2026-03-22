@@ -14,6 +14,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+var shapeModelFlag string
+
 var shapeCmd = &cobra.Command{
 	Use:   "shape",
 	Short: "Validate and refine draft specifications through guided conversation",
@@ -39,6 +41,7 @@ the automatically discovered draft specifications.`,
 
 func init() {
 	rootCmd.AddCommand(shapeCmd)
+	shapeCmd.Flags().StringVar(&shapeModelFlag, "model", "", "model to use (haiku, sonnet, opus)")
 }
 
 const shapeSystemPrompt = `You are a Shape Claude - an AI assistant that helps validate and refine draft specifications through guided conversation.
@@ -125,6 +128,12 @@ Updated drafts will be saved to: %s
 Begin by presenting the draft and addressing any uncertainty notes first.`
 
 func runShape(cmd *cobra.Command, args []string) error {
+	// Validate model flag early before any work
+	modelID, err := ResolveModelFlag(cmd)
+	if err != nil {
+		return err
+	}
+
 	_, utopiaDir, store, err := ResolveProject(cmd)
 	if err != nil {
 		return err
@@ -156,6 +165,9 @@ func runShape(cmd *cobra.Command, args []string) error {
 
 	ctx := context.Background()
 	cli := internal.NewCLI()
+	if modelID != "" {
+		cli = cli.WithModel(modelID)
+	}
 
 	for i, draft := range drafts {
 		fmt.Println("═══════════════════════════════════════════════════════════════")
@@ -369,8 +381,11 @@ After shaping, validated drafts can be promoted to official domain documents.`,
 	RunE: runShapeDomain,
 }
 
+var shapeDomainModelFlag string
+
 func init() {
 	shapeCmd.AddCommand(shapeDomainCmd)
+	shapeDomainCmd.Flags().StringVar(&shapeDomainModelFlag, "model", "", "model to use (haiku, sonnet, opus)")
 }
 
 const shapeDomainSystemPrompt = `You are a Domain Shape Claude - an AI assistant that helps validate and refine draft domain documents through guided conversation.
@@ -480,6 +495,12 @@ Updated drafts will be saved to: %s
 Begin by presenting the bounded context and addressing any uncertainty notes first.`
 
 func runShapeDomain(cmd *cobra.Command, args []string) error {
+	// Validate model flag early before any work
+	modelID, err := ResolveModelFlag(cmd)
+	if err != nil {
+		return err
+	}
+
 	_, utopiaDir, store, err := ResolveProject(cmd)
 	if err != nil {
 		return err
@@ -512,6 +533,9 @@ func runShapeDomain(cmd *cobra.Command, args []string) error {
 
 	ctx := context.Background()
 	cli := internal.NewCLI()
+	if modelID != "" {
+		cli = cli.WithModel(modelID)
+	}
 
 	for i, draft := range drafts {
 		fmt.Println("═══════════════════════════════════════════════════════════════")

@@ -44,6 +44,8 @@ func init() {
 // CREATE - Create a new validator
 // ============================================================================
 
+var validatorCreateModelFlag string
+
 var validatorCreateCmd = &cobra.Command{
 	Use:   "create",
 	Short: "Create a new validator with AI assistance",
@@ -63,9 +65,16 @@ Examples:
 
 func init() {
 	validatorCmd.AddCommand(validatorCreateCmd)
+	validatorCreateCmd.Flags().StringVar(&validatorCreateModelFlag, "model", "", "model to use (haiku, sonnet, opus)")
 }
 
 func runValidatorCreate(cmd *cobra.Command, args []string) error {
+	// Validate model flag early before any work
+	modelID, err := ResolveModelFlag(cmd)
+	if err != nil {
+		return err
+	}
+
 	// Get the project directory (current working directory)
 	projectDir, err := os.Getwd()
 	if err != nil {
@@ -86,12 +95,17 @@ func runValidatorCreate(cmd *cobra.Command, args []string) error {
 
 	// Run the validator creation assistant
 	creator := validators.NewCreator(projectDir)
+	if modelID != "" {
+		creator = creator.WithModel(modelID)
+	}
 	return creator.Run(ctx)
 }
 
 // ============================================================================
 // EDIT - Edit an existing validator
 // ============================================================================
+
+var validatorEditModelFlag string
 
 var validatorEditCmd = &cobra.Command{
 	Use:   "edit [validator-id]",
@@ -114,9 +128,16 @@ Examples:
 
 func init() {
 	validatorCmd.AddCommand(validatorEditCmd)
+	validatorEditCmd.Flags().StringVar(&validatorEditModelFlag, "model", "", "model to use (haiku, sonnet, opus)")
 }
 
 func runValidatorEdit(cmd *cobra.Command, args []string) error {
+	// Validate model flag early before any work
+	modelID, err := ResolveModelFlag(cmd)
+	if err != nil {
+		return err
+	}
+
 	// Get the project directory (current working directory)
 	projectDir, err := os.Getwd()
 	if err != nil {
@@ -125,6 +146,9 @@ func runValidatorEdit(cmd *cobra.Command, args []string) error {
 
 	// Create the editor
 	editor := validators.NewEditor(projectDir)
+	if modelID != "" {
+		editor = editor.WithModel(modelID)
+	}
 
 	// List available validators
 	validatorList, err := editor.ListValidators()

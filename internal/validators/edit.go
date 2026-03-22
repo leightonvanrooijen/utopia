@@ -104,6 +104,7 @@ type Editor struct {
 	projectDir string
 	cli        *internal.CLI
 	store      *internal.YAMLStore
+	model      string
 }
 
 // NewEditor creates a new validator editor for the given project directory.
@@ -114,6 +115,13 @@ func NewEditor(projectDir string) *Editor {
 		cli:        internal.NewCLI(),
 		store:      internal.NewYAMLStore(utopiaDir),
 	}
+}
+
+// WithModel sets the Claude model to use for this editor.
+func (e *Editor) WithModel(model string) *Editor {
+	e.model = model
+	e.cli = e.cli.WithModel(model)
+	return e
 }
 
 // ValidatorInfo contains information about an available validator for selection.

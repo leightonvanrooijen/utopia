@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/leightonvanrooijen/utopia/internal"
+	"github.com/leightonvanrooijen/utopia/internal/domain"
 	"github.com/spf13/cobra"
 )
 
@@ -105,4 +106,21 @@ func ResolveProject(cmd *cobra.Command) (projectDir, utopiaDir string, store *in
 	store = internal.NewYAMLStore(utopiaDir)
 
 	return projectDir, utopiaDir, store, nil
+}
+
+// ResolveModelFlag validates and resolves the --model flag value.
+// Returns the full Claude model identifier if valid, empty string if not provided,
+// or an error if the value is invalid.
+func ResolveModelFlag(cmd *cobra.Command) (string, error) {
+	modelName, _ := cmd.Flags().GetString("model")
+	if modelName == "" {
+		return "", nil
+	}
+
+	modelID, err := domain.ResolveModel(modelName)
+	if err != nil {
+		return "", err
+	}
+
+	return modelID, nil
 }

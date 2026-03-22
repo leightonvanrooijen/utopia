@@ -24,6 +24,7 @@ import (
 var (
 	executeTimeoutFlag int
 	executeAllFlag     bool
+	executeModelFlag   string
 )
 
 func InitExecuteCmd() {
@@ -53,10 +54,17 @@ Run the command again to resume from where you left off.`,
 	}
 	cmd.Flags().IntVarP(&executeTimeoutFlag, "timeout", "t", 0, "timeout in minutes (0 means no timeout)")
 	cmd.Flags().BoolVar(&executeAllFlag, "all", false, "execute all CRs in .utopia/change-requests/ in alphabetical order")
+	cmd.Flags().StringVar(&executeModelFlag, "model", "", "model to use (haiku, sonnet, opus)")
 	return cmd
 }
 
 func runExecute(cmd *cobra.Command, args []string) error {
+	// Validate model flag early before any work
+	modelID, err := ResolveModelFlag(cmd)
+	if err != nil {
+		return err
+	}
+
 	if executeTimeoutFlag < 0 {
 		return fmt.Errorf("invalid timeout value: %d (must be a positive integer)", executeTimeoutFlag)
 	}
@@ -74,7 +82,7 @@ func runExecute(cmd *cobra.Command, args []string) error {
 		if len(args) > 0 {
 			return fmt.Errorf("cannot specify CR ID with --all flag")
 		}
-		return runExecuteAll(cmd, store, config, absPath, utopiaDir)
+		return runExecuteAll(cmd, store, config, absPath, utopiaDir, modelID)
 	}
 
 	var crID string
@@ -94,7 +102,7 @@ func runExecute(cmd *cobra.Command, args []string) error {
 	}
 
 	if cr.Type == domain.CRTypeInitiative {
-		return executeInitiative(cmd, cr, store, config, absPath, utopiaDir)
+		return executeInitiative(cmd, cr, store, config, absPath, utopiaDir, modelID)
 	}
 
 	items, err := store.ListWorkItemsForSpec(crID)
@@ -134,7 +142,7 @@ func runExecute(cmd *cobra.Command, args []string) error {
 		cancel()
 	}()
 
-	result, err := ralph.Execute(ctx, crID, store, config, absPath)
+	result, err := ralph.Execute(ctx, crID, store, config, absPath, modelID)
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
 			sessionDuration := time.Since(sessionStart).Round(time.Second)
@@ -180,7 +188,7 @@ func runExecute(cmd *cobra.Command, args []string) error {
 // BATCH EXECUTION
 // ============================================================================
 
-func runExecuteAll(cmd *cobra.Command, store *internal.YAMLStore, config *domain.Config, projectDir, utopiaDir string) error {
+func runExecuteAll(cmd *cobra.Command, store *internal.YAMLStore, config *domain.Config, projectDir, utopiaDir, modelID string) error {
 	crs, err := store.ListChangeRequests()
 	if err != nil {
 		return fmt.Errorf("failed to list change requests: %w", err)
@@ -230,7 +238,7 @@ func runExecuteAll(cmd *cobra.Command, store *internal.YAMLStore, config *domain
 		fmt.Printf("Executing CR %d of %d: %s\n", i+1, totalCRs, cr.Title)
 		fmt.Printf("================================================================\n\n")
 
-		if err := executeSingleCR(ctx, cr, store, config, projectDir, utopiaDir); err != nil {
+		if err := executeSingleCR(ctx, cr, store, config, projectDir, utopiaDir, modelID); err != nil {
 			if ctx.Err() != nil {
 				if ctx.Err() == context.DeadlineExceeded {
 					sessionDuration := time.Since(sessionStart).Round(time.Second)
@@ -266,10 +274,10 @@ func runExecuteAll(cmd *cobra.Command, store *internal.YAMLStore, config *domain
 	return nil
 }
 
-func executeSingleCR(ctx context.Context, cr *domain.ChangeRequest, store *internal.YAMLStore, config *domain.Config, projectDir, utopiaDir string) error {
+func executeSingleCR(ctx context.Context, cr *domain.ChangeRequest, store *internal.YAMLStore, config *domain.Config, projectDir, utopiaDir, modelID string) error {
 	crID := cr.ID
 	if cr.Type == domain.CRTypeInitiative {
-		return executeSingleInitiative(ctx, cr, store, config, projectDir, utopiaDir)
+		return executeSingleInitiative(ctx, cr, store, config, projectDir, utopiaDir, modelID)
 	}
 
 	items, err := store.ListWorkItemsForSpec(crID)
@@ -286,7 +294,7 @@ func executeSingleCR(ctx context.Context, cr *domain.ChangeRequest, store *inter
 	}
 
 	fmt.Printf("Executing CR: %s (%d work items)\n\n", crID, len(items))
-	result, err := ralph.Execute(ctx, crID, store, config, projectDir)
+	result, err := ralph.Execute(ctx, crID, store, config, projectDir, modelID)
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded || ctx.Err() == context.Canceled {
 			fmt.Printf("\nExecution stopped.\n")
@@ -320,7 +328,7 @@ func executeSingleCR(ctx context.Context, cr *domain.ChangeRequest, store *inter
 // INITIATIVE EXECUTION
 // ============================================================================
 
-func executeInitiative(cmd *cobra.Command, cr *domain.ChangeRequest, store *internal.YAMLStore, config *domain.Config, projectDir, utopiaDir string) error {
+func executeInitiative(cmd *cobra.Command, cr *domain.ChangeRequest, store *internal.YAMLStore, config *domain.Config, projectDir, utopiaDir, modelID string) error {
 	fmt.Printf("Executing initiative: %s\n", cr.Title)
 	fmt.Printf("Phases: %d total, current: %d\n", len(cr.Phases), cr.CurrentPhase+1)
 
@@ -348,14 +356,14 @@ func executeInitiative(cmd *cobra.Command, cr *domain.ChangeRequest, store *inte
 		cancel()
 	}()
 
-	err := executeInitiativeCore(ctx, cr, store, config, projectDir, utopiaDir, true, true, sessionStart, true)
+	err := executeInitiativeCore(ctx, cr, store, config, projectDir, utopiaDir, true, true, sessionStart, true, modelID)
 	if err == context.Canceled {
 		return nil
 	}
 	return err
 }
 
-func executeSingleInitiative(ctx context.Context, cr *domain.ChangeRequest, store *internal.YAMLStore, config *domain.Config, projectDir, utopiaDir string) error {
+func executeSingleInitiative(ctx context.Context, cr *domain.ChangeRequest, store *internal.YAMLStore, config *domain.Config, projectDir, utopiaDir, modelID string) error {
 	fmt.Printf("Executing initiative: %s\n", cr.Title)
 	fmt.Printf("Phases: %d total, current: %d\n", len(cr.Phases), cr.CurrentPhase+1)
 
@@ -363,12 +371,12 @@ func executeSingleInitiative(ctx context.Context, cr *domain.ChangeRequest, stor
 		fmt.Printf("\nAll phases already complete!\n")
 		return nil
 	}
-	return executeInitiativeCore(ctx, cr, store, config, projectDir, utopiaDir, false, false, time.Time{}, true)
+	return executeInitiativeCore(ctx, cr, store, config, projectDir, utopiaDir, false, false, time.Time{}, true, modelID)
 }
 
 func executeInitiativeCore(
 	ctx context.Context, cr *domain.ChangeRequest, store *internal.YAMLStore, config *domain.Config,
-	projectDir, utopiaDir string, showTimeoutDetails, showPhaseSummary bool, sessionStart time.Time, autoMerge bool,
+	projectDir, utopiaDir string, showTimeoutDetails, showPhaseSummary bool, sessionStart time.Time, autoMerge bool, modelID string,
 ) error {
 	for cr.CurrentPhase < len(cr.Phases) {
 		if ctx.Err() != nil {
@@ -407,7 +415,7 @@ func executeInitiativeCore(
 		}
 		fmt.Println()
 
-		result, err := ralph.Execute(ctx, phaseWorkDir, store, config, projectDir)
+		result, err := ralph.Execute(ctx, phaseWorkDir, store, config, projectDir, modelID)
 		if err != nil {
 			if showTimeoutDetails && ctx.Err() == context.DeadlineExceeded {
 				sessionDuration := time.Since(sessionStart).Round(time.Second)

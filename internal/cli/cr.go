@@ -15,6 +15,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+var crModelFlag string
+
 var crCmd = &cobra.Command{
 	Use:   "cr",
 	Short: "Create a change request via guided conversation",
@@ -42,6 +44,7 @@ Tip: Run a file watcher to see updates in real-time:
 
 func init() {
 	rootCmd.AddCommand(crCmd)
+	crCmd.Flags().StringVar(&crModelFlag, "model", "", "model to use (haiku, sonnet, opus)")
 }
 
 // ============================================================================
@@ -359,6 +362,12 @@ Your role is ONLY to create the CR file. Let the execution and merge phases hand
 Start by warmly greeting the user and asking what change they'd like to make.`
 
 func runCR(cmd *cobra.Command, args []string) error {
+	// Validate model flag early before any work
+	modelID, err := ResolveModelFlag(cmd)
+	if err != nil {
+		return err
+	}
+
 	absPath, utopiaDir, store, err := ResolveProject(cmd)
 	if err != nil {
 		return err
@@ -420,6 +429,9 @@ func runCR(cmd *cobra.Command, args []string) error {
 	// Run interactive Claude session with transcript capture
 	ctx := context.Background()
 	cli := internal.NewCLI()
+	if modelID != "" {
+		cli = cli.WithModel(modelID)
+	}
 
 	// Get git branch for metadata before session
 	branch := git.CurrentBranch(absPath)

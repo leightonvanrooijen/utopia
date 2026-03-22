@@ -13,6 +13,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var refactorModelFlag string
+
 var refactorCmd = &cobra.Command{
 	Use:   "refactor",
 	Short: "Create a refactor change request via guided conversation",
@@ -41,6 +43,7 @@ Tip: Run a file watcher to see updates in real-time:
 
 func init() {
 	rootCmd.AddCommand(refactorCmd)
+	refactorCmd.Flags().StringVar(&refactorModelFlag, "model", "", "model to use (haiku, sonnet, opus)")
 }
 
 // refactorSystemPrompt guides Claude through refactor CR creation
@@ -178,6 +181,12 @@ If the user wants to:
 Start by warmly greeting the user and asking what code they'd like to refactor.`
 
 func runRefactor(cmd *cobra.Command, args []string) error {
+	// Validate model flag early before any work
+	modelID, err := ResolveModelFlag(cmd)
+	if err != nil {
+		return err
+	}
+
 	absPath, utopiaDir, store, err := ResolveProject(cmd)
 	if err != nil {
 		return err
@@ -200,6 +209,9 @@ func runRefactor(cmd *cobra.Command, args []string) error {
 	// Run interactive Claude session with transcript capture
 	ctx := context.Background()
 	cli := internal.NewCLI()
+	if modelID != "" {
+		cli = cli.WithModel(modelID)
+	}
 
 	// Get git branch for metadata before session
 	branch := git.CurrentBranch(absPath)

@@ -44,6 +44,7 @@ type CLI struct {
 	permissionMode PermissionMode
 	allowedTools   []string
 	verbose        bool
+	model          string // model override (e.g., "claude-sonnet-4-20250514")
 }
 
 // NewCLI creates a new Claude CLI wrapper with sensible defaults for Utopia
@@ -66,6 +67,13 @@ func (c *CLI) WithVerbose(verbose bool) *CLI {
 	return c
 }
 
+// WithModel sets the model to use for this CLI instance.
+// The model should be a full Claude model identifier (e.g., "claude-sonnet-4-20250514").
+func (c *CLI) WithModel(model string) *CLI {
+	c.model = model
+	return c
+}
+
 // baseArgs returns common arguments for all Claude invocations
 func (c *CLI) baseArgs() []string {
 	args := []string{}
@@ -76,6 +84,10 @@ func (c *CLI) baseArgs() []string {
 
 	if len(c.allowedTools) > 0 {
 		args = append(args, "--allowedTools", strings.Join(c.allowedTools, ","))
+	}
+
+	if c.model != "" {
+		args = append(args, "--model", c.model)
 	}
 
 	return args

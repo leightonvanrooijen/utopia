@@ -32,7 +32,8 @@ type Result struct {
 // Execute runs all work items for a spec sequentially.
 // Work items are processed one at a time, in order, retrying until
 // verification passes or max iterations is reached.
-func Execute(ctx context.Context, specID string, store *internal.YAMLStore, config *domain.Config, projectDir string) (*Result, error) {
+// The optional model parameter specifies a Claude model override (e.g., "claude-sonnet-4-20250514").
+func Execute(ctx context.Context, specID string, store *internal.YAMLStore, config *domain.Config, projectDir string, model ...string) (*Result, error) {
 	// Load work items for this spec
 	items, err := store.ListWorkItemsForSpec(specID)
 	if err != nil {
@@ -58,6 +59,9 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 
 	// Create dependencies
 	cli := internal.NewCLI().WithVerbose(true)
+	if len(model) > 0 && model[0] != "" {
+		cli = cli.WithModel(model[0])
+	}
 	verifier := verification.NewRunner(projectDir)
 	validatorRunner := validators.NewRunner(projectDir)
 

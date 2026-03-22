@@ -93,6 +93,7 @@ var (
 	discoverPathFlags    []string
 	discoverExcludeFlags []string
 	discoverVerboseFlag  bool
+	discoverModelFlag    string
 )
 
 func init() {
@@ -100,6 +101,7 @@ func init() {
 	discoverCmd.Flags().StringSliceVar(&discoverPathFlags, "path", nil, "Limit discovery to specific directory (can be specified multiple times)")
 	discoverCmd.Flags().StringSliceVar(&discoverExcludeFlags, "exclude", nil, "Exclude files matching glob pattern (can be specified multiple times)")
 	discoverCmd.Flags().BoolVarP(&discoverVerboseFlag, "verbose", "v", false, "Enable detailed file-by-file progress output")
+	discoverCmd.Flags().StringVar(&discoverModelFlag, "model", "", "model to use (haiku, sonnet, opus)")
 }
 
 func buildIdentifyQualifyPrompt(codebaseContext, specsSummary string) string {
@@ -186,6 +188,12 @@ THEN: Output ONLY the YAML block with your refined specification.`,
 }
 
 func runDiscover(cmd *cobra.Command, args []string) error {
+	// Validate model flag early before any work
+	modelID, err := ResolveModelFlag(cmd)
+	if err != nil {
+		return err
+	}
+
 	absPath, utopiaDir, store, err := ResolveProject(cmd)
 	if err != nil {
 		return err
@@ -229,6 +237,9 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 	specsSummary := buildExistingSpecsSummary(existingSpecs)
 	ctx := context.Background()
 	cli := internal.NewCLI().WithVerbose(discoverVerboseFlag)
+	if modelID != "" {
+		cli = cli.WithModel(modelID)
+	}
 
 	progress.startPhase(2, "Stage 1: Identifying and qualifying candidates")
 	stage1Prompt := buildIdentifyQualifyPrompt(codebaseContext, specsSummary)
@@ -251,7 +262,7 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 	}
 
 	progress.startPhase(3, fmt.Sprintf("Stage 2: Refining %d candidates in parallel", len(qualified)))
-	drafts, refinementErrors := runParallelRefinement(ctx, qualified, defaultRefinementIterations, discoverVerboseFlag)
+	drafts, refinementErrors := runParallelRefinement(ctx, qualified, defaultRefinementIterations, discoverVerboseFlag, modelID)
 	progress.endPhase(fmt.Sprintf("%d drafts refined", len(drafts)))
 
 	if len(refinementErrors) > 0 && discoverVerboseFlag {
@@ -281,7 +292,7 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runParallelRefinement(ctx context.Context, candidates []qualifiedCandidate, iterations int, verbose bool) ([]*domain.DraftSpec, []error) {
+func runParallelRefinement(ctx context.Context, candidates []qualifiedCandidate, iterations int, verbose bool, modelID string) ([]*domain.DraftSpec, []error) {
 	var (
 		drafts []*domain.DraftSpec
 		errors []error
@@ -290,6 +301,9 @@ func runParallelRefinement(ctx context.Context, candidates []qualifiedCandidate,
 	)
 
 	refinementCLI := internal.NewCLI().WithVerbose(verbose).WithAllowedTools([]string{"Read", "Grep", "Glob"})
+	if modelID != "" {
+		refinementCLI = refinementCLI.WithModel(modelID)
+	}
 
 	for _, candidate := range candidates {
 		wg.Add(1)
@@ -762,6 +776,7 @@ var (
 	discoverDomainPathFlags    []string
 	discoverDomainExcludeFlags []string
 	discoverDomainVerboseFlag  bool
+	discoverDomainModelFlag    string
 )
 
 func init() {
@@ -770,6 +785,7 @@ func init() {
 	discoverDomainCmd.Flags().StringSliceVar(&discoverDomainPathFlags, "path", nil, "Limit discovery to specific directory (can be specified multiple times)")
 	discoverDomainCmd.Flags().StringSliceVar(&discoverDomainExcludeFlags, "exclude", nil, "Exclude files matching glob pattern (can be specified multiple times)")
 	discoverDomainCmd.Flags().BoolVarP(&discoverDomainVerboseFlag, "verbose", "v", false, "Enable detailed file-by-file progress output")
+	discoverDomainCmd.Flags().StringVar(&discoverDomainModelFlag, "model", "", "model to use (haiku, sonnet, opus)")
 }
 
 const discoverDomainSystemPrompt = `You are a Domain Discovery Claude - an AI assistant that analyzes codebases to identify domain vocabulary, bounded contexts, and canonical terminology.
@@ -833,6 +849,12 @@ drafts:
 Now analyze the codebase and generate draft domain documents.`
 
 func runDiscoverDomain(cmd *cobra.Command, args []string) error {
+	// Validate model flag early before any work
+	modelID, err := ResolveModelFlag(cmd)
+	if err != nil {
+		return err
+	}
+
 	absPath, utopiaDir, store, err := ResolveProject(cmd)
 	if err != nil {
 		return err
@@ -896,6 +918,9 @@ func runDiscoverDomain(cmd *cobra.Command, args []string) error {
 	progress.startPhase(2, "Analyzing codebase with Claude")
 	ctx := context.Background()
 	cli := internal.NewCLI().WithVerbose(true)
+	if modelID != "" {
+		cli = cli.WithModel(modelID)
+	}
 	result, err := cli.Prompt(ctx, systemPrompt)
 	if err != nil {
 		return fmt.Errorf("claude analysis failed: %w", err)
