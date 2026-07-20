@@ -32,7 +32,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	fmt.Println("SPECIFICATIONS")
 	fmt.Println("==============")
 	if len(specs) == 0 {
-		fmt.Println("  No specs yet. Run 'utopia spec' to create one.")
+		fmt.Println("  No specs yet. Run 'utopia cr' to create your first change request.")
 	} else {
 		for _, spec := range specs {
 			featureCount := len(spec.Features)
@@ -55,7 +55,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	fmt.Println("WORK ITEMS")
 	fmt.Println("==========")
 	if len(items) == 0 {
-		fmt.Println("  No work items yet. Run 'utopia chunk' after creating specs.")
+		fmt.Println("  No work items yet. Run 'utopia execute' to chunk a change request into work items.")
 	} else {
 		pending, inProgress, completed, failed := 0, 0, 0, 0
 		for _, item := range items {

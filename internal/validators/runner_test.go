@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -324,11 +323,8 @@ func TestRunner_RunAll_NoMatchingTrigger(t *testing.T) {
 }
 
 func TestRunner_RunAll_ConcurrentExecution(t *testing.T) {
-	// This test verifies validators run concurrently by tracking execution overlap
-	// We use a counter to detect concurrent execution
-	var concurrentCount atomic.Int32
-	var maxConcurrent atomic.Int32
-
+	// This test verifies validators run concurrently by checking they all
+	// complete quickly (git diff fails fast, so serial execution would be slow).
 	validators := []*domain.Validator{
 		{ID: "v1", Run: domain.RunAfterWorkitem, Prompt: "test"},
 		{ID: "v2", Run: domain.RunAfterWorkitem, Prompt: "test"},
@@ -361,10 +357,6 @@ func TestRunner_RunAll_ConcurrentExecution(t *testing.T) {
 			t.Errorf("validator %s should have error", vr.ID)
 		}
 	}
-
-	// Update maxConcurrent tracking (for documentation)
-	_ = concurrentCount
-	_ = maxConcurrent
 }
 
 func TestRunner_RunAll_ContextCancellation(t *testing.T) {
