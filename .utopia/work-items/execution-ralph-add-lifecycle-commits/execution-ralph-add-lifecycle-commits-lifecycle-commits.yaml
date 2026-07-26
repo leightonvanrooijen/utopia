@@ -1,0 +1,60 @@
+id: execution-ralph-add-lifecycle-commits-lifecycle-commits
+spec_ref: execution-ralph-add-lifecycle-commits.lifecycle-commits
+title: |
+    Work items and change requests are tracked in git across their full lifecycle.
+    After chunking, the generated work item files are committed. After a CR is merged
+    and cleaned up, the deletion of the CR file and its work item files is committed.
+    Lifecycle commits must be robust: a path that no longer exists on disk (already
+    deleted, staged as a deletion) must not abort the commit, and commit failures are
+    logged as warnings without blocking execution.
+status: completed
+prompt: |-
+    ## TASK
+
+    Work items and change requests are tracked in git across their full lifecycle.
+    After chunking, the generated work item files are committed. After a CR is merged
+    and cleaned up, the deletion of the CR file and its work item files is committed.
+    Lifecycle commits must be robust: a path that no longer exists on disk (already
+    deleted, staged as a deletion) must not abort the commit, and commit failures are
+    logged as warnings without blocking execution.
+
+
+    Acceptance criteria:
+    - After chunking a CR, the work item files under .utopia/work-items/<cr-id>/ are committed with message 'chunk:<space><cr-id>'
+    - After merge cleanup, the deletion of .utopia/change-requests/<cr-id>.yaml and .utopia/work-items/<cr-id>/ is committed with message 'cleanup:<space>complete <cr-id>'
+    - The cleanup commit succeeds even though the work-items directory has already been removed from disk (deletions of tracked files are staged; a non-matching pathspec does not cause a fatal git error)
+    - Staging paths that are gitignored or nonexistent does not abort the commit of the remaining paths
+    - The project .gitignore no longer excludes .utopia/work-items/
+    - A full 'utopia execute' run on a clean repo produces no 'git add failed' or 'Cleanup commit warning' output and leaves the working tree clean
+    - Initiative phase cleanup commits work the same way as regular CR cleanup commits
+
+
+
+    ## HINTS
+
+    - Remove the '.utopia/work-items/' line from the repository .gitignore
+    - gitCommitChunk and gitCommitCleanup live in internal/cli/execute.go (~lines 596-607)
+    - The fatal error comes from git.Add in internal/git/git.go - 'git add <path>' exits 128 when a pathspec matches nothing; either filter paths (skip ones that neither exist on disk nor are tracked, via 'git ls-files') or stage with 'git add -A -- <existing-parent-scope>' so deletions are staged without fatal pathspec errors
+    - internal/cli/merge.go also deletes work items for initiative phases (~lines 460-475 and 740-760) and relies on the same cleanup commit path
+    - Keep the existing behavior of git.CommitIfChanged - no commit is created when nothing was staged
+
+
+    ## CONSTRAINTS
+
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+order: 0
+estimated_complexity: medium
+iteration_count: 1
