@@ -621,7 +621,7 @@ func GitCommitCR(projectDir, crID string) (string, error) {
 	return git.HeadSHA(projectDir)
 }
 
-func GitCommitSpecMerge(projectDir string, cr *domain.ChangeRequest, mergeResult *MergeResult) error {
+func GitCommitSpecMerge(projectDir string, cr *domain.ChangeRequest, mergeResult *MergeResult, specsDir string) error {
 	var msg string
 	if mergeResult.IsRefactor {
 		msg = fmt.Sprintf("spec: merge refactor CR '%s'\n\nNo spec modifications (refactor only).", cr.Title)
@@ -638,6 +638,5 @@ func GitCommitSpecMerge(projectDir string, cr *domain.ChangeRequest, mergeResult
 		}
 	}
 
-	specsDir := filepath.Join(projectDir, ".utopia", "specs")
 	return git.CommitIfChanged(projectDir, msg, specsDir)
 }

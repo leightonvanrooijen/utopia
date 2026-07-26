@@ -14,11 +14,78 @@ import (
 // YAMLStore handles reading and writing YAML files
 type YAMLStore struct {
 	baseDir string
+	// Absolute artifact directories, resolved from the optional paths section
+	// in config.yaml. Default to specs/, adrs/, concepts/, and domain/ under baseDir.
+	specsDir    string
+	adrsDir     string
+	conceptsDir string
+	domainDir   string
 }
 
-// NewYAMLStore creates a store rooted at the given directory
+// NewYAMLStore creates a store rooted at the given directory.
+// Artifact directories (specs, adrs, concepts, domain) default to their
+// standard locations under baseDir and can be overridden via the optional
+// paths section in config.yaml.
 func NewYAMLStore(baseDir string) *YAMLStore {
-	return &YAMLStore{baseDir: baseDir}
+	s := &YAMLStore{
+		baseDir:     baseDir,
+		specsDir:    filepath.Join(baseDir, "specs"),
+		adrsDir:     filepath.Join(baseDir, "adrs"),
+		conceptsDir: filepath.Join(baseDir, "concepts"),
+		domainDir:   filepath.Join(baseDir, "domain"),
+	}
+	s.applyConfiguredPaths()
+	return s
+}
+
+// applyConfiguredPaths overrides artifact directories from the optional paths
+// section in config.yaml. A missing or unreadable config keeps the defaults,
+// so projects without a paths section behave exactly as before.
+func (s *YAMLStore) applyConfiguredPaths() {
+	config, err := Load[domain.Config](s, "config.yaml")
+	if err != nil || config.Paths == nil {
+		return
+	}
+
+	// baseDir is always <project root>/.utopia, so relative configured paths
+	// resolve from the project root; absolute paths are used as-is.
+	projectRoot := filepath.Dir(s.baseDir)
+	resolve := func(configured string, dir *string) {
+		if configured == "" {
+			return
+		}
+		if filepath.IsAbs(configured) {
+			*dir = configured
+			return
+		}
+		*dir = filepath.Join(projectRoot, configured)
+	}
+
+	resolve(config.Paths.Specs, &s.specsDir)
+	resolve(config.Paths.ADRs, &s.adrsDir)
+	resolve(config.Paths.Concepts, &s.conceptsDir)
+	resolve(config.Paths.Domain, &s.domainDir)
+}
+
+// SpecsDir returns the absolute directory where specs are stored.
+func (s *YAMLStore) SpecsDir() string { return s.specsDir }
+
+// ADRsDir returns the absolute directory where ADRs are stored.
+func (s *YAMLStore) ADRsDir() string { return s.adrsDir }
+
+// ConceptsDir returns the absolute directory where concept docs are stored.
+func (s *YAMLStore) ConceptsDir() string { return s.conceptsDir }
+
+// DomainDir returns the absolute directory where domain docs are stored.
+func (s *YAMLStore) DomainDir() string { return s.domainDir }
+
+// fullPath resolves a path against the store's base directory.
+// Absolute paths (already-resolved artifact locations) are used as-is.
+func (s *YAMLStore) fullPath(path string) string {
+	if filepath.IsAbs(path) {
+		return path
+	}
+	return filepath.Join(s.baseDir, path)
 }
 
 // Storable is implemented by types that can be persisted to the store.
@@ -30,7 +97,7 @@ type Storable interface {
 // Load reads a YAML file and unmarshals it into T.
 // The path should be relative to the store's base directory (e.g., "specs/my-spec.yaml").
 func Load[T any](s *YAMLStore, path string) (*T, error) {
-	fullPath := filepath.Join(s.baseDir, path)
+	fullPath := s.fullPath(path)
 
 	var dest T
 	if err := s.readYAML(fullPath, &dest); err != nil {
@@ -44,7 +111,7 @@ func Load[T any](s *YAMLStore, path string) (*T, error) {
 // Creates parent directories if they don't exist.
 // The path should be relative to the store's base directory.
 func Save[T any](s *YAMLStore, path string, data *T) error {
-	fullPath := filepath.Join(s.baseDir, path)
+	fullPath := s.fullPath(path)
 	dir := filepath.Dir(fullPath)
 
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -58,7 +125,7 @@ func Save[T any](s *YAMLStore, path string, data *T) error {
 // Skips directories and non-YAML files.
 // The dir should be relative to the store's base directory.
 func List[T any](s *YAMLStore, dir string) ([]*T, error) {
-	fullDir := filepath.Join(s.baseDir, dir)
+	fullDir := s.fullPath(dir)
 
 	entries, err := os.ReadDir(fullDir)
 	if err != nil {
@@ -88,7 +155,7 @@ func List[T any](s *YAMLStore, dir string) ([]*T, error) {
 // Delete removes a file at the specified path.
 // The path should be relative to the store's base directory.
 func Delete(s *YAMLStore, path string, resourceType, id string) error {
-	fullPath := filepath.Join(s.baseDir, path)
+	fullPath := s.fullPath(path)
 	if err := os.Remove(fullPath); err != nil {
 		if os.IsNotExist(err) {
 			return &domain.NotFoundError{Resource: resourceType, ID: id}
@@ -98,15 +165,14 @@ func Delete(s *YAMLStore, path string, resourceType, id string) error {
 	return nil
 }
 
-// SaveSpec writes a spec to .utopia/specs/{id}.yaml
+// SaveSpec writes a spec to {specsDir}/{id}.yaml (default .utopia/specs/).
 // Uses custom marshaling to preserve feature spacing and block style.
 func (s *YAMLStore) SaveSpec(spec *domain.Spec) error {
-	dir := filepath.Join(s.baseDir, "specs")
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(s.specsDir, 0755); err != nil {
 		return fmt.Errorf("failed to create specs directory: %w", err)
 	}
 
-	path := filepath.Join(dir, spec.ID+".yaml")
+	path := filepath.Join(s.specsDir, spec.ID+".yaml")
 	return s.writeSpecYAML(path, spec)
 }
 
@@ -128,19 +194,19 @@ func (s *YAMLStore) writeSpecYAML(path string, spec *domain.Spec) error {
 	return nil
 }
 
-// LoadSpec reads a spec from .utopia/specs/{id}.yaml
+// LoadSpec reads a spec from {specsDir}/{id}.yaml (default .utopia/specs/)
 func (s *YAMLStore) LoadSpec(id string) (*domain.Spec, error) {
-	return Load[domain.Spec](s, filepath.Join("specs", id+".yaml"))
+	return Load[domain.Spec](s, filepath.Join(s.specsDir, id+".yaml"))
 }
 
-// DeleteSpec removes a spec file from .utopia/specs/{id}.yaml
+// DeleteSpec removes a spec file from {specsDir}/{id}.yaml (default .utopia/specs/)
 func (s *YAMLStore) DeleteSpec(id string) error {
-	return Delete(s, filepath.Join("specs", id+".yaml"), "spec", id)
+	return Delete(s, filepath.Join(s.specsDir, id+".yaml"), "spec", id)
 }
 
 // ListSpecs returns all specs in the specs directory
 func (s *YAMLStore) ListSpecs() ([]*domain.Spec, error) {
-	return List[domain.Spec](s, "specs")
+	return List[domain.Spec](s, s.specsDir)
 }
 
 // SaveWorkItemForSpec writes a work item to .utopia/work-items/{specID}/{id}.yaml
@@ -519,27 +585,27 @@ func (s *YAMLStore) AppendExecutionLogEntry(crID string, entry domain.ExecutionL
 
 // ListADRs returns all ADRs in the adrs directory
 func (s *YAMLStore) ListADRs() ([]*domain.ADR, error) {
-	return List[domain.ADR](s, "adrs")
+	return List[domain.ADR](s, s.adrsDir)
 }
 
-// SaveDomainDoc writes a domain doc to .utopia/domain/{id}.yaml
+// SaveDomainDoc writes a domain doc to {domainDir}/{id}.yaml (default .utopia/domain/)
 func (s *YAMLStore) SaveDomainDoc(doc *domain.DomainDoc) error {
-	return Save(s, filepath.Join("domain", doc.ID+".yaml"), doc)
+	return Save(s, filepath.Join(s.domainDir, doc.ID+".yaml"), doc)
 }
 
-// LoadDomainDoc reads a domain doc from .utopia/domain/{id}.yaml
+// LoadDomainDoc reads a domain doc from {domainDir}/{id}.yaml (default .utopia/domain/)
 func (s *YAMLStore) LoadDomainDoc(id string) (*domain.DomainDoc, error) {
-	return Load[domain.DomainDoc](s, filepath.Join("domain", id+".yaml"))
+	return Load[domain.DomainDoc](s, filepath.Join(s.domainDir, id+".yaml"))
 }
 
 // ListDomainDocs returns all domain docs in the domain directory
 func (s *YAMLStore) ListDomainDocs() ([]*domain.DomainDoc, error) {
-	return List[domain.DomainDoc](s, "domain")
+	return List[domain.DomainDoc](s, s.domainDir)
 }
 
-// LoadConceptDoc reads a concept doc from .utopia/concepts/{id}.md
+// LoadConceptDoc reads a concept doc from {conceptsDir}/{id}.md (default .utopia/concepts/)
 func (s *YAMLStore) LoadConceptDoc(id string) (*domain.ConceptDoc, error) {
-	path := filepath.Join(s.baseDir, "concepts", id+".md")
+	path := filepath.Join(s.conceptsDir, id+".md")
 
 	bytes, err := os.ReadFile(path)
 	if err != nil {
@@ -577,7 +643,7 @@ func (s *YAMLStore) LoadConceptDoc(id string) (*domain.ConceptDoc, error) {
 
 // ListConceptDocs returns all concept docs in the concepts directory
 func (s *YAMLStore) ListConceptDocs() ([]*domain.ConceptDoc, error) {
-	dir := filepath.Join(s.baseDir, "concepts")
+	dir := s.conceptsDir
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {

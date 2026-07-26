@@ -840,7 +840,7 @@ func runHarvest(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	absPath, utopiaDir, store, err := ResolveProject(cmd)
+	absPath, _, store, err := ResolveProject(cmd)
 	if err != nil {
 		return err
 	}
@@ -858,9 +858,9 @@ func runHarvest(cmd *cobra.Command, args []string) error {
 	}
 
 	// Ensure all directories exist
-	adrsDir := filepath.Join(utopiaDir, "adrs")
-	conceptsDir := filepath.Join(utopiaDir, "concepts")
-	domainDir := filepath.Join(utopiaDir, "domain")
+	adrsDir := store.ADRsDir()
+	conceptsDir := store.ConceptsDir()
+	domainDir := store.DomainDir()
 
 	for _, dir := range []string{adrsDir, conceptsDir, domainDir} {
 		if err := os.MkdirAll(dir, 0755); err != nil {

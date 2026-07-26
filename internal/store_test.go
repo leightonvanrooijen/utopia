@@ -1152,3 +1152,212 @@ models:
 		t.Errorf("expected validator_edit 'opus', got %q", config.Models.ValidatorEdit)
 	}
 }
+
+// setupPathsTestProject creates a project root with a .utopia directory and
+// optional config.yaml content, returning the project root and utopia dir.
+func setupPathsTestProject(t *testing.T, configContent string) (projectRoot, utopiaDir string) {
+	t.Helper()
+	projectRoot = t.TempDir()
+	utopiaDir = filepath.Join(projectRoot, ".utopia")
+	if err := os.MkdirAll(utopiaDir, 0755); err != nil {
+		t.Fatalf("failed to create .utopia dir: %v", err)
+	}
+	if configContent != "" {
+		if err := os.WriteFile(filepath.Join(utopiaDir, "config.yaml"), []byte(configContent), 0644); err != nil {
+			t.Fatalf("failed to write config: %v", err)
+		}
+	}
+	return projectRoot, utopiaDir
+}
+
+func TestConfigPaths_DefaultsWhenOmitted(t *testing.T) {
+	_, utopiaDir := setupPathsTestProject(t, `verification:
+    command: ./test.sh
+`)
+
+	store := NewYAMLStore(utopiaDir)
+
+	expected := map[string]string{
+		"specs":    store.SpecsDir(),
+		"adrs":     store.ADRsDir(),
+		"concepts": store.ConceptsDir(),
+		"domain":   store.DomainDir(),
+	}
+	for name, got := range expected {
+		want := filepath.Join(utopiaDir, name)
+		if got != want {
+			t.Errorf("expected %s dir %q, got %q", name, want, got)
+		}
+	}
+}
+
+func TestConfigPaths_DefaultsWhenNoConfigFile(t *testing.T) {
+	_, utopiaDir := setupPathsTestProject(t, "")
+
+	store := NewYAMLStore(utopiaDir)
+
+	if store.SpecsDir() != filepath.Join(utopiaDir, "specs") {
+		t.Errorf("expected default specs dir, got %q", store.SpecsDir())
+	}
+}
+
+func TestConfigPaths_RelativeResolvedFromProjectRoot(t *testing.T) {
+	projectRoot, utopiaDir := setupPathsTestProject(t, `verification:
+    command: ./test.sh
+paths:
+    specs: docs/specs
+    adrs: docs/adrs
+    concepts: docs/concepts
+    domain: docs/domain
+`)
+
+	store := NewYAMLStore(utopiaDir)
+
+	expected := map[string]string{
+		"specs":    store.SpecsDir(),
+		"adrs":     store.ADRsDir(),
+		"concepts": store.ConceptsDir(),
+		"domain":   store.DomainDir(),
+	}
+	for name, got := range expected {
+		want := filepath.Join(projectRoot, "docs", name)
+		if got != want {
+			t.Errorf("expected %s dir %q, got %q", name, want, got)
+		}
+	}
+}
+
+func TestConfigPaths_AbsoluteUsedAsIs(t *testing.T) {
+	absDir := filepath.Join(t.TempDir(), "shared-specs")
+	_, utopiaDir := setupPathsTestProject(t, `verification:
+    command: ./test.sh
+paths:
+    specs: `+absDir+`
+`)
+
+	store := NewYAMLStore(utopiaDir)
+
+	if store.SpecsDir() != absDir {
+		t.Errorf("expected specs dir %q, got %q", absDir, store.SpecsDir())
+	}
+}
+
+func TestConfigPaths_PartialSectionKeepsDefaults(t *testing.T) {
+	projectRoot, utopiaDir := setupPathsTestProject(t, `verification:
+    command: ./test.sh
+paths:
+    specs: docs/specs
+`)
+
+	store := NewYAMLStore(utopiaDir)
+
+	if store.SpecsDir() != filepath.Join(projectRoot, "docs", "specs") {
+		t.Errorf("expected configured specs dir, got %q", store.SpecsDir())
+	}
+	if store.ADRsDir() != filepath.Join(utopiaDir, "adrs") {
+		t.Errorf("expected default adrs dir, got %q", store.ADRsDir())
+	}
+	if store.ConceptsDir() != filepath.Join(utopiaDir, "concepts") {
+		t.Errorf("expected default concepts dir, got %q", store.ConceptsDir())
+	}
+	if store.DomainDir() != filepath.Join(utopiaDir, "domain") {
+		t.Errorf("expected default domain dir, got %q", store.DomainDir())
+	}
+}
+
+func TestConfigPaths_SpecRoundTripInConfiguredDir(t *testing.T) {
+	projectRoot, utopiaDir := setupPathsTestProject(t, `verification:
+    command: ./test.sh
+paths:
+    specs: docs/specs
+`)
+
+	store := NewYAMLStore(utopiaDir)
+
+	spec := &domain.Spec{ID: "test-spec", Title: "Test Spec"}
+	if err := store.SaveSpec(spec); err != nil {
+		t.Fatalf("failed to save spec: %v", err)
+	}
+
+	// Directory is created on first write, and the file lands there
+	specPath := filepath.Join(projectRoot, "docs", "specs", "test-spec.yaml")
+	if _, err := os.Stat(specPath); err != nil {
+		t.Fatalf("expected spec file at %s: %v", specPath, err)
+	}
+
+	loaded, err := store.LoadSpec("test-spec")
+	if err != nil {
+		t.Fatalf("failed to load spec: %v", err)
+	}
+	if loaded.Title != "Test Spec" {
+		t.Errorf("expected title 'Test Spec', got %q", loaded.Title)
+	}
+
+	specs, err := store.ListSpecs()
+	if err != nil {
+		t.Fatalf("failed to list specs: %v", err)
+	}
+	if len(specs) != 1 {
+		t.Fatalf("expected 1 spec, got %d", len(specs))
+	}
+
+	if err := store.DeleteSpec("test-spec"); err != nil {
+		t.Fatalf("failed to delete spec: %v", err)
+	}
+	if _, err := os.Stat(specPath); !os.IsNotExist(err) {
+		t.Errorf("expected spec file to be deleted")
+	}
+}
+
+func TestConfigPaths_DomainDocRoundTripInConfiguredDir(t *testing.T) {
+	projectRoot, utopiaDir := setupPathsTestProject(t, `verification:
+    command: ./test.sh
+paths:
+    domain: docs/domain
+`)
+
+	store := NewYAMLStore(utopiaDir)
+
+	doc := &domain.DomainDoc{ID: "billing"}
+	if err := store.SaveDomainDoc(doc); err != nil {
+		t.Fatalf("failed to save domain doc: %v", err)
+	}
+
+	docPath := filepath.Join(projectRoot, "docs", "domain", "billing.yaml")
+	if _, err := os.Stat(docPath); err != nil {
+		t.Fatalf("expected domain doc at %s: %v", docPath, err)
+	}
+
+	loaded, err := store.LoadDomainDoc("billing")
+	if err != nil {
+		t.Fatalf("failed to load domain doc: %v", err)
+	}
+	if loaded.ID != "billing" {
+		t.Errorf("expected doc ID 'billing', got %q", loaded.ID)
+	}
+}
+
+func TestConfigPaths_LoadConfigParsesPathsSection(t *testing.T) {
+	_, utopiaDir := setupPathsTestProject(t, `verification:
+    command: ./test.sh
+paths:
+    specs: docs/specs
+    adrs: docs/adrs
+`)
+
+	store := NewYAMLStore(utopiaDir)
+
+	config, err := store.LoadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error loading config: %v", err)
+	}
+	if config.Paths == nil {
+		t.Fatal("expected Paths to be non-nil")
+	}
+	if config.Paths.Specs != "docs/specs" {
+		t.Errorf("expected paths.specs 'docs/specs', got %q", config.Paths.Specs)
+	}
+	if config.Paths.ADRs != "docs/adrs" {
+		t.Errorf("expected paths.adrs 'docs/adrs', got %q", config.Paths.ADRs)
+	}
+}

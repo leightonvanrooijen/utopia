@@ -695,7 +695,7 @@ func AutoMergeCR(cr *domain.ChangeRequest, crID string, store *internal.YAMLStor
 	}
 
 	// Step 2: Create git commit for spec changes
-	if err := GitCommitSpecMerge(projectDir, cr, mergeResult); err != nil {
+	if err := GitCommitSpecMerge(projectDir, cr, mergeResult, store.SpecsDir()); err != nil {
 		return fmt.Errorf("failed to create git commit: %w", err)
 	}
 	fmt.Println("✓ Created git commit for spec merge")

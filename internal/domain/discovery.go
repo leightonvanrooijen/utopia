@@ -35,6 +35,19 @@ type Config struct {
 	// Models configures which Claude model to use for each command.
 	// If omitted entirely, sonnet is used as the implicit default.
 	Models *ModelConfig `yaml:"models,omitempty"`
+	// Paths configures where artifact folders live.
+	// If omitted entirely, all artifacts live in their default locations under .utopia/.
+	Paths *PathsConfig `yaml:"paths,omitempty"`
+}
+
+// PathsConfig configures where the specs, adrs, concepts, and domain folders live.
+// Each key defaults to its standard location under .utopia/ when omitted.
+// Relative paths are resolved from the project root; absolute paths are used as-is.
+type PathsConfig struct {
+	Specs    string `yaml:"specs,omitempty"`
+	ADRs     string `yaml:"adrs,omitempty"`
+	Concepts string `yaml:"concepts,omitempty"`
+	Domain   string `yaml:"domain,omitempty"`
 }
 
 // ValidatorConfig specifies a validator with optional model and run overrides.

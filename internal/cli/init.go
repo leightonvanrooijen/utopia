@@ -148,7 +148,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// Create directory structure (idempotent)
 	dirs := []string{
 		utopiaDir,
-		filepath.Join(utopiaDir, "specs"),
+		store.SpecsDir(),
 		filepath.Join(utopiaDir, "work-items"),
 		filepath.Join(utopiaDir, "validators"),
 	}
