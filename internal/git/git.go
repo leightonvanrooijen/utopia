@@ -3,7 +3,9 @@ package git
 
 import (
 	"bytes"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -45,15 +47,66 @@ func Commit(projectDir, message string) error {
 // CommitIfChanged stages the given paths and commits if there are changes.
 // This is the most common pattern: stage specific paths, then commit only if
 // something was actually staged.
+// Paths that cannot be staged (nonexistent and untracked, or ignored and
+// untracked) are skipped so they don't abort staging of the remaining paths.
+// Tracked paths deleted from disk are staged as deletions.
 // Returns nil if no changes were staged (no commit created).
 func CommitIfChanged(projectDir, message string, paths ...string) error {
-	if err := Add(projectDir, paths...); err != nil {
-		return err
+	stageable := stageablePaths(projectDir, paths)
+	if len(stageable) > 0 {
+		if err := Add(projectDir, stageable...); err != nil {
+			return err
+		}
 	}
 	if !HasStagedChanges(projectDir) {
 		return nil
 	}
 	return Commit(projectDir, message)
+}
+
+// stageablePaths filters paths down to those git add can stage without a
+// fatal error: paths tracked in the index (including deleted tracked files,
+// whose removal is staged) and paths that exist on disk and are not ignored.
+func stageablePaths(projectDir string, paths []string) []string {
+	var stageable []string
+	for _, path := range paths {
+		if isTracked(projectDir, path) {
+			stageable = append(stageable, path)
+			continue
+		}
+		onDisk := path
+		if !filepath.IsAbs(onDisk) {
+			onDisk = filepath.Join(projectDir, onDisk)
+		}
+		if _, err := os.Stat(onDisk); err != nil {
+			continue
+		}
+		if isIgnored(projectDir, path) {
+			continue
+		}
+		stageable = append(stageable, path)
+	}
+	return stageable
+}
+
+// isTracked returns true if the path (file or directory) contains at least
+// one file tracked in the git index.
+func isTracked(projectDir, path string) bool {
+	cmd := exec.Command("git", "ls-files", "--", path)
+	cmd.Dir = projectDir
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	if err := cmd.Run(); err != nil {
+		return false
+	}
+	return strings.TrimSpace(stdout.String()) != ""
+}
+
+// isIgnored returns true if the path is excluded by gitignore rules.
+func isIgnored(projectDir, path string) bool {
+	cmd := exec.Command("git", "check-ignore", "-q", "--", path)
+	cmd.Dir = projectDir
+	return cmd.Run() == nil
 }
 
 // CurrentBranch returns the name of the current git branch.
