@@ -1,7 +1,7 @@
 id: initialization
 title: initialization
 created: "2026-03-05T07:39:19.919048+11:00"
-updated: "2026-03-05T07:39:19.919525+11:00"
+updated: "2026-07-26T17:30:20.041429+10:00"
 description: ""
 features:
     - id: project-context-field
@@ -22,3 +22,18 @@ features:
         - Only prompts for fields that are empty/missing
         - Preserves all existing config values
         - Prints which fields were added vs skipped
+
+    - id: configurable-artifact-paths
+      description: |
+        Allow users to configure where the specs, adrs, concepts, and domain
+        folders live via an optional `paths` section in config.yaml. Each key
+        defaults to its current location under .utopia/ when omitted, so
+        existing projects continue to work without any config changes.
+        Configured paths may point outside .utopia/ (e.g. docs/specs).
+      acceptance_criteria:
+        - config.yaml supports an optional `paths` section with keys `specs`, `adrs`, `concepts`, and `domain`
+        - When the `paths` section or an individual key is omitted, the path defaults to the current location (.utopia/specs, .utopia/adrs, .utopia/concepts, .utopia/domain)
+        - Relative paths are resolved from the project root; absolute paths are used as-is
+        - All commands that read or write specs, adrs, concepts, or domain artifacts resolve the folder location from config instead of hardcoded .utopia/ paths
+        - Existing projects with no `paths` config behave exactly as before (backward compatible)
+        - If a configured directory does not exist, it is created when an artifact is first written to it
