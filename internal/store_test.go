@@ -756,6 +756,7 @@ func TestLoadValidator_FullFormat(t *testing.T) {
 	// Note: run field is deprecated in validator files but should still load without error
 	content := `---
 id: code-standards
+description: Checks naming conventions; applies to Go source changes
 allowed_tools: [Read, Glob, Grep, WebFetch]
 ---
 Review the following changes for code standards:
@@ -776,6 +777,9 @@ If all standards are met, output: <PASSED>
 
 	if validator.ID != "code-standards" {
 		t.Errorf("expected ID 'code-standards', got %q", validator.ID)
+	}
+	if validator.Description != "Checks naming conventions; applies to Go source changes" {
+		t.Errorf("expected description to be parsed from frontmatter, got %q", validator.Description)
 	}
 	// Run should default since it's not configured (run in file is deprecated/ignored)
 	if validator.GetRun() != domain.RunAfterWorkitem {
@@ -821,6 +825,12 @@ Simple prompt with {{changed_files}} placeholder.
 
 	if validator.ID != "minimal-validator" {
 		t.Errorf("expected ID 'minimal-validator', got %q", validator.ID)
+	}
+
+	// A validator with no description must still load; empty Description is the
+	// router's signal to treat it as always applicable rather than skip it.
+	if validator.Description != "" {
+		t.Errorf("expected empty description when frontmatter omits it, got %q", validator.Description)
 	}
 
 	// Verify defaults are applied via getter methods

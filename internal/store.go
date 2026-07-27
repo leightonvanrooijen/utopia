@@ -772,6 +772,7 @@ func (s *YAMLStore) DeleteValidator(path string) error {
 // It includes the deprecated 'run' field to detect and warn about its usage.
 type validatorFrontmatter struct {
 	ID           string   `yaml:"id"`
+	Description  string   `yaml:"description,omitempty"`
 	AllowedTools []string `yaml:"allowed_tools,omitempty"`
 	Run          string   `yaml:"run,omitempty"` // deprecated: configure in config.yaml instead
 }
@@ -780,7 +781,7 @@ type validatorFrontmatter struct {
 // The path should be relative to the store's base directory (e.g., "validators/component-standards.md").
 // Returns the validator with frontmatter fields populated and Prompt containing the markdown body.
 //
-// Valid frontmatter fields: id, allowed_tools
+// Valid frontmatter fields: id, description, allowed_tools
 // The "run" field is deprecated in validator files and should be configured in config.yaml.
 // If "run" is found in the file, a warning is logged but the file continues to load.
 func (s *YAMLStore) LoadValidator(path string) (*domain.Validator, error) {
@@ -825,6 +826,7 @@ func (s *YAMLStore) LoadValidator(path string) (*domain.Validator, error) {
 	// Build validator (without deprecated run field)
 	validator := &domain.Validator{
 		ID:           fm.ID,
+		Description:  fm.Description,
 		AllowedTools: fm.AllowedTools,
 	}
 

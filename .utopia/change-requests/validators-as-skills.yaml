@@ -4,7 +4,7 @@ title: Fix the validator diff basis, then make validators skill-like - a recall-
 status: in-progress
 phases:
     - type: bugfix
-      status: in-progress
+      status: complete
       tasks:
         - id: fix-workitem-diff-basis
           description: |
@@ -59,7 +59,7 @@ phases:
             - The errgroup batch is in RunAllWithDiffLimited in internal/validators/runner.go
             - Derive a child context per validator (context.WithTimeout) inside each g.Go closure
     - type: enhancement
-      status: pending
+      status: in-progress
       changes:
         - operation: add
           spec: agentic-validators
@@ -148,3 +148,4 @@ phases:
             add:
                 - Prompt instructs the assistant to author a specific, router-usable description stating what the validator checks and when it applies
                 - Prompt instructs the assistant to place run in config.yaml guidance rather than frontmatter, and never to emit a run field in the generated file
+current_phase: 1

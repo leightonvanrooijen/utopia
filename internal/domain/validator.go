@@ -22,11 +22,19 @@ func DefaultAllowedTools() []string {
 // Validator represents a project standards validator loaded from a .md file.
 // Validators use YAML frontmatter for configuration and markdown body for the prompt.
 //
-// Valid frontmatter fields: id, allowed_tools, prompt
+// Valid frontmatter fields: id, description, allowed_tools
 // The "run" field should be configured in config.yaml, not in the validator file.
 type Validator struct {
 	// ID is the unique identifier for this validator (required)
 	ID string `yaml:"id"`
+
+	// Description is a short "what this checks and when it applies" line read by
+	// the relevance router to decide whether this validator is worth running for a
+	// given change - exactly as Claude skills route on their description, without
+	// loading the (expensive) Prompt body. Optional: an empty Description means the
+	// router has no signal to route on and must treat the validator as always
+	// applicable, never silently skipping it.
+	Description string `yaml:"description,omitempty"`
 
 	// AllowedTools specifies which tools the validator can use (optional, defaults to ["Read", "Glob", "Grep"])
 	AllowedTools []string `yaml:"allowed_tools,omitempty"`
