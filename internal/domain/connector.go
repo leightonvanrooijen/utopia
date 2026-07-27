@@ -8,14 +8,16 @@ import (
 // Lifecycle event names emitted by the execution loop, in loop order.
 // These are the canonical names connectors subscribe to via the "on" field.
 const (
-	EventExecutionStarted   = "execution-started"
-	EventWorkItemStarted    = "workitem-started"
-	EventWorkItemVerified   = "workitem-verified"
-	EventWorkItemCommitted  = "workitem-committed"
-	EventPhaseVerified      = "phase-verified"
-	EventPhaseCompleted     = "phase-completed"
-	EventExecutionCompleted = "execution-completed"
-	EventExecutionFailed    = "execution-failed"
+	EventExecutionStarted           = "execution-started"
+	EventWorkItemStarted            = "workitem-started"
+	EventWorkItemCompletionClaimed  = "workitem-completion-claimed"
+	EventWorkItemVerificationFailed = "workitem-verification-failed"
+	EventWorkItemVerified           = "workitem-verified"
+	EventWorkItemCommitted          = "workitem-committed"
+	EventPhaseVerified              = "phase-verified"
+	EventPhaseCompleted             = "phase-completed"
+	EventExecutionCompleted         = "execution-completed"
+	EventExecutionFailed            = "execution-failed"
 )
 
 // LifecycleEventNames returns all lifecycle event names in loop order.
@@ -23,6 +25,8 @@ func LifecycleEventNames() []string {
 	return []string{
 		EventExecutionStarted,
 		EventWorkItemStarted,
+		EventWorkItemCompletionClaimed,
+		EventWorkItemVerificationFailed,
 		EventWorkItemVerified,
 		EventWorkItemCommitted,
 		EventPhaseVerified,
@@ -43,7 +47,10 @@ const (
 // gatingEvents lists events where a gating connector can block progression.
 // Post-commit and terminal events (workitem-committed, phase-completed,
 // execution-completed, execution-failed) fire after the outcome they describe
-// is already final, so gating has no semantics there.
+// is already final, so gating has no semantics there. The speculative-execution
+// signals (workitem-completion-claimed, workitem-verification-failed) fire mid-loop
+// to let connectors start or abandon slow work; they carry no gate, so a blocking
+// exit would have nothing to block.
 var gatingEvents = map[string]bool{
 	EventExecutionStarted: true,
 	EventWorkItemStarted:  true,

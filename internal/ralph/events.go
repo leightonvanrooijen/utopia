@@ -6,14 +6,16 @@ import "github.com/leightonvanrooijen/utopia/internal/domain"
 // The canonical definitions live in the domain package so config validation
 // and the loop share one vocabulary; these aliases keep call sites local.
 const (
-	EventExecutionStarted   = domain.EventExecutionStarted
-	EventWorkItemStarted    = domain.EventWorkItemStarted
-	EventWorkItemVerified   = domain.EventWorkItemVerified
-	EventWorkItemCommitted  = domain.EventWorkItemCommitted
-	EventPhaseVerified      = domain.EventPhaseVerified
-	EventPhaseCompleted     = domain.EventPhaseCompleted
-	EventExecutionCompleted = domain.EventExecutionCompleted
-	EventExecutionFailed    = domain.EventExecutionFailed
+	EventExecutionStarted           = domain.EventExecutionStarted
+	EventWorkItemStarted            = domain.EventWorkItemStarted
+	EventWorkItemCompletionClaimed  = domain.EventWorkItemCompletionClaimed
+	EventWorkItemVerificationFailed = domain.EventWorkItemVerificationFailed
+	EventWorkItemVerified           = domain.EventWorkItemVerified
+	EventWorkItemCommitted          = domain.EventWorkItemCommitted
+	EventPhaseVerified              = domain.EventPhaseVerified
+	EventPhaseCompleted             = domain.EventPhaseCompleted
+	EventExecutionCompleted         = domain.EventExecutionCompleted
+	EventExecutionFailed            = domain.EventExecutionFailed
 )
 
 // EventPayload carries the structured context for a lifecycle event.

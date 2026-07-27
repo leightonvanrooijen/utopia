@@ -61,6 +61,29 @@ func TestValidateConnectors(t *testing.T) {
 			wantError: false,
 		},
 		{
+			name: "valid notify connector on speculative-execution events",
+			connectors: []ConnectorConfig{
+				{Name: "spec", On: []string{"workitem-completion-claimed", "workitem-verification-failed"}, Command: "./spec.sh"},
+			},
+			wantError: false,
+		},
+		{
+			name: "gating on workitem-completion-claimed rejected",
+			connectors: []ConnectorConfig{
+				{Name: "bad", On: []string{"workitem-completion-claimed"}, Command: "./x.sh", Mode: "gating"},
+			},
+			wantError: true,
+			wantIssue: `bad: mode gating is not supported on event "workitem-completion-claimed"`,
+		},
+		{
+			name: "gating on workitem-verification-failed rejected",
+			connectors: []ConnectorConfig{
+				{Name: "bad", On: []string{"workitem-verification-failed"}, Command: "./x.sh", Mode: "gating"},
+			},
+			wantError: true,
+			wantIssue: `bad: mode gating is not supported on event "workitem-verification-failed"`,
+		},
+		{
 			name: "unknown event name rejected",
 			connectors: []ConnectorConfig{
 				{Name: "bad", On: []string{"workitem-finished"}, Command: "./x.sh"},

@@ -264,6 +264,13 @@ func executeWorkItem(
 
 		fmt.Printf("  Iteration %d: %s token found, running verification...\n", item.IterationCount, CompletionToken)
 
+		// Completion claimed but not yet verified. Notify connectors can start
+		// speculative work here (before the verification gate) and abandon it if
+		// a later workitem-verification-failed fires. Fire-and-forget: notify only.
+		claimedPayload := itemPayload
+		claimedPayload.IterationCount = item.IterationCount
+		dispatcher.Dispatch(Event{Name: EventWorkItemCompletionClaimed, Payload: claimedPayload})
+
 		// Token found - run verification
 		if verifyCommand == "" {
 			// No verification configured - consider it done
@@ -305,6 +312,12 @@ func executeWorkItem(
 			// Verification failed - inject failure and retry
 			// Validators were cancelled, their feedback is discarded
 			fmt.Printf("  Iteration %d: verification failed, will retry with failure output\n", item.IterationCount)
+			// Signals that a completion claim did not hold, so any speculative
+			// work started at workitem-completion-claimed can be abandoned.
+			// Fire-and-forget: notify only.
+			failedPayload := itemPayload
+			failedPayload.IterationCount = item.IterationCount
+			dispatcher.Dispatch(Event{Name: EventWorkItemVerificationFailed, Payload: failedPayload})
 			item.LastFailureOutput = result.VerifyOutput
 			item.LastValidatorFeedback = "" // Clear any previous validator feedback
 			continue
