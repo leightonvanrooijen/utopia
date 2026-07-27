@@ -3,6 +3,7 @@ package ralph
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -68,6 +69,7 @@ type handle struct {
 func (h *handle) join() ConnectorResult {
 	<-h.done
 	h.state = handleJoined
+	logResolution(h)
 	return h.result
 }
 
@@ -77,6 +79,7 @@ func (h *handle) cancelRun() {
 	h.cancel()
 	<-h.done
 	h.state = handleCancelled
+	logResolution(h)
 }
 
 // Engine launches, joins, and cancels subscription actions as lifecycle
@@ -135,10 +138,11 @@ func (en *Engine) Emit(ctx context.Context, e Event) error {
 	return gateErr
 }
 
-// Drain blocks until every running handle resolves and collects its outcome,
-// logging failures as notify warnings. Timeouts are already armed per handle,
-// so a timed-out action is killed rather than awaited forever; an action with
-// no timeout is awaited indefinitely.
+// Drain blocks until every running handle resolves and records each outcome
+// to the resolution ledger. Timeouts are already armed per handle, so a
+// timed-out action is killed rather than awaited forever; an action with no
+// timeout is awaited indefinitely. Once Drain returns, no handle is left
+// running, so no connector child process outlives the run.
 func (en *Engine) Drain() {
 	for _, h := range en.handles {
 		if h.state != handleRunning {
@@ -146,15 +150,13 @@ func (en *Engine) Drain() {
 		}
 		<-h.done
 		h.state = handleDrained
-		if h.result.Err != nil {
-			fmt.Print(formatNotifyFailure(h.result))
-		}
+		logResolution(h)
 	}
 }
 
 // reapCompleted resolves launch-only handles whose work finished on its own
 // since the last emit. They drain: their outcome is collected without a join
-// event, and failures are logged as notify warnings.
+// event and recorded to the resolution ledger.
 func (en *Engine) reapCompleted() {
 	for _, h := range en.handles {
 		if h.state != handleRunning || h.sub.Join != "" {
@@ -163,10 +165,27 @@ func (en *Engine) reapCompleted() {
 		select {
 		case <-h.done:
 			h.state = handleDrained
-			if h.result.Err != nil {
-				fmt.Print(formatNotifyFailure(h.result))
-			}
+			logResolution(h)
 		default:
+		}
+	}
+}
+
+// logResolution appends one line to the handle-resolution ledger: the
+// connector name, how the handle resolved (joined, cancelled, or drained),
+// its exit code, and the failure cause when present, with any captured output
+// indented beneath. Every door - join, cancel, drain - logs through here, so
+// a finished run leaves a record of every launched handle and no outcome is
+// silently dropped.
+func logResolution(h *handle) {
+	line := fmt.Sprintf("  connector %s %s (exit %d)", h.sub.Name, h.state, h.result.ExitCode)
+	if h.result.Err != nil {
+		line += ": " + h.result.Err.Error()
+	}
+	fmt.Println(line)
+	if out := strings.TrimSpace(h.result.Stdout + h.result.Stderr); out != "" {
+		for _, l := range strings.Split(out, "\n") {
+			fmt.Println("    " + l)
 		}
 	}
 }

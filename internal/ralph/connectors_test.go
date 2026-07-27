@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,28 @@ import (
 
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 )
+
+// captureStdout redirects os.Stdout while fn runs and returns everything it
+// printed, so tests can assert on the resolution ledger.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	orig := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stdout = w
+	fn()
+	if err := w.Close(); err != nil {
+		t.Fatalf("close pipe: %v", err)
+	}
+	os.Stdout = orig
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("read pipe: %v", err)
+	}
+	return string(out)
+}
 
 func TestCompileConnectors_NotifyCompilesToLaunchOnly(t *testing.T) {
 	subs := CompileConnectors([]domain.ConnectorConfig{
@@ -368,41 +391,60 @@ func TestEngine_CancelEscalatesToSIGKILLAfterGracePeriod(t *testing.T) {
 	}
 }
 
-func TestFormatNotifyFailure_IncludesNameExitCodeAndOutput(t *testing.T) {
+func TestResolutionLedger_JoinRecordsNameTypeExitCodeAndOutput(t *testing.T) {
 	runner := gatingRunner(t, t.TempDir(), "flaky", EventWorkItemVerified, "echo posting failed; echo hook 500 >&2; exit 3")
 
-	if err := runner.Handle(context.Background(), Event{Name: EventWorkItemVerified}); err == nil {
-		t.Fatal("expected failure")
-	}
+	out := captureStdout(t, func() {
+		if err := runner.Handle(context.Background(), Event{Name: EventWorkItemVerified}); err == nil {
+			t.Fatal("expected failure")
+		}
+	})
 
-	msg := formatNotifyFailure(runner.engine.handles[0].result)
-
-	if !strings.Contains(msg, "flaky") {
-		t.Errorf("log must include the connector name, got %q", msg)
-	}
-	if !strings.Contains(msg, "exit status 3") {
-		t.Errorf("log must include the exit code, got %q", msg)
-	}
-	if !strings.Contains(msg, "posting failed") {
-		t.Errorf("log must include captured stdout, got %q", msg)
-	}
-	if !strings.Contains(msg, "hook 500") {
-		t.Errorf("log must include captured stderr, got %q", msg)
+	for _, want := range []string{"flaky", handleJoined, "exit 3", "posting failed", "hook 500"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("join ledger must include %q, got:\n%s", want, out)
+		}
 	}
 }
 
-func TestFormatNotifyFailure_TimeoutReported(t *testing.T) {
+func TestResolutionLedger_DrainRecordsTimeoutResolution(t *testing.T) {
 	runner := NewConnectorRunner([]domain.ConnectorConfig{
 		{Name: "slow-notify", On: []string{EventExecutionCompleted}, Command: "sleep 5", Timeout: "100ms"},
 	}, t.TempDir())
 
-	if err := runner.Handle(context.Background(), Event{Name: EventExecutionCompleted}); err != nil {
-		t.Fatalf("notify must not block, got %v", err)
+	out := captureStdout(t, func() {
+		if err := runner.Handle(context.Background(), Event{Name: EventExecutionCompleted}); err != nil {
+			t.Fatalf("notify must not block, got %v", err)
+		}
+	})
+
+	for _, want := range []string{"slow-notify", handleDrained, "timed out"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("drain ledger must include %q, got:\n%s", want, out)
+		}
+	}
+}
+
+func TestResolutionLedger_CancelRecordsCancelledResolution(t *testing.T) {
+	sub := Subscription{
+		Name:   "speculative",
+		Launch: EventWorkItemStarted,
+		Cancel: []string{EventWorkItemVerified},
+		Action: commandAction(domain.ConnectorConfig{Name: "speculative", Command: "sleep 5"}, t.TempDir()),
+	}
+	en := NewEngine([]Subscription{sub})
+
+	if err := en.Emit(context.Background(), Event{Name: EventWorkItemStarted}); err != nil {
+		t.Fatalf("launch emit failed: %v", err)
 	}
 
-	msg := formatNotifyFailure(runner.engine.handles[0].result)
+	out := captureStdout(t, func() {
+		if err := en.Emit(context.Background(), Event{Name: EventWorkItemVerified}); err != nil {
+			t.Fatalf("cancel emit failed: %v", err)
+		}
+	})
 
-	if !strings.Contains(msg, "slow-notify") || !strings.Contains(msg, "timed out") {
-		t.Errorf("timeout log must include the connector name and timeout cause, got %q", msg)
+	if !strings.Contains(out, "speculative") || !strings.Contains(out, handleCancelled) {
+		t.Errorf("cancel ledger must name the connector and its resolution, got:\n%s", out)
 	}
 }

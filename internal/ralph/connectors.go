@@ -193,16 +193,3 @@ func commandAction(cc domain.ConnectorConfig, projectDir string) Action {
 		}
 	}
 }
-
-// formatNotifyFailure renders a notify connector failure as a warning log
-// message carrying the connector name, the failure cause (exit code or
-// timeout), and the connector's captured output indented beneath it.
-func formatNotifyFailure(cr ConnectorResult) string {
-	msg := fmt.Sprintf("  warning: connector %s failed on %s: %v\n", cr.Name, cr.Event, cr.Err)
-	if out := strings.TrimSpace(cr.Stdout + cr.Stderr); out != "" {
-		for _, line := range strings.Split(out, "\n") {
-			msg += "    " + line + "\n"
-		}
-	}
-	return msg
-}
