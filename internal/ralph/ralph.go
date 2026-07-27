@@ -108,6 +108,13 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 	if cr, err := store.LoadChangeRequest(basePayload.CRID); err == nil {
 		basePayload.CRTitle = cr.Title
 	}
+	// Record HEAD before any work item runs. After-phase validators diff
+	// against this baseline so they review the cumulative changes of every
+	// commit produced during the phase, not just the last work item. A repo
+	// with no commits yet yields an empty SHA; the diff falls back gracefully.
+	if sha, err := git.HeadSHA(projectDir); err == nil {
+		basePayload.PhaseStartSHA = sha
+	}
 
 	// A gate blocking execution-started aborts the run before any work starts.
 	if gateErr := dispatcher.Dispatch(Event{Name: EventExecutionStarted, Payload: basePayload}); gateErr != nil {

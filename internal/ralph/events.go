@@ -21,7 +21,9 @@ const (
 // EventPayload carries the structured context for a lifecycle event.
 // CRID, CRTitle, and SpecID are set on every event. WorkItemID and
 // IterationCount are set on workitem-scoped events, CommitSHA on
-// post-commit events, and Reason on execution-failed.
+// post-commit events, and Reason on execution-failed. PhaseStartSHA is the
+// HEAD SHA recorded before any work item ran, used by after-phase validators
+// to scope their review to the cumulative diff of the whole phase.
 type EventPayload struct {
 	CRID           string `json:"cr_id"`
 	CRTitle        string `json:"cr_title"`
@@ -30,6 +32,7 @@ type EventPayload struct {
 	IterationCount int    `json:"iteration_count,omitempty"`
 	CommitSHA      string `json:"commit_sha,omitempty"`
 	Reason         string `json:"reason,omitempty"`
+	PhaseStartSHA  string `json:"phase_start_sha,omitempty"`
 }
 
 // Event is a named lifecycle event emitted by the execution loop.

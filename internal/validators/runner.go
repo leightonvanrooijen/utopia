@@ -246,13 +246,33 @@ func (r *Runner) GetGitDiff(ctx context.Context) (string, error) {
 	return r.getGitDiff(ctx)
 }
 
+// GetGitDiffSince returns the diff between the given baseline commit and the
+// working tree. After-phase validators pass the HEAD SHA recorded before the
+// phase began, so the diff covers every commit produced during the phase plus
+// any as-yet-uncommitted fix in progress. An empty baseline (repo with no
+// commit at phase start) falls back to the uncommitted-changes diff so the
+// call never fails on an unresolvable ref.
+func (r *Runner) GetGitDiffSince(ctx context.Context, baseline string) (string, error) {
+	if baseline == "" {
+		return r.getGitDiff(ctx)
+	}
+	return r.gitDiff(ctx, baseline)
+}
+
 // getGitDiff returns the diff of the current work item's uncommitted changes.
 // Validators run before the work item is committed, so HEAD is the previous
 // work item's commit and "git diff HEAD" scopes exactly to the changes under
 // review. It also works on a repo whose only commit is HEAD, where "HEAD~1"
 // would not resolve.
 func (r *Runner) getGitDiff(ctx context.Context) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", "diff", "HEAD")
+	return r.gitDiff(ctx, "HEAD")
+}
+
+// gitDiff runs "git diff <args...>" in the runner's work dir and returns its
+// output. It is the shared execution path for the workitem-scoped and
+// phase-scoped diffs above.
+func (r *Runner) gitDiff(ctx context.Context, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", append([]string{"diff"}, args...)...)
 	cmd.Dir = r.workDir
 
 	var stdout, stderr bytes.Buffer

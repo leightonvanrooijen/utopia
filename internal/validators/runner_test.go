@@ -255,6 +255,124 @@ func TestRunner_getGitDiff_SingleCommit(t *testing.T) {
 	}
 }
 
+func TestRunner_GetGitDiffSince(t *testing.T) {
+	// Skip if not in a git repo
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not found, skipping test")
+	}
+
+	tmpDir, err := os.MkdirTemp("", "validator-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	runGit := func(args ...string) error {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = tmpDir
+		return cmd.Run()
+	}
+	headSHA := func() string {
+		cmd := exec.Command("git", "rev-parse", "HEAD")
+		cmd.Dir = tmpDir
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("git rev-parse failed: %v", err)
+		}
+		return strings.TrimSpace(string(out))
+	}
+
+	if err := runGit("init"); err != nil {
+		t.Fatalf("git init failed: %v", err)
+	}
+	if err := runGit("config", "user.email", "test@example.com"); err != nil {
+		t.Fatalf("git config email failed: %v", err)
+	}
+	if err := runGit("config", "user.name", "Test User"); err != nil {
+		t.Fatalf("git config name failed: %v", err)
+	}
+
+	// Phase-start baseline: an initial commit before any work item runs.
+	if err := os.WriteFile(tmpDir+"/file.txt", []byte("baseline"), 0644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+	if err := runGit("add", "."); err != nil {
+		t.Fatalf("git add failed: %v", err)
+	}
+	if err := runGit("commit", "-m", "baseline"); err != nil {
+		t.Fatalf("git commit failed: %v", err)
+	}
+	phaseStart := headSHA()
+
+	// Two work items, each committed - the phase produced two commits.
+	if err := os.WriteFile(tmpDir+"/file.txt", []byte("workitem one"), 0644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+	if err := runGit("add", "."); err != nil {
+		t.Fatalf("git add failed: %v", err)
+	}
+	if err := runGit("commit", "-m", "workitem 1"); err != nil {
+		t.Fatalf("git commit failed: %v", err)
+	}
+	if err := os.WriteFile(tmpDir+"/file.txt", []byte("workitem two"), 0644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+	if err := runGit("add", "."); err != nil {
+		t.Fatalf("git add failed: %v", err)
+	}
+	if err := runGit("commit", "-m", "workitem 2"); err != nil {
+		t.Fatalf("git commit failed: %v", err)
+	}
+
+	r := NewRunner(tmpDir)
+
+	// The phase diff spans the baseline through the working tree, so it shows
+	// the cumulative change of every commit in the phase - "git diff HEAD"
+	// would be empty here because every work item is already committed.
+	diff, err := r.GetGitDiffSince(context.Background(), phaseStart)
+	if err != nil {
+		t.Fatalf("GetGitDiffSince failed: %v", err)
+	}
+	if !strings.Contains(diff, "-baseline") || !strings.Contains(diff, "+workitem two") {
+		t.Errorf("phase diff should span baseline..working tree, got: %s", diff)
+	}
+
+	// An in-progress after-phase fix stays uncommitted; the phase diff must
+	// still reflect it so re-validation sees the latest state.
+	if err := os.WriteFile(tmpDir+"/file.txt", []byte("workitem two fixed"), 0644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+	diff, err = r.GetGitDiffSince(context.Background(), phaseStart)
+	if err != nil {
+		t.Fatalf("GetGitDiffSince failed: %v", err)
+	}
+	if !strings.Contains(diff, "+workitem two fixed") {
+		t.Errorf("phase diff should include the uncommitted fix, got: %s", diff)
+	}
+
+	// No commits produced during the phase (baseline == HEAD, clean tree):
+	// the phase diff is empty and validators handle it gracefully.
+	if err := runGit("checkout", "--", "file.txt"); err != nil {
+		t.Fatalf("git checkout failed: %v", err)
+	}
+	if err := runGit("reset", "--hard", phaseStart); err != nil {
+		t.Fatalf("git reset failed: %v", err)
+	}
+	diff, err = r.GetGitDiffSince(context.Background(), phaseStart)
+	if err != nil {
+		t.Fatalf("GetGitDiffSince failed: %v", err)
+	}
+	if strings.TrimSpace(diff) != "" {
+		t.Errorf("phase diff should be empty when no commits were produced, got: %s", diff)
+	}
+
+	// An empty baseline (repo with no commit at phase start) falls back to the
+	// uncommitted-changes diff rather than erroring on an unresolvable ref.
+	if _, err := r.GetGitDiffSince(context.Background(), ""); err != nil {
+		t.Fatalf("GetGitDiffSince with empty baseline should fall back, got: %v", err)
+	}
+}
+
 func TestValidatorResult_Fields(t *testing.T) {
 	t.Run("successful result", func(t *testing.T) {
 		vr := ValidatorResult{

@@ -79,7 +79,19 @@ func validatorAction(runner *validators.Runner, list []*domain.Validator, trigge
 			// for this run. A failure to compute the diff is surfaced as an
 			// error rather than silently swallowed into an empty diff, which
 			// would let validators pass vacuously against no changes.
-			diff, err := runner.GetGitDiff(ctx)
+			//
+			// after-workitem validators run before the work item is committed,
+			// so "git diff HEAD" scopes to the changes under review. after-phase
+			// validators run once every work item is already committed, so they
+			// diff against the phase-start baseline recorded on the payload to
+			// review the cumulative changes of the whole phase.
+			var diff string
+			var err error
+			if trigger == domain.RunAfterPhase {
+				diff, err = runner.GetGitDiffSince(ctx, e.Payload.PhaseStartSHA)
+			} else {
+				diff, err = runner.GetGitDiff(ctx)
+			}
 			if err != nil {
 				done <- outcome{err: err}
 				return
