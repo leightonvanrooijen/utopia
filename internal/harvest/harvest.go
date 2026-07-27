@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/leightonvanrooijen/utopia/internal"
+	"github.com/leightonvanrooijen/utopia/internal/cli/ui"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 )
 
@@ -532,21 +533,21 @@ func Run(ctx context.Context, store *internal.YAMLStore, opts Options) (*Result,
 	// Display harvest summary
 	fmt.Println("Starting unified harvest session...")
 	fmt.Printf("Found %d unprocessed conversations:\n", len(unprocessedConvs))
-	fmt.Printf("  - %d system-truth (has CR + executed)\n", systemTruthCount)
-	fmt.Printf("  - %d exploratory (no CR)\n", exploratoryCount)
+	fmt.Printf("  "+ui.Bullet+" %d system-truth (has CR + executed)\n", systemTruthCount)
+	fmt.Printf("  "+ui.Bullet+" %d exploratory (no CR)\n", exploratoryCount)
 	fmt.Println()
 	fmt.Println("Existing documentation:")
-	fmt.Printf("  - %d ADRs\n", len(existingADRs))
-	fmt.Printf("  - %d Concepts\n", len(existingConcepts))
-	fmt.Printf("  - %d Domain Docs\n", len(existingDomainDocs))
+	fmt.Printf("  "+ui.Bullet+" %d ADRs\n", len(existingADRs))
+	fmt.Printf("  "+ui.Bullet+" %d Concepts\n", len(existingConcepts))
+	fmt.Printf("  "+ui.Bullet+" %d Domain Docs\n", len(existingDomainDocs))
 	fmt.Println()
 	fmt.Println("Documentation signals:")
-	fmt.Printf("  - %s README signal%s\n", formatSignalCount(readmeSignalCount), pluralize(readmeSignalCount))
+	fmt.Printf("  "+ui.Bullet+" %s README signal%s\n", formatSignalCount(readmeSignalCount), pluralize(readmeSignalCount))
 	fmt.Println()
 	fmt.Println("Documents will be saved to:")
-	fmt.Printf("  - ADRs: %s\n", adrsDir)
-	fmt.Printf("  - Concepts: %s\n", conceptsDir)
-	fmt.Printf("  - Domain: %s\n", domainDir)
+	fmt.Printf("  "+ui.Bullet+" ADRs: %s\n", adrsDir)
+	fmt.Printf("  "+ui.Bullet+" Concepts: %s\n", conceptsDir)
+	fmt.Printf("  "+ui.Bullet+" Domain: %s\n", domainDir)
 	fmt.Println()
 
 	// Run interactive Claude session

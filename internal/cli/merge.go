@@ -136,10 +136,10 @@ func runMerge(cmd *cobra.Command, args []string, dryRun bool) error {
 				}
 			case "remove":
 				if change.FeatureID != "" {
-					out.Printf("    - Remove feature: %s\n", change.FeatureID)
+					out.Printf("    "+ui.Bullet+" Remove feature: %s\n", change.FeatureID)
 				}
 				if len(change.DomainKnowledge) > 0 {
-					out.Printf("    - Remove %d domain knowledge item(s)\n", len(change.DomainKnowledge))
+					out.Printf("    "+ui.Bullet+" Remove %d domain knowledge item(s)\n", len(change.DomainKnowledge))
 				}
 			}
 		}
@@ -253,13 +253,13 @@ func runMerge(cmd *cobra.Command, args []string, dryRun bool) error {
 	out.Printf("  Specs affected: %d\n", len(specIDs)+len(deletedSpecs))
 	for _, specID := range specIDs {
 		if createdSpecs[specID] {
-			out.Printf("    - %s (created)\n", specID)
+			out.Printf("    "+ui.Bullet+" %s (created)\n", specID)
 		} else {
-			out.Printf("    - %s (updated)\n", specID)
+			out.Printf("    "+ui.Bullet+" %s (updated)\n", specID)
 		}
 	}
 	for specID := range deletedSpecs {
-		out.Printf("    - %s (deleted)\n", specID)
+		out.Printf("    "+ui.Bullet+" %s (deleted)\n", specID)
 	}
 
 	return nil

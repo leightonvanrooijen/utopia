@@ -75,9 +75,7 @@ func runPromote(cmd *cobra.Command, args []string) error {
 		out.Warnf("Warning: spec created but failed to delete draft: %v", err)
 	}
 
-	out.Printf("═══════════════════════════════════════════════════════════════\n")
-	out.Printf("                 DRAFT PROMOTED TO SPEC\n")
-	out.Printf("═══════════════════════════════════════════════════════════════\n\n")
+	out.Banner("DRAFT PROMOTED TO SPEC")
 	out.Printf("  Draft:  %s\n", draft.ID)
 	out.Printf("  Title:  %s\n", spec.Title)
 	out.Printf("  Features: %d\n\n", len(spec.Features))
@@ -184,9 +182,7 @@ func runPromoteDomain(cmd *cobra.Command, args []string) error {
 			out.Warnf("Warning: domain doc merged but failed to delete draft: %v", err)
 		}
 
-		out.Printf("═══════════════════════════════════════════════════════════════\n")
-		out.Printf("           DOMAIN DRAFT MERGED INTO EXISTING DOC\n")
-		out.Printf("═══════════════════════════════════════════════════════════════\n\n")
+		out.Banner("DOMAIN DRAFT MERGED INTO EXISTING DOC")
 		out.Printf("  Draft:          %s\n", draft.ID)
 		out.Printf("  Bounded Context: %s\n", draft.BoundedContext)
 		out.Printf("  Terms Added:     %d\n", newTermCount)
@@ -205,9 +201,7 @@ func runPromoteDomain(cmd *cobra.Command, args []string) error {
 		out.Warnf("Warning: domain doc created but failed to delete draft: %v", err)
 	}
 
-	out.Printf("═══════════════════════════════════════════════════════════════\n")
-	out.Printf("            DOMAIN DRAFT PROMOTED TO DOMAIN DOC\n")
-	out.Printf("═══════════════════════════════════════════════════════════════\n\n")
+	out.Banner("DOMAIN DRAFT PROMOTED TO DOMAIN DOC")
 	out.Printf("  Draft:          %s\n", draft.ID)
 	out.Printf("  Title:          %s\n", doc.Title)
 	out.Printf("  Bounded Context: %s\n", doc.BoundedContext)

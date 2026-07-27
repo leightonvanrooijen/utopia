@@ -161,9 +161,9 @@ func runShape(cmd *cobra.Command, args []string) error {
 
 	out.Progressf("Starting draft validation session...\n")
 	out.Progressf("Found %d draft specifications:\n", len(drafts))
-	out.Progressf("  - LOW confidence:    %d (will validate first)\n", counts[domain.DraftConfidenceLow])
-	out.Progressf("  - MEDIUM confidence: %d\n", counts[domain.DraftConfidenceMedium])
-	out.Progressf("  - HIGH confidence:   %d\n\n", counts[domain.DraftConfidenceHigh])
+	out.Progressf("  "+ui.Bullet+" LOW confidence:    %d (will validate first)\n", counts[domain.DraftConfidenceLow])
+	out.Progressf("  "+ui.Bullet+" MEDIUM confidence: %d\n", counts[domain.DraftConfidenceMedium])
+	out.Progressf("  "+ui.Bullet+" HIGH confidence:   %d\n\n", counts[domain.DraftConfidenceHigh])
 
 	ctx := context.Background()
 	cli := internal.NewCLI()
@@ -172,10 +172,8 @@ func runShape(cmd *cobra.Command, args []string) error {
 	}
 
 	for i, draft := range drafts {
-		out.Printf("═══════════════════════════════════════════════════════════════\n")
-		out.Printf("Draft %d of %d: %s\n", i+1, len(drafts), draft.Title)
-		out.Printf("Confidence: %s\n", strings.ToUpper(string(draft.Confidence)))
-		out.Printf("═══════════════════════════════════════════════════════════════\n\n")
+		out.Banner(fmt.Sprintf("Draft %d of %d: %s", i+1, len(drafts), draft.Title))
+		out.Printf("Confidence: %s\n\n", strings.ToUpper(string(draft.Confidence)))
 
 		draftYAML, err := yaml.Marshal(draft)
 		if err != nil {
@@ -202,7 +200,8 @@ func runShape(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to apply shape result for %s: %w", draft.ID, err)
 		}
 
-		out.Printf("\n───────────────────────────────────────────────────────────────\n")
+		out.Printf("\n")
+		out.Rule()
 
 		if i < len(drafts)-1 {
 			out.Printf("\nCompleted %d of %d drafts. Press Enter to continue to next draft, or Ctrl+C to exit.\n", i+1, len(drafts))
@@ -210,9 +209,7 @@ func runShape(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	out.Printf("\n═══════════════════════════════════════════════════════════════\n")
-	out.Printf("                    SHAPING COMPLETE\n")
-	out.Printf("═══════════════════════════════════════════════════════════════\n\n")
+	out.Banner("SHAPING COMPLETE")
 	out.Printf("All drafts have been validated.\n\n")
 	out.Printf("Next steps:\n")
 	out.Printf("  1. Review updated drafts in %s\n", draftsDir)
@@ -311,13 +308,13 @@ func applyShapeResult(out *ui.Printer, store *internal.YAMLStore, original *doma
 		if len(result.ChangesSummary) > 0 {
 			out.Printf("Changes:\n")
 			for _, change := range result.ChangesSummary {
-				out.Printf("  - %s\n", change)
+				out.Printf("  "+ui.Bullet+" %s\n", change)
 			}
 		}
 		if len(result.RemovedFeatures) > 0 {
 			out.Printf("Removed features:\n")
 			for _, f := range result.RemovedFeatures {
-				out.Printf("  - %s: %s\n", f.ID, f.Reason)
+				out.Printf("  "+ui.Bullet+" %s: %s\n", f.ID, f.Reason)
 			}
 		}
 		return nil
@@ -522,9 +519,9 @@ func runShapeDomain(cmd *cobra.Command, args []string) error {
 
 	out.Progressf("Starting domain draft validation session...\n")
 	out.Progressf("Found %d draft domain documents:\n", len(drafts))
-	out.Progressf("  - LOW confidence:    %d (will validate first)\n", counts[domain.DraftDomainConfidenceLow])
-	out.Progressf("  - MEDIUM confidence: %d\n", counts[domain.DraftDomainConfidenceMedium])
-	out.Progressf("  - HIGH confidence:   %d\n\n", counts[domain.DraftDomainConfidenceHigh])
+	out.Progressf("  "+ui.Bullet+" LOW confidence:    %d (will validate first)\n", counts[domain.DraftDomainConfidenceLow])
+	out.Progressf("  "+ui.Bullet+" MEDIUM confidence: %d\n", counts[domain.DraftDomainConfidenceMedium])
+	out.Progressf("  "+ui.Bullet+" HIGH confidence:   %d\n\n", counts[domain.DraftDomainConfidenceHigh])
 
 	ctx := context.Background()
 	cli := internal.NewCLI()
@@ -533,12 +530,10 @@ func runShapeDomain(cmd *cobra.Command, args []string) error {
 	}
 
 	for i, draft := range drafts {
-		out.Printf("═══════════════════════════════════════════════════════════════\n")
-		out.Printf("Domain Draft %d of %d: %s\n", i+1, len(drafts), draft.Title)
+		out.Banner(fmt.Sprintf("Domain Draft %d of %d: %s", i+1, len(drafts), draft.Title))
 		out.Printf("Bounded Context: %s\n", draft.BoundedContext)
 		out.Printf("Confidence: %s\n", strings.ToUpper(string(draft.Confidence)))
-		out.Printf("Terms: %d\n", len(draft.Terms))
-		out.Printf("═══════════════════════════════════════════════════════════════\n\n")
+		out.Printf("Terms: %d\n\n", len(draft.Terms))
 
 		draftYAML, err := yaml.Marshal(draft)
 		if err != nil {
@@ -566,7 +561,8 @@ func runShapeDomain(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to apply domain shape result for %s: %w", draft.ID, err)
 		}
 
-		out.Printf("\n───────────────────────────────────────────────────────────────\n")
+		out.Printf("\n")
+		out.Rule()
 
 		if i < len(drafts)-1 {
 			out.Printf("\nCompleted %d of %d domain drafts. Press Enter to continue to next draft, or Ctrl+C to exit.\n", i+1, len(drafts))
@@ -574,9 +570,7 @@ func runShapeDomain(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	out.Printf("\n═══════════════════════════════════════════════════════════════\n")
-	out.Printf("                 DOMAIN SHAPING COMPLETE\n")
-	out.Printf("═══════════════════════════════════════════════════════════════\n\n")
+	out.Banner("DOMAIN SHAPING COMPLETE")
 	out.Printf("All domain drafts have been validated.\n\n")
 	out.Printf("Next steps:\n")
 	out.Printf("  1. Review updated drafts in %s\n", draftsDir)
@@ -720,25 +714,25 @@ func applyDomainShapeResult(out *ui.Printer, store *internal.YAMLStore, original
 		if len(result.ChangesSummary) > 0 {
 			out.Printf("Changes:\n")
 			for _, change := range result.ChangesSummary {
-				out.Printf("  - %s\n", change)
+				out.Printf("  "+ui.Bullet+" %s\n", change)
 			}
 		}
 		if len(result.RemovedTerms) > 0 {
 			out.Printf("Removed terms:\n")
 			for _, t := range result.RemovedTerms {
-				out.Printf("  - %s: %s\n", t.Term, t.Reason)
+				out.Printf("  "+ui.Bullet+" %s: %s\n", t.Term, t.Reason)
 			}
 		}
 		if len(result.AliasedTerms) > 0 {
 			out.Printf("Aliased terms:\n")
 			for _, t := range result.AliasedTerms {
-				out.Printf("  - %s → %s: %s\n", t.Term, t.CanonicalTarget, t.Reason)
+				out.Printf("  "+ui.Bullet+" %s → %s: %s\n", t.Term, t.CanonicalTarget, t.Reason)
 			}
 		}
 		if len(result.MergedTerms) > 0 {
 			out.Printf("Merged terms:\n")
 			for _, t := range result.MergedTerms {
-				out.Printf("  - %s → %s: %s\n", t.FromTerm, t.IntoTerm, t.Reason)
+				out.Printf("  "+ui.Bullet+" %s → %s: %s\n", t.FromTerm, t.IntoTerm, t.Reason)
 			}
 		}
 		if len(result.SplitTerms) > 0 {
@@ -748,7 +742,7 @@ func applyDomainShapeResult(out *ui.Printer, store *internal.YAMLStore, original
 				for _, nt := range t.NewTerms {
 					newNames = append(newNames, nt.Term)
 				}
-				out.Printf("  - %s → [%s]: %s\n", t.OriginalTerm, strings.Join(newNames, ", "), t.Reason)
+				out.Printf("  "+ui.Bullet+" %s → [%s]: %s\n", t.OriginalTerm, strings.Join(newNames, ", "), t.Reason)
 			}
 		}
 		return nil
