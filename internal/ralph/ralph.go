@@ -82,6 +82,19 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 		validatorList = append(validatorList, v)
 	}
 
+	// Create the lifecycle event dispatcher. No subscribers are registered
+	// in this phase, so dispatching is a no-op passthrough.
+	dispatcher := NewDispatcher()
+	basePayload := EventPayload{
+		CRID:   extractCRID(specID),
+		SpecID: specID,
+	}
+	if cr, err := store.LoadChangeRequest(basePayload.CRID); err == nil {
+		basePayload.CRTitle = cr.Title
+	}
+
+	dispatcher.Dispatch(Event{Name: EventExecutionStarted, Payload: basePayload})
+
 	// Execute each work item in order
 	for i, item := range items {
 		// Skip completed items
@@ -94,10 +107,13 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 		fmt.Printf("[%d/%d] %s - starting execution\n", i+1, len(items), item.ID)
 
 		// Execute this work item with the Ralph loop
-		err := executeWorkItem(ctx, item, specID, store, cli, verifier, validatorRunner, validatorList, config, projectDir)
+		err := executeWorkItem(ctx, item, specID, store, cli, verifier, validatorRunner, validatorList, config, projectDir, dispatcher, basePayload)
 		if err != nil {
 			result.StoppedAt = item.ID
 			result.Reason = err.Error()
+			failPayload := basePayload
+			failPayload.Reason = err.Error()
+			dispatcher.Dispatch(Event{Name: EventExecutionFailed, Payload: failPayload})
 			return result, err
 		}
 
@@ -106,11 +122,22 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 	}
 
 	// Run after-phase validators once all work items are complete
-	if result.Completed == result.Total && len(validatorList) > 0 {
-		if err := runAfterPhaseValidators(ctx, validatorRunner, validatorList, cli, config, projectDir); err != nil {
-			result.Reason = err.Error()
-			return result, err
+	if result.Completed == result.Total {
+		if len(validatorList) > 0 {
+			if err := runAfterPhaseValidators(ctx, validatorRunner, validatorList, cli, config, projectDir, dispatcher, basePayload); err != nil {
+				result.Reason = err.Error()
+				failPayload := basePayload
+				failPayload.Reason = err.Error()
+				dispatcher.Dispatch(Event{Name: EventExecutionFailed, Payload: failPayload})
+				return result, err
+			}
+		} else {
+			// No validators configured: the phase is trivially verified and
+			// no after-phase commit is created.
+			dispatcher.Dispatch(Event{Name: EventPhaseVerified, Payload: basePayload})
+			dispatcher.Dispatch(Event{Name: EventPhaseCompleted, Payload: basePayload})
 		}
+		dispatcher.Dispatch(Event{Name: EventExecutionCompleted, Payload: basePayload})
 	}
 
 	return result, nil
@@ -128,6 +155,8 @@ func executeWorkItem(
 	validatorList []*domain.Validator,
 	config *domain.Config,
 	projectDir string,
+	dispatcher *Dispatcher,
+	basePayload EventPayload,
 ) error {
 	maxIterations := config.Verification.MaxIterations
 	verifyCommand := config.Verification.Command
@@ -140,6 +169,11 @@ func executeWorkItem(
 		crTitle = cr.Title
 		operationType = deriveOperationType(cr, item.SpecRef)
 	}
+
+	itemPayload := basePayload
+	itemPayload.WorkItemID = item.ID
+	itemPayload.IterationCount = item.IterationCount
+	dispatcher.Dispatch(Event{Name: EventWorkItemStarted, Payload: itemPayload})
 
 	for {
 		// Check context cancellation (Ctrl+C)
@@ -227,7 +261,11 @@ func executeWorkItem(
 				return err
 			}
 			logExecutionEntry(store, crID, item, operationType)
-			gitCommitWorkItem(projectDir, item, crTitle)
+			p := itemPayload
+			p.IterationCount = item.IterationCount
+			dispatcher.Dispatch(Event{Name: EventWorkItemVerified, Payload: p})
+			p.CommitSHA = gitCommitWorkItem(projectDir, item, crTitle)
+			dispatcher.Dispatch(Event{Name: EventWorkItemCommitted, Payload: p})
 			return nil
 		}
 
@@ -290,7 +328,11 @@ func executeWorkItem(
 			return err
 		}
 		logExecutionEntry(store, crID, item, operationType)
-		gitCommitWorkItem(projectDir, item, crTitle)
+		p := itemPayload
+		p.IterationCount = item.IterationCount
+		dispatcher.Dispatch(Event{Name: EventWorkItemVerified, Payload: p})
+		p.CommitSHA = gitCommitWorkItem(projectDir, item, crTitle)
+		dispatcher.Dispatch(Event{Name: EventWorkItemCommitted, Payload: p})
 		return nil
 	}
 }
@@ -431,7 +473,8 @@ func logExecutionEntry(store *internal.YAMLStore, crID string, item *domain.Work
 
 // gitCommitWorkItem creates a git commit after a work item passes verification.
 // Logs warning and returns on failure (non-blocking).
-func gitCommitWorkItem(projectDir string, item *domain.WorkItem, crTitle string) {
+// Returns the SHA of the created commit, or "" if no commit was created.
+func gitCommitWorkItem(projectDir string, item *domain.WorkItem, crTitle string) string {
 	// Build commit message: subject line + body with CR title
 	subject := fmt.Sprintf("workitem: %s", item.ID)
 	body := crTitle
@@ -440,21 +483,27 @@ func gitCommitWorkItem(projectDir string, item *domain.WorkItem, crTitle string)
 	// Stage all changes first to check if there's anything to commit
 	if err := git.Add(projectDir, "-A"); err != nil {
 		fmt.Printf("  warning: git add failed: %v\n", err)
-		return
+		return ""
 	}
 
 	// Check if there are changes to commit
 	if !git.HasStagedChanges(projectDir) {
-		return
+		return ""
 	}
 
 	// Commit
 	if err := git.Commit(projectDir, message); err != nil {
 		fmt.Printf("  warning: git commit failed: %v\n", err)
-		return
+		return ""
 	}
 
 	fmt.Printf("  Created commit for %s\n", item.ID)
+
+	sha, err := git.HeadSHA(projectDir)
+	if err != nil {
+		return ""
+	}
+	return sha
 }
 
 // runAfterPhaseValidators executes validators with the "after-phase" trigger.
@@ -469,6 +518,8 @@ func runAfterPhaseValidators(
 	cli *internal.CLI,
 	config *domain.Config,
 	projectDir string,
+	dispatcher *Dispatcher,
+	basePayload EventPayload,
 ) error {
 	maxIterations := config.Verification.MaxIterations
 	iteration := 0
@@ -493,7 +544,10 @@ func runAfterPhaseValidators(
 		results := validatorRunner.RunAll(ctx, validatorList, domain.RunAfterPhase)
 
 		if len(results) == 0 {
-			// No after-phase validators configured
+			// No after-phase validators configured: the phase is trivially
+			// verified and no after-phase commit is created.
+			dispatcher.Dispatch(Event{Name: EventPhaseVerified, Payload: basePayload})
+			dispatcher.Dispatch(Event{Name: EventPhaseCompleted, Payload: basePayload})
 			return nil
 		}
 
@@ -504,10 +558,13 @@ func runAfterPhaseValidators(
 
 		if aggregate.Passed {
 			fmt.Println("All after-phase validators passed!")
+			dispatcher.Dispatch(Event{Name: EventPhaseVerified, Payload: basePayload})
+			p := basePayload
 			// Create commit for successful fix if this wasn't the first iteration
 			if iteration > 1 {
-				gitCommitAfterPhase(projectDir)
+				p.CommitSHA = gitCommitAfterPhase(projectDir)
 			}
+			dispatcher.Dispatch(Event{Name: EventPhaseCompleted, Payload: p})
 			return nil
 		}
 
@@ -574,25 +631,32 @@ func buildAfterPhasePrompt(validatorFeedback string) string {
 }
 
 // gitCommitAfterPhase creates a git commit after fixing after-phase validator issues.
-func gitCommitAfterPhase(projectDir string) {
+// Returns the SHA of the created commit, or "" if no commit was created.
+func gitCommitAfterPhase(projectDir string) string {
 	message := "fix: after-phase validator standards issues"
 
 	// Stage all changes first
 	if err := git.Add(projectDir, "-A"); err != nil {
 		fmt.Printf("  warning: git add failed: %v\n", err)
-		return
+		return ""
 	}
 
 	// Check if there are changes to commit
 	if !git.HasStagedChanges(projectDir) {
-		return
+		return ""
 	}
 
 	// Commit
 	if err := git.Commit(projectDir, message); err != nil {
 		fmt.Printf("  warning: git commit failed: %v\n", err)
-		return
+		return ""
 	}
 
 	fmt.Println("  Created commit for after-phase validator fixes")
+
+	sha, err := git.HeadSHA(projectDir)
+	if err != nil {
+		return ""
+	}
+	return sha
 }
