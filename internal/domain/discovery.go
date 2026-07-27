@@ -53,6 +53,11 @@ type ValidatorConfig struct {
 	// Run specifies when this validator should execute (after-workitem, after-phase, on-demand)
 	// If set, overrides the run trigger specified in the validator file's frontmatter
 	Run string `yaml:"run,omitempty"`
+	// Always, when true, opts this validator out of the relevance router so it runs
+	// on every change - the escape hatch for checks (e.g. security) too important to
+	// risk the router skipping. It composes with Run: an always after-phase validator
+	// still only runs at phase gates. Defaults to false.
+	Always bool `yaml:"always,omitempty"`
 }
 
 // UnmarshalYAML implements custom unmarshaling to support both string and object formats.
@@ -90,6 +95,12 @@ func (vc *ValidatorConfig) GetModel() string {
 // GetRun returns the run trigger override, or empty string if not set.
 func (vc *ValidatorConfig) GetRun() string {
 	return vc.Run
+}
+
+// GetAlways reports whether this validator opts out of the relevance router and
+// runs on every change. Defaults to false.
+func (vc *ValidatorConfig) GetAlways() bool {
+	return vc.Always
 }
 
 // ModelConfig specifies model selection for commands.

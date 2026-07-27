@@ -80,6 +80,7 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 		if vc.GetRun() != "" {
 			v.Run = domain.RunTrigger(vc.GetRun())
 		}
+		v.Always = vc.GetAlways()
 		validatorList = append(validatorList, v)
 	}
 
