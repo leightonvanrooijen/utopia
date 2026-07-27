@@ -85,8 +85,7 @@ func runCRValidate(cmd *cobra.Command, args []string) error {
 
 	// Validate all CRs
 	if err := validateChangeRequests(store); err != nil {
-		fmt.Printf("✗ %s\n", err)
-		os.Exit(1)
+		return err
 	}
 
 	crs, _ := store.ListChangeRequests()
@@ -109,20 +108,17 @@ func validateSingleCR(filePath, utopiaDir string) error {
 	// Read and parse the file
 	bytes, err := os.ReadFile(absPath)
 	if err != nil {
-		fmt.Printf("✗ Failed to read file: %s\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to read %s: %w", absPath, err)
 	}
 
 	var cr domain.ChangeRequest
 	if err := yaml.Unmarshal(bytes, &cr); err != nil {
-		fmt.Printf("✗ Invalid YAML syntax: %s\n", err)
-		os.Exit(1)
+		return fmt.Errorf("invalid YAML syntax in %s: %w", filepath.Base(absPath), err)
 	}
 
 	// Validate the CR
 	if validationErr := domain.ValidateChangeRequest(&cr); validationErr != nil {
-		fmt.Printf("✗ %s: %s\n", filepath.Base(absPath), validationErr)
-		os.Exit(1)
+		return fmt.Errorf("%s: %w", filepath.Base(absPath), validationErr)
 	}
 
 	fmt.Printf("✓ %s is valid\n", filepath.Base(absPath))

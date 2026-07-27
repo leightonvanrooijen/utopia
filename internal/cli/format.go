@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,11 @@ import (
 	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/spf13/cobra"
 )
+
+// ErrCheckFailed signals that format --check found files needing reformatting.
+// It carries exit-status semantics (like gofmt -l), not an error to dump:
+// the handler silences cobra's usage/error output and Execute() supplies exit code 1.
+var ErrCheckFailed = errors.New("files would be reformatted")
 
 // Flag for format command (package-level for Cobra compatibility)
 var formatCheckFlag bool
@@ -107,7 +113,9 @@ func runFormat(cmd *cobra.Command, args []string, checkOnly bool) error {
 	if checkOnly {
 		if wouldChangeCount > 0 {
 			fmt.Printf("\n%d file(s) would be reformatted\n", wouldChangeCount)
-			os.Exit(1)
+			cmd.SilenceUsage = true
+			cmd.SilenceErrors = true
+			return ErrCheckFailed
 		}
 		fmt.Printf("%d file(s) already formatted\n", len(files))
 		return nil
