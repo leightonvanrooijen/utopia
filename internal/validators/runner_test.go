@@ -758,6 +758,79 @@ func TestRunner_RunAllWithDiffLimited_FiltersByTrigger(t *testing.T) {
 	}
 }
 
+func TestRunner_RunAllWithDiffLimited_ValidatorTimeout(t *testing.T) {
+	validators := []*domain.Validator{
+		{ID: "v1", Run: domain.RunAfterWorkitem, Prompt: "test"},
+		{ID: "v2", Run: domain.RunAfterWorkitem, Prompt: "test"},
+		{ID: "v3", Run: domain.RunAfterWorkitem, Prompt: "test"},
+	}
+
+	// A sub-nanosecond timeout guarantees each validator's child deadline trips
+	// before (or during) its Claude invocation, so every validator resolves as a
+	// timeout regardless of whether the claude binary is present.
+	r := NewRunner("/tmp").WithValidatorTimeout(time.Nanosecond)
+
+	start := time.Now()
+	results := r.RunAllWithDiffLimited(context.Background(), validators, domain.RunAfterWorkitem, "fake diff", 4)
+	elapsed := time.Since(start)
+
+	if len(results) != 3 {
+		t.Fatalf("expected 3 results, got %d", len(results))
+	}
+
+	for _, vr := range results {
+		// A timed-out validator resolves as a failure carrying a clear timeout
+		// message, not a validation verdict about the diff.
+		if vr.Err == nil {
+			t.Errorf("validator %s should have timed out with an error, got Result=%v", vr.ID, vr.Result)
+			continue
+		}
+		if !strings.Contains(vr.Err.Error(), "timed out") {
+			t.Errorf("validator %s error should mention the timeout, got: %v", vr.ID, vr.Err)
+		}
+		if vr.Result != nil {
+			t.Errorf("validator %s should have no Result when it times out, got %v", vr.ID, vr.Result)
+		}
+	}
+
+	// Independent timeouts fire concurrently - the batch resolves quickly rather
+	// than one stuck validator serializing or stalling the others.
+	if elapsed > 2*time.Second {
+		t.Errorf("timeouts should resolve quickly in parallel, batch took %v", elapsed)
+	}
+}
+
+func TestRunner_RunAllWithDiffLimited_GlobalCancellation(t *testing.T) {
+	validators := []*domain.Validator{
+		{ID: "v1", Run: domain.RunAfterWorkitem, Prompt: "test"},
+		{ID: "v2", Run: domain.RunAfterWorkitem, Prompt: "test"},
+	}
+
+	// Simulate Ctrl+C: the run context is already cancelled. A generous
+	// per-validator timeout ensures any error comes from the cancellation, not
+	// the deadline.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	r := NewRunner("/tmp").WithValidatorTimeout(10 * time.Minute)
+	results := r.RunAllWithDiffLimited(ctx, validators, domain.RunAfterWorkitem, "fake diff", 4)
+
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+
+	for _, vr := range results {
+		if vr.Err == nil {
+			t.Errorf("validator %s should error under global cancellation", vr.ID)
+			continue
+		}
+		// Cancellation must not be mislabeled as a per-validator timeout.
+		if strings.Contains(vr.Err.Error(), "timed out") {
+			t.Errorf("validator %s cancellation should not be reported as a timeout, got: %v", vr.ID, vr.Err)
+		}
+	}
+}
+
 func TestRunner_RunAllWithDiffLimited_EmptyReturnsNil(t *testing.T) {
 	r := NewRunner("/tmp")
 

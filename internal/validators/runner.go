@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
@@ -15,6 +16,12 @@ import (
 
 // PassedToken is the marker validators must include to indicate success
 const PassedToken = "<PASSED>"
+
+// DefaultValidatorTimeout bounds a single validator's Claude invocation. Without
+// it, one hung invocation would block the whole gate on g.Wait until a global
+// Ctrl+C. With it, a stuck validator resolves as its own failure and the rest of
+// the batch proceeds unaffected.
+const DefaultValidatorTimeout = 10 * time.Minute
 
 // Result holds the outcome of a validator run
 type Result struct {
@@ -36,17 +43,30 @@ type ValidatorResult struct {
 
 // Runner executes validators by invoking Claude with read-only tools
 type Runner struct {
-	workDir     string
-	cli         *internal.CLI
-	modelConfig *domain.ModelConfig
+	workDir          string
+	cli              *internal.CLI
+	modelConfig      *domain.ModelConfig
+	validatorTimeout time.Duration
 }
 
 // NewRunner creates a validator runner that operates in the given directory.
 // Use WithModelConfig to configure model fallback for validators.
 func NewRunner(workDir string) *Runner {
 	return &Runner{
-		workDir: workDir,
-		cli:     internal.NewCLI().WithVerbose(false),
+		workDir:          workDir,
+		cli:              internal.NewCLI().WithVerbose(false),
+		validatorTimeout: DefaultValidatorTimeout,
+	}
+}
+
+// WithValidatorTimeout sets the per-validator timeout used when running
+// validators concurrently. A value <= 0 falls back to DefaultValidatorTimeout.
+func (r *Runner) WithValidatorTimeout(timeout time.Duration) *Runner {
+	return &Runner{
+		workDir:          r.workDir,
+		cli:              r.cli,
+		modelConfig:      r.modelConfig,
+		validatorTimeout: timeout,
 	}
 }
 
@@ -58,9 +78,10 @@ func NewRunner(workDir string) *Runner {
 // 4. "sonnet" as the implicit default
 func (r *Runner) WithModelConfig(mc *domain.ModelConfig) *Runner {
 	return &Runner{
-		workDir:     r.workDir,
-		cli:         r.cli,
-		modelConfig: mc,
+		workDir:          r.workDir,
+		cli:              r.cli,
+		modelConfig:      mc,
+		validatorTimeout: r.validatorTimeout,
 	}
 }
 
@@ -117,7 +138,8 @@ func (r *Runner) Run(ctx context.Context, validator *domain.Validator) (*Result,
 
 // RunAll executes multiple validators concurrently for the given run trigger.
 // It computes the git diff once and shares it across all validators.
-// Each validator runs in its own goroutine with independent timeouts.
+// Each validator runs in its own goroutine under its own timeout, so one stuck
+// validator resolves as a failure without stalling the rest.
 // Context cancellation (e.g., Ctrl+C) stops all running validators.
 func (r *Runner) RunAll(ctx context.Context, validators []*domain.Validator, trigger domain.RunTrigger) []ValidatorResult {
 	// Compute git diff once, shared across all validators
@@ -142,7 +164,8 @@ func (r *Runner) RunAll(ctx context.Context, validators []*domain.Validator, tri
 // RunAllWithDiff executes multiple validators concurrently with a pre-computed git diff.
 // This allows the caller to compute the diff once and share it, which is useful when
 // running validators in parallel with other operations that also need the diff.
-// Each validator runs in its own goroutine. Context cancellation stops all validators.
+// Each validator runs in its own goroutine under its own timeout. Context
+// cancellation stops all validators.
 func (r *Runner) RunAllWithDiff(ctx context.Context, validators []*domain.Validator, trigger domain.RunTrigger, changedFiles string) []ValidatorResult {
 	return r.RunAllWithDiffLimited(ctx, validators, trigger, changedFiles, 0)
 }
@@ -153,6 +176,8 @@ const DefaultValidatorConcurrency = 4
 // RunAllWithDiffLimited executes multiple validators with a concurrency limit.
 // If concurrencyLimit <= 0, defaults to DefaultValidatorConcurrency.
 // Validators run in parallel up to the limit, then wait for slots to free.
+// Each validator runs under its own timeout (see WithValidatorTimeout), so a
+// single stuck validator fails on its own without blocking the batch.
 // Context cancellation stops all validators.
 func (r *Runner) RunAllWithDiffLimited(ctx context.Context, validators []*domain.Validator, trigger domain.RunTrigger, changedFiles string, concurrencyLimit int) []ValidatorResult {
 	// Filter validators matching the trigger
@@ -177,6 +202,13 @@ func (r *Runner) RunAllWithDiffLimited(ctx context.Context, validators []*domain
 		mu      sync.Mutex
 	)
 
+	// Resolve the per-validator timeout, guarding against a zero value from a
+	// Runner that was not built via NewRunner.
+	timeout := r.validatorTimeout
+	if timeout <= 0 {
+		timeout = DefaultValidatorTimeout
+	}
+
 	// Use errgroup with concurrency limit for structured concurrency
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(concurrencyLimit)
@@ -187,8 +219,23 @@ func (r *Runner) RunAllWithDiffLimited(ctx context.Context, validators []*domain
 			var vr ValidatorResult
 			vr.ID = v.ID
 
-			// Run the validator
-			result, err := r.runWithDiff(gctx, v, changedFiles)
+			// Give each validator its own timeout derived from the per-run
+			// context. The child deadline is independent, so one validator
+			// timing out neither delays nor cancels the others; deriving from
+			// gctx keeps global cancellation (Ctrl+C) propagating to all.
+			vctx, cancel := context.WithTimeout(gctx, timeout)
+			defer cancel()
+
+			result, err := r.runWithDiff(vctx, v, changedFiles)
+
+			// A validator that exceeds its own deadline resolves as a failure
+			// with a clear timeout message. Guard on gctx so a global Ctrl+C
+			// (which also trips the child deadline) is not mislabeled a timeout.
+			if vctx.Err() == context.DeadlineExceeded && gctx.Err() == nil {
+				result = nil
+				err = fmt.Errorf("validator timed out after %s", timeout)
+			}
+
 			vr.Result = result
 			vr.Err = err
 
