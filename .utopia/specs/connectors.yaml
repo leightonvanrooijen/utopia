@@ -1,7 +1,7 @@
 id: connectors
 title: connectors
 created: "2026-07-27T18:56:05.450266+10:00"
-updated: "2026-07-27T18:56:05.450271+10:00"
+updated: "2026-07-27T21:36:47.506461+10:00"
 description: ""
 features:
     - id: connector-config
@@ -50,3 +50,48 @@ features:
         - A notify connector exiting non-zero does not stop the loop or change the run result
         - Notify connector failures are logged with the connector name, exit code, and captured output
         - A notify connector timeout is logged and does not block the run
+
+    - id: subscription-engine
+      description: |
+        Internal launch/join/abort engine underneath the connector dispatcher.
+        A subscription binds three verbs to lifecycle events: launch (spawn the
+        process when this event fires), join (block at this event and collect
+        the exit code), and cancel (kill the in-flight run if this event fires).
+        Each launched run is tracked as a handle walking a state machine:
+        running -> joined | cancelled | drained.
+
+        The user-facing config surface is unchanged - mode gating/notify compile
+        down to engine terms (gating = launch and join on the same event,
+        notify = launch only). The engine's generality is internal.
+
+        Depends on the connectors-plugin-system CR being merged first.
+      acceptance_criteria:
+        - A subscription carries a launch event, an optional join event, optional cancel events, a timeout, and an action
+        - Emitting an event processes subscriptions in fixed pass order - cancel in-flight handles first, then launch new ones, then join
+        - A connector with mode notify compiles to a subscription with launch only and no join
+        - A connector with mode gating compiles to a subscription with launch and join on the same event, producing identical gating behavior to before
+        - Cancelling a handle sends SIGTERM to the process group, then SIGKILL after a grace period
+        - Joining a handle blocks until process exit and captures exit code and stdout
+        - A handle exceeding its timeout is killed and its outcome recorded as failed
+
+    - id: speculative-events
+      description: |
+        Two additional lifecycle events enabling speculative execution - starting
+        slow work before its gate point and killing it if the gate becomes moot.
+      acceptance_criteria:
+        - workitem-completion-claimed fires when the completion token is found, before verification runs
+        - workitem-verification-failed fires when verification fails for an iteration
+        - Both events carry the standard workitem-scoped payload including work_item_id and iteration_count
+        - Notify connectors may subscribe to both events via config
+        - Config validation rejects mode gating on both events, consistent with the existing rejection rule for events without gating semantics
+
+    - id: handle-resolution-ledger
+      description: |
+        Every launched handle must resolve through exactly one door - joined,
+        cancelled, or drained. The run cannot exit while any handle is unresolved.
+        No orphaned processes, no silently dropped outcomes.
+      acceptance_criteria:
+        - Every launched handle resolves as exactly one of joined, cancelled, or drained
+        - When the execution loop ends, unresolved handles are drained - awaited up to their remaining timeout, then killed
+        - Each resolution is logged with connector name, resolution type, exit code, and captured output
+        - After utopia execute returns, no connector child processes remain running
