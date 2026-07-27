@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -52,7 +53,8 @@ func runPromote(cmd *cobra.Command, args []string) error {
 	draftID := args[0]
 	draft, err := store.LoadDraft(draftID)
 	if err != nil {
-		if _, ok := err.(*domain.NotFoundError); ok {
+		var nfe *domain.NotFoundError
+		if errors.As(err, &nfe) {
 			return fmt.Errorf("draft '%s' not found (use --list to see available drafts)", draftID)
 		}
 		return fmt.Errorf("failed to load draft: %w", err)
@@ -164,7 +166,8 @@ func runPromoteDomain(cmd *cobra.Command, args []string) error {
 	draftID := args[0]
 	draft, err := store.LoadDraftDomainDoc(draftID)
 	if err != nil {
-		if _, ok := err.(*domain.NotFoundError); ok {
+		var nfe *domain.NotFoundError
+		if errors.As(err, &nfe) {
 			return fmt.Errorf("domain draft '%s' not found (use --list to see available drafts)", draftID)
 		}
 		return fmt.Errorf("failed to load domain draft: %w", err)
