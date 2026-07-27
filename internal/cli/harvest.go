@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/leightonvanrooijen/utopia/internal/cli/ui"
 	"github.com/leightonvanrooijen/utopia/internal/harvest"
 	"github.com/spf13/cobra"
 )
@@ -42,6 +43,8 @@ func init() {
 }
 
 func runHarvest(cmd *cobra.Command, args []string) error {
+	out := ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr())
+
 	// Validate model flag early before any work
 	modelID, err := ResolveModelFlag(cmd)
 	if err != nil {
@@ -63,8 +66,8 @@ func runHarvest(cmd *cobra.Command, args []string) error {
 	}
 
 	if result.UnprocessedConversations == 0 {
-		fmt.Println("No unprocessed conversations found.")
-		fmt.Println("Conversations are created when you use /cr or other interactive commands.")
+		out.Printf("No unprocessed conversations found.\n")
+		out.Printf("Conversations are created when you use /cr or other interactive commands.\n")
 	}
 	return nil
 }

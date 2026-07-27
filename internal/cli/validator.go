@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/leightonvanrooijen/utopia/internal/cli/ui"
 	"github.com/leightonvanrooijen/utopia/internal/validators"
 	"github.com/spf13/cobra"
 )
@@ -132,6 +133,8 @@ func init() {
 }
 
 func runValidatorEdit(cmd *cobra.Command, args []string) error {
+	out := ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr())
+
 	// Validate model flag early before any work
 	modelID, err := ResolveModelFlag(cmd)
 	if err != nil {
@@ -166,7 +169,7 @@ func runValidatorEdit(cmd *cobra.Command, args []string) error {
 		}
 	} else {
 		// No argument provided - show list and prompt for selection
-		selectedPath, err = promptValidatorSelection(validatorList)
+		selectedPath, err = promptValidatorSelection(out, validatorList)
 		if err != nil {
 			return err
 		}
@@ -206,17 +209,15 @@ func findValidatorByID(validatorList []validators.ValidatorInfo, id string) (str
 }
 
 // promptValidatorSelection displays the list of validators and prompts the user to select one.
-func promptValidatorSelection(validatorList []validators.ValidatorInfo) (string, error) {
-	fmt.Println("Available validators:")
-	fmt.Println()
+func promptValidatorSelection(out *ui.Printer, validatorList []validators.ValidatorInfo) (string, error) {
+	out.Printf("Available validators:\n\n")
 
 	for i, v := range validatorList {
 		runTrigger := v.Validator.GetRun()
-		fmt.Printf("  %d. %s (%s)\n", i+1, v.Validator.ID, runTrigger)
+		out.Printf("  %d. %s (%s)\n", i+1, v.Validator.ID, runTrigger)
 	}
 
-	fmt.Println()
-	fmt.Print("Select validator (number or ID): ")
+	out.Printf("\nSelect validator (number or ID): ")
 
 	reader := bufio.NewReader(os.Stdin)
 	input, err := reader.ReadString('\n')
@@ -268,6 +269,8 @@ func init() {
 }
 
 func runValidatorDelete(cmd *cobra.Command, args []string) error {
+	out := ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr())
+
 	// Get the project directory (current working directory)
 	projectDir, err := os.Getwd()
 	if err != nil {
@@ -301,7 +304,7 @@ func runValidatorDelete(cmd *cobra.Command, args []string) error {
 		}
 	} else {
 		// No argument provided - show list and prompt for selection
-		selectedPath, err = promptValidatorSelection(validatorList)
+		selectedPath, err = promptValidatorSelection(out, validatorList)
 		if err != nil {
 			return err
 		}
@@ -319,13 +322,13 @@ func runValidatorDelete(cmd *cobra.Command, args []string) error {
 	}
 
 	// Display what will be deleted
-	fmt.Printf("\nValidator to delete:\n")
-	fmt.Printf("  ID:   %s\n", selectedValidator.Validator.ID)
-	fmt.Printf("  Run:  %s\n", selectedValidator.Validator.GetRun())
-	fmt.Printf("  File: .utopia/%s\n", selectedPath)
+	out.Printf("\nValidator to delete:\n")
+	out.Printf("  ID:   %s\n", selectedValidator.Validator.ID)
+	out.Printf("  Run:  %s\n", selectedValidator.Validator.GetRun())
+	out.Printf("  File: .utopia/%s\n", selectedPath)
 
 	// Prompt for confirmation
-	fmt.Print("\nAre you sure you want to delete this validator? [y/N]: ")
+	out.Printf("\nAre you sure you want to delete this validator? [y/N]: ")
 	reader := bufio.NewReader(os.Stdin)
 	input, err := reader.ReadString('\n')
 	if err != nil {
@@ -334,7 +337,7 @@ func runValidatorDelete(cmd *cobra.Command, args []string) error {
 
 	input = strings.TrimSpace(strings.ToLower(input))
 	if input != "y" && input != "yes" {
-		fmt.Println("Deletion cancelled.")
+		out.Printf("Deletion cancelled.\n")
 		return nil
 	}
 
@@ -344,9 +347,10 @@ func runValidatorDelete(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to delete validator %s: %w", selectedValidator.Validator.ID, err)
 	}
 
-	fmt.Printf("\n✓ Deleted validator: %s\n", selectedValidator.Validator.ID)
-	fmt.Printf("  Removed file: .utopia/%s\n", selectedPath)
-	fmt.Printf("  Updated config: .utopia/config.yaml\n")
+	out.Printf("\n")
+	out.Successf("Deleted validator: %s", selectedValidator.Validator.ID)
+	out.Printf("  Removed file: .utopia/%s\n", selectedPath)
+	out.Printf("  Updated config: .utopia/config.yaml\n")
 
 	return nil
 }

@@ -55,6 +55,10 @@ func (p *Printer) Warnf(format string, a ...any) {
 	fmt.Fprintf(p.err, "%s %s\n", Warning, fmt.Sprintf(format, a...))
 }
 
+// Progressf writes a diagnostic (progress/status) line to stderr, leaving
+// stdout clean for pipeable results.
+func (p *Printer) Progressf(format string, a ...any) { fmt.Fprintf(p.err, format, a...) }
+
 // Banner writes the title centered between two ═ rules, framed by blank lines.
 func (p *Printer) Banner(title string) {
 	rule := strings.Repeat("═", ruleWidth)

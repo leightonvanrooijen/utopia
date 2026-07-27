@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/leightonvanrooijen/utopia/internal"
+	"github.com/leightonvanrooijen/utopia/internal/cli/ui"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -128,6 +129,8 @@ Updated drafts will be saved to: %s
 Begin by presenting the draft and addressing any uncertainty notes first.`
 
 func runShape(cmd *cobra.Command, args []string) error {
+	out := ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr())
+
 	// Validate model flag early before any work
 	modelID, err := ResolveModelFlag(cmd)
 	if err != nil {
@@ -148,20 +151,19 @@ func runShape(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load drafts: %w", err)
 	}
 	if len(drafts) == 0 {
-		fmt.Println("No draft specifications found.")
-		fmt.Println("Run 'utopia discover' to analyze your codebase and create drafts.")
+		out.Printf("No draft specifications found.\n")
+		out.Printf("Run 'utopia discover' to analyze your codebase and create drafts.\n")
 		return nil
 	}
 
 	sortDraftsByConfidence(drafts)
 	counts := countDraftsByConfidence(drafts)
 
-	fmt.Println("Starting draft validation session...")
-	fmt.Printf("Found %d draft specifications:\n", len(drafts))
-	fmt.Printf("  - LOW confidence:    %d (will validate first)\n", counts[domain.DraftConfidenceLow])
-	fmt.Printf("  - MEDIUM confidence: %d\n", counts[domain.DraftConfidenceMedium])
-	fmt.Printf("  - HIGH confidence:   %d\n", counts[domain.DraftConfidenceHigh])
-	fmt.Println()
+	out.Progressf("Starting draft validation session...\n")
+	out.Progressf("Found %d draft specifications:\n", len(drafts))
+	out.Progressf("  - LOW confidence:    %d (will validate first)\n", counts[domain.DraftConfidenceLow])
+	out.Progressf("  - MEDIUM confidence: %d\n", counts[domain.DraftConfidenceMedium])
+	out.Progressf("  - HIGH confidence:   %d\n\n", counts[domain.DraftConfidenceHigh])
 
 	ctx := context.Background()
 	cli := internal.NewCLI()
@@ -170,11 +172,10 @@ func runShape(cmd *cobra.Command, args []string) error {
 	}
 
 	for i, draft := range drafts {
-		fmt.Println("═══════════════════════════════════════════════════════════════")
-		fmt.Printf("Draft %d of %d: %s\n", i+1, len(drafts), draft.Title)
-		fmt.Printf("Confidence: %s\n", strings.ToUpper(string(draft.Confidence)))
-		fmt.Println("═══════════════════════════════════════════════════════════════")
-		fmt.Println()
+		out.Printf("═══════════════════════════════════════════════════════════════\n")
+		out.Printf("Draft %d of %d: %s\n", i+1, len(drafts), draft.Title)
+		out.Printf("Confidence: %s\n", strings.ToUpper(string(draft.Confidence)))
+		out.Printf("═══════════════════════════════════════════════════════════════\n\n")
 
 		draftYAML, err := yaml.Marshal(draft)
 		if err != nil {
@@ -185,44 +186,37 @@ func runShape(cmd *cobra.Command, args []string) error {
 		transcript, sessionErr := cli.SessionWithCapture(ctx, systemPrompt)
 
 		if sessionErr != nil {
-			fmt.Println()
-			fmt.Println("Session interrupted.")
-			fmt.Println("Progress saved. Run 'utopia shape' again to continue.")
+			out.Progressf("\nSession interrupted.\n")
+			out.Progressf("Progress saved. Run 'utopia shape' again to continue.\n")
 			return nil
 		}
 
 		result, err := parseShapeResult(transcript)
 		if err != nil {
-			fmt.Printf("Note: Could not parse shape result for %s: %v\n", draft.ID, err)
-			fmt.Println("Draft unchanged.")
+			out.Progressf("Note: Could not parse shape result for %s: %v\n", draft.ID, err)
+			out.Printf("Draft unchanged.\n")
 			continue
 		}
 
-		if err := applyShapeResult(store, draft, result); err != nil {
+		if err := applyShapeResult(out, store, draft, result); err != nil {
 			return fmt.Errorf("failed to apply shape result for %s: %w", draft.ID, err)
 		}
 
-		fmt.Println()
-		fmt.Println("───────────────────────────────────────────────────────────────")
+		out.Printf("\n───────────────────────────────────────────────────────────────\n")
 
 		if i < len(drafts)-1 {
-			fmt.Println()
-			fmt.Printf("Completed %d of %d drafts. Press Enter to continue to next draft, or Ctrl+C to exit.\n", i+1, len(drafts))
+			out.Printf("\nCompleted %d of %d drafts. Press Enter to continue to next draft, or Ctrl+C to exit.\n", i+1, len(drafts))
 			fmt.Scanln()
 		}
 	}
 
-	fmt.Println()
-	fmt.Println("═══════════════════════════════════════════════════════════════")
-	fmt.Println("                    SHAPING COMPLETE")
-	fmt.Println("═══════════════════════════════════════════════════════════════")
-	fmt.Println()
-	fmt.Println("All drafts have been validated.")
-	fmt.Println()
-	fmt.Println("Next steps:")
-	fmt.Println("  1. Review updated drafts in", draftsDir)
-	fmt.Println("  2. Use 'utopia cr' to create change requests from validated drafts")
-	fmt.Println()
+	out.Printf("\n═══════════════════════════════════════════════════════════════\n")
+	out.Printf("                    SHAPING COMPLETE\n")
+	out.Printf("═══════════════════════════════════════════════════════════════\n\n")
+	out.Printf("All drafts have been validated.\n\n")
+	out.Printf("Next steps:\n")
+	out.Printf("  1. Review updated drafts in %s\n", draftsDir)
+	out.Printf("  2. Use 'utopia cr' to create change requests from validated drafts\n\n")
 	return nil
 }
 
@@ -293,17 +287,17 @@ func parseShapeResult(transcript string) (*shapeResult, error) {
 	return &wrapper.ShapeResult, nil
 }
 
-func applyShapeResult(store *internal.YAMLStore, original *domain.DraftSpec, result *shapeResult) error {
+func applyShapeResult(out *ui.Printer, store *internal.YAMLStore, original *domain.DraftSpec, result *shapeResult) error {
 	switch result.Action {
 	case "reject_all":
-		fmt.Printf("Rejecting draft: %s\n", original.ID)
+		out.Printf("Rejecting draft: %s\n", original.ID)
 		if err := store.DeleteDraft(original.ID); err != nil {
 			return fmt.Errorf("failed to delete rejected draft: %w", err)
 		}
-		fmt.Println("Draft removed.")
+		out.Printf("Draft removed.\n")
 		return nil
 	case "no_changes":
-		fmt.Printf("No changes to draft: %s\n", original.ID)
+		out.Printf("No changes to draft: %s\n", original.ID)
 		return nil
 	case "update":
 		if result.UpdatedDraft == nil {
@@ -313,17 +307,17 @@ func applyShapeResult(store *internal.YAMLStore, original *domain.DraftSpec, res
 		if err := store.SaveDraft(updated); err != nil {
 			return fmt.Errorf("failed to save updated draft: %w", err)
 		}
-		fmt.Printf("Updated draft: %s\n", updated.ID)
+		out.Printf("Updated draft: %s\n", updated.ID)
 		if len(result.ChangesSummary) > 0 {
-			fmt.Println("Changes:")
+			out.Printf("Changes:\n")
 			for _, change := range result.ChangesSummary {
-				fmt.Printf("  - %s\n", change)
+				out.Printf("  - %s\n", change)
 			}
 		}
 		if len(result.RemovedFeatures) > 0 {
-			fmt.Println("Removed features:")
+			out.Printf("Removed features:\n")
 			for _, f := range result.RemovedFeatures {
-				fmt.Printf("  - %s: %s\n", f.ID, f.Reason)
+				out.Printf("  - %s: %s\n", f.ID, f.Reason)
 			}
 		}
 		return nil
@@ -495,6 +489,8 @@ Updated drafts will be saved to: %s
 Begin by presenting the bounded context and addressing any uncertainty notes first.`
 
 func runShapeDomain(cmd *cobra.Command, args []string) error {
+	out := ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr())
+
 	// Validate model flag early before any work
 	modelID, err := ResolveModelFlag(cmd)
 	if err != nil {
@@ -515,8 +511,8 @@ func runShapeDomain(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load domain drafts: %w", err)
 	}
 	if len(drafts) == 0 {
-		fmt.Println("No draft domain documents found.")
-		fmt.Println("Run 'utopia discover domain' to analyze your codebase and create drafts.")
+		out.Printf("No draft domain documents found.\n")
+		out.Printf("Run 'utopia discover domain' to analyze your codebase and create drafts.\n")
 		return nil
 	}
 
@@ -524,12 +520,11 @@ func runShapeDomain(cmd *cobra.Command, args []string) error {
 	counts := countDomainDraftsByConfidence(drafts)
 	allTerms := collectAllDomainTerms(drafts)
 
-	fmt.Println("Starting domain draft validation session...")
-	fmt.Printf("Found %d draft domain documents:\n", len(drafts))
-	fmt.Printf("  - LOW confidence:    %d (will validate first)\n", counts[domain.DraftDomainConfidenceLow])
-	fmt.Printf("  - MEDIUM confidence: %d\n", counts[domain.DraftDomainConfidenceMedium])
-	fmt.Printf("  - HIGH confidence:   %d\n", counts[domain.DraftDomainConfidenceHigh])
-	fmt.Println()
+	out.Progressf("Starting domain draft validation session...\n")
+	out.Progressf("Found %d draft domain documents:\n", len(drafts))
+	out.Progressf("  - LOW confidence:    %d (will validate first)\n", counts[domain.DraftDomainConfidenceLow])
+	out.Progressf("  - MEDIUM confidence: %d\n", counts[domain.DraftDomainConfidenceMedium])
+	out.Progressf("  - HIGH confidence:   %d\n\n", counts[domain.DraftDomainConfidenceHigh])
 
 	ctx := context.Background()
 	cli := internal.NewCLI()
@@ -538,13 +533,12 @@ func runShapeDomain(cmd *cobra.Command, args []string) error {
 	}
 
 	for i, draft := range drafts {
-		fmt.Println("═══════════════════════════════════════════════════════════════")
-		fmt.Printf("Domain Draft %d of %d: %s\n", i+1, len(drafts), draft.Title)
-		fmt.Printf("Bounded Context: %s\n", draft.BoundedContext)
-		fmt.Printf("Confidence: %s\n", strings.ToUpper(string(draft.Confidence)))
-		fmt.Printf("Terms: %d\n", len(draft.Terms))
-		fmt.Println("═══════════════════════════════════════════════════════════════")
-		fmt.Println()
+		out.Printf("═══════════════════════════════════════════════════════════════\n")
+		out.Printf("Domain Draft %d of %d: %s\n", i+1, len(drafts), draft.Title)
+		out.Printf("Bounded Context: %s\n", draft.BoundedContext)
+		out.Printf("Confidence: %s\n", strings.ToUpper(string(draft.Confidence)))
+		out.Printf("Terms: %d\n", len(draft.Terms))
+		out.Printf("═══════════════════════════════════════════════════════════════\n\n")
 
 		draftYAML, err := yaml.Marshal(draft)
 		if err != nil {
@@ -556,44 +550,37 @@ func runShapeDomain(cmd *cobra.Command, args []string) error {
 		transcript, sessionErr := cli.SessionWithCapture(ctx, systemPrompt)
 
 		if sessionErr != nil {
-			fmt.Println()
-			fmt.Println("Session interrupted.")
-			fmt.Println("Progress saved. Run 'utopia shape domain' again to continue.")
+			out.Progressf("\nSession interrupted.\n")
+			out.Progressf("Progress saved. Run 'utopia shape domain' again to continue.\n")
 			return nil
 		}
 
 		result, err := parseDomainShapeResult(transcript)
 		if err != nil {
-			fmt.Printf("Note: Could not parse domain shape result for %s: %v\n", draft.ID, err)
-			fmt.Println("Draft unchanged.")
+			out.Progressf("Note: Could not parse domain shape result for %s: %v\n", draft.ID, err)
+			out.Printf("Draft unchanged.\n")
 			continue
 		}
 
-		if err := applyDomainShapeResult(store, draft, result); err != nil {
+		if err := applyDomainShapeResult(out, store, draft, result); err != nil {
 			return fmt.Errorf("failed to apply domain shape result for %s: %w", draft.ID, err)
 		}
 
-		fmt.Println()
-		fmt.Println("───────────────────────────────────────────────────────────────")
+		out.Printf("\n───────────────────────────────────────────────────────────────\n")
 
 		if i < len(drafts)-1 {
-			fmt.Println()
-			fmt.Printf("Completed %d of %d domain drafts. Press Enter to continue to next draft, or Ctrl+C to exit.\n", i+1, len(drafts))
+			out.Printf("\nCompleted %d of %d domain drafts. Press Enter to continue to next draft, or Ctrl+C to exit.\n", i+1, len(drafts))
 			fmt.Scanln()
 		}
 	}
 
-	fmt.Println()
-	fmt.Println("═══════════════════════════════════════════════════════════════")
-	fmt.Println("                 DOMAIN SHAPING COMPLETE")
-	fmt.Println("═══════════════════════════════════════════════════════════════")
-	fmt.Println()
-	fmt.Println("All domain drafts have been validated.")
-	fmt.Println()
-	fmt.Println("Next steps:")
-	fmt.Println("  1. Review updated drafts in", draftsDir)
-	fmt.Println("  2. Use 'utopia promote domain' to move validated drafts to official domain docs")
-	fmt.Println()
+	out.Printf("\n═══════════════════════════════════════════════════════════════\n")
+	out.Printf("                 DOMAIN SHAPING COMPLETE\n")
+	out.Printf("═══════════════════════════════════════════════════════════════\n\n")
+	out.Printf("All domain drafts have been validated.\n\n")
+	out.Printf("Next steps:\n")
+	out.Printf("  1. Review updated drafts in %s\n", draftsDir)
+	out.Printf("  2. Use 'utopia promote domain' to move validated drafts to official domain docs\n\n")
 	return nil
 }
 
@@ -709,17 +696,17 @@ func parseDomainShapeResult(transcript string) (*domainShapeResult, error) {
 	return &wrapper.DomainShapeResult, nil
 }
 
-func applyDomainShapeResult(store *internal.YAMLStore, original *domain.DraftDomainDoc, result *domainShapeResult) error {
+func applyDomainShapeResult(out *ui.Printer, store *internal.YAMLStore, original *domain.DraftDomainDoc, result *domainShapeResult) error {
 	switch result.Action {
 	case "reject_all":
-		fmt.Printf("Rejecting domain draft: %s\n", original.ID)
+		out.Printf("Rejecting domain draft: %s\n", original.ID)
 		if err := store.DeleteDraftDomainDoc(original.ID); err != nil {
 			return fmt.Errorf("failed to delete rejected domain draft: %w", err)
 		}
-		fmt.Println("Domain draft removed.")
+		out.Printf("Domain draft removed.\n")
 		return nil
 	case "no_changes":
-		fmt.Printf("No changes to domain draft: %s\n", original.ID)
+		out.Printf("No changes to domain draft: %s\n", original.ID)
 		return nil
 	case "update":
 		if result.UpdatedDraft == nil {
@@ -729,39 +716,39 @@ func applyDomainShapeResult(store *internal.YAMLStore, original *domain.DraftDom
 		if err := store.SaveDraftDomainDoc(updated); err != nil {
 			return fmt.Errorf("failed to save updated domain draft: %w", err)
 		}
-		fmt.Printf("Updated domain draft: %s\n", updated.ID)
+		out.Printf("Updated domain draft: %s\n", updated.ID)
 		if len(result.ChangesSummary) > 0 {
-			fmt.Println("Changes:")
+			out.Printf("Changes:\n")
 			for _, change := range result.ChangesSummary {
-				fmt.Printf("  - %s\n", change)
+				out.Printf("  - %s\n", change)
 			}
 		}
 		if len(result.RemovedTerms) > 0 {
-			fmt.Println("Removed terms:")
+			out.Printf("Removed terms:\n")
 			for _, t := range result.RemovedTerms {
-				fmt.Printf("  - %s: %s\n", t.Term, t.Reason)
+				out.Printf("  - %s: %s\n", t.Term, t.Reason)
 			}
 		}
 		if len(result.AliasedTerms) > 0 {
-			fmt.Println("Aliased terms:")
+			out.Printf("Aliased terms:\n")
 			for _, t := range result.AliasedTerms {
-				fmt.Printf("  - %s → %s: %s\n", t.Term, t.CanonicalTarget, t.Reason)
+				out.Printf("  - %s → %s: %s\n", t.Term, t.CanonicalTarget, t.Reason)
 			}
 		}
 		if len(result.MergedTerms) > 0 {
-			fmt.Println("Merged terms:")
+			out.Printf("Merged terms:\n")
 			for _, t := range result.MergedTerms {
-				fmt.Printf("  - %s → %s: %s\n", t.FromTerm, t.IntoTerm, t.Reason)
+				out.Printf("  - %s → %s: %s\n", t.FromTerm, t.IntoTerm, t.Reason)
 			}
 		}
 		if len(result.SplitTerms) > 0 {
-			fmt.Println("Split terms:")
+			out.Printf("Split terms:\n")
 			for _, t := range result.SplitTerms {
 				var newNames []string
 				for _, nt := range t.NewTerms {
 					newNames = append(newNames, nt.Term)
 				}
-				fmt.Printf("  - %s → [%s]: %s\n", t.OriginalTerm, strings.Join(newNames, ", "), t.Reason)
+				out.Printf("  - %s → [%s]: %s\n", t.OriginalTerm, strings.Join(newNames, ", "), t.Reason)
 			}
 		}
 		return nil

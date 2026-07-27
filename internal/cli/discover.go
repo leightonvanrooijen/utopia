@@ -56,6 +56,8 @@ func init() {
 }
 
 func runDiscover(cmd *cobra.Command, args []string) error {
+	out := ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr())
+
 	// Validate model flag early before any work
 	modelID, err := ResolveModelFlag(cmd)
 	if err != nil {
@@ -75,17 +77,17 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 
 	scope := discover.Scope{Paths: discoverPathFlags, ExcludePatterns: discoverExcludeFlags}
 
-	fmt.Println("Starting codebase discovery...")
-	fmt.Printf("Project: %s\n", absPath)
-	fmt.Printf("Existing specs: %d\n", len(existingSpecs))
-	fmt.Printf("Existing drafts: %d\n", len(existingDrafts))
+	out.Progressf("Starting codebase discovery...\n")
+	out.Progressf("Project: %s\n", absPath)
+	out.Progressf("Existing specs: %d\n", len(existingSpecs))
+	out.Progressf("Existing drafts: %d\n", len(existingDrafts))
 	if len(scope.Paths) > 0 {
-		fmt.Printf("Scope: %s\n", strings.Join(scope.Paths, ", "))
+		out.Progressf("Scope: %s\n", strings.Join(scope.Paths, ", "))
 	}
 	if len(scope.ExcludePatterns) > 0 {
-		fmt.Printf("Excluding: %s\n", strings.Join(scope.ExcludePatterns, ", "))
+		out.Progressf("Excluding: %s\n", strings.Join(scope.ExcludePatterns, ", "))
 	}
-	fmt.Println()
+	out.Progressf("\n")
 
 	startTime := time.Now()
 	result, err := discover.Specs(context.Background(), store, discover.SpecsOptions{
@@ -101,15 +103,15 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 
 	switch {
 	case len(result.FilesAnalyzed) == 0:
-		fmt.Println("No files to analyze.")
+		out.Printf("No files to analyze.\n")
 	case result.Qualified == 0:
-		fmt.Println("\nNo candidates passed qualification criteria.")
+		out.Printf("\nNo candidates passed qualification criteria.\n")
 	case len(result.Drafts) == 0:
-		fmt.Println("\nNo draft specifications produced after refinement.")
+		out.Printf("\nNo draft specifications produced after refinement.\n")
 	default:
-		printDiscoverySummary(ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr()), result.Drafts, draftsDir)
+		printDiscoverySummary(out, result.Drafts, draftsDir)
 	}
-	fmt.Printf("\nTotal elapsed time: %.1fs\n", time.Since(startTime).Seconds())
+	out.Progressf("\nTotal elapsed time: %.1fs\n", time.Since(startTime).Seconds())
 	return nil
 }
 
@@ -188,6 +190,8 @@ func init() {
 }
 
 func runDiscoverDomain(cmd *cobra.Command, args []string) error {
+	out := ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr())
+
 	// Validate model flag early before any work
 	modelID, err := ResolveModelFlag(cmd)
 	if err != nil {
@@ -218,22 +222,22 @@ func runDiscoverDomain(cmd *cobra.Command, args []string) error {
 
 	scope := discover.Scope{Paths: discoverDomainPathFlags, ExcludePatterns: discoverDomainExcludeFlags}
 
-	fmt.Println("Starting domain vocabulary discovery...")
-	fmt.Printf("Project: %s\n", absPath)
-	fmt.Printf("Existing domain docs: %d\n", len(existingDomainDocs))
-	fmt.Printf("Existing draft domain docs: %d\n", len(existingDrafts))
+	out.Progressf("Starting domain vocabulary discovery...\n")
+	out.Progressf("Project: %s\n", absPath)
+	out.Progressf("Existing domain docs: %d\n", len(existingDomainDocs))
+	out.Progressf("Existing draft domain docs: %d\n", len(existingDrafts))
 	if isIncremental {
-		fmt.Printf("Mode: incremental (since %s)\n", lastRunTime.Format("2006-01-02 15:04:05"))
+		out.Progressf("Mode: incremental (since %s)\n", lastRunTime.Format("2006-01-02 15:04:05"))
 	} else {
-		fmt.Println("Mode: full discovery")
+		out.Progressf("Mode: full discovery\n")
 	}
 	if len(scope.Paths) > 0 {
-		fmt.Printf("Scope: %s\n", strings.Join(scope.Paths, ", "))
+		out.Progressf("Scope: %s\n", strings.Join(scope.Paths, ", "))
 	}
 	if len(scope.ExcludePatterns) > 0 {
-		fmt.Printf("Excluding: %s\n", strings.Join(scope.ExcludePatterns, ", "))
+		out.Progressf("Excluding: %s\n", strings.Join(scope.ExcludePatterns, ", "))
 	}
-	fmt.Println()
+	out.Progressf("\n")
 
 	startTime := time.Now()
 	result, err := discover.Domain(context.Background(), store, discover.DomainOptions{
@@ -251,14 +255,14 @@ func runDiscoverDomain(cmd *cobra.Command, args []string) error {
 
 	switch {
 	case len(result.FilesAnalyzed) == 0:
-		fmt.Println("No new or modified files to analyze.")
-		fmt.Println("Use --full to force complete re-discovery.")
+		out.Printf("No new or modified files to analyze.\n")
+		out.Printf("Use --full to force complete re-discovery.\n")
 	case len(result.Drafts) == 0:
-		fmt.Println("No new draft domain documents discovered.")
+		out.Printf("No new draft domain documents discovered.\n")
 	default:
-		printDomainDiscoverySummary(ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr()), result.Drafts, draftsDir)
+		printDomainDiscoverySummary(out, result.Drafts, draftsDir)
 	}
-	fmt.Printf("\nTotal elapsed time: %.1fs\n", time.Since(startTime).Seconds())
+	out.Progressf("\nTotal elapsed time: %.1fs\n", time.Since(startTime).Seconds())
 	return nil
 }
 

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/leightonvanrooijen/utopia/internal"
+	"github.com/leightonvanrooijen/utopia/internal/cli/ui"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 	"github.com/spf13/cobra"
 )
@@ -133,6 +134,7 @@ func init() {
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
+	out := ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr())
 	projectDir, err := ResolveProjectDir(cmd)
 	if err != nil {
 		return err
@@ -178,7 +180,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// Prompt for verification command if missing
 	if config.Verification.Command == "" {
-		fmt.Print("What command verifies your code? (e.g., npm test): ")
+		out.Printf("What command verifies your code? (e.g., npm test): ")
 		verifyCmd, err := reader.ReadString('\n')
 		if err != nil {
 			return fmt.Errorf("failed to read verification command: %w", err)
@@ -194,7 +196,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if !isReInit || (isReInit && config.Verification.MaxIterations == 0 && config.Verification.Command == "") {
 		// Only prompt on fresh init, not re-init (max_iterations has a valid zero value)
 		if !isReInit {
-			fmt.Print("Max iterations per work item? (leave blank for unlimited): ")
+			out.Printf("Max iterations per work item? (leave blank for unlimited): ")
 			maxIterStr, err := reader.ReadString('\n')
 			if err != nil {
 				return fmt.Errorf("failed to read max iterations: %w", err)
@@ -218,7 +220,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// Prompt for project context if missing
 	if config.ProjectContext == "" {
-		fmt.Print("Project context (orient an AI to this project's workflow): ")
+		out.Printf("Project context (orient an AI to this project's workflow): ")
 		projectContext, err := reader.ReadString('\n')
 		if err != nil {
 			return fmt.Errorf("failed to read project context: %w", err)
@@ -235,32 +237,29 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// Print appropriate output based on fresh init vs re-init
 	if isReInit {
-		fmt.Printf("Updated Utopia project at %s\n", utopiaDir)
-		fmt.Println()
+		out.Printf("Updated Utopia project at %s\n\n", utopiaDir)
 		if len(added) > 0 {
-			fmt.Println("Added:")
+			out.Printf("Added:\n")
 			for _, field := range added {
-				fmt.Printf("  %s\n", field)
+				out.Printf("  %s\n", field)
 			}
 		}
 		if len(skipped) > 0 {
-			fmt.Println("Skipped (already configured):")
+			out.Printf("Skipped (already configured):\n")
 			for _, field := range skipped {
-				fmt.Printf("  %s\n", field)
+				out.Printf("  %s\n", field)
 			}
 		}
 	} else {
-		fmt.Printf("Initialized Utopia project at %s\n", utopiaDir)
-		fmt.Println()
-		fmt.Println("Created:")
-		fmt.Println("  .utopia/config.yaml              - Project configuration")
-		fmt.Println("  .utopia/specs/                   - Living specifications")
-		fmt.Println("  .utopia/work-items/              - Work items for Ralph")
-		fmt.Println("  .utopia/validators/_template.md  - Validator template (copy to create validators)")
-		fmt.Println()
-		fmt.Println("Next steps:")
-		fmt.Println("  utopia cr              - Create a change request")
-		fmt.Println("  utopia status          - View project status")
+		out.Printf("Initialized Utopia project at %s\n\n", utopiaDir)
+		out.Printf("Created:\n")
+		out.Printf("  .utopia/config.yaml              - Project configuration\n")
+		out.Printf("  .utopia/specs/                   - Living specifications\n")
+		out.Printf("  .utopia/work-items/              - Work items for Ralph\n")
+		out.Printf("  .utopia/validators/_template.md  - Validator template (copy to create validators)\n")
+		out.Printf("\nNext steps:\n")
+		out.Printf("  utopia cr              - Create a change request\n")
+		out.Printf("  utopia status          - View project status\n")
 	}
 
 	return nil

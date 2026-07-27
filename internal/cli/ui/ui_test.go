@@ -48,6 +48,20 @@ func TestWarnfWritesGlyphToStderr(t *testing.T) {
 	}
 }
 
+func TestProgressfWritesToStderr(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	p := NewPrinter(&stdout, &stderr)
+
+	p.Progressf("Analyzing %d files...\n", 7)
+
+	if got, want := stderr.String(), "Analyzing 7 files...\n"; got != want {
+		t.Errorf("stderr = %q, want %q", got, want)
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("expected empty stdout, got %q", stdout.String())
+	}
+}
+
 func TestBannerCentersTitleBetweenComputedRules(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	p := NewPrinter(&stdout, &stderr)

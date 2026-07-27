@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/leightonvanrooijen/utopia/internal"
+	"github.com/leightonvanrooijen/utopia/internal/cli/ui"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 	"github.com/leightonvanrooijen/utopia/internal/git"
 	"github.com/spf13/cobra"
@@ -73,6 +74,7 @@ func init() {
 }
 
 func runCRValidate(cmd *cobra.Command, args []string) error {
+	out := ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr())
 	_, utopiaDir, store, err := ResolveProject(cmd)
 	if err != nil {
 		return err
@@ -80,7 +82,7 @@ func runCRValidate(cmd *cobra.Command, args []string) error {
 
 	if len(args) == 1 {
 		// Validate a single file
-		return validateSingleCR(args[0], utopiaDir)
+		return validateSingleCR(out, args[0], utopiaDir)
 	}
 
 	// Validate all CRs
@@ -89,12 +91,12 @@ func runCRValidate(cmd *cobra.Command, args []string) error {
 	}
 
 	crs, _ := store.ListChangeRequests()
-	fmt.Printf("✓ All %d change request(s) are valid\n", len(crs))
+	out.Successf("All %d change request(s) are valid", len(crs))
 	return nil
 }
 
 // validateSingleCR validates a single CR file by path.
-func validateSingleCR(filePath, utopiaDir string) error {
+func validateSingleCR(out *ui.Printer, filePath, utopiaDir string) error {
 	// Handle both absolute and relative paths
 	absPath := filePath
 	if !filepath.IsAbs(filePath) {
@@ -121,7 +123,7 @@ func validateSingleCR(filePath, utopiaDir string) error {
 		return fmt.Errorf("%s: %w", filepath.Base(absPath), validationErr)
 	}
 
-	fmt.Printf("✓ %s is valid\n", filepath.Base(absPath))
+	out.Successf("%s is valid", filepath.Base(absPath))
 	return nil
 }
 
@@ -358,6 +360,8 @@ Your role is ONLY to create the CR file. Let the execution and merge phases hand
 Start by warmly greeting the user and asking what change they'd like to make.`
 
 func runCR(cmd *cobra.Command, args []string) error {
+	out := ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr())
+
 	// Validate model flag early before any work
 	modelID, err := ResolveModelFlag(cmd)
 	if err != nil {
@@ -377,9 +381,8 @@ func runCR(cmd *cobra.Command, args []string) error {
 
 	// Warn if project_context is missing
 	if config.ProjectContext == "" {
-		fmt.Println("⚠ Warning: project_context is empty in config.yaml")
-		fmt.Println("  Run 'utopia init' to add project context for better CR guidance")
-		fmt.Println()
+		out.Warnf("Warning: project_context is empty in config.yaml")
+		out.Progressf("  Run 'utopia init' to add project context for better CR guidance\n\n")
 	}
 
 	// Create change requests directory if it doesn't exist
@@ -415,12 +418,10 @@ func runCR(cmd *cobra.Command, args []string) error {
 	// Inject project context, summaries, and path into the system prompt
 	systemPrompt := fmt.Sprintf(crSystemPrompt, projectContext, specsSummary, crsSummary, changeRequestsDir, changeRequestsDir)
 
-	fmt.Println("Starting change request creation session...")
-	fmt.Printf("Found %d existing specs\n", len(existingSpecs))
-	fmt.Printf("Found %d existing change requests\n", len(existingCRs))
-	fmt.Println()
-	fmt.Println("Change requests will be saved to:", changeRequestsDir)
-	fmt.Println()
+	out.Progressf("Starting change request creation session...\n")
+	out.Progressf("Found %d existing specs\n", len(existingSpecs))
+	out.Progressf("Found %d existing change requests\n\n", len(existingCRs))
+	out.Printf("Change requests will be saved to: %s\n\n", changeRequestsDir)
 
 	// Run interactive Claude session with transcript capture
 	ctx := context.Background()
@@ -436,8 +437,7 @@ func runCR(cmd *cobra.Command, args []string) error {
 	// Capture transcript - this persists even on Ctrl+C due to defer in SessionWithCapture
 	transcript, sessionErr := cli.SessionWithCapture(ctx, systemPrompt)
 
-	fmt.Println()
-	fmt.Println("Session ended. Validating change requests...")
+	out.Progressf("\nSession ended. Validating change requests...\n")
 
 	// Track CRs and commits for conversation metadata
 	var crsCreated []domain.CRCommit
@@ -446,58 +446,54 @@ func runCR(cmd *cobra.Command, args []string) error {
 	// Validate all change requests
 	crValidationErr := validateChangeRequests(store)
 	if crValidationErr != nil {
-		fmt.Println()
-		fmt.Printf("✗ Change request validation failed:\n%s\n", crValidationErr)
-		fmt.Println()
-		fmt.Println("Starting Claude session to fix validation errors...")
-		fmt.Println()
+		out.Progressf("\n%s Change request validation failed:\n%s\n\n", ui.Failure, crValidationErr)
+		out.Progressf("Starting Claude session to fix validation errors...\n\n")
 
 		fixPrompt := fmt.Sprintf(crFixSystemPrompt, utopiaDir, crValidationErr)
 		fixTranscript, fixErr := cli.SessionWithCapture(ctx, fixPrompt)
 		transcript += "\n\n--- Fix Session ---\n\n" + fixTranscript
 		if fixErr != nil {
 			// Save conversation before returning error
-			saveConversation(store, sessionStart, branch, transcript, crsCreated, commits)
+			saveConversation(out, store, sessionStart, branch, transcript, crsCreated, commits)
 			return fmt.Errorf("claude fix session failed: %w", fixErr)
 		}
 
 		// Re-validate after fix session
 		crValidationErr = validateChangeRequests(store)
 		if crValidationErr != nil {
-			fmt.Println()
-			fmt.Printf("✗ Change request validation still failed:\n%s\n", crValidationErr)
+			out.Progressf("\n%s Change request validation still failed:\n%s\n", ui.Failure, crValidationErr)
 			// Save conversation before returning error
-			saveConversation(store, sessionStart, branch, transcript, crsCreated, commits)
+			saveConversation(out, store, sessionStart, branch, transcript, crsCreated, commits)
 			return fmt.Errorf("change request validation failed after fix attempt")
 		}
 	}
 
-	fmt.Println("✓ All change requests are valid")
+	out.Successf("All change requests are valid")
 
 	// Auto-commit valid CRs and track commits
 	crs, err := store.ListChangeRequests()
 	if err != nil {
-		saveConversation(store, sessionStart, branch, transcript, crsCreated, commits)
+		saveConversation(out, store, sessionStart, branch, transcript, crsCreated, commits)
 		return fmt.Errorf("failed to list change requests for commit: %w", err)
 	}
 
 	for _, cr := range crs {
 		sha, commitErr := GitCommitCR(absPath, cr.ID)
 		if commitErr != nil {
-			fmt.Printf("⚠ Failed to commit CR %s: %v\n", cr.ID, commitErr)
+			out.Warnf("Failed to commit CR %s: %v", cr.ID, commitErr)
 			continue
 		}
 		if sha != "" {
-			fmt.Printf("✓ Committed CR: %s (%s)\n", cr.ID, sha[:8])
+			out.Successf("Committed CR: %s (%s)", cr.ID, sha[:8])
 			crsCreated = append(crsCreated, domain.CRCommit{CRID: cr.ID, CommitSHA: sha})
 			commits = append(commits, sha)
 		}
 	}
 
 	// Save the conversation transcript with metadata (skips empty conversations)
-	convID := saveConversation(store, sessionStart, branch, transcript, crsCreated, commits)
+	convID := saveConversation(out, store, sessionStart, branch, transcript, crsCreated, commits)
 	if convID != "" {
-		fmt.Printf("✓ Conversation saved: %s\n", convID)
+		out.Successf("Conversation saved: %s", convID)
 	}
 
 	// Return session error if there was one (transcript still saved above)
@@ -661,7 +657,7 @@ Start by reading the file mentioned in the error and fixing it.`
 
 // saveConversation persists a conversation transcript with metadata
 // Returns the conversation ID, or empty string if conversation has no meaningful content
-func saveConversation(store *internal.YAMLStore, sessionStart time.Time, branch, transcript string, crsCreated []domain.CRCommit, commits []string) string {
+func saveConversation(out *ui.Printer, store *internal.YAMLStore, sessionStart time.Time, branch, transcript string, crsCreated []domain.CRCommit, commits []string) string {
 	// Skip persisting empty conversations (no transcript, no CRs, no commits)
 	if strings.TrimSpace(transcript) == "" && len(crsCreated) == 0 && len(commits) == 0 {
 		return ""
@@ -688,7 +684,7 @@ func saveConversation(store *internal.YAMLStore, sessionStart time.Time, branch,
 	}
 
 	if err := store.SaveConversation(conv); err != nil {
-		fmt.Printf("⚠ Failed to save conversation: %v\n", err)
+		out.Warnf("Failed to save conversation: %v", err)
 		return ""
 	}
 
