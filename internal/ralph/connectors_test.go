@@ -1,0 +1,193 @@
+package ralph
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/leightonvanrooijen/utopia/internal/domain"
+)
+
+func TestConnectorRunner_RunsSubscribedConnectorsSequentiallyInConfigOrder(t *testing.T) {
+	dir := t.TempDir()
+	runner := NewConnectorRunner([]domain.ConnectorConfig{
+		{Name: "first", On: []string{EventWorkItemVerified}, Command: "echo first >> order.txt"},
+		{Name: "skipped", On: []string{EventExecutionFailed}, Command: "echo skipped >> order.txt"},
+		{Name: "second", On: []string{EventWorkItemVerified}, Command: "echo second >> order.txt"},
+	}, dir)
+
+	results := runner.Run(context.Background(), Event{Name: EventWorkItemVerified})
+
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+	if results[0].Name != "first" || results[1].Name != "second" {
+		t.Errorf("expected results in config order [first second], got [%s %s]", results[0].Name, results[1].Name)
+	}
+
+	content, err := os.ReadFile(filepath.Join(dir, "order.txt"))
+	if err != nil {
+		t.Fatalf("failed to read order file: %v", err)
+	}
+	if got := string(content); got != "first\nsecond\n" {
+		t.Errorf("expected sequential execution in config order, got %q", got)
+	}
+}
+
+func TestConnectorRunner_UnsubscribedEventRunsNothing(t *testing.T) {
+	runner := NewConnectorRunner([]domain.ConnectorConfig{
+		{Name: "notify", On: []string{EventExecutionCompleted}, Command: "echo hi"},
+	}, t.TempDir())
+
+	results := runner.Run(context.Background(), Event{Name: EventWorkItemStarted})
+
+	if len(results) != 0 {
+		t.Errorf("expected no results for unsubscribed event, got %d", len(results))
+	}
+}
+
+func TestConnectorRunner_PayloadDeliveredAsJSONOnStdin(t *testing.T) {
+	runner := NewConnectorRunner([]domain.ConnectorConfig{
+		{Name: "echo-stdin", On: []string{EventWorkItemCommitted}, Command: "cat"},
+	}, t.TempDir())
+
+	payload := EventPayload{
+		CRID:           "cr-42",
+		CRTitle:        "Add connectors",
+		SpecID:         "cr-42/phase-1",
+		WorkItemID:     "wi-1",
+		IterationCount: 3,
+		CommitSHA:      "abc123",
+	}
+	results := runner.Run(context.Background(), Event{Name: EventWorkItemCommitted, Payload: payload})
+
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Err != nil {
+		t.Fatalf("connector failed: %v", results[0].Err)
+	}
+
+	var got EventPayload
+	if err := json.Unmarshal([]byte(results[0].Stdout), &got); err != nil {
+		t.Fatalf("stdout is not valid JSON payload: %v (stdout=%q)", err, results[0].Stdout)
+	}
+	if got != payload {
+		t.Errorf("payload mismatch: got %+v, want %+v", got, payload)
+	}
+}
+
+func TestConnectorRunner_EnvironmentVariablesSet(t *testing.T) {
+	dir := t.TempDir()
+	runner := NewConnectorRunner([]domain.ConnectorConfig{
+		{
+			Name:    "env-check",
+			On:      []string{EventExecutionStarted},
+			Command: `echo "$UTOPIA_EVENT|$UTOPIA_CR_ID|$UTOPIA_PROJECT_DIR"`,
+		},
+	}, dir)
+
+	results := runner.Run(context.Background(), Event{
+		Name:    EventExecutionStarted,
+		Payload: EventPayload{CRID: "cr-7"},
+	})
+
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	want := EventExecutionStarted + "|cr-7|" + dir + "\n"
+	if results[0].Stdout != want {
+		t.Errorf("expected env vars %q, got %q", want, results[0].Stdout)
+	}
+}
+
+func TestConnectorRunner_RunsInProjectDirectory(t *testing.T) {
+	dir := t.TempDir()
+	runner := NewConnectorRunner([]domain.ConnectorConfig{
+		{Name: "pwd", On: []string{EventExecutionStarted}, Command: "pwd"},
+	}, dir)
+
+	results := runner.Run(context.Background(), Event{Name: EventExecutionStarted})
+
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	// Resolve symlinks: on macOS t.TempDir() is under /var which links to /private/var
+	wantDir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatalf("failed to resolve temp dir: %v", err)
+	}
+	gotDir, err := filepath.EvalSymlinks(strings.TrimSpace(results[0].Stdout))
+	if err != nil {
+		t.Fatalf("failed to resolve reported working dir: %v", err)
+	}
+	if gotDir != wantDir {
+		t.Errorf("expected working directory %q, got %q", wantDir, gotDir)
+	}
+}
+
+func TestConnectorRunner_CapturesStdoutAndStderr(t *testing.T) {
+	runner := NewConnectorRunner([]domain.ConnectorConfig{
+		{Name: "both", On: []string{EventPhaseCompleted}, Command: "echo out; echo err >&2"},
+	}, t.TempDir())
+
+	results := runner.Run(context.Background(), Event{Name: EventPhaseCompleted})
+
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Stdout != "out\n" {
+		t.Errorf("expected stdout %q, got %q", "out\n", results[0].Stdout)
+	}
+	if results[0].Stderr != "err\n" {
+		t.Errorf("expected stderr %q, got %q", "err\n", results[0].Stderr)
+	}
+}
+
+func TestConnectorRunner_NonZeroExitReportsError(t *testing.T) {
+	runner := NewConnectorRunner([]domain.ConnectorConfig{
+		{Name: "failing", On: []string{EventWorkItemVerified}, Command: "echo output; exit 3"},
+	}, t.TempDir())
+
+	results := runner.Run(context.Background(), Event{Name: EventWorkItemVerified})
+
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Err == nil {
+		t.Fatal("expected error for non-zero exit, got nil")
+	}
+	if results[0].TimedOut {
+		t.Error("non-zero exit must not be reported as a timeout")
+	}
+	if results[0].Stdout != "output\n" {
+		t.Errorf("output must still be captured on failure, got %q", results[0].Stdout)
+	}
+}
+
+func TestConnectorRunner_TimeoutKillsCommandAndReportsFailed(t *testing.T) {
+	runner := NewConnectorRunner([]domain.ConnectorConfig{
+		{Name: "slow", On: []string{EventWorkItemVerified}, Command: "sleep 5", Timeout: "100ms"},
+	}, t.TempDir())
+
+	start := time.Now()
+	results := runner.Run(context.Background(), Event{Name: EventWorkItemVerified})
+	elapsed := time.Since(start)
+
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if !results[0].TimedOut {
+		t.Error("expected TimedOut to be true")
+	}
+	if results[0].Err == nil {
+		t.Fatal("expected error for timed-out connector, got nil")
+	}
+	if elapsed >= 5*time.Second {
+		t.Errorf("command was not killed at timeout; took %v", elapsed)
+	}
+}

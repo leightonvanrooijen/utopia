@@ -82,9 +82,21 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 		validatorList = append(validatorList, v)
 	}
 
-	// Create the lifecycle event dispatcher. No subscribers are registered
-	// in this phase, so dispatching is a no-op passthrough.
+	// Create the lifecycle event dispatcher and subscribe the connector
+	// runner so configured connectors execute when their events fire.
+	// Gating and notify failure semantics are layered on in later work
+	// items; for now failures are surfaced as warnings.
 	dispatcher := NewDispatcher()
+	if len(config.Connectors) > 0 {
+		connectorRunner := NewConnectorRunner(config.Connectors, projectDir)
+		dispatcher.Subscribe(func(e Event) {
+			for _, cr := range connectorRunner.Run(ctx, e) {
+				if cr.Err != nil {
+					fmt.Printf("  warning: connector %s failed on %s: %v\n", cr.Name, cr.Event, cr.Err)
+				}
+			}
+		})
+	}
 	basePayload := EventPayload{
 		CRID:   extractCRID(specID),
 		SpecID: specID,
