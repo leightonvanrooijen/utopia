@@ -14,4 +14,4 @@ strategies:
   execute: sequential
 verification:
   command: ./scripts/verify.sh
-  max_iterations: 10
+  max_iterations: 6
