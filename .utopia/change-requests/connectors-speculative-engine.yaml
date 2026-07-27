@@ -4,7 +4,7 @@ title: Launch/join/abort subscription engine, proven out by migrating validators
 status: in-progress
 phases:
     - type: feature
-      status: in-progress
+      status: complete
       changes:
         - operation: add
           spec: connectors
@@ -63,6 +63,7 @@ phases:
                 - Each resolution is logged with connector name, resolution type, exit code, and captured output
                 - After utopia execute returns, no connector child processes remain running
     - type: refactor
+      status: in-progress
       tasks:
         - id: migrate-validators-to-subscription-engine
           description: |
@@ -85,3 +86,4 @@ phases:
             - Bespoke choreography lives in runVerificationWithValidators and runAfterPhaseValidators in internal/ralph/ralph.go
             - The in-process action should wrap internal/validators/runner.go RunAllWithDiff rather than shelling out
             - The engine's action abstraction means validators do not need to become external commands - that can be a later decision
+current_phase: 1

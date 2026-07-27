@@ -83,15 +83,22 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 		validatorList = append(validatorList, v)
 	}
 
-	// Create the lifecycle event dispatcher and subscribe the connector
-	// runner so configured connectors execute when their events fire.
-	// Notify failures are logged warnings; gating failures propagate as
-	// *GateError through Dispatch to block loop progression.
+	// Create the lifecycle event dispatcher and wire the subscription engine.
+	// Configured validators and connectors both compile to engine
+	// subscriptions: after-workitem validators launch speculatively at
+	// completion-claimed and join/cancel around verification, while connectors
+	// keep their notify/gating shapes. Validators are registered before
+	// connectors so a failing validator's feedback wins over a gating connector
+	// on the same event, matching the pre-migration order where validators were
+	// checked first. Notify failures are logged warnings; gating failures
+	// propagate as *GateError through Dispatch to block loop progression.
 	dispatcher := NewDispatcher()
-	if len(config.Connectors) > 0 {
-		connectorRunner := NewConnectorRunner(config.Connectors, projectDir)
+	subs := CompileValidators(validatorRunner, validatorList, config.Verification.ValidatorConcurrency)
+	subs = append(subs, CompileConnectors(config.Connectors, projectDir)...)
+	if len(subs) > 0 {
+		runner := &ConnectorRunner{engine: NewEngine(subs)}
 		dispatcher.Subscribe(func(e Event) error {
-			return connectorRunner.Handle(ctx, e)
+			return runner.Handle(ctx, e)
 		})
 	}
 	basePayload := EventPayload{
@@ -123,7 +130,7 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 		fmt.Printf("[%d/%d] %s - starting execution\n", i+1, len(items), item.ID)
 
 		// Execute this work item with the Ralph loop
-		err := executeWorkItem(ctx, item, specID, store, cli, verifier, validatorRunner, validatorList, config, projectDir, dispatcher, basePayload)
+		err := executeWorkItem(ctx, item, specID, store, cli, verifier, config, projectDir, dispatcher, basePayload)
 		if err != nil {
 			result.StoppedAt = item.ID
 			result.Reason = err.Error()
@@ -141,7 +148,7 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 	// fires phase-verified and phase-completed (and their gating connectors)
 	// even when no validators are configured.
 	if result.Completed == result.Total {
-		if err := runAfterPhaseValidators(ctx, validatorRunner, validatorList, cli, config, projectDir, dispatcher, basePayload); err != nil {
+		if err := runAfterPhaseValidators(ctx, cli, config, projectDir, dispatcher, basePayload); err != nil {
 			result.Reason = err.Error()
 			failPayload := basePayload
 			failPayload.Reason = err.Error()
@@ -162,8 +169,6 @@ func executeWorkItem(
 	store *internal.YAMLStore,
 	cli *internal.CLI,
 	verifier *verification.Runner,
-	validatorRunner *validators.Runner,
-	validatorList []*domain.Validator,
 	config *domain.Config,
 	projectDir string,
 	dispatcher *Dispatcher,
@@ -264,103 +269,56 @@ func executeWorkItem(
 
 		fmt.Printf("  Iteration %d: %s token found, running verification...\n", item.IterationCount, CompletionToken)
 
-		// Completion claimed but not yet verified. Notify connectors can start
-		// speculative work here (before the verification gate) and abandon it if
-		// a later workitem-verification-failed fires. Fire-and-forget: notify only.
+		// Completion claimed but not yet verified. This launches speculative
+		// work: after-workitem validators start now (via the engine) and run
+		// concurrently with verification, to be joined at workitem-verified or
+		// abandoned at workitem-verification-failed. Notify connectors also
+		// start here. Fire-and-forget at this point: notify only.
 		claimedPayload := itemPayload
 		claimedPayload.IterationCount = item.IterationCount
 		dispatcher.Dispatch(Event{Name: EventWorkItemCompletionClaimed, Payload: claimedPayload})
 
-		// Token found - run verification
-		if verifyCommand == "" {
-			// No verification configured - consider it done
+		// Run verification. Validators are already running speculatively; the
+		// engine joins them at workitem-verified below. An empty verification
+		// command is treated as trivially verified.
+		verifyPassed := true
+		verifyOutput := ""
+		if verifyCommand != "" {
+			verifyResult, err := verifier.Run(ctx, verifyCommand)
+			if err != nil {
+				return fmt.Errorf("verification command failed to execute: %w", err)
+			}
+			verifyPassed = verifyResult.Passed
+			verifyOutput = verifyResult.Output
+		} else {
 			fmt.Printf("  Iteration %d: no verification command configured, marking complete\n", item.IterationCount)
-			p := itemPayload
-			p.IterationCount = item.IterationCount
-			// A gate blocking workitem-verified injects its stdout as
-			// feedback into the next iteration and prevents the commit.
-			if gateErr := dispatcher.Dispatch(Event{Name: EventWorkItemVerified, Payload: p}); gateErr != nil {
-				fmt.Printf("  Iteration %d: gating connector blocked workitem-verified, will retry with feedback\n", item.IterationCount)
-				item.LastFailureOutput = ""
-				item.LastValidatorFeedback = gateFeedback(gateErr)
-				continue
-			}
-			item.Status = domain.WorkItemCompleted
-			item.LastFailureOutput = ""
-			item.LastValidatorFeedback = ""
-			if err := store.SaveWorkItemForSpec(specID, item); err != nil {
-				return err
-			}
-			logExecutionEntry(store, crID, item, operationType)
-			p.CommitSHA = gitCommitWorkItem(projectDir, item, crTitle)
-			dispatcher.Dispatch(Event{Name: EventWorkItemCommitted, Payload: p})
-			return nil
 		}
 
-		// Compute git diff once before verification/validation
-		gitDiff, _ := validatorRunner.GetGitDiff(ctx)
-
-		// Run verification first, then validators if verification passes
-		// Validators run in parallel up to the configured concurrency limit
-		result := runVerificationWithValidators(ctx, verifier, verifyCommand, validatorRunner, validatorList, gitDiff, config.Verification.ValidatorConcurrency)
-
-		if result.VerifyErr != nil {
-			return fmt.Errorf("verification command failed to execute: %w", result.VerifyErr)
-		}
-
-		if !result.VerifyPassed {
-			// Verification failed - inject failure and retry
-			// Validators were cancelled, their feedback is discarded
+		if !verifyPassed {
+			// Verification failed - inject failure and retry. Signal that the
+			// completion claim did not hold so the engine cancels the
+			// speculative validators; their feedback is discarded.
 			fmt.Printf("  Iteration %d: verification failed, will retry with failure output\n", item.IterationCount)
-			// Signals that a completion claim did not hold, so any speculative
-			// work started at workitem-completion-claimed can be abandoned.
-			// Fire-and-forget: notify only.
 			failedPayload := itemPayload
 			failedPayload.IterationCount = item.IterationCount
 			dispatcher.Dispatch(Event{Name: EventWorkItemVerificationFailed, Payload: failedPayload})
-			item.LastFailureOutput = result.VerifyOutput
+			item.LastFailureOutput = verifyOutput
 			item.LastValidatorFeedback = "" // Clear any previous validator feedback
 			continue
 		}
 
-		fmt.Printf("  Iteration %d: verification passed!\n", item.IterationCount)
-
-		// Verification passed - check validator results
-		allValidatorsPassed := true
-		var validatorFeedback strings.Builder
-		for _, vr := range result.ValidatorResults {
-			if vr.Err != nil {
-				fmt.Printf("  Iteration %d: validator %s error: %v\n", item.IterationCount, vr.ID, vr.Err)
-				allValidatorsPassed = false
-				validatorFeedback.WriteString(fmt.Sprintf("Validator %s error: %v\n\n", vr.ID, vr.Err))
-			} else if vr.Result != nil && !vr.Result.Passed {
-				fmt.Printf("  Iteration %d: validator %s failed\n", item.IterationCount, vr.ID)
-				allValidatorsPassed = false
-				validatorFeedback.WriteString(fmt.Sprintf("Validator %s failed:\n%s\n\n", vr.ID, vr.Result.Feedback))
-			} else {
-				fmt.Printf("  Iteration %d: validator %s passed\n", item.IterationCount, vr.ID)
-			}
+		if verifyCommand != "" {
+			fmt.Printf("  Iteration %d: verification passed!\n", item.IterationCount)
 		}
 
-		if !allValidatorsPassed {
-			// Validators failed - inject their feedback and retry
-			// Test failures are cleared since verification passed
-			feedback := validatorFeedback.String()
-			fmt.Printf("  Iteration %d: validators failed, will retry with feedback\n", item.IterationCount)
-			// Print validator feedback to stdout so humans can see the same content fed to the AI
-			fmt.Printf("\n--- Validator Failure Feedback ---\n%s\n--- End Validator Feedback ---\n\n", feedback)
-			item.LastFailureOutput = "" // Tests passed, clear test failures
-			item.LastValidatorFeedback = feedback
-			continue
-		}
-
-		// All checks passed!
+		// Verification passed - join the speculative validators (and any gating
+		// connectors) at workitem-verified. A blocking gate - a failing
+		// validator or connector - injects its stdout as feedback into the next
+		// iteration and prevents the commit.
 		p := itemPayload
 		p.IterationCount = item.IterationCount
-		// A gate blocking workitem-verified injects its stdout as feedback
-		// into the next iteration and prevents the commit.
 		if gateErr := dispatcher.Dispatch(Event{Name: EventWorkItemVerified, Payload: p}); gateErr != nil {
-			fmt.Printf("  Iteration %d: gating connector blocked workitem-verified, will retry with feedback\n", item.IterationCount)
+			fmt.Printf("  Iteration %d: gate blocked workitem-verified, will retry with feedback\n", item.IterationCount)
 			item.LastFailureOutput = ""
 			item.LastValidatorFeedback = gateFeedback(gateErr)
 			continue
@@ -410,59 +368,6 @@ func gateFeedback(err error) string {
 		return fmt.Sprintf("Gating connector %s blocked %s:\n%s\n", ge.Connector, ge.Event, ge.Stdout)
 	}
 	return err.Error() + "\n"
-}
-
-// VerificationWithValidation holds the result of running verification and validators in parallel.
-type VerificationWithValidation struct {
-	// VerifyPassed is true if the verification command succeeded
-	VerifyPassed bool
-	// VerifyOutput contains verification output (for failure injection)
-	VerifyOutput string
-	// VerifyErr is set if verification failed to execute (not just failed tests)
-	VerifyErr error
-	// ValidatorResults contains results from all validators (only populated if verification passed)
-	ValidatorResults []validators.ValidatorResult
-}
-
-// runVerificationWithValidators runs verification first, then validators sequentially.
-// Validators only start after verification passes, avoiding wasted compute.
-// Validators run in parallel up to the configured concurrency limit.
-func runVerificationWithValidators(
-	ctx context.Context,
-	verifier *verification.Runner,
-	verifyCommand string,
-	validatorRunner *validators.Runner,
-	validatorList []*domain.Validator,
-	gitDiff string,
-	validatorConcurrency int,
-) *VerificationWithValidation {
-	result := &VerificationWithValidation{}
-
-	// Run verification first
-	verifyResult, err := verifier.Run(ctx, verifyCommand)
-
-	if err != nil {
-		// Verification command failed to execute
-		result.VerifyErr = err
-		return result
-	}
-
-	if !verifyResult.Passed {
-		// Verification failed - skip validators entirely (no wasted compute)
-		result.VerifyPassed = false
-		result.VerifyOutput = verifyResult.Output
-		return result
-	}
-
-	// Verification passed
-	result.VerifyPassed = true
-
-	// Run validators only if verification passed
-	if len(validatorList) > 0 {
-		result.ValidatorResults = validatorRunner.RunAllWithDiffLimited(ctx, validatorList, domain.RunAfterWorkitem, gitDiff, validatorConcurrency)
-	}
-
-	return result
 }
 
 // extractCRID extracts the change request ID from a specID.
@@ -564,8 +469,6 @@ func gitCommitWorkItem(projectDir string, item *domain.WorkItem, crTitle string)
 // until all validators pass or max iterations is reached.
 func runAfterPhaseValidators(
 	ctx context.Context,
-	validatorRunner *validators.Runner,
-	validatorList []*domain.Validator,
 	cli *internal.CLI,
 	config *domain.Config,
 	projectDir string,
@@ -574,7 +477,6 @@ func runAfterPhaseValidators(
 ) error {
 	maxIterations := config.Verification.MaxIterations
 	iteration := 0
-	var lastValidatorFeedback string
 
 	for {
 		// Check context cancellation (Ctrl+C)
@@ -591,47 +493,30 @@ func runAfterPhaseValidators(
 			return fmt.Errorf("max iterations (%d) reached for after-phase validators", maxIterations)
 		}
 
-		// Run validators with after-phase trigger
-		results := validatorRunner.RunAll(ctx, validatorList, domain.RunAfterPhase)
-
-		// No after-phase validators configured means the phase is trivially
-		// verified; gating connectors on phase-verified still run below.
-		passed := true
-		feedback := ""
-		if len(results) > 0 {
-			fmt.Printf("Running %d after-phase validator(s) (iteration %d)...\n", len(results), iteration)
-			aggregate := validators.AggregateResults(results)
-			passed = aggregate.Passed
-			feedback = aggregate.Feedback
-		}
-
-		if passed {
-			// A gate blocking phase-verified injects its stdout as feedback
-			// into a fix iteration and prevents the after-phase commit.
-			gateErr := dispatcher.Dispatch(Event{Name: EventPhaseVerified, Payload: basePayload})
-			if gateErr == nil {
-				if len(results) > 0 {
-					fmt.Println("All after-phase validators passed!")
-				}
-				p := basePayload
-				// Create commit for successful fix if this wasn't the first iteration
-				if iteration > 1 {
-					p.CommitSHA = gitCommitAfterPhase(projectDir)
-				}
-				dispatcher.Dispatch(Event{Name: EventPhaseCompleted, Payload: p})
-				return nil
+		// Run after-phase validators (and any gating connectors) by emitting
+		// phase-verified. After-phase validators launch and join on this event,
+		// so the dispatch runs them in-process and returns a *GateError
+		// carrying their aggregated feedback if any fail. No after-phase
+		// validators configured means the phase is trivially verified; gating
+		// connectors on phase-verified still run.
+		gateErr := dispatcher.Dispatch(Event{Name: EventPhaseVerified, Payload: basePayload})
+		if gateErr == nil {
+			p := basePayload
+			// Create commit for a successful fix if this wasn't the first iteration
+			if iteration > 1 {
+				p.CommitSHA = gitCommitAfterPhase(projectDir)
 			}
-			fmt.Printf("  After-phase iteration %d: gating connector blocked phase-verified, will retry with feedback\n", iteration)
-			feedback = gateFeedback(gateErr)
+			dispatcher.Dispatch(Event{Name: EventPhaseCompleted, Payload: p})
+			return nil
 		}
 
 		// Validators or a gate failed - inject feedback and retry with Claude
-		lastValidatorFeedback = feedback
+		feedback := gateFeedback(gateErr)
 		fmt.Printf("  After-phase iteration %d: validators failed, will retry with feedback\n", iteration)
-		fmt.Printf("\n--- Validator Failure Feedback ---\n%s\n--- End Validator Feedback ---\n\n", lastValidatorFeedback)
+		fmt.Printf("\n--- Validator Failure Feedback ---\n%s\n--- End Validator Feedback ---\n\n", feedback)
 
 		// Build prompt for Claude to fix standards issues
-		prompt := buildAfterPhasePrompt(lastValidatorFeedback)
+		prompt := buildAfterPhasePrompt(feedback)
 
 		fmt.Printf("  After-phase iteration %d: invoking Claude to fix standards issues...\n", iteration)
 
