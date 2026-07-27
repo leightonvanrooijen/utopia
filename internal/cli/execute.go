@@ -495,7 +495,7 @@ func chunkCR(cr *domain.ChangeRequest, crID string, store *internal.YAMLStore, c
 		return nil, fmt.Errorf("failed to update CR status: %w", err)
 	}
 
-	workItems, err := chunk.Chunk(cr, store.LoadSpec)
+	workItems, err := chunk.Chunk(cr, store.LoadSpec, store.LoadStandardsIndex())
 	if err != nil {
 		return nil, fmt.Errorf("chunking failed: %w", err)
 	}
@@ -524,7 +524,7 @@ func chunkCR(cr *domain.ChangeRequest, crID string, store *internal.YAMLStore, c
 func chunkPhase(crID string, phaseIndex int, phase *domain.Phase, store *internal.YAMLStore, config *domain.Config, projectDir string) ([]*domain.WorkItem, error) {
 	fmt.Printf("Chunking phase %d (type: %s)\n", phaseIndex+1, phase.Type)
 
-	workItems, err := chunk.ChunkPhase(crID, phaseIndex, phase, store.LoadSpec)
+	workItems, err := chunk.ChunkPhase(crID, phaseIndex, phase, store.LoadSpec, store.LoadStandardsIndex())
 	if err != nil {
 		return nil, fmt.Errorf("chunking failed: %w", err)
 	}

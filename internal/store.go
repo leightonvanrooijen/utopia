@@ -604,6 +604,53 @@ func (s *YAMLStore) ListConceptDocs() ([]*domain.ConceptDoc, error) {
 	return docs, nil
 }
 
+// LoadStandardsIndex reads the frontmatter metadata of every standards doc
+// in .utopia/standards/. Docs with missing or unparseable frontmatter are
+// skipped so a single bad doc never fails chunking. Returns an empty index
+// when the directory is missing or empty.
+func (s *YAMLStore) LoadStandardsIndex() []domain.StandardsDocMeta {
+	dir := filepath.Join(s.baseDir, "standards")
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+
+	var docs []domain.StandardsDocMeta
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
+			continue
+		}
+
+		bytes, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+		if err != nil {
+			continue
+		}
+
+		content := string(bytes)
+		if !strings.HasPrefix(content, "---\n") {
+			continue
+		}
+		endMarker := strings.Index(content[4:], "\n---")
+		if endMarker == -1 {
+			continue
+		}
+
+		var meta domain.StandardsDocMeta
+		if err := yaml.Unmarshal([]byte(content[4:4+endMarker]), &meta); err != nil {
+			continue
+		}
+		if meta.ID == "" {
+			continue
+		}
+
+		meta.Path = filepath.ToSlash(filepath.Join(".utopia", "standards", entry.Name()))
+		docs = append(docs, meta)
+	}
+
+	return docs
+}
+
 // SaveDraft writes a draft spec to .utopia/drafts/specs/{id}.yaml
 func (s *YAMLStore) SaveDraft(draft *domain.DraftSpec) error {
 	return Save(s, filepath.Join("drafts", "specs", draft.ID+".yaml"), draft)

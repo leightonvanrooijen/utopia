@@ -49,7 +49,9 @@ type bugfixFeature struct {
 
 // Chunk transforms a change request into work items.
 // For bugfix CRs that reference specs, specLoader must be provided.
-func Chunk(cr *domain.ChangeRequest, specLoader SpecLoader) ([]*domain.WorkItem, error) {
+// The standards index (frontmatter metadata of .utopia/standards/ docs) is
+// injected into every work item prompt; pass nil when no standards exist.
+func Chunk(cr *domain.ChangeRequest, specLoader SpecLoader, standards []domain.StandardsDocMeta) ([]*domain.WorkItem, error) {
 	// Extract features from the CR
 	features, bugfixRefs := extractFeatures(cr)
 
@@ -92,7 +94,7 @@ func Chunk(cr *domain.ChangeRequest, specLoader SpecLoader) ([]*domain.WorkItem,
 		if isBugfix && refFeatures != nil {
 			refFeature = refFeatures[feature.ID]
 		}
-		workItem.Prompt = BuildPromptWithConstraints(feature, workItem.Constraints, nil, refFeature, feature.Hints)
+		workItem.Prompt = BuildPromptWithConstraints(feature, workItem.Constraints, nil, refFeature, feature.Hints, standards)
 
 		workItems = append(workItems, workItem)
 	}
@@ -102,7 +104,9 @@ func Chunk(cr *domain.ChangeRequest, specLoader SpecLoader) ([]*domain.WorkItem,
 
 // ChunkPhase transforms a single phase of an initiative CR into work items.
 // For bugfix phases that reference specs, specLoader must be provided.
-func ChunkPhase(crID string, phaseIndex int, phase *domain.Phase, specLoader SpecLoader) ([]*domain.WorkItem, error) {
+// The standards index is injected into every work item prompt; pass nil
+// when no standards exist.
+func ChunkPhase(crID string, phaseIndex int, phase *domain.Phase, specLoader SpecLoader, standards []domain.StandardsDocMeta) ([]*domain.WorkItem, error) {
 	// Extract features from the phase
 	features, bugfixRefs := extractFeaturesFromPhase(phase)
 
@@ -146,7 +150,7 @@ func ChunkPhase(crID string, phaseIndex int, phase *domain.Phase, specLoader Spe
 		if isBugfix && refFeatures != nil {
 			refFeature = refFeatures[feature.ID]
 		}
-		workItem.Prompt = BuildPromptWithConstraints(feature, workItem.Constraints, nil, refFeature, feature.Hints)
+		workItem.Prompt = BuildPromptWithConstraints(feature, workItem.Constraints, nil, refFeature, feature.Hints, standards)
 
 		workItems = append(workItems, workItem)
 	}
@@ -450,6 +454,12 @@ The following spec feature defines the correct behavior:
 {{range .Hints}}- {{.}}
 {{end}}
 {{end}}
+{{if .Standards}}
+## STANDARDS
+
+{{.Standards}}
+
+{{end}}
 ## CONSTRAINTS
 
 {{range .Constraints}}- {{.}}
@@ -472,6 +482,7 @@ type PromptData struct {
 	Task             string
 	Reference        string // Optional: for bugfix items, the referenced spec feature content
 	Hints            []string
+	Standards        string // Optional: index of standards docs the executor reads on demand
 	Constraints      []string
 	PreviousFailures string
 }
@@ -479,13 +490,19 @@ type PromptData struct {
 // BuildPromptWithConstraints creates a prompt with custom constraints.
 // For bugfix items, refFeature contains the spec feature that defines correct behavior.
 // Hints provide ephemeral implementation guidance and appear in a HINTS section after TASK.
-func BuildPromptWithConstraints(feature domain.Feature, constraints []string, failures []string, refFeature *domain.Feature, hints []string) string {
+// Standards metadata is rendered as a STANDARDS index section; the executor
+// reads the full docs it judges relevant before implementing.
+func BuildPromptWithConstraints(feature domain.Feature, constraints []string, failures []string, refFeature *domain.Feature, hints []string, standards []domain.StandardsDocMeta) string {
 	task := buildTaskWithCriteria(feature)
 
 	data := PromptData{
 		Task:        task,
 		Hints:       hints,
 		Constraints: constraints,
+	}
+
+	if len(standards) > 0 {
+		data.Standards = buildStandardsSection(standards)
 	}
 
 	// For bugfix items, include the referenced feature content
@@ -517,6 +534,27 @@ func buildReferenceSection(feature *domain.Feature) string {
 	return strings.TrimSpace(sb.String())
 }
 
+// buildStandardsSection formats the standards index for the STANDARDS section.
+// Only frontmatter metadata is included - never full doc content. The executor
+// reads the docs it judges relevant on demand.
+func buildStandardsSection(standards []domain.StandardsDocMeta) string {
+	var sb strings.Builder
+
+	sb.WriteString("This project defines coding standards in .utopia/standards/. ")
+	sb.WriteString("Before implementing, read the standards docs relevant to the files this task touches:\n\n")
+
+	for _, doc := range standards {
+		sb.WriteString(fmt.Sprintf("- id: %s\n", doc.ID))
+		sb.WriteString(fmt.Sprintf("  description: %s\n", doc.Description))
+		if len(doc.Tags) > 0 {
+			sb.WriteString(fmt.Sprintf("  tags: %s\n", strings.Join(doc.Tags, ", ")))
+		}
+		sb.WriteString(fmt.Sprintf("  path: %s\n", doc.Path))
+	}
+
+	return strings.TrimSpace(sb.String())
+}
+
 // buildTaskWithCriteria merges feature description with acceptance criteria
 // into a single TASK block.
 func buildTaskWithCriteria(feature domain.Feature) string {
@@ -542,6 +580,7 @@ func renderTemplate(data PromptData) string {
 	// Escape any template syntax in user content
 	data.Task = escapeTemplateContent(data.Task)
 	data.Reference = escapeTemplateContent(data.Reference)
+	data.Standards = escapeTemplateContent(data.Standards)
 	data.PreviousFailures = escapeTemplateContent(data.PreviousFailures)
 	for i, hint := range data.Hints {
 		data.Hints[i] = escapeTemplateContent(hint)

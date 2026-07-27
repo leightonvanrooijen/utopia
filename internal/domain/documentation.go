@@ -449,6 +449,18 @@ const (
 	ConceptStatusPublished ConceptStatus = "published"
 )
 
+// StandardsDocMeta holds the frontmatter metadata of a standards document
+// in .utopia/standards/. Only lightweight metadata is carried - executors
+// read the full doc content on demand from Path.
+type StandardsDocMeta struct {
+	ID          string   `yaml:"id"`
+	Title       string   `yaml:"title"`
+	Description string   `yaml:"description"`
+	Tags        []string `yaml:"tags,omitempty"`
+	// Path is the project-root-relative path to the doc (not stored in frontmatter)
+	Path string `yaml:"-"`
+}
+
 // ConceptDoc represents an educational trade-off explanation document.
 // Unlike other docs, concepts are stored as Markdown with YAML frontmatter
 // for readability and external sharing.
