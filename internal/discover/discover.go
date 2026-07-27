@@ -7,11 +7,12 @@ package discover
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/leightonvanrooijen/utopia/internal"
+	"github.com/leightonvanrooijen/utopia/internal/cli/ui"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 )
 
@@ -24,35 +25,10 @@ type Scope struct {
 	ExcludePatterns []string
 }
 
-// progress tracks timing and progress for discovery phases
-type progress struct {
-	phaseStart  time.Time
-	totalPhases int
-	verbose     bool
-}
-
-func newProgress(totalPhases int, verbose bool) *progress {
-	return &progress{phaseStart: time.Now(), totalPhases: totalPhases, verbose: verbose}
-}
-
-func (p *progress) startPhase(phaseNum int, name string) {
-	p.phaseStart = time.Now()
-	fmt.Printf("[%d/%d] %s...", phaseNum, p.totalPhases, name)
-}
-
-func (p *progress) endPhase(detail string) {
-	elapsed := time.Since(p.phaseStart)
-	if detail != "" {
-		fmt.Printf(" done (%.1fs, %s)\n", elapsed.Seconds(), detail)
-	} else {
-		fmt.Printf(" done (%.1fs)\n", elapsed.Seconds())
-	}
-}
-
-func (p *progress) verbosePrintf(format string, args ...interface{}) {
-	if p.verbose {
-		fmt.Printf(format, args...)
-	}
+// newProgress builds the shared phase-progress renderer over stdout,
+// matching the package-level fmt output used elsewhere in this pipeline.
+func newProgress(totalPhases int, verbose bool) *ui.Progress {
+	return ui.NewProgress(os.Stdout, totalPhases, verbose)
 }
 
 // SpecsOptions configures the spec discovery pipeline.
@@ -88,7 +64,7 @@ func Specs(ctx context.Context, store *internal.YAMLStore, opts SpecsOptions) (*
 	prog := newProgress(4, opts.Verbose)
 	result := &SpecsResult{}
 
-	prog.startPhase(1, "Scanning files")
+	prog.StartPhase(1, "Scanning files")
 	codebaseContext, filesAnalyzed, err := collectCodebaseContext(opts.ProjectDir, opts.Scope, prog)
 	if err != nil {
 		return nil, fmt.Errorf("failed to collect codebase context: %w", err)
@@ -98,7 +74,7 @@ func Specs(ctx context.Context, store *internal.YAMLStore, opts SpecsOptions) (*
 		fmt.Printf(" done (no files found)\n")
 		return result, nil
 	}
-	prog.endPhase(fmt.Sprintf("%d files found", len(filesAnalyzed)))
+	prog.EndPhase(fmt.Sprintf("%d files found", len(filesAnalyzed)))
 
 	specsSummary := buildExistingSpecsSummary(opts.ExistingSpecs)
 	cli := internal.NewCLI().WithVerbose(opts.Verbose)
@@ -106,7 +82,7 @@ func Specs(ctx context.Context, store *internal.YAMLStore, opts SpecsOptions) (*
 		cli = cli.WithModel(opts.Model)
 	}
 
-	prog.startPhase(2, "Stage 1: Identifying and qualifying candidates")
+	prog.StartPhase(2, "Stage 1: Identifying and qualifying candidates")
 	stage1Prompt := buildIdentifyQualifyPrompt(codebaseContext, specsSummary)
 	qualifiedResult, err := cli.Prompt(ctx, stage1Prompt)
 	if err != nil {
@@ -114,7 +90,7 @@ func Specs(ctx context.Context, store *internal.YAMLStore, opts SpecsOptions) (*
 	}
 	qualifiedCount := countYAMLItems(qualifiedResult.Stdout, "qualified")
 	disqualifiedCount := countYAMLItems(qualifiedResult.Stdout, "disqualified")
-	prog.endPhase(fmt.Sprintf("%d qualified, %d disqualified", qualifiedCount, disqualifiedCount))
+	prog.EndPhase(fmt.Sprintf("%d qualified, %d disqualified", qualifiedCount, disqualifiedCount))
 
 	disqualified := parseDisqualifiedCandidates(qualifiedResult.Stdout)
 	logDisqualifiedCandidates(disqualified, opts.Verbose)
@@ -125,9 +101,9 @@ func Specs(ctx context.Context, store *internal.YAMLStore, opts SpecsOptions) (*
 		return result, nil
 	}
 
-	prog.startPhase(3, fmt.Sprintf("Stage 2: Refining %d candidates in parallel", len(qualified)))
+	prog.StartPhase(3, fmt.Sprintf("Stage 2: Refining %d candidates in parallel", len(qualified)))
 	drafts, refinementErrors := runParallelRefinement(ctx, qualified, defaultRefinementIterations, opts.Verbose, opts.Model)
-	prog.endPhase(fmt.Sprintf("%d drafts refined", len(drafts)))
+	prog.EndPhase(fmt.Sprintf("%d drafts refined", len(drafts)))
 
 	if len(refinementErrors) > 0 && opts.Verbose {
 		fmt.Println("\n  Refinement errors:")
@@ -141,14 +117,14 @@ func Specs(ctx context.Context, store *internal.YAMLStore, opts SpecsOptions) (*
 		return result, nil
 	}
 
-	prog.startPhase(4, "Saving drafts")
+	prog.StartPhase(4, "Saving drafts")
 	for _, draft := range drafts {
-		prog.verbosePrintf("\n  Saving %s.yaml", draft.ID)
+		prog.Verbosef("\n  Saving %s.yaml", draft.ID)
 		if err := store.SaveDraft(draft); err != nil {
 			return nil, fmt.Errorf("failed to save draft %s: %w", draft.ID, err)
 		}
 	}
-	prog.endPhase(fmt.Sprintf("%d drafts saved", len(drafts)))
+	prog.EndPhase(fmt.Sprintf("%d drafts saved", len(drafts)))
 
 	return result, nil
 }

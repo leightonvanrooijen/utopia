@@ -104,7 +104,7 @@ type DomainResult struct {
 func Domain(ctx context.Context, store *internal.YAMLStore, opts DomainOptions) (*DomainResult, error) {
 	prog := newProgress(4, opts.Verbose)
 
-	prog.startPhase(1, "Scanning files")
+	prog.StartPhase(1, "Scanning files")
 	codebaseContext, filesAnalyzed, err := collectDomainContextIncremental(opts.ProjectDir, opts.LastRun, opts.Incremental, opts.Scope, prog)
 	if err != nil {
 		return nil, fmt.Errorf("failed to collect codebase context: %w", err)
@@ -114,12 +114,12 @@ func Domain(ctx context.Context, store *internal.YAMLStore, opts DomainOptions) 
 		fmt.Printf(" done (no new files)\n")
 		return result, nil
 	}
-	prog.endPhase(fmt.Sprintf("%d files found", len(filesAnalyzed)))
+	prog.EndPhase(fmt.Sprintf("%d files found", len(filesAnalyzed)))
 
 	domainDocsSummary := buildExistingDomainDocsSummary(opts.ExistingDocs)
 	systemPrompt := fmt.Sprintf(domainSystemPrompt, codebaseContext, domainDocsSummary)
 
-	prog.startPhase(2, "Analyzing codebase with Claude")
+	prog.StartPhase(2, "Analyzing codebase with Claude")
 	cli := internal.NewCLI().WithVerbose(true)
 	if opts.Model != "" {
 		cli = cli.WithModel(opts.Model)
@@ -128,9 +128,9 @@ func Domain(ctx context.Context, store *internal.YAMLStore, opts DomainOptions) 
 	if err != nil {
 		return nil, fmt.Errorf("claude analysis failed: %w", err)
 	}
-	prog.endPhase("")
+	prog.EndPhase("")
 
-	prog.startPhase(3, "Parsing draft domain documents")
+	prog.StartPhase(3, "Parsing draft domain documents")
 	drafts, err := parseDomainDraftsFromOutput(promptResult.Stdout)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse drafts: %w", err)
@@ -140,16 +140,16 @@ func Domain(ctx context.Context, store *internal.YAMLStore, opts DomainOptions) 
 		fmt.Printf(" done (no drafts found)\n")
 		return result, nil
 	}
-	prog.endPhase(fmt.Sprintf("%d drafts parsed", len(drafts)))
+	prog.EndPhase(fmt.Sprintf("%d drafts parsed", len(drafts)))
 
-	prog.startPhase(4, "Saving drafts")
+	prog.StartPhase(4, "Saving drafts")
 	for _, draft := range drafts {
-		prog.verbosePrintf("\n  Saving %s.yaml", draft.ID)
+		prog.Verbosef("\n  Saving %s.yaml", draft.ID)
 		if err := store.SaveDraftDomainDoc(draft); err != nil {
 			return nil, fmt.Errorf("failed to save draft %s: %w", draft.ID, err)
 		}
 	}
-	prog.endPhase(fmt.Sprintf("%d drafts saved", len(drafts)))
+	prog.EndPhase(fmt.Sprintf("%d drafts saved", len(drafts)))
 
 	newState := &domain.DomainDiscoveryState{LastRun: time.Now(), FilesAnalyzed: filesAnalyzed}
 	if len(opts.Scope.Paths) > 0 || len(opts.Scope.ExcludePatterns) > 0 {

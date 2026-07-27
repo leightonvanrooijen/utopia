@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/leightonvanrooijen/utopia/internal/analysis/types"
+	"github.com/leightonvanrooijen/utopia/internal/cli/ui"
 )
 
 // File collection types
@@ -22,7 +23,7 @@ type skippedFile struct {
 	reason string
 }
 
-func collectCodebaseContext(projectDir string, scope Scope, progress *progress) (string, []string, error) {
+func collectCodebaseContext(projectDir string, scope Scope, progress *ui.Progress) (string, []string, error) {
 	var sb strings.Builder
 	var filesAnalyzed []string
 
@@ -50,14 +51,14 @@ func collectCodebaseContext(projectDir string, scope Scope, progress *progress) 
 		}
 		allFiles = append(allFiles, files...)
 		for _, skip := range skipped {
-			progress.verbosePrintf("\n  Skipped: %s (%s)", skip.path, skip.reason)
+			progress.Verbosef("\n  Skipped: %s (%s)", skip.path, skip.reason)
 		}
 	}
 
 	if len(allFiles) > 0 {
 		sb.WriteString("\n### Source Files\n\n")
 		for _, f := range allFiles {
-			progress.verbosePrintf("\n  Collected: %s", f.path)
+			progress.Verbosef("\n  Collected: %s", f.path)
 			sb.WriteString(fmt.Sprintf("**File: %s**\n```\n%s\n```\n\n", f.path, f.content))
 			filesAnalyzed = append(filesAnalyzed, f.path)
 		}
@@ -65,7 +66,7 @@ func collectCodebaseContext(projectDir string, scope Scope, progress *progress) 
 	return sb.String(), filesAnalyzed, nil
 }
 
-func collectAllTextFiles(root, projectDir string, maxTotalSize int64, excludePatterns []string, progress *progress) ([]collectedFile, []skippedFile, error) {
+func collectAllTextFiles(root, projectDir string, maxTotalSize int64, excludePatterns []string, progress *ui.Progress) ([]collectedFile, []skippedFile, error) {
 	var files []collectedFile
 	var skipped []skippedFile
 	var totalSize int64
@@ -86,13 +87,13 @@ func collectAllTextFiles(root, projectDir string, maxTotalSize int64, excludePat
 			return nil
 		}
 		if matchesAnyPattern(relPath, excludePatterns) {
-			if progress.verbose {
+			if progress.Verbose() {
 				skipped = append(skipped, skippedFile{path: relPath, reason: "excluded by pattern"})
 			}
 			return nil
 		}
 		if totalSize+info.Size() > maxTotalSize {
-			if progress.verbose {
+			if progress.Verbose() {
 				skipped = append(skipped, skippedFile{path: relPath, reason: "size limit exceeded"})
 			}
 			return nil
@@ -102,7 +103,7 @@ func collectAllTextFiles(root, projectDir string, maxTotalSize int64, excludePat
 			return nil
 		}
 		if !isTextFile(content) {
-			if progress.verbose {
+			if progress.Verbose() {
 				skipped = append(skipped, skippedFile{path: relPath, reason: "binary file"})
 			}
 			return nil
@@ -114,7 +115,7 @@ func collectAllTextFiles(root, projectDir string, maxTotalSize int64, excludePat
 	return files, skipped, err
 }
 
-func collectDomainContextIncremental(projectDir string, lastRun time.Time, incrementalMode bool, scope Scope, progress *progress) (string, map[string]time.Time, error) {
+func collectDomainContextIncremental(projectDir string, lastRun time.Time, incrementalMode bool, scope Scope, progress *ui.Progress) (string, map[string]time.Time, error) {
 	var sb strings.Builder
 	filesAnalyzed := make(map[string]time.Time)
 	typeAnalyzer := types.NewAnalyzer()
@@ -157,13 +158,13 @@ func collectDomainContextIncremental(projectDir string, lastRun time.Time, incre
 			}
 			allFiles = append(allFiles, files...)
 			for _, skip := range skipped {
-				progress.verbosePrintf("\n  Skipped: %s (%s)", skip.path, skip.reason)
+				progress.Verbosef("\n  Skipped: %s (%s)", skip.path, skip.reason)
 			}
 		}
 		if len(allFiles) > 0 {
 			sb.WriteString(fmt.Sprintf("\n### %s\n\n", p.name))
 			for _, f := range allFiles {
-				progress.verbosePrintf("\n  Collected: %s", f.path)
+				progress.Verbosef("\n  Collected: %s", f.path)
 				sb.WriteString(fmt.Sprintf("**File: %s**\n```\n%s\n```\n\n", f.path, f.content))
 				filesAnalyzed[f.path] = f.modTime
 				if strings.HasSuffix(f.path, ".go") {
@@ -252,7 +253,7 @@ func collectDomainContextIncremental(projectDir string, lastRun time.Time, incre
 	return sb.String(), filesAnalyzed, nil
 }
 
-func collectDomainFilesIncremental(root, projectDir, pattern string, maxTotalSize int64, lastRun time.Time, incrementalMode bool, excludePatterns []string, progress *progress) ([]collectedFile, []skippedFile, error) {
+func collectDomainFilesIncremental(root, projectDir, pattern string, maxTotalSize int64, lastRun time.Time, incrementalMode bool, excludePatterns []string, progress *ui.Progress) ([]collectedFile, []skippedFile, error) {
 	var files []collectedFile
 	var skipped []skippedFile
 	var totalSize int64
@@ -273,25 +274,25 @@ func collectDomainFilesIncremental(root, projectDir, pattern string, maxTotalSiz
 			return nil
 		}
 		if strings.HasSuffix(relPath, "_test.go") {
-			if progress.verbose {
+			if progress.Verbose() {
 				skipped = append(skipped, skippedFile{path: relPath, reason: "test file"})
 			}
 			return nil
 		}
 		if strings.Contains(filepath.Base(relPath), "mock") {
-			if progress.verbose {
+			if progress.Verbose() {
 				skipped = append(skipped, skippedFile{path: relPath, reason: "mock file"})
 			}
 			return nil
 		}
 		if strings.Contains(relPath, "generated") || strings.HasSuffix(relPath, ".gen.go") {
-			if progress.verbose {
+			if progress.Verbose() {
 				skipped = append(skipped, skippedFile{path: relPath, reason: "generated file"})
 			}
 			return nil
 		}
 		if matchesAnyPattern(relPath, excludePatterns) {
-			if progress.verbose {
+			if progress.Verbose() {
 				skipped = append(skipped, skippedFile{path: relPath, reason: "excluded by pattern"})
 			}
 			return nil
@@ -303,13 +304,13 @@ func collectDomainFilesIncremental(root, projectDir, pattern string, maxTotalSiz
 			}
 		}
 		if incrementalMode && !info.ModTime().After(lastRun) {
-			if progress.verbose {
+			if progress.Verbose() {
 				skipped = append(skipped, skippedFile{path: relPath, reason: "not modified since last run"})
 			}
 			return nil
 		}
 		if totalSize+info.Size() > maxTotalSize {
-			if progress.verbose {
+			if progress.Verbose() {
 				skipped = append(skipped, skippedFile{path: relPath, reason: "size limit exceeded"})
 			}
 			return nil
@@ -319,7 +320,7 @@ func collectDomainFilesIncremental(root, projectDir, pattern string, maxTotalSiz
 			return nil
 		}
 		if !isTextFile(content) {
-			if progress.verbose {
+			if progress.Verbose() {
 				skipped = append(skipped, skippedFile{path: relPath, reason: "binary file"})
 			}
 			return nil

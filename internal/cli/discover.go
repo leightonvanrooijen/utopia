@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
+	"github.com/leightonvanrooijen/utopia/internal/cli/ui"
 	"github.com/leightonvanrooijen/utopia/internal/discover"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 	"github.com/spf13/cobra"
@@ -107,67 +107,44 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 	case len(result.Drafts) == 0:
 		fmt.Println("\nNo draft specifications produced after refinement.")
 	default:
-		printDiscoverySummary(result.Drafts, draftsDir)
+		printDiscoverySummary(ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr()), result.Drafts, draftsDir)
 	}
 	fmt.Printf("\nTotal elapsed time: %.1fs\n", time.Since(startTime).Seconds())
 	return nil
 }
 
-func printDiscoverySummary(drafts []*domain.DraftSpec, draftsDir string) {
-	sort.Slice(drafts, func(i, j int) bool {
-		confidenceOrder := map[domain.DraftConfidence]int{domain.DraftConfidenceHigh: 0, domain.DraftConfidenceMedium: 1, domain.DraftConfidenceLow: 2}
-		return confidenceOrder[drafts[i].Confidence] < confidenceOrder[drafts[j].Confidence]
-	})
-	counts := map[domain.DraftConfidence]int{}
+func printDiscoverySummary(out *ui.Printer, drafts []*domain.DraftSpec, draftsDir string) {
+	items := make([]ui.SummaryItem, 0, len(drafts))
 	for _, d := range drafts {
-		counts[d.Confidence]++
-	}
-
-	fmt.Println()
-	fmt.Println("═══════════════════════════════════════════════════════════════")
-	fmt.Println("                    DISCOVERY COMPLETE")
-	fmt.Println("═══════════════════════════════════════════════════════════════")
-	fmt.Println()
-	fmt.Printf("Created %d draft specifications:\n", len(drafts))
-	fmt.Printf("  • HIGH confidence:   %d\n", counts[domain.DraftConfidenceHigh])
-	fmt.Printf("  • MEDIUM confidence: %d\n", counts[domain.DraftConfidenceMedium])
-	fmt.Printf("  • LOW confidence:    %d\n", counts[domain.DraftConfidenceLow])
-	fmt.Println()
-	fmt.Println("Drafts saved to:", draftsDir)
-	fmt.Println()
-	fmt.Println("Draft Specifications:")
-	fmt.Println("───────────────────────────────────────────────────────────────")
-	for _, d := range drafts {
-		confidenceIcon := "○"
-		switch d.Confidence {
-		case domain.DraftConfidenceHigh:
-			confidenceIcon = "●"
-		case domain.DraftConfidenceMedium:
-			confidenceIcon = "◐"
+		details := []string{
+			fmt.Sprintf("ID: %s", d.ID),
+			fmt.Sprintf("Features: %d", len(d.Features)),
 		}
-		fmt.Printf("\n%s [%s] %s\n", confidenceIcon, strings.ToUpper(string(d.Confidence)), d.Title)
-		fmt.Printf("  ID: %s\n", d.ID)
-		fmt.Printf("  Features: %d\n", len(d.Features))
 		if d.HasTests() {
-			fmt.Printf("  Tests: %d files\n", len(d.Evidence.TestFiles))
+			details = append(details, fmt.Sprintf("Tests: %d files", len(d.Evidence.TestFiles)))
 		}
 		if d.HasDocs() {
-			fmt.Printf("  Docs: %d files\n", len(d.Evidence.DocFiles))
+			details = append(details, fmt.Sprintf("Docs: %d files", len(d.Evidence.DocFiles)))
 		}
-		if len(d.UncertaintyNotes) > 0 {
-			fmt.Println("  Uncertainties:")
-			for _, note := range d.UncertaintyNotes {
-				fmt.Printf("    ⚠ %s\n", note)
-			}
-		}
+		items = append(items, ui.SummaryItem{
+			Confidence:    string(d.Confidence),
+			Title:         d.Title,
+			Details:       details,
+			Uncertainties: d.UncertaintyNotes,
+		})
 	}
-	fmt.Println()
-	fmt.Println("───────────────────────────────────────────────────────────────")
-	fmt.Println("Next steps:")
-	fmt.Println("  1. Review drafts in", draftsDir)
-	fmt.Println("  2. Run 'utopia shape' to validate and refine drafts")
-	fmt.Println("  3. Promote validated drafts to specifications")
-	fmt.Println()
+	out.Summary(ui.Summary{
+		BannerTitle:  "DISCOVERY COMPLETE",
+		CreatedNoun:  "draft specifications",
+		SectionTitle: "Draft Specifications:",
+		DraftsDir:    draftsDir,
+		Items:        items,
+		NextSteps: []string{
+			fmt.Sprintf("1. Review drafts in %s", draftsDir),
+			"2. Run 'utopia shape' to validate and refine drafts",
+			"3. Promote validated drafts to specifications",
+		},
+	})
 }
 
 // ============================================================================
@@ -279,66 +256,43 @@ func runDiscoverDomain(cmd *cobra.Command, args []string) error {
 	case len(result.Drafts) == 0:
 		fmt.Println("No new draft domain documents discovered.")
 	default:
-		printDomainDiscoverySummary(result.Drafts, draftsDir)
+		printDomainDiscoverySummary(ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr()), result.Drafts, draftsDir)
 	}
 	fmt.Printf("\nTotal elapsed time: %.1fs\n", time.Since(startTime).Seconds())
 	return nil
 }
 
-func printDomainDiscoverySummary(drafts []*domain.DraftDomainDoc, draftsDir string) {
-	sort.Slice(drafts, func(i, j int) bool {
-		confidenceOrder := map[domain.DraftDomainConfidence]int{domain.DraftDomainConfidenceHigh: 0, domain.DraftDomainConfidenceMedium: 1, domain.DraftDomainConfidenceLow: 2}
-		return confidenceOrder[drafts[i].Confidence] < confidenceOrder[drafts[j].Confidence]
-	})
-	counts := map[domain.DraftDomainConfidence]int{}
+func printDomainDiscoverySummary(out *ui.Printer, drafts []*domain.DraftDomainDoc, draftsDir string) {
+	items := make([]ui.SummaryItem, 0, len(drafts))
 	for _, d := range drafts {
-		counts[d.Confidence]++
-	}
-
-	fmt.Println()
-	fmt.Println("═══════════════════════════════════════════════════════════════")
-	fmt.Println("                DOMAIN DISCOVERY COMPLETE")
-	fmt.Println("═══════════════════════════════════════════════════════════════")
-	fmt.Println()
-	fmt.Printf("Created %d draft domain documents:\n", len(drafts))
-	fmt.Printf("  • HIGH confidence:   %d\n", counts[domain.DraftDomainConfidenceHigh])
-	fmt.Printf("  • MEDIUM confidence: %d\n", counts[domain.DraftDomainConfidenceMedium])
-	fmt.Printf("  • LOW confidence:    %d\n", counts[domain.DraftDomainConfidenceLow])
-	fmt.Println()
-	fmt.Println("Drafts saved to:", draftsDir)
-	fmt.Println()
-	fmt.Println("Draft Domain Documents:")
-	fmt.Println("───────────────────────────────────────────────────────────────")
-	for _, d := range drafts {
-		confidenceIcon := "○"
-		switch d.Confidence {
-		case domain.DraftDomainConfidenceHigh:
-			confidenceIcon = "●"
-		case domain.DraftDomainConfidenceMedium:
-			confidenceIcon = "◐"
+		details := []string{
+			fmt.Sprintf("Bounded Context: %s", d.BoundedContext),
+			fmt.Sprintf("Terms: %d", len(d.Terms)),
+			fmt.Sprintf("Entities: %d", len(d.Entities)),
 		}
-		fmt.Printf("\n%s [%s] %s\n", confidenceIcon, strings.ToUpper(string(d.Confidence)), d.Title)
-		fmt.Printf("  Bounded Context: %s\n", d.BoundedContext)
-		fmt.Printf("  Terms: %d\n", len(d.Terms))
-		fmt.Printf("  Entities: %d\n", len(d.Entities))
 		if d.HasTypeDefinitions() {
-			fmt.Printf("  Type files: %d\n", len(d.Evidence.TypeFiles))
+			details = append(details, fmt.Sprintf("Type files: %d", len(d.Evidence.TypeFiles)))
 		}
 		if d.HasSchemas() {
-			fmt.Printf("  Schema files: %d\n", len(d.Evidence.SchemaFiles))
+			details = append(details, fmt.Sprintf("Schema files: %d", len(d.Evidence.SchemaFiles)))
 		}
-		if len(d.UncertaintyNotes) > 0 {
-			fmt.Println("  Uncertainties:")
-			for _, note := range d.UncertaintyNotes {
-				fmt.Printf("    ⚠ %s\n", note)
-			}
-		}
+		items = append(items, ui.SummaryItem{
+			Confidence:    string(d.Confidence),
+			Title:         d.Title,
+			Details:       details,
+			Uncertainties: d.UncertaintyNotes,
+		})
 	}
-	fmt.Println()
-	fmt.Println("───────────────────────────────────────────────────────────────")
-	fmt.Println("Next steps:")
-	fmt.Println("  1. Review drafts in", draftsDir)
-	fmt.Println("  2. Validate terminology with domain experts")
-	fmt.Println("  3. Promote validated drafts to official domain docs")
-	fmt.Println()
+	out.Summary(ui.Summary{
+		BannerTitle:  "DOMAIN DISCOVERY COMPLETE",
+		CreatedNoun:  "draft domain documents",
+		SectionTitle: "Draft Domain Documents:",
+		DraftsDir:    draftsDir,
+		Items:        items,
+		NextSteps: []string{
+			fmt.Sprintf("1. Review drafts in %s", draftsDir),
+			"2. Validate terminology with domain experts",
+			"3. Promote validated drafts to official domain docs",
+		},
+	})
 }
