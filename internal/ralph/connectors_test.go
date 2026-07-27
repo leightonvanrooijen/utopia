@@ -13,48 +13,54 @@ import (
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 )
 
-func TestConnectorRunner_RunsSubscribedConnectorsSequentiallyInConfigOrder(t *testing.T) {
-	dir := t.TempDir()
-	runner := NewConnectorRunner([]domain.ConnectorConfig{
-		{Name: "first", On: []string{EventWorkItemVerified}, Command: "echo first >> order.txt"},
-		{Name: "skipped", On: []string{EventExecutionFailed}, Command: "echo skipped >> order.txt"},
-		{Name: "second", On: []string{EventWorkItemVerified}, Command: "echo second >> order.txt"},
-	}, dir)
+func TestCompileConnectors_NotifyCompilesToLaunchOnly(t *testing.T) {
+	subs := CompileConnectors([]domain.ConnectorConfig{
+		{Name: "slack", On: []string{EventExecutionCompleted, EventExecutionFailed}, Command: "echo hi"},
+	}, t.TempDir())
 
-	results := runner.Run(context.Background(), Event{Name: EventWorkItemVerified})
-
-	if len(results) != 2 {
-		t.Fatalf("expected 2 results, got %d", len(results))
+	if len(subs) != 2 {
+		t.Fatalf("expected one subscription per subscribed event, got %d", len(subs))
 	}
-	if results[0].Name != "first" || results[1].Name != "second" {
-		t.Errorf("expected results in config order [first second], got [%s %s]", results[0].Name, results[1].Name)
-	}
-
-	content, err := os.ReadFile(filepath.Join(dir, "order.txt"))
-	if err != nil {
-		t.Fatalf("failed to read order file: %v", err)
-	}
-	if got := string(content); got != "first\nsecond\n" {
-		t.Errorf("expected sequential execution in config order, got %q", got)
+	for i, wantLaunch := range []string{EventExecutionCompleted, EventExecutionFailed} {
+		if subs[i].Launch != wantLaunch {
+			t.Errorf("subs[%d].Launch = %q, want %q", i, subs[i].Launch, wantLaunch)
+		}
+		if subs[i].Join != "" {
+			t.Errorf("notify must compile with no join, got %q", subs[i].Join)
+		}
+		if len(subs[i].Cancel) != 0 {
+			t.Errorf("notify must compile with no cancel events, got %v", subs[i].Cancel)
+		}
 	}
 }
 
-func TestConnectorRunner_UnsubscribedEventRunsNothing(t *testing.T) {
-	runner := NewConnectorRunner([]domain.ConnectorConfig{
-		{Name: "notify", On: []string{EventExecutionCompleted}, Command: "echo hi"},
+func TestCompileConnectors_GatingCompilesToLaunchAndJoinOnSameEvent(t *testing.T) {
+	subs := CompileConnectors([]domain.ConnectorConfig{
+		{Name: "lint", On: []string{EventWorkItemVerified}, Command: "npm run lint", Mode: domain.ConnectorModeGating, Timeout: "30s"},
 	}, t.TempDir())
 
-	results := runner.Run(context.Background(), Event{Name: EventWorkItemStarted})
-
-	if len(results) != 0 {
-		t.Errorf("expected no results for unsubscribed event, got %d", len(results))
+	if len(subs) != 1 {
+		t.Fatalf("expected 1 subscription, got %d", len(subs))
 	}
+	if subs[0].Launch != EventWorkItemVerified || subs[0].Join != EventWorkItemVerified {
+		t.Errorf("gating must launch and join on the same event, got launch %q join %q", subs[0].Launch, subs[0].Join)
+	}
+	if subs[0].Timeout != 30*time.Second {
+		t.Errorf("timeout must compile to a duration, got %v", subs[0].Timeout)
+	}
+}
+
+// gatingRunner builds a runner whose handles resolve synchronously at the
+// event, so tests can inspect collected results deterministically.
+func gatingRunner(t *testing.T, dir, name, event, command string) *ConnectorRunner {
+	t.Helper()
+	return NewConnectorRunner([]domain.ConnectorConfig{
+		{Name: name, On: []string{event}, Command: command, Mode: domain.ConnectorModeGating},
+	}, dir)
 }
 
 func TestConnectorRunner_PayloadDeliveredAsJSONOnStdin(t *testing.T) {
-	runner := NewConnectorRunner([]domain.ConnectorConfig{
-		{Name: "echo-stdin", On: []string{EventWorkItemCommitted}, Command: "cat"},
-	}, t.TempDir())
+	runner := gatingRunner(t, t.TempDir(), "echo-stdin", EventWorkItemStarted, "cat")
 
 	payload := EventPayload{
 		CRID:           "cr-42",
@@ -64,18 +70,14 @@ func TestConnectorRunner_PayloadDeliveredAsJSONOnStdin(t *testing.T) {
 		IterationCount: 3,
 		CommitSHA:      "abc123",
 	}
-	results := runner.Run(context.Background(), Event{Name: EventWorkItemCommitted, Payload: payload})
-
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
-	}
-	if results[0].Err != nil {
-		t.Fatalf("connector failed: %v", results[0].Err)
+	if err := runner.Handle(context.Background(), Event{Name: EventWorkItemStarted, Payload: payload}); err != nil {
+		t.Fatalf("connector failed: %v", err)
 	}
 
+	result := runner.engine.handles[0].result
 	var got EventPayload
-	if err := json.Unmarshal([]byte(results[0].Stdout), &got); err != nil {
-		t.Fatalf("stdout is not valid JSON payload: %v (stdout=%q)", err, results[0].Stdout)
+	if err := json.Unmarshal([]byte(result.Stdout), &got); err != nil {
+		t.Fatalf("stdout is not valid JSON payload: %v (stdout=%q)", err, result.Stdout)
 	}
 	if got != payload {
 		t.Errorf("payload mismatch: got %+v, want %+v", got, payload)
@@ -84,45 +86,35 @@ func TestConnectorRunner_PayloadDeliveredAsJSONOnStdin(t *testing.T) {
 
 func TestConnectorRunner_EnvironmentVariablesSet(t *testing.T) {
 	dir := t.TempDir()
-	runner := NewConnectorRunner([]domain.ConnectorConfig{
-		{
-			Name:    "env-check",
-			On:      []string{EventExecutionStarted},
-			Command: `echo "$UTOPIA_EVENT|$UTOPIA_CR_ID|$UTOPIA_PROJECT_DIR"`,
-		},
-	}, dir)
+	runner := gatingRunner(t, dir, "env-check", EventExecutionStarted, `echo "$UTOPIA_EVENT|$UTOPIA_CR_ID|$UTOPIA_PROJECT_DIR"`)
 
-	results := runner.Run(context.Background(), Event{
+	if err := runner.Handle(context.Background(), Event{
 		Name:    EventExecutionStarted,
 		Payload: EventPayload{CRID: "cr-7"},
-	})
-
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
+	}); err != nil {
+		t.Fatalf("connector failed: %v", err)
 	}
+
 	want := EventExecutionStarted + "|cr-7|" + dir + "\n"
-	if results[0].Stdout != want {
-		t.Errorf("expected env vars %q, got %q", want, results[0].Stdout)
+	if got := runner.engine.handles[0].result.Stdout; got != want {
+		t.Errorf("expected env vars %q, got %q", want, got)
 	}
 }
 
 func TestConnectorRunner_RunsInProjectDirectory(t *testing.T) {
 	dir := t.TempDir()
-	runner := NewConnectorRunner([]domain.ConnectorConfig{
-		{Name: "pwd", On: []string{EventExecutionStarted}, Command: "pwd"},
-	}, dir)
+	runner := gatingRunner(t, dir, "pwd", EventExecutionStarted, "pwd")
 
-	results := runner.Run(context.Background(), Event{Name: EventExecutionStarted})
-
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
+	if err := runner.Handle(context.Background(), Event{Name: EventExecutionStarted}); err != nil {
+		t.Fatalf("connector failed: %v", err)
 	}
+
 	// Resolve symlinks: on macOS t.TempDir() is under /var which links to /private/var
 	wantDir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
 		t.Fatalf("failed to resolve temp dir: %v", err)
 	}
-	gotDir, err := filepath.EvalSymlinks(strings.TrimSpace(results[0].Stdout))
+	gotDir, err := filepath.EvalSymlinks(strings.TrimSpace(runner.engine.handles[0].result.Stdout))
 	if err != nil {
 		t.Fatalf("failed to resolve reported working dir: %v", err)
 	}
@@ -131,59 +123,42 @@ func TestConnectorRunner_RunsInProjectDirectory(t *testing.T) {
 	}
 }
 
-func TestConnectorRunner_CapturesStdoutAndStderr(t *testing.T) {
-	runner := NewConnectorRunner([]domain.ConnectorConfig{
-		{Name: "both", On: []string{EventPhaseCompleted}, Command: "echo out; echo err >&2"},
-	}, t.TempDir())
+func TestConnectorRunner_JoinCapturesOutputAndExitCode(t *testing.T) {
+	runner := gatingRunner(t, t.TempDir(), "both", EventWorkItemVerified, "echo out; echo err >&2; exit 3")
 
-	results := runner.Run(context.Background(), Event{Name: EventPhaseCompleted})
+	err := runner.Handle(context.Background(), Event{Name: EventWorkItemVerified})
+	if err == nil {
+		t.Fatal("expected gate error for non-zero exit")
+	}
 
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
+	result := runner.engine.handles[0].result
+	if result.Stdout != "out\n" {
+		t.Errorf("expected stdout %q, got %q", "out\n", result.Stdout)
 	}
-	if results[0].Stdout != "out\n" {
-		t.Errorf("expected stdout %q, got %q", "out\n", results[0].Stdout)
+	if result.Stderr != "err\n" {
+		t.Errorf("expected stderr %q, got %q", "err\n", result.Stderr)
 	}
-	if results[0].Stderr != "err\n" {
-		t.Errorf("expected stderr %q, got %q", "err\n", results[0].Stderr)
+	if result.ExitCode != 3 {
+		t.Errorf("expected exit code 3, got %d", result.ExitCode)
 	}
-}
-
-func TestConnectorRunner_NonZeroExitReportsError(t *testing.T) {
-	runner := NewConnectorRunner([]domain.ConnectorConfig{
-		{Name: "failing", On: []string{EventWorkItemVerified}, Command: "echo output; exit 3"},
-	}, t.TempDir())
-
-	results := runner.Run(context.Background(), Event{Name: EventWorkItemVerified})
-
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
-	}
-	if results[0].Err == nil {
-		t.Fatal("expected error for non-zero exit, got nil")
-	}
-	if results[0].TimedOut {
+	if result.TimedOut {
 		t.Error("non-zero exit must not be reported as a timeout")
-	}
-	if results[0].Stdout != "output\n" {
-		t.Errorf("output must still be captured on failure, got %q", results[0].Stdout)
 	}
 }
 
 func TestConnectorRunner_Handle_GatingExitZeroProceeds(t *testing.T) {
-	runner := NewConnectorRunner([]domain.ConnectorConfig{
-		{Name: "gate", On: []string{EventWorkItemVerified}, Command: "echo ok", Mode: domain.ConnectorModeGating},
-	}, t.TempDir())
+	runner := gatingRunner(t, t.TempDir(), "gate", EventWorkItemVerified, "echo ok")
 
 	if err := runner.Handle(context.Background(), Event{Name: EventWorkItemVerified}); err != nil {
 		t.Errorf("gating connector exiting 0 must not block, got %v", err)
 	}
+	if got := runner.engine.handles[0].result.ExitCode; got != 0 {
+		t.Errorf("expected exit code 0, got %d", got)
+	}
 }
 
 func TestConnectorRunner_Handle_GatingNonZeroBlocksWithStdout(t *testing.T) {
-	runner := NewConnectorRunner([]domain.ConnectorConfig{
-		{Name: "gate", On: []string{EventWorkItemVerified}, Command: "echo lint failed; exit 1", Mode: domain.ConnectorModeGating},
-	}, t.TempDir())
+	runner := gatingRunner(t, t.TempDir(), "gate", EventWorkItemVerified, "echo lint failed; exit 1")
 
 	err := runner.Handle(context.Background(), Event{Name: EventWorkItemVerified})
 
@@ -207,11 +182,22 @@ func TestConnectorRunner_Handle_GatingTimeoutBlocks(t *testing.T) {
 		{Name: "slow-gate", On: []string{EventWorkItemStarted}, Command: "sleep 5", Mode: domain.ConnectorModeGating, Timeout: "100ms"},
 	}, t.TempDir())
 
+	start := time.Now()
 	err := runner.Handle(context.Background(), Event{Name: EventWorkItemStarted})
 
 	var ge *GateError
 	if !errors.As(err, &ge) {
 		t.Fatalf("timed-out gating connector must block like a non-zero exit, got %v", err)
+	}
+	if elapsed := time.Since(start); elapsed >= 5*time.Second {
+		t.Errorf("command was not killed at timeout; took %v", elapsed)
+	}
+	result := runner.engine.handles[0].result
+	if !result.TimedOut {
+		t.Error("expected TimedOut to be true")
+	}
+	if result.Err == nil {
+		t.Error("timed-out handle outcome must be recorded as failed")
 	}
 }
 
@@ -223,6 +209,15 @@ func TestConnectorRunner_Handle_NotifyFailureDoesNotBlock(t *testing.T) {
 	if err := runner.Handle(context.Background(), Event{Name: EventWorkItemVerified}); err != nil {
 		t.Errorf("notify connector failure must not block, got %v", err)
 	}
+
+	runner.engine.Drain()
+	h := runner.engine.handles[0]
+	if h.state != handleDrained {
+		t.Errorf("notify handle must drain, got %s", h.state)
+	}
+	if h.result.Err == nil {
+		t.Error("notify failure must still be recorded in the handle outcome")
+	}
 }
 
 func TestConnectorRunner_Handle_NotifyTimeoutDoesNotBlock(t *testing.T) {
@@ -233,19 +228,154 @@ func TestConnectorRunner_Handle_NotifyTimeoutDoesNotBlock(t *testing.T) {
 	if err := runner.Handle(context.Background(), Event{Name: EventWorkItemVerified}); err != nil {
 		t.Errorf("notify connector timeout must not block, got %v", err)
 	}
+
+	start := time.Now()
+	runner.engine.Drain()
+	if elapsed := time.Since(start); elapsed >= 5*time.Second {
+		t.Errorf("timed-out notify command was not killed; drain took %v", elapsed)
+	}
+	result := runner.engine.handles[0].result
+	if !result.TimedOut || result.Err == nil {
+		t.Errorf("timed-out handle outcome must be recorded as failed, got %+v", result)
+	}
+}
+
+func TestConnectorRunner_Handle_NotifyRunsInBackground(t *testing.T) {
+	dir := t.TempDir()
+	runner := NewConnectorRunner([]domain.ConnectorConfig{
+		{Name: "slow-notify", On: []string{EventWorkItemStarted}, Command: "sleep 0.2; echo done > done.txt"},
+	}, dir)
+
+	start := time.Now()
+	if err := runner.Handle(context.Background(), Event{Name: EventWorkItemStarted}); err != nil {
+		t.Fatalf("notify connector must not block, got %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 150*time.Millisecond {
+		t.Errorf("launch-only connector must not block the event, took %v", elapsed)
+	}
+
+	runner.engine.Drain()
+	if _, err := os.Stat(filepath.Join(dir, "done.txt")); err != nil {
+		t.Errorf("notify command must run to completion in the background: %v", err)
+	}
+}
+
+func TestConnectorRunner_Handle_TerminalEventDrainsRunningHandles(t *testing.T) {
+	dir := t.TempDir()
+	runner := NewConnectorRunner([]domain.ConnectorConfig{
+		{Name: "final-notify", On: []string{EventExecutionCompleted}, Command: "sleep 0.2; echo ran > ran.txt"},
+	}, dir)
+
+	if err := runner.Handle(context.Background(), Event{Name: EventExecutionCompleted}); err != nil {
+		t.Fatalf("notify connector must not block, got %v", err)
+	}
+
+	// Handle drains on terminal events, so the command finished before return.
+	if _, err := os.Stat(filepath.Join(dir, "ran.txt")); err != nil {
+		t.Errorf("terminal events must drain running handles before the loop exits: %v", err)
+	}
+	if got := runner.engine.handles[0].state; got != handleDrained {
+		t.Errorf("handle state = %s, want %s", got, handleDrained)
+	}
+}
+
+func TestConnectorRunner_Handle_BlockedGateStillRunsLaterConnectors(t *testing.T) {
+	dir := t.TempDir()
+	runner := NewConnectorRunner([]domain.ConnectorConfig{
+		{Name: "gate", On: []string{EventWorkItemVerified}, Command: "exit 1", Mode: domain.ConnectorModeGating},
+		{Name: "notify", On: []string{EventWorkItemVerified}, Command: "echo ran >> after.txt"},
+	}, dir)
+
+	err := runner.Handle(context.Background(), Event{Name: EventWorkItemVerified})
+
+	if err == nil {
+		t.Fatal("expected gate error")
+	}
+	runner.engine.Drain()
+	if _, statErr := os.Stat(filepath.Join(dir, "after.txt")); statErr != nil {
+		t.Errorf("connectors after a blocked gate must still run: %v", statErr)
+	}
+}
+
+func TestEngine_CancelSendsSIGTERMToProcessGroup(t *testing.T) {
+	cc := domain.ConnectorConfig{Name: "trap-term", Command: `trap 'echo terminated; exit 0' TERM; sleep 5`}
+	sub := Subscription{
+		Name:   "trap-term",
+		Launch: EventWorkItemStarted,
+		Cancel: []string{EventWorkItemVerified},
+		Action: commandAction(cc, t.TempDir()),
+	}
+	en := NewEngine([]Subscription{sub})
+
+	if err := en.Emit(context.Background(), Event{Name: EventWorkItemStarted}); err != nil {
+		t.Fatalf("launch emit failed: %v", err)
+	}
+	// Give the shell a moment to install the trap before signalling.
+	time.Sleep(50 * time.Millisecond)
+
+	start := time.Now()
+	if err := en.Emit(context.Background(), Event{Name: EventWorkItemVerified}); err != nil {
+		t.Fatalf("cancel emit failed: %v", err)
+	}
+
+	if elapsed := time.Since(start); elapsed >= 5*time.Second {
+		t.Errorf("cancel did not terminate the process group; took %v", elapsed)
+	}
+	h := en.handles[0]
+	if h.state != handleCancelled {
+		t.Errorf("handle state = %s, want %s", h.state, handleCancelled)
+	}
+	if !strings.Contains(h.result.Stdout, "terminated") {
+		t.Errorf("expected the command's TERM trap to run, stdout = %q", h.result.Stdout)
+	}
+}
+
+func TestEngine_CancelEscalatesToSIGKILLAfterGracePeriod(t *testing.T) {
+	oldGrace := cancelGracePeriod
+	cancelGracePeriod = 100 * time.Millisecond
+	defer func() { cancelGracePeriod = oldGrace }()
+
+	// The shell ignores SIGTERM and respawns children, so only the SIGKILL
+	// escalation to the process group can end it.
+	cc := domain.ConnectorConfig{Name: "term-proof", Command: `trap '' TERM; while :; do sleep 0.05; done`}
+	sub := Subscription{
+		Name:   "term-proof",
+		Launch: EventWorkItemStarted,
+		Cancel: []string{EventWorkItemVerified},
+		Action: commandAction(cc, t.TempDir()),
+	}
+	en := NewEngine([]Subscription{sub})
+
+	if err := en.Emit(context.Background(), Event{Name: EventWorkItemStarted}); err != nil {
+		t.Fatalf("launch emit failed: %v", err)
+	}
+	time.Sleep(50 * time.Millisecond)
+
+	start := time.Now()
+	if err := en.Emit(context.Background(), Event{Name: EventWorkItemVerified}); err != nil {
+		t.Fatalf("cancel emit failed: %v", err)
+	}
+
+	if elapsed := time.Since(start); elapsed >= 3*time.Second {
+		t.Errorf("SIGKILL escalation did not end a TERM-proof process group; took %v", elapsed)
+	}
+	h := en.handles[0]
+	if h.state != handleCancelled {
+		t.Errorf("handle state = %s, want %s", h.state, handleCancelled)
+	}
+	if h.result.Err == nil {
+		t.Error("a killed run must record a failure outcome")
+	}
 }
 
 func TestFormatNotifyFailure_IncludesNameExitCodeAndOutput(t *testing.T) {
-	runner := NewConnectorRunner([]domain.ConnectorConfig{
-		{Name: "flaky", On: []string{EventExecutionCompleted}, Command: "echo posting failed; echo hook 500 >&2; exit 3"},
-	}, t.TempDir())
+	runner := gatingRunner(t, t.TempDir(), "flaky", EventWorkItemVerified, "echo posting failed; echo hook 500 >&2; exit 3")
 
-	results := runner.Run(context.Background(), Event{Name: EventExecutionCompleted})
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
+	if err := runner.Handle(context.Background(), Event{Name: EventWorkItemVerified}); err == nil {
+		t.Fatal("expected failure")
 	}
 
-	msg := formatNotifyFailure(results[0])
+	msg := formatNotifyFailure(runner.engine.handles[0].result)
 
 	if !strings.Contains(msg, "flaky") {
 		t.Errorf("log must include the connector name, got %q", msg)
@@ -266,54 +396,13 @@ func TestFormatNotifyFailure_TimeoutReported(t *testing.T) {
 		{Name: "slow-notify", On: []string{EventExecutionCompleted}, Command: "sleep 5", Timeout: "100ms"},
 	}, t.TempDir())
 
-	results := runner.Run(context.Background(), Event{Name: EventExecutionCompleted})
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
+	if err := runner.Handle(context.Background(), Event{Name: EventExecutionCompleted}); err != nil {
+		t.Fatalf("notify must not block, got %v", err)
 	}
 
-	msg := formatNotifyFailure(results[0])
+	msg := formatNotifyFailure(runner.engine.handles[0].result)
 
 	if !strings.Contains(msg, "slow-notify") || !strings.Contains(msg, "timed out") {
 		t.Errorf("timeout log must include the connector name and timeout cause, got %q", msg)
-	}
-}
-
-func TestConnectorRunner_Handle_BlockedGateStillRunsLaterConnectors(t *testing.T) {
-	dir := t.TempDir()
-	runner := NewConnectorRunner([]domain.ConnectorConfig{
-		{Name: "gate", On: []string{EventWorkItemVerified}, Command: "exit 1", Mode: domain.ConnectorModeGating},
-		{Name: "notify", On: []string{EventWorkItemVerified}, Command: "echo ran >> after.txt"},
-	}, dir)
-
-	err := runner.Handle(context.Background(), Event{Name: EventWorkItemVerified})
-
-	if err == nil {
-		t.Fatal("expected gate error")
-	}
-	if _, statErr := os.Stat(filepath.Join(dir, "after.txt")); statErr != nil {
-		t.Errorf("connectors after a blocked gate must still run: %v", statErr)
-	}
-}
-
-func TestConnectorRunner_TimeoutKillsCommandAndReportsFailed(t *testing.T) {
-	runner := NewConnectorRunner([]domain.ConnectorConfig{
-		{Name: "slow", On: []string{EventWorkItemVerified}, Command: "sleep 5", Timeout: "100ms"},
-	}, t.TempDir())
-
-	start := time.Now()
-	results := runner.Run(context.Background(), Event{Name: EventWorkItemVerified})
-	elapsed := time.Since(start)
-
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
-	}
-	if !results[0].TimedOut {
-		t.Error("expected TimedOut to be true")
-	}
-	if results[0].Err == nil {
-		t.Fatal("expected error for timed-out connector, got nil")
-	}
-	if elapsed >= 5*time.Second {
-		t.Errorf("command was not killed at timeout; took %v", elapsed)
 	}
 }
