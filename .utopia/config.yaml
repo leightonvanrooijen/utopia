@@ -1,4 +1,9 @@
-project_context: You are working inside Utopia, a system where all changes are driven by change requests with explicit decisions, domain language, and constraints. Specs represent the current state of the system and are the source of truth for what exists now. The system self-documents by harvesting conversations into domain language, concepts, and architectural decision records.
+project_context:
+  You are working inside Utopia, a system where all changes are driven by change
+  requests with explicit decisions, domain language, and constraints. Specs
+  represent the current state of the system and are the source of truth for what
+  exists now. The system self-documents by harvesting conversations into domain
+  language, concepts, and architectural decision records.
 models:
   default: opus
   execute: sonnet
@@ -9,4 +14,4 @@ strategies:
   execute: sequential
 verification:
   command: ./scripts/verify.sh
-  max_iterations: 6
+  max_iterations: 10
