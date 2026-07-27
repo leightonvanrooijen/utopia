@@ -153,7 +153,7 @@ func runValidatorEdit(cmd *cobra.Command, args []string) error {
 	// List available validators
 	validatorList, err := editor.ListValidators()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to list validators: %w", err)
 	}
 
 	// Determine which validator to edit
@@ -202,7 +202,7 @@ func findValidatorByID(validatorList []validators.ValidatorInfo, id string) (str
 	for _, v := range validatorList {
 		ids = append(ids, v.Validator.ID)
 	}
-	return "", fmt.Errorf("validator %q not found. Available validators: %s", id, strings.Join(ids, ", "))
+	return "", fmt.Errorf("validator %q not found (available validators: %s)", id, strings.Join(ids, ", "))
 }
 
 // promptValidatorSelection displays the list of validators and prompts the user to select one.
@@ -280,7 +280,7 @@ func runValidatorDelete(cmd *cobra.Command, args []string) error {
 	// List available validators
 	validatorList, err := editor.ListValidators()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to list validators: %w", err)
 	}
 
 	// Determine which validator to delete
@@ -341,7 +341,7 @@ func runValidatorDelete(cmd *cobra.Command, args []string) error {
 	// Delete the validator using the deleter
 	deleter := validators.NewDeleter(projectDir)
 	if err := deleter.Delete(selectedPath); err != nil {
-		return err
+		return fmt.Errorf("failed to delete validator %s: %w", selectedValidator.Validator.ID, err)
 	}
 
 	fmt.Printf("\n✓ Deleted validator: %s\n", selectedValidator.Validator.ID)

@@ -583,7 +583,7 @@ func validateChangeRequests(store *internal.YAMLStore) error {
 	crs, err := store.ListChangeRequests()
 	if err != nil {
 		// ListChangeRequests returns parse errors for invalid YAML
-		return err
+		return fmt.Errorf("failed to list change requests: %w", err)
 	}
 
 	// Validate each CR has required fields based on type

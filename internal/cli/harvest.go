@@ -59,7 +59,7 @@ func runHarvest(cmd *cobra.Command, args []string) error {
 		Model:      modelID,
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("harvest failed: %w", err)
 	}
 
 	if result.UnprocessedConversations == 0 {

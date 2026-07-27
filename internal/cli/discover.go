@@ -96,7 +96,7 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 		ExistingSpecs: existingSpecs,
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("spec discovery failed: %w", err)
 	}
 
 	switch {
@@ -269,7 +269,7 @@ func runDiscoverDomain(cmd *cobra.Command, args []string) error {
 		ExistingDocs: existingDomainDocs,
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("domain discovery failed: %w", err)
 	}
 
 	switch {

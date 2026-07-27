@@ -169,7 +169,7 @@ func runExecute(cmd *cobra.Command, args []string) error {
 		if result.StoppedAt != "" {
 			fmt.Printf("Stopped at: %s\n", result.StoppedAt)
 		}
-		return err
+		return fmt.Errorf("CR %q failed: %w", crID, err)
 	}
 
 	fmt.Printf("\nAll work items completed successfully!\n")
@@ -448,7 +448,7 @@ func executeInitiativeCore(
 			if result.StoppedAt != "" {
 				fmt.Printf("Stopped at: %s\n", result.StoppedAt)
 			}
-			return err
+			return fmt.Errorf("phase %d of CR %q failed: %w", phaseIndex+1, cr.ID, err)
 		}
 
 		cr.Phases[phaseIndex].Status = domain.PhaseStatusComplete
@@ -609,14 +609,14 @@ func gitCommitCleanup(projectDir, crID, utopiaDir string) error {
 func GitCommitCR(projectDir, crID string) (string, error) {
 	crFile := filepath.Join(projectDir, ".utopia", "change-requests", crID+".yaml")
 	if err := git.Add(projectDir, crFile); err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to stage CR file %s: %w", crFile, err)
 	}
 	if !git.HasStagedChanges(projectDir) {
 		return "", nil
 	}
 	msg := fmt.Sprintf("cr: create %s", crID)
 	if err := git.Commit(projectDir, msg); err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to commit CR %s: %w", crID, err)
 	}
 	return git.HeadSHA(projectDir)
 }
