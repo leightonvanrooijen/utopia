@@ -1,6 +1,8 @@
 package internal
 
 import (
+	"strings"
+
 	"github.com/google/yamlfmt/formatters/basic"
 )
 
@@ -22,4 +24,41 @@ func FormatYAML(content []byte) ([]byte, error) {
 		return nil, err
 	}
 	return f.Format(content)
+}
+
+// ExtractYAMLBlock extracts the first fenced YAML block from Claude output.
+// Falls back to scanning for a bare "drafts:" document when no fence is found.
+func ExtractYAMLBlock(text string) string {
+	startMarkers := []string{"```yaml", "```yml"}
+	endMarker := "```"
+	for _, start := range startMarkers {
+		startIdx := strings.Index(text, start)
+		if startIdx == -1 {
+			continue
+		}
+		contentStart := startIdx + len(start)
+		remaining := text[contentStart:]
+		endIdx := strings.Index(remaining, endMarker)
+		if endIdx == -1 {
+			continue
+		}
+		return strings.TrimSpace(remaining[:endIdx])
+	}
+	if strings.Contains(text, "drafts:") {
+		lines := strings.Split(text, "\n")
+		var yamlLines []string
+		inYAML := false
+		for _, line := range lines {
+			if strings.HasPrefix(strings.TrimSpace(line), "drafts:") {
+				inYAML = true
+			}
+			if inYAML {
+				yamlLines = append(yamlLines, line)
+			}
+		}
+		if len(yamlLines) > 0 {
+			return strings.Join(yamlLines, "\n")
+		}
+	}
+	return ""
 }

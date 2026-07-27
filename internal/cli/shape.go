@@ -277,7 +277,7 @@ type shapeUpdated struct {
 }
 
 func parseShapeResult(transcript string) (*shapeResult, error) {
-	yamlContent := extractYAMLBlock(transcript)
+	yamlContent := internal.ExtractYAMLBlock(transcript)
 	if yamlContent == "" {
 		return nil, fmt.Errorf("no YAML block found in transcript")
 	}
@@ -693,7 +693,7 @@ type domainShapeUpdatedDraft struct {
 }
 
 func parseDomainShapeResult(transcript string) (*domainShapeResult, error) {
-	yamlContent := extractYAMLBlock(transcript)
+	yamlContent := internal.ExtractYAMLBlock(transcript)
 	if yamlContent == "" {
 		return nil, fmt.Errorf("no YAML block found in transcript")
 	}
