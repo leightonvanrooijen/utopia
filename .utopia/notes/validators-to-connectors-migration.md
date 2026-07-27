@@ -60,15 +60,28 @@ since connectors-plugin-system is already in-progress):
 - New event `workitem-verification-failed`: fires when verification fails;
   the runner SIGTERMs (then SIGKILLs) in-flight speculative connectors.
   Also useful for failure-alerting/metrics connectors
-- New config flag `early_start: true` on gating connectors subscribed to
-  workitem-verified: launch at completion-claimed, killed on verification
-  failure, verdict collected at the workitem-verified gate. A flag keeps
-  the start/gate/cancel pairing a system invariant instead of user-wired
-  plumbing
+- Generalize connector config to launch/join/abort (rejected `early_start`
+  flag as too hardcoded to the validator use case):
+  - `on: <event>` - launch: when the process starts
+  - `await: <event>` (optional) - join: loop blocks at this event on the
+    connector's exit code. Present = gating, absent = notify - the mode
+    enum dissolves. Synchronous gate = await equal to on
+  - `cancel_on: [<events>]` (optional) - abort: kill the in-flight run
+  - Config validation enforces loop-order invariants: await same-or-later
+    than on; cancel_on events fall between on and await
+
+Validator wiring becomes:
+  on: workitem-completion-claimed
+  await: workitem-verified
+  cancel_on: [workitem-verification-failed]
 
 Flow: token found -> speculative connector starts in parallel with
 verification -> verification fails: kill connector, iterate | verification
 passes: await connector exit, gate on exit code.
+
+Note: the in-progress connectors-plugin-system CR keeps mode gating|notify;
+those are the degenerate cases of this model. The migration CR evolves the
+schema (mode -> await/cancel_on) - decide backward compatibility then.
 
 Constraint to document: early-start connectors must be side-effect-safe
 before exit (a killed run must leak nothing external). Read-only reviewers
