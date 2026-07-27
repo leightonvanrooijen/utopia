@@ -35,6 +35,9 @@ type Config struct {
 	// Models configures which Claude model to use for each command.
 	// If omitted entirely, sonnet is used as the implicit default.
 	Models *ModelConfig `yaml:"models,omitempty"`
+	// Connectors registers external commands that run on lifecycle events
+	// emitted by the execution loop. See ConnectorConfig for the entry format.
+	Connectors []ConnectorConfig `yaml:"connectors,omitempty"`
 }
 
 // ValidatorConfig specifies a validator with optional model and run overrides.

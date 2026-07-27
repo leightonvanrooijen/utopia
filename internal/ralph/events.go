@@ -1,15 +1,19 @@
 package ralph
 
+import "github.com/leightonvanrooijen/utopia/internal/domain"
+
 // Lifecycle event names emitted by the execution loop, in loop order.
+// The canonical definitions live in the domain package so config validation
+// and the loop share one vocabulary; these aliases keep call sites local.
 const (
-	EventExecutionStarted   = "execution-started"
-	EventWorkItemStarted    = "workitem-started"
-	EventWorkItemVerified   = "workitem-verified"
-	EventWorkItemCommitted  = "workitem-committed"
-	EventPhaseVerified      = "phase-verified"
-	EventPhaseCompleted     = "phase-completed"
-	EventExecutionCompleted = "execution-completed"
-	EventExecutionFailed    = "execution-failed"
+	EventExecutionStarted   = domain.EventExecutionStarted
+	EventWorkItemStarted    = domain.EventWorkItemStarted
+	EventWorkItemVerified   = domain.EventWorkItemVerified
+	EventWorkItemCommitted  = domain.EventWorkItemCommitted
+	EventPhaseVerified      = domain.EventPhaseVerified
+	EventPhaseCompleted     = domain.EventPhaseCompleted
+	EventExecutionCompleted = domain.EventExecutionCompleted
+	EventExecutionFailed    = domain.EventExecutionFailed
 )
 
 // EventPayload carries the structured context for a lifecycle event.

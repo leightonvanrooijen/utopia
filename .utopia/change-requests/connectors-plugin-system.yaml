@@ -4,7 +4,7 @@ title: Lifecycle event connectors - language-agnostic plugin system for the ralp
 status: in-progress
 phases:
     - type: refactor
-      status: in-progress
+      status: complete
       tasks:
         - id: ralph-lifecycle-event-dispatcher
           description: |
@@ -39,6 +39,7 @@ phases:
             - Follow the dependency-wiring style used for validators.Runner in Execute
             - Do not port verification/validators onto the dispatcher in this phase - just add emission alongside them
     - type: feature
+      status: in-progress
       changes:
         - operation: add
           spec: connectors
@@ -102,3 +103,4 @@ phases:
                 - A notify connector exiting non-zero does not stop the loop or change the run result
                 - Notify connector failures are logged with the connector name, exit code, and captured output
                 - A notify connector timeout is logged and does not block the run
+current_phase: 1
