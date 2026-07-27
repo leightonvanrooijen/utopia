@@ -225,6 +225,59 @@ func TestConnectorRunner_Handle_NotifyFailureDoesNotBlock(t *testing.T) {
 	}
 }
 
+func TestConnectorRunner_Handle_NotifyTimeoutDoesNotBlock(t *testing.T) {
+	runner := NewConnectorRunner([]domain.ConnectorConfig{
+		{Name: "slow-notify", On: []string{EventWorkItemVerified}, Command: "sleep 5", Timeout: "100ms"},
+	}, t.TempDir())
+
+	if err := runner.Handle(context.Background(), Event{Name: EventWorkItemVerified}); err != nil {
+		t.Errorf("notify connector timeout must not block, got %v", err)
+	}
+}
+
+func TestFormatNotifyFailure_IncludesNameExitCodeAndOutput(t *testing.T) {
+	runner := NewConnectorRunner([]domain.ConnectorConfig{
+		{Name: "flaky", On: []string{EventExecutionCompleted}, Command: "echo posting failed; echo hook 500 >&2; exit 3"},
+	}, t.TempDir())
+
+	results := runner.Run(context.Background(), Event{Name: EventExecutionCompleted})
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+
+	msg := formatNotifyFailure(results[0])
+
+	if !strings.Contains(msg, "flaky") {
+		t.Errorf("log must include the connector name, got %q", msg)
+	}
+	if !strings.Contains(msg, "exit status 3") {
+		t.Errorf("log must include the exit code, got %q", msg)
+	}
+	if !strings.Contains(msg, "posting failed") {
+		t.Errorf("log must include captured stdout, got %q", msg)
+	}
+	if !strings.Contains(msg, "hook 500") {
+		t.Errorf("log must include captured stderr, got %q", msg)
+	}
+}
+
+func TestFormatNotifyFailure_TimeoutReported(t *testing.T) {
+	runner := NewConnectorRunner([]domain.ConnectorConfig{
+		{Name: "slow-notify", On: []string{EventExecutionCompleted}, Command: "sleep 5", Timeout: "100ms"},
+	}, t.TempDir())
+
+	results := runner.Run(context.Background(), Event{Name: EventExecutionCompleted})
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+
+	msg := formatNotifyFailure(results[0])
+
+	if !strings.Contains(msg, "slow-notify") || !strings.Contains(msg, "timed out") {
+		t.Errorf("timeout log must include the connector name and timeout cause, got %q", msg)
+	}
+}
+
 func TestConnectorRunner_Handle_BlockedGateStillRunsLaterConnectors(t *testing.T) {
 	dir := t.TempDir()
 	runner := NewConnectorRunner([]domain.ConnectorConfig{

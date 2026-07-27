@@ -96,9 +96,22 @@ func (r *ConnectorRunner) Handle(ctx context.Context, e Event) error {
 			}
 			continue
 		}
-		fmt.Printf("  warning: connector %s failed on %s: %v\n", cr.Name, cr.Event, cr.Err)
+		fmt.Print(formatNotifyFailure(cr))
 	}
 	return gateErr
+}
+
+// formatNotifyFailure renders a notify connector failure as a warning log
+// message carrying the connector name, the failure cause (exit code or
+// timeout), and the connector's captured output indented beneath it.
+func formatNotifyFailure(cr ConnectorResult) string {
+	msg := fmt.Sprintf("  warning: connector %s failed on %s: %v\n", cr.Name, cr.Event, cr.Err)
+	if out := strings.TrimSpace(cr.Stdout + cr.Stderr); out != "" {
+		for _, line := range strings.Split(out, "\n") {
+			msg += "    " + line + "\n"
+		}
+	}
+	return msg
 }
 
 // subscribesTo reports whether the connector subscribes to the named event.
