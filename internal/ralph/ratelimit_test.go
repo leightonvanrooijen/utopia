@@ -1,9 +1,13 @@
 package ralph
 
 import (
+	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/leightonvanrooijen/utopia/internal"
 )
 
 func TestDetectRateLimit(t *testing.T) {
@@ -44,15 +48,41 @@ func TestDetectRateLimit(t *testing.T) {
 			expected: true,
 		},
 		{
+			name:     "current session limit format (no timezone)",
+			stdout:   "",
+			stderr:   "You've hit your session limit · resets 5pm",
+			expected: true,
+		},
+		{
+			name:     "current Opus limit format (no timezone)",
+			stdout:   "You've hit your Opus limit · resets 3:30pm",
+			stderr:   "",
+			expected: true,
+		},
+		{
+			name:     "current session limit with timezone",
+			stdout:   "",
+			stderr:   "You've hit your session limit · resets 5pm (America/New_York)",
+			expected: true,
+		},
+		{
 			name:     "no rate limit",
 			stdout:   "Normal output",
 			stderr:   "Some error",
 			expected: false,
 		},
 		{
-			name:     "partial match - no timezone",
+			// The timezone is now optional, so a legacy-prefixed message
+			// without one is interpreted in system local time and detected.
+			name:     "legacy prefix without timezone",
 			stdout:   "",
 			stderr:   "Limit reached · resets 1am",
+			expected: true,
+		},
+		{
+			name:     "spend limit is not a rolling rate limit",
+			stdout:   "",
+			stderr:   "You've hit your org's monthly spend limit",
 			expected: false,
 		},
 		{
@@ -269,6 +299,9 @@ func TestRateLimitPatternVariations(t *testing.T) {
 		"Limit reached · resets 11:59pm (Asia/Tokyo)",
 		"Some prefix Limit reached · resets 1am (UTC) some suffix",
 		"Limit reached · resets 1am (Australia/Sydney) · contact an admin to increase limits",
+		"You've hit your session limit · resets 5pm",
+		"You've hit your Opus limit · resets 3:30pm",
+		"You've hit your session limit · resets 5pm (America/New_York)",
 	}
 
 	for _, pattern := range validPatterns {
@@ -304,4 +337,153 @@ func TestDefaultConstants(t *testing.T) {
 	if RateLimitBuffer != 2*time.Minute {
 		t.Errorf("RateLimitBuffer = %v, want 2m", RateLimitBuffer)
 	}
+
+	if ProbeInterval != 30*time.Minute {
+		t.Errorf("ProbeInterval = %v, want 30m", ProbeInterval)
+	}
+}
+
+func TestRollingLimitWithoutTimezoneParses(t *testing.T) {
+	// Current message formats omit the timezone. Parsing must succeed by
+	// interpreting the reset time in the system local timezone (no error).
+	dur, err := ParseRateLimitWait("", "You've hit your session limit · resets 5pm")
+	if err != nil {
+		t.Fatalf("ParseRateLimitWait() with no timezone returned error: %v", err)
+	}
+	if dur <= 0 || dur > 25*time.Hour {
+		t.Errorf("ParseRateLimitWait() = %v, want a positive duration under ~1 day", dur)
+	}
+
+	// The wait message should still be produced without a parse error.
+	msg := FormatWaitMessage("", "You've hit your Opus limit · resets 3:30pm")
+	if !strings.Contains(msg, "Rate limit hit") || strings.Contains(msg, "parse error") {
+		t.Errorf("FormatWaitMessage() = %q, want a clean rate-limit message", msg)
+	}
+}
+
+func TestDetectSpendLimit(t *testing.T) {
+	tests := []struct {
+		name     string
+		stdout   string
+		stderr   string
+		expected bool
+	}{
+		{
+			name:     "spend limit in stderr",
+			stderr:   "You've hit your org's monthly spend limit",
+			expected: true,
+		},
+		{
+			name:     "spend limit in stdout",
+			stdout:   "You've hit your org's monthly spend limit · contact an admin",
+			expected: true,
+		},
+		{
+			name:     "rolling rate limit is not a spend limit",
+			stderr:   "Limit reached · resets 1am (Australia/Sydney)",
+			expected: false,
+		},
+		{
+			name:     "no limit",
+			stdout:   "normal output",
+			stderr:   "normal error",
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := DetectSpendLimit(tt.stdout, tt.stderr); got != tt.expected {
+				t.Errorf("DetectSpendLimit() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestProbeUntilRecovered(t *testing.T) {
+	spendLimited := &internal.PromptResult{Stderr: "You've hit your org's monthly spend limit"}
+
+	t.Run("recovers on first successful probe", func(t *testing.T) {
+		calls := 0
+		probe := func(context.Context) (*internal.PromptResult, error) {
+			calls++
+			return &internal.PromptResult{Stdout: "ok"}, nil
+		}
+		if err := probeUntilRecovered(context.Background(), probe, time.Millisecond); err != nil {
+			t.Fatalf("probeUntilRecovered() error = %v, want nil", err)
+		}
+		if calls != 1 {
+			t.Errorf("probe called %d times, want 1", calls)
+		}
+	})
+
+	t.Run("keeps probing while still limited then recovers", func(t *testing.T) {
+		calls := 0
+		probe := func(context.Context) (*internal.PromptResult, error) {
+			calls++
+			if calls < 3 {
+				// Still limited: the probe itself hits the spend limit and errors.
+				return spendLimited, fmt.Errorf("claude prompt failed: exit status 1")
+			}
+			return &internal.PromptResult{Stdout: "ok"}, nil
+		}
+		if err := probeUntilRecovered(context.Background(), probe, time.Millisecond); err != nil {
+			t.Fatalf("probeUntilRecovered() error = %v, want nil", err)
+		}
+		if calls != 3 {
+			t.Errorf("probe called %d times, want 3", calls)
+		}
+	})
+
+	t.Run("cancelled during wait returns context error without probing", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		calls := 0
+		probe := func(context.Context) (*internal.PromptResult, error) {
+			calls++
+			return &internal.PromptResult{Stdout: "ok"}, nil
+		}
+		// A long interval ensures the cancelled ctx wins the select, exercising
+		// the Ctrl+C / timeout graceful-shutdown path.
+		err := probeUntilRecovered(ctx, probe, time.Hour)
+		if err != context.Canceled {
+			t.Errorf("probeUntilRecovered() error = %v, want context.Canceled", err)
+		}
+		if calls != 0 {
+			t.Errorf("probe called %d times, want 0 (cancelled before probing)", calls)
+		}
+	})
+}
+
+func TestHandleClaudeLimits(t *testing.T) {
+	t.Run("no limit returns limitNone", func(t *testing.T) {
+		result := &internal.PromptResult{Stdout: "all good"}
+		outcome, err := handleClaudeLimits(context.Background(), result)
+		if err != nil {
+			t.Fatalf("handleClaudeLimits() error = %v, want nil", err)
+		}
+		if outcome != limitNone {
+			t.Errorf("handleClaudeLimits() outcome = %v, want limitNone", outcome)
+		}
+	})
+
+	t.Run("nil result returns limitNone", func(t *testing.T) {
+		outcome, err := handleClaudeLimits(context.Background(), nil)
+		if err != nil || outcome != limitNone {
+			t.Errorf("handleClaudeLimits(nil) = (%v, %v), want (limitNone, nil)", outcome, err)
+		}
+	})
+
+	t.Run("rolling limit with cancelled ctx returns limitWaited and ctx error", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		result := &internal.PromptResult{Stderr: "Limit reached · resets 1am (Australia/Sydney)"}
+		outcome, err := handleClaudeLimits(ctx, result)
+		if outcome != limitWaited {
+			t.Errorf("handleClaudeLimits() outcome = %v, want limitWaited", outcome)
+		}
+		if err != context.Canceled {
+			t.Errorf("handleClaudeLimits() error = %v, want context.Canceled", err)
+		}
+	})
 }

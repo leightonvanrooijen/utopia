@@ -227,31 +227,22 @@ func executeWorkItem(
 
 		// Invoke Claude
 		claudeResult, err := cli.Prompt(ctx, prompt)
+
+		// Detect and handle Claude usage limits (rolling rate limit or org
+		// monthly spend limit) before treating this as a failed iteration.
+		// A handled limit means this attempt must not count against max
+		// iterations, so we undo the increment and retry with a normally
+		// rebuilt prompt. A limit error means ctx was cancelled while
+		// waiting/probing (Ctrl+C or timeout) - take the graceful shutdown path.
+		if outcome, limitErr := handleClaudeLimits(ctx, claudeResult); limitErr != nil {
+			_ = store.SaveWorkItemForSpec(specID, item)
+			return limitErr
+		} else if outcome == limitWaited {
+			item.IterationCount--
+			continue
+		}
+
 		if err != nil {
-			// Check for rate limit before counting this as a failed iteration
-			if claudeResult != nil && DetectRateLimit(claudeResult.Stdout, claudeResult.Stderr) {
-				// Rate limit detected - wait and retry without counting this iteration
-				item.IterationCount-- // Undo the increment since this shouldn't count
-
-				waitDuration, parseErr := ParseRateLimitWait(claudeResult.Stdout, claudeResult.Stderr)
-				if parseErr != nil {
-					fmt.Printf("  Rate limit detected but failed to parse reset time: %v\n", parseErr)
-					fmt.Printf("  Falling back to %v wait...\n", DefaultRateLimitWait)
-				}
-
-				fmt.Printf("  %s\n", FormatWaitMessage(claudeResult.Stdout, claudeResult.Stderr))
-
-				// Sleep until rate limit resets
-				select {
-				case <-ctx.Done():
-					_ = store.SaveWorkItemForSpec(specID, item)
-					return ctx.Err()
-				case <-time.After(waitDuration):
-					// Rate limit should have reset, retry
-					continue
-				}
-			}
-
 			fmt.Printf("  Iteration %d: Claude invocation failed: %v\n", item.IterationCount, err)
 			// Continue to next iteration - Claude may have hit an error
 			continue
@@ -522,30 +513,18 @@ func runAfterPhaseValidators(
 
 		// Invoke Claude
 		claudeResult, err := cli.Prompt(ctx, prompt)
+
+		// Detect and handle Claude usage limits without counting the attempt
+		// against max iterations. A limit error means ctx was cancelled while
+		// waiting/probing (Ctrl+C or timeout) - take the graceful shutdown path.
+		if outcome, limitErr := handleClaudeLimits(ctx, claudeResult); limitErr != nil {
+			return limitErr
+		} else if outcome == limitWaited {
+			iteration--
+			continue
+		}
+
 		if err != nil {
-			// Check for rate limit before counting this as a failed iteration
-			if claudeResult != nil && DetectRateLimit(claudeResult.Stdout, claudeResult.Stderr) {
-				// Rate limit detected - wait and retry without counting this iteration
-				iteration-- // Undo the increment since this shouldn't count
-
-				waitDuration, parseErr := ParseRateLimitWait(claudeResult.Stdout, claudeResult.Stderr)
-				if parseErr != nil {
-					fmt.Printf("  Rate limit detected but failed to parse reset time: %v\n", parseErr)
-					fmt.Printf("  Falling back to %v wait...\n", DefaultRateLimitWait)
-				}
-
-				fmt.Printf("  %s\n", FormatWaitMessage(claudeResult.Stdout, claudeResult.Stderr))
-
-				// Sleep until rate limit resets
-				select {
-				case <-ctx.Done():
-					return ctx.Err()
-				case <-time.After(waitDuration):
-					// Rate limit should have reset, retry
-					continue
-				}
-			}
-
 			fmt.Printf("  After-phase iteration %d: Claude invocation failed: %v\n", iteration, err)
 			// Continue to next iteration - Claude may have hit an error
 			continue
