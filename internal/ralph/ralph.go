@@ -2,6 +2,7 @@ package ralph
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -84,17 +85,13 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 
 	// Create the lifecycle event dispatcher and subscribe the connector
 	// runner so configured connectors execute when their events fire.
-	// Gating and notify failure semantics are layered on in later work
-	// items; for now failures are surfaced as warnings.
+	// Notify failures are logged warnings; gating failures propagate as
+	// *GateError through Dispatch to block loop progression.
 	dispatcher := NewDispatcher()
 	if len(config.Connectors) > 0 {
 		connectorRunner := NewConnectorRunner(config.Connectors, projectDir)
-		dispatcher.Subscribe(func(e Event) {
-			for _, cr := range connectorRunner.Run(ctx, e) {
-				if cr.Err != nil {
-					fmt.Printf("  warning: connector %s failed on %s: %v\n", cr.Name, cr.Event, cr.Err)
-				}
-			}
+		dispatcher.Subscribe(func(e Event) error {
+			return connectorRunner.Handle(ctx, e)
 		})
 	}
 	basePayload := EventPayload{
@@ -105,7 +102,14 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 		basePayload.CRTitle = cr.Title
 	}
 
-	dispatcher.Dispatch(Event{Name: EventExecutionStarted, Payload: basePayload})
+	// A gate blocking execution-started aborts the run before any work starts.
+	if gateErr := dispatcher.Dispatch(Event{Name: EventExecutionStarted, Payload: basePayload}); gateErr != nil {
+		result.Reason = gateErr.Error()
+		failPayload := basePayload
+		failPayload.Reason = gateErr.Error()
+		dispatcher.Dispatch(Event{Name: EventExecutionFailed, Payload: failPayload})
+		return result, gateErr
+	}
 
 	// Execute each work item in order
 	for i, item := range items {
@@ -133,21 +137,16 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 		fmt.Printf("[%d/%d] %s - completed in %d iteration(s)\n", i+1, len(items), item.ID, item.IterationCount)
 	}
 
-	// Run after-phase validators once all work items are complete
+	// Run after-phase validators once all work items are complete. This also
+	// fires phase-verified and phase-completed (and their gating connectors)
+	// even when no validators are configured.
 	if result.Completed == result.Total {
-		if len(validatorList) > 0 {
-			if err := runAfterPhaseValidators(ctx, validatorRunner, validatorList, cli, config, projectDir, dispatcher, basePayload); err != nil {
-				result.Reason = err.Error()
-				failPayload := basePayload
-				failPayload.Reason = err.Error()
-				dispatcher.Dispatch(Event{Name: EventExecutionFailed, Payload: failPayload})
-				return result, err
-			}
-		} else {
-			// No validators configured: the phase is trivially verified and
-			// no after-phase commit is created.
-			dispatcher.Dispatch(Event{Name: EventPhaseVerified, Payload: basePayload})
-			dispatcher.Dispatch(Event{Name: EventPhaseCompleted, Payload: basePayload})
+		if err := runAfterPhaseValidators(ctx, validatorRunner, validatorList, cli, config, projectDir, dispatcher, basePayload); err != nil {
+			result.Reason = err.Error()
+			failPayload := basePayload
+			failPayload.Reason = err.Error()
+			dispatcher.Dispatch(Event{Name: EventExecutionFailed, Payload: failPayload})
+			return result, err
 		}
 		dispatcher.Dispatch(Event{Name: EventExecutionCompleted, Payload: basePayload})
 	}
@@ -185,7 +184,10 @@ func executeWorkItem(
 	itemPayload := basePayload
 	itemPayload.WorkItemID = item.ID
 	itemPayload.IterationCount = item.IterationCount
-	dispatcher.Dispatch(Event{Name: EventWorkItemStarted, Payload: itemPayload})
+	// A gate blocking workitem-started aborts the run before the item runs.
+	if gateErr := dispatcher.Dispatch(Event{Name: EventWorkItemStarted, Payload: itemPayload}); gateErr != nil {
+		return gateErr
+	}
 
 	for {
 		// Check context cancellation (Ctrl+C)
@@ -266,6 +268,16 @@ func executeWorkItem(
 		if verifyCommand == "" {
 			// No verification configured - consider it done
 			fmt.Printf("  Iteration %d: no verification command configured, marking complete\n", item.IterationCount)
+			p := itemPayload
+			p.IterationCount = item.IterationCount
+			// A gate blocking workitem-verified injects its stdout as
+			// feedback into the next iteration and prevents the commit.
+			if gateErr := dispatcher.Dispatch(Event{Name: EventWorkItemVerified, Payload: p}); gateErr != nil {
+				fmt.Printf("  Iteration %d: gating connector blocked workitem-verified, will retry with feedback\n", item.IterationCount)
+				item.LastFailureOutput = ""
+				item.LastValidatorFeedback = gateFeedback(gateErr)
+				continue
+			}
 			item.Status = domain.WorkItemCompleted
 			item.LastFailureOutput = ""
 			item.LastValidatorFeedback = ""
@@ -273,9 +285,6 @@ func executeWorkItem(
 				return err
 			}
 			logExecutionEntry(store, crID, item, operationType)
-			p := itemPayload
-			p.IterationCount = item.IterationCount
-			dispatcher.Dispatch(Event{Name: EventWorkItemVerified, Payload: p})
 			p.CommitSHA = gitCommitWorkItem(projectDir, item, crTitle)
 			dispatcher.Dispatch(Event{Name: EventWorkItemCommitted, Payload: p})
 			return nil
@@ -333,6 +342,16 @@ func executeWorkItem(
 		}
 
 		// All checks passed!
+		p := itemPayload
+		p.IterationCount = item.IterationCount
+		// A gate blocking workitem-verified injects its stdout as feedback
+		// into the next iteration and prevents the commit.
+		if gateErr := dispatcher.Dispatch(Event{Name: EventWorkItemVerified, Payload: p}); gateErr != nil {
+			fmt.Printf("  Iteration %d: gating connector blocked workitem-verified, will retry with feedback\n", item.IterationCount)
+			item.LastFailureOutput = ""
+			item.LastValidatorFeedback = gateFeedback(gateErr)
+			continue
+		}
 		item.Status = domain.WorkItemCompleted
 		item.LastFailureOutput = ""
 		item.LastValidatorFeedback = ""
@@ -340,9 +359,6 @@ func executeWorkItem(
 			return err
 		}
 		logExecutionEntry(store, crID, item, operationType)
-		p := itemPayload
-		p.IterationCount = item.IterationCount
-		dispatcher.Dispatch(Event{Name: EventWorkItemVerified, Payload: p})
 		p.CommitSHA = gitCommitWorkItem(projectDir, item, crTitle)
 		dispatcher.Dispatch(Event{Name: EventWorkItemCommitted, Payload: p})
 		return nil
@@ -371,6 +387,16 @@ func buildPrompt(item *domain.WorkItem) string {
 	}
 
 	return prompt
+}
+
+// gateFeedback formats a blocking gate error for prompt injection, carrying
+// the gating connector's stdout into the next iteration's feedback section.
+func gateFeedback(err error) string {
+	var ge *GateError
+	if errors.As(err, &ge) && strings.TrimSpace(ge.Stdout) != "" {
+		return fmt.Sprintf("Gating connector %s blocked %s:\n%s\n", ge.Connector, ge.Event, ge.Stdout)
+	}
+	return err.Error() + "\n"
 }
 
 // VerificationWithValidation holds the result of running verification and validators in parallel.
@@ -555,33 +581,39 @@ func runAfterPhaseValidators(
 		// Run validators with after-phase trigger
 		results := validatorRunner.RunAll(ctx, validatorList, domain.RunAfterPhase)
 
-		if len(results) == 0 {
-			// No after-phase validators configured: the phase is trivially
-			// verified and no after-phase commit is created.
-			dispatcher.Dispatch(Event{Name: EventPhaseVerified, Payload: basePayload})
-			dispatcher.Dispatch(Event{Name: EventPhaseCompleted, Payload: basePayload})
-			return nil
+		// No after-phase validators configured means the phase is trivially
+		// verified; gating connectors on phase-verified still run below.
+		passed := true
+		feedback := ""
+		if len(results) > 0 {
+			fmt.Printf("Running %d after-phase validator(s) (iteration %d)...\n", len(results), iteration)
+			aggregate := validators.AggregateResults(results)
+			passed = aggregate.Passed
+			feedback = aggregate.Feedback
 		}
 
-		fmt.Printf("Running %d after-phase validator(s) (iteration %d)...\n", len(results), iteration)
-
-		// Aggregate results
-		aggregate := validators.AggregateResults(results)
-
-		if aggregate.Passed {
-			fmt.Println("All after-phase validators passed!")
-			dispatcher.Dispatch(Event{Name: EventPhaseVerified, Payload: basePayload})
-			p := basePayload
-			// Create commit for successful fix if this wasn't the first iteration
-			if iteration > 1 {
-				p.CommitSHA = gitCommitAfterPhase(projectDir)
+		if passed {
+			// A gate blocking phase-verified injects its stdout as feedback
+			// into a fix iteration and prevents the after-phase commit.
+			gateErr := dispatcher.Dispatch(Event{Name: EventPhaseVerified, Payload: basePayload})
+			if gateErr == nil {
+				if len(results) > 0 {
+					fmt.Println("All after-phase validators passed!")
+				}
+				p := basePayload
+				// Create commit for successful fix if this wasn't the first iteration
+				if iteration > 1 {
+					p.CommitSHA = gitCommitAfterPhase(projectDir)
+				}
+				dispatcher.Dispatch(Event{Name: EventPhaseCompleted, Payload: p})
+				return nil
 			}
-			dispatcher.Dispatch(Event{Name: EventPhaseCompleted, Payload: p})
-			return nil
+			fmt.Printf("  After-phase iteration %d: gating connector blocked phase-verified, will retry with feedback\n", iteration)
+			feedback = gateFeedback(gateErr)
 		}
 
-		// Validators failed - inject feedback and retry with Claude
-		lastValidatorFeedback = aggregate.Feedback
+		// Validators or a gate failed - inject feedback and retry with Claude
+		lastValidatorFeedback = feedback
 		fmt.Printf("  After-phase iteration %d: validators failed, will retry with feedback\n", iteration)
 		fmt.Printf("\n--- Validator Failure Feedback ---\n%s\n--- End Validator Feedback ---\n\n", lastValidatorFeedback)
 

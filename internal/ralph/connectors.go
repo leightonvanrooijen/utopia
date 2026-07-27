@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/leightonvanrooijen/utopia/internal/domain"
@@ -18,6 +19,8 @@ type ConnectorResult struct {
 	Name string
 	// Event is the lifecycle event that triggered the run
 	Event string
+	// Mode is the connector mode (gating or notify) from config
+	Mode string
 	// Stdout is the captured standard output of the command
 	Stdout string
 	// Stderr is the captured standard error of the command
@@ -26,6 +29,26 @@ type ConnectorResult struct {
 	TimedOut bool
 	// Err is non-nil if the command failed: non-zero exit, timeout, or failure to start
 	Err error
+}
+
+// GateError reports a gating connector that blocked loop progression.
+// Stdout carries the connector's output so gate sites can surface it in
+// abort errors or inject it as feedback into the next iteration.
+type GateError struct {
+	// Connector is the name of the gating connector that blocked
+	Connector string
+	// Event is the lifecycle event where the gate fired
+	Event string
+	// Stdout is the connector's captured standard output
+	Stdout string
+}
+
+func (e *GateError) Error() string {
+	msg := fmt.Sprintf("gating connector %s blocked %s", e.Connector, e.Event)
+	if out := strings.TrimSpace(e.Stdout); out != "" {
+		msg += ": " + out
+	}
+	return msg
 }
 
 // ConnectorRunner executes configured connector commands when their
@@ -55,6 +78,29 @@ func (r *ConnectorRunner) Run(ctx context.Context, e Event) []ConnectorResult {
 	return results
 }
 
+// Handle runs all connectors subscribed to the event and applies mode
+// semantics: notify failures are logged as warnings and never block, while
+// the first gating failure is returned as a *GateError. Timeouts are
+// failures like any other. All subscribed connectors run even after a gate
+// blocks, so notify side effects are not skipped.
+func (r *ConnectorRunner) Handle(ctx context.Context, e Event) error {
+	var gateErr error
+	for _, cr := range r.Run(ctx, e) {
+		if cr.Err == nil {
+			continue
+		}
+		if cr.Mode == domain.ConnectorModeGating {
+			fmt.Printf("  gating connector %s blocked %s: %v\n", cr.Name, cr.Event, cr.Err)
+			if gateErr == nil {
+				gateErr = &GateError{Connector: cr.Name, Event: cr.Event, Stdout: cr.Stdout}
+			}
+			continue
+		}
+		fmt.Printf("  warning: connector %s failed on %s: %v\n", cr.Name, cr.Event, cr.Err)
+	}
+	return gateErr
+}
+
 // subscribesTo reports whether the connector subscribes to the named event.
 func subscribesTo(cc domain.ConnectorConfig, eventName string) bool {
 	for _, name := range cc.On {
@@ -70,7 +116,7 @@ func subscribesTo(cc domain.ConnectorConfig, eventName string) bool {
 // UTOPIA_PROJECT_DIR environment variables. A command exceeding its timeout
 // is killed and reported as failed.
 func (r *ConnectorRunner) runConnector(ctx context.Context, cc domain.ConnectorConfig, e Event) ConnectorResult {
-	result := ConnectorResult{Name: cc.Name, Event: e.Name}
+	result := ConnectorResult{Name: cc.Name, Event: e.Name, Mode: cc.GetMode()}
 
 	// Invalid timeouts are rejected by config validation, so parse errors
 	// here are unreachable in practice; run without a timeout if one slips through.

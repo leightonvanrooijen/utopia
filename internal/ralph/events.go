@@ -39,7 +39,7 @@ type Event struct {
 // Dispatcher delivers lifecycle events to registered subscribers.
 // With no subscribers registered, dispatching is a no-op.
 type Dispatcher struct {
-	subscribers []func(Event)
+	subscribers []func(Event) error
 }
 
 // NewDispatcher creates a Dispatcher with no subscribers.
@@ -47,14 +47,22 @@ func NewDispatcher() *Dispatcher {
 	return &Dispatcher{}
 }
 
-// Subscribe registers fn to receive every dispatched event.
-func (d *Dispatcher) Subscribe(fn func(Event)) {
+// Subscribe registers fn to receive every dispatched event. A subscriber
+// returns a non-nil error to block loop progression at gating events;
+// fire-and-forget subscribers return nil.
+func (d *Dispatcher) Subscribe(fn func(Event) error) {
 	d.subscribers = append(d.subscribers, fn)
 }
 
-// Dispatch delivers the event to all subscribers in registration order.
-func (d *Dispatcher) Dispatch(e Event) {
+// Dispatch delivers the event to all subscribers in registration order and
+// returns the first blocking error. Every subscriber receives the event even
+// when an earlier one blocks, so side effects are not silently skipped.
+func (d *Dispatcher) Dispatch(e Event) error {
+	var firstErr error
 	for _, fn := range d.subscribers {
-		fn(e)
+		if err := fn(e); err != nil && firstErr == nil {
+			firstErr = err
+		}
 	}
+	return firstErr
 }

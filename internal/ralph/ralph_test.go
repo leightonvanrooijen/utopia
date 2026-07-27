@@ -1,11 +1,42 @@
 package ralph
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 )
+
+func TestGateFeedback_CarriesConnectorStdout(t *testing.T) {
+	err := &GateError{Connector: "lint-gate", Event: EventWorkItemVerified, Stdout: "3 lint errors\n"}
+
+	feedback := gateFeedback(err)
+
+	if !strings.Contains(feedback, "lint-gate") {
+		t.Errorf("feedback must name the connector, got %q", feedback)
+	}
+	if !strings.Contains(feedback, "3 lint errors") {
+		t.Errorf("feedback must carry the connector stdout, got %q", feedback)
+	}
+}
+
+func TestGateFeedback_FallsBackToErrorMessageWithoutStdout(t *testing.T) {
+	feedback := gateFeedback(errors.New("something blocked"))
+
+	if !strings.Contains(feedback, "something blocked") {
+		t.Errorf("feedback must fall back to the error message, got %q", feedback)
+	}
+}
+
+func TestGateError_MessageWithoutStdout(t *testing.T) {
+	err := &GateError{Connector: "gate", Event: EventWorkItemStarted}
+
+	want := "gating connector gate blocked " + EventWorkItemStarted
+	if err.Error() != want {
+		t.Errorf("Error() = %q, want %q", err.Error(), want)
+	}
+}
 
 func TestCompletionToken(t *testing.T) {
 	// Verify the completion token constant

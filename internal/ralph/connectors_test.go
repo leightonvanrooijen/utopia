@@ -3,6 +3,7 @@ package ralph
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -166,6 +167,78 @@ func TestConnectorRunner_NonZeroExitReportsError(t *testing.T) {
 	}
 	if results[0].Stdout != "output\n" {
 		t.Errorf("output must still be captured on failure, got %q", results[0].Stdout)
+	}
+}
+
+func TestConnectorRunner_Handle_GatingExitZeroProceeds(t *testing.T) {
+	runner := NewConnectorRunner([]domain.ConnectorConfig{
+		{Name: "gate", On: []string{EventWorkItemVerified}, Command: "echo ok", Mode: domain.ConnectorModeGating},
+	}, t.TempDir())
+
+	if err := runner.Handle(context.Background(), Event{Name: EventWorkItemVerified}); err != nil {
+		t.Errorf("gating connector exiting 0 must not block, got %v", err)
+	}
+}
+
+func TestConnectorRunner_Handle_GatingNonZeroBlocksWithStdout(t *testing.T) {
+	runner := NewConnectorRunner([]domain.ConnectorConfig{
+		{Name: "gate", On: []string{EventWorkItemVerified}, Command: "echo lint failed; exit 1", Mode: domain.ConnectorModeGating},
+	}, t.TempDir())
+
+	err := runner.Handle(context.Background(), Event{Name: EventWorkItemVerified})
+
+	var ge *GateError
+	if !errors.As(err, &ge) {
+		t.Fatalf("expected *GateError, got %v", err)
+	}
+	if ge.Connector != "gate" || ge.Event != EventWorkItemVerified {
+		t.Errorf("gate error identifies %s on %s, want gate on %s", ge.Connector, ge.Event, EventWorkItemVerified)
+	}
+	if ge.Stdout != "lint failed\n" {
+		t.Errorf("gate error must carry connector stdout, got %q", ge.Stdout)
+	}
+	if !strings.Contains(err.Error(), "lint failed") {
+		t.Errorf("gate error message must include stdout, got %q", err.Error())
+	}
+}
+
+func TestConnectorRunner_Handle_GatingTimeoutBlocks(t *testing.T) {
+	runner := NewConnectorRunner([]domain.ConnectorConfig{
+		{Name: "slow-gate", On: []string{EventWorkItemStarted}, Command: "sleep 5", Mode: domain.ConnectorModeGating, Timeout: "100ms"},
+	}, t.TempDir())
+
+	err := runner.Handle(context.Background(), Event{Name: EventWorkItemStarted})
+
+	var ge *GateError
+	if !errors.As(err, &ge) {
+		t.Fatalf("timed-out gating connector must block like a non-zero exit, got %v", err)
+	}
+}
+
+func TestConnectorRunner_Handle_NotifyFailureDoesNotBlock(t *testing.T) {
+	runner := NewConnectorRunner([]domain.ConnectorConfig{
+		{Name: "notify", On: []string{EventWorkItemVerified}, Command: "exit 1"},
+	}, t.TempDir())
+
+	if err := runner.Handle(context.Background(), Event{Name: EventWorkItemVerified}); err != nil {
+		t.Errorf("notify connector failure must not block, got %v", err)
+	}
+}
+
+func TestConnectorRunner_Handle_BlockedGateStillRunsLaterConnectors(t *testing.T) {
+	dir := t.TempDir()
+	runner := NewConnectorRunner([]domain.ConnectorConfig{
+		{Name: "gate", On: []string{EventWorkItemVerified}, Command: "exit 1", Mode: domain.ConnectorModeGating},
+		{Name: "notify", On: []string{EventWorkItemVerified}, Command: "echo ran >> after.txt"},
+	}, dir)
+
+	err := runner.Handle(context.Background(), Event{Name: EventWorkItemVerified})
+
+	if err == nil {
+		t.Fatal("expected gate error")
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "after.txt")); statErr != nil {
+		t.Errorf("connectors after a blocked gate must still run: %v", statErr)
 	}
 }
 

@@ -1,6 +1,9 @@
 package ralph
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestDispatcher_NoSubscribers(t *testing.T) {
 	d := NewDispatcher()
@@ -13,11 +16,13 @@ func TestDispatcher_DeliversToAllSubscribersInOrder(t *testing.T) {
 	d := NewDispatcher()
 
 	var order []string
-	d.Subscribe(func(e Event) {
+	d.Subscribe(func(e Event) error {
 		order = append(order, "first:"+e.Name)
+		return nil
 	})
-	d.Subscribe(func(e Event) {
+	d.Subscribe(func(e Event) error {
 		order = append(order, "second:"+e.Name)
+		return nil
 	})
 
 	d.Dispatch(Event{Name: EventWorkItemStarted})
@@ -43,7 +48,7 @@ func TestDispatcher_SubscriberReceivesPayload(t *testing.T) {
 	d := NewDispatcher()
 
 	var got Event
-	d.Subscribe(func(e Event) { got = e })
+	d.Subscribe(func(e Event) error { got = e; return nil })
 
 	sent := Event{
 		Name: EventWorkItemCommitted,
@@ -60,5 +65,43 @@ func TestDispatcher_SubscriberReceivesPayload(t *testing.T) {
 
 	if got != sent {
 		t.Errorf("subscriber received %+v, want %+v", got, sent)
+	}
+}
+
+func TestDispatcher_ReturnsFirstBlockingErrorAndStillDeliversToAll(t *testing.T) {
+	d := NewDispatcher()
+
+	first := errors.New("first block")
+	second := errors.New("second block")
+	var delivered []string
+	d.Subscribe(func(e Event) error {
+		delivered = append(delivered, "blocker-1")
+		return first
+	})
+	d.Subscribe(func(e Event) error {
+		delivered = append(delivered, "notify")
+		return nil
+	})
+	d.Subscribe(func(e Event) error {
+		delivered = append(delivered, "blocker-2")
+		return second
+	})
+
+	err := d.Dispatch(Event{Name: EventWorkItemVerified})
+
+	if err != first {
+		t.Errorf("Dispatch returned %v, want first blocking error %v", err, first)
+	}
+	if len(delivered) != 3 {
+		t.Errorf("expected all 3 subscribers to receive the event despite blocking, got %v", delivered)
+	}
+}
+
+func TestDispatcher_NilErrorWhenNoSubscriberBlocks(t *testing.T) {
+	d := NewDispatcher()
+	d.Subscribe(func(e Event) error { return nil })
+
+	if err := d.Dispatch(Event{Name: EventPhaseVerified}); err != nil {
+		t.Errorf("expected nil error when no subscriber blocks, got %v", err)
 	}
 }
