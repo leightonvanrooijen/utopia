@@ -1,0 +1,36 @@
+id: execution-ralph-refactor-limit-branch
+type: refactor
+title: Extract duplicated rate-limit handling branch in ralph loop
+status: draft
+tasks:
+  - id: extract-limit-handling-helper
+    description: |
+      The rate-limit detection-and-wait branch is duplicated in two loop
+      variants in internal/ralph/ralph.go: the WorkItem execution loop
+      (around lines 227-248) and the after-phase validator loop (around
+      lines 642-662). Both call DetectRateLimit, decrement their iteration
+      counter, ParseRateLimitWait, FormatWaitMessage, and select on
+      ctx.Done() vs time.After(waitDuration).
+
+      Extract the shared logic into one helper so future limit-handling
+      changes (e.g. spend-limit probing) only need to be made once. Behavior
+      must be preserved exactly, including the divergence between the two
+      call sites: the WorkItem loop persists work item state via
+      store.SaveWorkItemForSpec before returning on cancellation, while the
+      after-phase loop has no state to persist and simply returns ctx.Err().
+    acceptance_criteria:
+      - The rate-limit detection-and-wait logic exists in exactly one place, called from both loops
+      - The WorkItem execution loop still persists work item state via store.SaveWorkItemForSpec before returning when the context is cancelled during the limit wait
+      - The after-phase validator loop still returns ctx.Err() without persisting state when the context is cancelled during the limit wait
+      - Both loops still decrement their iteration counter so a rate-limited attempt does not count against max iterations
+      - Both loops still print the wait message and the parse-error fallback message with identical wording to before
+      - When the wait timer elapses, both loops continue to the next iteration exactly as before
+      - When the invocation error is not a rate limit, both loops fall through to their existing failed-iteration handling unchanged
+      - All existing tests in internal/ralph pass without modification to their assertions
+      - go build ./... and go test ./internal/ralph/... pass
+    hints:
+      - The two call sites are around ralph.go:227-248 (WorkItem loop) and ralph.go:642-662 (after-phase loop)
+      - The call-site divergence is cancellation cleanup only - have the helper return an outcome (e.g. cancelled / retry / not-a-rate-limit) and let each caller run its own cleanup + return, rather than having the helper return ctx.Err() itself; this keeps the SaveWorkItemForSpec difference at the call site where it belongs
+      - The iteration-counter decrement uses different variables (item.IterationCount vs iteration) - either pass a pointer/decrement closure or decrement at the call site after the helper reports a rate limit was handled
+      - This refactor should land BEFORE execution-ralph-enhance-spend-limit-probing so the spend-limit logic is added to one helper instead of two branches; if the enhancement lands first, this refactor must fold in the spend-limit branch too
+      - Do not change the extracted logic's behavior - this is a pure move + de-duplicate, verified by the existing ratelimit tests
