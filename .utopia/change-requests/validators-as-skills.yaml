@@ -1,0 +1,150 @@
+id: validators-as-skills
+type: initiative
+title: Fix the validator diff basis, then make validators skill-like - a recall-biased router selects which validators run per change
+status: draft
+phases:
+    - type: bugfix
+      status: pending
+      tasks:
+        - id: fix-workitem-diff-basis
+          description: |
+            Correct the diff that after-workitem validators review. Today the runner
+            computes `git diff HEAD~1`, which diffs the commit-before-last against the
+            working tree - so it conflates the previously committed work item's changes
+            with the current uncommitted ones, and errors on a repo's first commit
+            (the error is silently swallowed, so validators run against an empty diff
+            and pass everything). Validators run BEFORE the work item is committed, so
+            the current work item's changes are uncommitted and HEAD is the previous
+            work item's commit. The correct diff for a single work item is `git diff HEAD`.
+          spec: agentic-validators
+          feature_id: validator-runner
+          acceptance_criteria:
+            - After-workitem validators receive exactly the current work item's uncommitted changes (git diff HEAD), not changes from prior commits
+            - On a repo whose only commit is the one under review, the work-item diff is still computed correctly rather than erroring
+            - A failure to compute the diff surfaces as an error rather than being silently swallowed into an empty diff
+            - The diff-scope logic lives in the validators package (runner) so any caller - current loop or a future engine adapter - gets the correct diff
+          hints:
+            - The offending command is `git diff HEAD~1` in getGitDiff in internal/validators/runner.go
+            - The current call site is `gitDiff, _ := validatorRunner.GetGitDiff(ctx)` in internal/ralph/ralph.go around the completion-token branch - the discarded error is the silent-empty-diff bug
+            - COORDINATION - the in-progress connectors-speculative-engine initiative migrates this choreography onto the subscription engine and its acceptance criteria "preserve the diff-scoped context", i.e. it will carry this bug forward unchanged. Land this fix in the runner so whichever choreography wins inherits the correct diff
+        - id: fix-phase-diff-basis
+          description: |
+            After-phase validators should review the whole phase, not one commit.
+            Give after-phase validators the cumulative diff of every commit produced
+            during the phase, rather than the same HEAD~1 diff.
+          spec: agentic-validators
+          feature_id: validator-run-triggers
+          acceptance_criteria:
+            - After-phase validators receive the cumulative diff of all commits produced during the phase
+            - The phase diff is computed against a recorded phase-start baseline, not a fixed HEAD offset
+            - If no commits were produced during the phase, the phase diff is empty and validators handle it gracefully
+          hints:
+            - Record the HEAD SHA at phase start and diff `<phase-start-sha>..HEAD`
+            - after-phase validators are driven by runAfterPhaseValidators in internal/ralph/ralph.go, which currently calls RunAll (recomputing HEAD~1 internally)
+        - id: add-per-validator-timeout
+          description: |
+            The validator-parallel-execution feature requires that an individual
+            validator's timeout not block the others, but no per-validator timeout
+            exists - a single hung Claude invocation blocks the whole gate (g.Wait)
+            until a global Ctrl+C. Add a per-validator timeout so a stuck validator
+            resolves as a failure on its own without stalling the rest.
+          spec: agentic-validators
+          feature_id: validator-parallel-execution
+          acceptance_criteria:
+            - Each validator runs under its own timeout derived from a per-run context
+            - A validator that exceeds its timeout resolves as a failed ValidatorResult with a clear timeout message
+            - One validator timing out does not delay or cancel the other validators in the batch
+            - Global context cancellation (Ctrl+C) still stops all validators
+          hints:
+            - The errgroup batch is in RunAllWithDiffLimited in internal/validators/runner.go
+            - Derive a child context per validator (context.WithTimeout) inside each g.Go closure
+    - type: enhancement
+      status: pending
+      changes:
+        - operation: add
+          spec: agentic-validators
+          feature:
+            id: validator-description
+            description: |
+                Give each validator a skill-style `description` in its frontmatter - a
+                short "what this checks and when it applies" line. This is the field the
+                relevance router reads to decide whether a validator is worth running for
+                a given change, exactly as Claude skills route on their description. The
+                validator body (the expensive prompt) stays the on-demand payload.
+            acceptance_criteria:
+                - Validator frontmatter supports an optional `description` field parsed into the Validator model
+                - A validator with no description still loads and is treated as always-applicable by the router (never silently skipped)
+                - The description is available to the router without loading or sending the validator body
+            hints:
+                - Add Description to the Validator struct in internal/domain/validator.go and to validatorFrontmatter in internal/store.go
+        - operation: add
+          spec: agentic-validators
+          feature:
+            id: validator-relevance-router
+            description: |
+                A recall-biased router that selects which validators run for a given
+                change, replacing the current "run every validator's full prompt and let
+                it self-gate to <PASSED>" model. The router makes one cheap model call
+                over the changed diff plus every validator's id and description, and
+                returns the ids that might apply. Only the selected validators then run
+                their full body. It is deliberately a recall filter, not a precise
+                classifier - the validator body remains the exact pass/fail gate, so an
+                over-inclusive router only costs an extra run while a missed validator
+                would ship an unchecked violation. There is no deterministic path/glob
+                pre-filter by design - relevance is a semantic judgement and this is the
+                place where model-driven selection is the right tool.
+            acceptance_criteria:
+                - Before validators execute, the router selects the applicable subset from the configured validators for the current change
+                - The router is fed the change diff and each validator's id and description, and returns the applicable ids
+                - The router is instructed to include a validator whenever relevance is uncertain (biased toward recall)
+                - The router uses a cheap model independent of the validators execution model
+                - A validator marked always true bypasses the router and always runs
+                - A validator with no description bypasses the router and always runs
+                - The router runs once per work item when it first reaches the validation gate; the selection is persisted on the work item and reused across retries and resumes rather than re-routed each iteration
+                - on-demand validators are never selected by the router
+                - Selection happens in the validators package so it is independent of the loop-versus-engine choreography
+                - If the router call fails, execution falls back to running all applicable validators rather than skipping validation
+            hints:
+                - Model this as a SelectApplicable(ctx, validators, diff) step in internal/validators/ invoked before RunAllWithDiff, not inside the ralph loop
+                - Persist selected ids on the WorkItem (internal/domain/workitem.go) alongside LastValidatorFeedback so resume reuses them
+                - Reuse the model-resolution pattern already in the runner; the router model should default separately (a haiku-tier default) from models.validators
+        - operation: add
+          spec: agentic-validators
+          feature:
+            id: validator-always-run
+            description: |
+                An optional `always` flag on a validator's config entry that opts it out
+                of routing so it runs on every change - the escape hatch for the one or
+                two checks (e.g. security) you cannot risk the router skipping.
+            acceptance_criteria:
+                - ValidatorConfig supports an optional `always` boolean (default false)
+                - A validator with always true is never filtered out by the router
+                - always composes with run triggers - an always after-phase validator always runs at phase gates, not work-item gates
+            hints:
+                - Add Always to ValidatorConfig in internal/domain/discovery.go and thread it into the router's bypass check
+        - operation: modify
+          spec: agentic-validators
+          feature_id: validator-file-format
+          description: |
+            Add the description field to the documented format and stop documenting the
+            `run` field in frontmatter, which the loader has already deprecated (it warns
+            and reads run from config.yaml instead).
+          criteria:
+            add:
+                - Frontmatter contains id (required), description (optional), allowed_tools (optional)
+                - The description is a short line stating what the validator checks and when it applies, used by the relevance router
+                - run is configured in config.yaml, not frontmatter; a run field in frontmatter is deprecated and warns on load
+            remove:
+                - Frontmatter contains id (required), run (optional), allowed_tools (optional)
+                - run defaults to "after-workitem" if not specified
+        - operation: modify
+          spec: agentic-validators
+          feature_id: validator-assistant-prompt
+          description: |
+            The create/edit assistant must treat the description as a first-class,
+            quality-gated output (the router is only as good as the descriptions), and
+            must stop emitting the deprecated run field in generated frontmatter.
+          criteria:
+            add:
+                - Prompt instructs the assistant to author a specific, router-usable description stating what the validator checks and when it applies
+                - Prompt instructs the assistant to place run in config.yaml guidance rather than frontmatter, and never to emit a run field in the generated file
