@@ -33,6 +33,15 @@ type EventPayload struct {
 	CommitSHA      string `json:"commit_sha,omitempty"`
 	Reason         string `json:"reason,omitempty"`
 	PhaseStartSHA  string `json:"phase_start_sha,omitempty"`
+
+	// SelectedValidatorIDs carries the relevance router's selection to the
+	// validators subscription so only the chosen validators run. It is set on the
+	// event that launches a validators run (workitem-completion-claimed for
+	// after-workitem, phase-verified for after-phase) once routing has run.
+	// ValidatorsRouted reports whether routing produced this selection; when
+	// false the validators action falls back to running every applicable validator.
+	SelectedValidatorIDs []string `json:"selected_validator_ids,omitempty"`
+	ValidatorsRouted     bool     `json:"validators_routed,omitempty"`
 }
 
 // Event is a named lifecycle event emitted by the execution loop.

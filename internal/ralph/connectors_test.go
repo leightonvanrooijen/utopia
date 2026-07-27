@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -102,7 +103,7 @@ func TestConnectorRunner_PayloadDeliveredAsJSONOnStdin(t *testing.T) {
 	if err := json.Unmarshal([]byte(result.Stdout), &got); err != nil {
 		t.Fatalf("stdout is not valid JSON payload: %v (stdout=%q)", err, result.Stdout)
 	}
-	if got != payload {
+	if !reflect.DeepEqual(got, payload) {
 		t.Errorf("payload mismatch: got %+v, want %+v", got, payload)
 	}
 }

@@ -2,6 +2,7 @@ package ralph
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 )
 
@@ -63,7 +64,7 @@ func TestDispatcher_SubscriberReceivesPayload(t *testing.T) {
 	}
 	d.Dispatch(sent)
 
-	if got != sent {
+	if !reflect.DeepEqual(got, sent) {
 		t.Errorf("subscriber received %+v, want %+v", got, sent)
 	}
 }

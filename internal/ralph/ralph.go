@@ -137,7 +137,7 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 		fmt.Printf("[%d/%d] %s - starting execution\n", i+1, len(items), item.ID)
 
 		// Execute this work item with the Ralph loop
-		err := executeWorkItem(ctx, item, specID, store, cli, verifier, config, projectDir, dispatcher, basePayload)
+		err := executeWorkItem(ctx, item, specID, store, cli, verifier, config, projectDir, dispatcher, basePayload, validatorRunner, validatorList)
 		if err != nil {
 			result.StoppedAt = item.ID
 			result.Reason = err.Error()
@@ -155,7 +155,7 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 	// fires phase-verified and phase-completed (and their gating connectors)
 	// even when no validators are configured.
 	if result.Completed == result.Total {
-		if err := runAfterPhaseValidators(ctx, cli, config, projectDir, dispatcher, basePayload); err != nil {
+		if err := runAfterPhaseValidators(ctx, cli, config, projectDir, dispatcher, basePayload, validatorRunner, validatorList); err != nil {
 			result.Reason = err.Error()
 			failPayload := basePayload
 			failPayload.Reason = err.Error()
@@ -180,6 +180,8 @@ func executeWorkItem(
 	projectDir string,
 	dispatcher *Dispatcher,
 	basePayload EventPayload,
+	validatorRunner *validators.Runner,
+	validatorList []*domain.Validator,
 ) error {
 	maxIterations := config.Verification.MaxIterations
 	verifyCommand := config.Verification.Command
@@ -267,13 +269,38 @@ func executeWorkItem(
 
 		fmt.Printf("  Iteration %d: %s token found, running verification...\n", item.IterationCount, CompletionToken)
 
+		// Route validators once for this work item, the first time it reaches the
+		// gate. The cheap relevance router picks which validators apply to the
+		// change; the selection is persisted on the item so retries and resumes
+		// reuse the one decision rather than re-routing every iteration. A router
+		// failure returns "all applicable" (still recorded so we don't retry the
+		// failing call); a diff failure leaves the item unrouted so the gate falls
+		// back to running all applicable validators next dispatch.
+		if !item.ValidatorsRouted && len(validatorList) > 0 {
+			if diff, diffErr := validatorRunner.GetGitDiff(ctx); diffErr == nil {
+				selected, routeErr := validatorRunner.SelectApplicable(ctx, validatorList, diff)
+				if routeErr != nil {
+					fmt.Printf("  Iteration %d: validator router failed, running all applicable: %v\n", item.IterationCount, routeErr)
+				}
+				item.SelectedValidators = selected
+				item.ValidatorsRouted = true
+				_ = store.SaveWorkItemForSpec(specID, item)
+			} else {
+				fmt.Printf("  Iteration %d: could not compute diff for validator routing: %v\n", item.IterationCount, diffErr)
+			}
+		}
+
 		// Completion claimed but not yet verified. This launches speculative
 		// work: after-workitem validators start now (via the engine) and run
 		// concurrently with verification, to be joined at workitem-verified or
 		// abandoned at workitem-verification-failed. Notify connectors also
-		// start here. Fire-and-forget at this point: notify only.
+		// start here. Fire-and-forget at this point: notify only. The router's
+		// selection rides on the payload so the validators action runs only the
+		// chosen subset.
 		claimedPayload := itemPayload
 		claimedPayload.IterationCount = item.IterationCount
+		claimedPayload.SelectedValidatorIDs = item.SelectedValidators
+		claimedPayload.ValidatorsRouted = item.ValidatorsRouted
 		dispatcher.Dispatch(Event{Name: EventWorkItemCompletionClaimed, Payload: claimedPayload})
 
 		// Run verification. Validators are already running speculatively; the
@@ -472,9 +499,29 @@ func runAfterPhaseValidators(
 	projectDir string,
 	dispatcher *Dispatcher,
 	basePayload EventPayload,
+	validatorRunner *validators.Runner,
+	validatorList []*domain.Validator,
 ) error {
 	maxIterations := config.Verification.MaxIterations
 	iteration := 0
+
+	// Route after-phase validators once, over the cumulative phase diff, before
+	// the fix-retry loop so a retry reuses the same selection rather than
+	// re-routing. The selection rides on basePayload into every phase-verified
+	// dispatch below. A router failure runs all applicable; a diff failure leaves
+	// the payload unrouted so the gate falls back to running all applicable.
+	if len(validatorList) > 0 {
+		if diff, diffErr := validatorRunner.GetGitDiffSince(ctx, basePayload.PhaseStartSHA); diffErr == nil {
+			selected, routeErr := validatorRunner.SelectApplicable(ctx, validatorList, diff)
+			if routeErr != nil {
+				fmt.Printf("  After-phase: validator router failed, running all applicable: %v\n", routeErr)
+			}
+			basePayload.SelectedValidatorIDs = selected
+			basePayload.ValidatorsRouted = true
+		} else {
+			fmt.Printf("  After-phase: could not compute diff for validator routing: %v\n", diffErr)
+		}
+	}
 
 	for {
 		// Check context cancellation (Ctrl+C)

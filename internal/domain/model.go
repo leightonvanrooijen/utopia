@@ -74,6 +74,7 @@ func ValidateModelConfig(mc *ModelConfig) error {
 	checkModel(mc.Harvest, "models.harvest")
 	checkModel(mc.Execute, "models.execute")
 	checkModel(mc.Validators, "models.validators")
+	checkModel(mc.ValidatorRouter, "models.validator_router")
 	checkModel(mc.Discover, "models.discover")
 	checkModel(mc.Standards, "models.standards")
 	checkModel(mc.Refactor, "models.refactor")

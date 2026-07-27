@@ -269,3 +269,23 @@ func TestValidatorConfig_UnmarshalYAML_MixedList(t *testing.T) {
 		t.Errorf("expected third path 'validators/naming.md', got %q", configs[2].GetPath())
 	}
 }
+
+func TestValidator_BypassesRouter(t *testing.T) {
+	tests := []struct {
+		name string
+		v    Validator
+		want bool
+	}{
+		{"always-run bypasses", Validator{ID: "sec", Description: "checks secrets", Always: true}, true},
+		{"empty description bypasses", Validator{ID: "x"}, true},
+		{"whitespace-only description bypasses", Validator{ID: "x", Description: "   \n"}, true},
+		{"described, not always -> routed", Validator{ID: "x", Description: "checks naming"}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.v.BypassesRouter(); got != tt.want {
+				t.Errorf("BypassesRouter() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

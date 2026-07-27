@@ -100,10 +100,15 @@ type ModelConfig struct {
 	Default string `yaml:"default,omitempty"`
 
 	// Per-command model overrides
-	CR              string `yaml:"cr,omitempty"`
-	Harvest         string `yaml:"harvest,omitempty"`
-	Execute         string `yaml:"execute,omitempty"`
-	Validators      string `yaml:"validators,omitempty"`
+	CR         string `yaml:"cr,omitempty"`
+	Harvest    string `yaml:"harvest,omitempty"`
+	Execute    string `yaml:"execute,omitempty"`
+	Validators string `yaml:"validators,omitempty"`
+	// ValidatorRouter selects the model for the cheap relevance router that picks
+	// which validators run for a change. It defaults to a haiku-tier model
+	// independently of Validators and Default (see the validators package), so
+	// routing stays cheap even when validators run on a larger model.
+	ValidatorRouter string `yaml:"validator_router,omitempty"`
 	Discover        string `yaml:"discover,omitempty"`
 	Standards       string `yaml:"standards,omitempty"`
 	Refactor        string `yaml:"refactor,omitempty"`
@@ -129,6 +134,8 @@ func (c *ModelConfig) ModelForCommand(command string) string {
 		override = c.Execute
 	case "validators":
 		override = c.Validators
+	case "validator_router":
+		override = c.ValidatorRouter
 	case "discover":
 		override = c.Discover
 	case "standards":

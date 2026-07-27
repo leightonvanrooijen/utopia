@@ -47,6 +47,29 @@ func CompileValidators(runner *validators.Runner, list []*domain.Validator, conc
 	return subs
 }
 
+// selectRouted narrows the validator list to the relevance router's selection
+// carried on the launch event's payload. When routing has not run (or fell back
+// on failure), ValidatorsRouted is false and the full list is returned so the
+// gate runs every applicable validator rather than silently skipping validation.
+// The trigger filter in RunAllWithDiffLimited still narrows the result to this
+// subscription's trigger, so a selection spanning triggers composes correctly.
+func selectRouted(list []*domain.Validator, p EventPayload) []*domain.Validator {
+	if !p.ValidatorsRouted {
+		return list
+	}
+	chosen := make(map[string]bool, len(p.SelectedValidatorIDs))
+	for _, id := range p.SelectedValidatorIDs {
+		chosen[id] = true
+	}
+	var out []*domain.Validator
+	for _, v := range list {
+		if chosen[v.ID] {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
 // hasTrigger reports whether any validator is configured with the given trigger.
 func hasTrigger(list []*domain.Validator, trigger domain.RunTrigger) bool {
 	for _, v := range list {
@@ -96,7 +119,7 @@ func validatorAction(runner *validators.Runner, list []*domain.Validator, trigge
 				done <- outcome{err: err}
 				return
 			}
-			results := runner.RunAllWithDiffLimited(ctx, list, trigger, diff, concurrency)
+			results := runner.RunAllWithDiffLimited(ctx, selectRouted(list, e.Payload), trigger, diff, concurrency)
 			done <- outcome{agg: validators.AggregateResults(results)}
 		}()
 		return func() ConnectorResult {

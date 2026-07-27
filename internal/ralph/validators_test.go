@@ -80,3 +80,34 @@ func TestCompileValidators_AggregatesPerTriggerIntoOneSubscription(t *testing.T)
 		t.Errorf("after-phase subscription must be registered second, got launch %q", subs[1].Launch)
 	}
 }
+
+func TestSelectRouted(t *testing.T) {
+	list := []*domain.Validator{
+		{ID: "a"}, {ID: "b"}, {ID: "c"},
+	}
+
+	t.Run("unrouted payload runs full list as fallback", func(t *testing.T) {
+		got := selectRouted(list, EventPayload{ValidatorsRouted: false, SelectedValidatorIDs: []string{"a"}})
+		if len(got) != 3 {
+			t.Errorf("expected full list when not routed, got %d validators", len(got))
+		}
+	})
+
+	t.Run("routed payload narrows to the selection", func(t *testing.T) {
+		got := selectRouted(list, EventPayload{ValidatorsRouted: true, SelectedValidatorIDs: []string{"a", "c"}})
+		var ids []string
+		for _, v := range got {
+			ids = append(ids, v.ID)
+		}
+		if len(ids) != 2 || ids[0] != "a" || ids[1] != "c" {
+			t.Errorf("expected [a c], got %v", ids)
+		}
+	})
+
+	t.Run("routed with empty selection runs nothing", func(t *testing.T) {
+		got := selectRouted(list, EventPayload{ValidatorsRouted: true, SelectedValidatorIDs: nil})
+		if len(got) != 0 {
+			t.Errorf("expected no validators for empty routed selection, got %d", len(got))
+		}
+	})
+}
