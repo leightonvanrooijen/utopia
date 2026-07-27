@@ -35,22 +35,18 @@ const validatorTemplate = `---
 # Examples: "code-standards", "security-review", "api-consistency"
 id: my-validator
 
-# When to run (optional, default: after-workitem)
-# Controls when this validator executes in the workflow:
-#
-#   after-workitem  - Runs after EACH work item passes verification.
-#                     Best for: Standards that should be checked incrementally.
-#                     Feedback is injected into the next retry if violations found.
-#
-#   after-phase     - Runs ONCE after all work items in a phase complete.
-#                     Best for: Cross-cutting concerns, architecture reviews,
-#                     or checks that need to see the full picture.
-#
-#   on-demand       - Never runs automatically. Must be invoked manually.
-#                     Best for: Expensive checks, optional audits, or reviews
-#                     that don't need to block normal workflow.
-#
-run: after-workitem
+# Description (optional, recommended)
+# A short line stating what this validator checks and when it applies. The
+# relevance router reads this - like a Claude skill description - to decide
+# whether the validator is worth running for a given change, without loading
+# the full prompt below. Leave it empty only if the validator should run on
+# every change: an empty description gives the router no signal, so it treats
+# the validator as always applicable rather than silently skipping it.
+description: Checks [what this validator enforces] when [which files/changes it applies to]
+
+# When to run (after-workitem, after-phase, or on-demand) is configured per
+# validator in .utopia/config.yaml, NOT here. A "run" field in this frontmatter
+# is deprecated and warns on load.
 
 # Tools the validator can use (optional, default: [Read, Glob, Grep])
 # By default, validators are read-only for safety. Available tools:
