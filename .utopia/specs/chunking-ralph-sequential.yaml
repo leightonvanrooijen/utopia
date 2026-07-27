@@ -1,7 +1,7 @@
 id: chunking-ralph-sequential
 title: Ralph Sequential Chunking Strategy
 created: "0001-01-01T00:00:00+00:00"
-updated: "2026-03-17T09:21:05.973357+11:00"
+updated: "2026-07-27T13:02:35.759627+10:00"
 description: |
     The "ralph-sequential" chunking strategy transforms a structured specification into
     discrete WorkItems optimized for Ralph Wiggum loop execution.
@@ -174,3 +174,21 @@ features:
         - HINTS section appears after TASK section, before CONSTRAINTS
         - If no hints, HINTS section is omitted entirely
         - Each hint is rendered as a bullet point
+
+    - id: standards-index-injection
+      description: |
+        When building work-item prompts, the chunker reads the YAML frontmatter
+        of every doc in .utopia/standards/ and injects a compact STANDARDS index
+        section into the prompt. The index works like skill discovery via
+        progressive disclosure: only lightweight metadata (id, description,
+        tags, path) is always present, and the executor reads the full docs it
+        judges relevant before implementing. This keeps the chunker
+        deterministic while placing semantic relevance matching with the
+        executor, who knows which files the task actually touches.
+      acceptance_criteria:
+        - Work-item prompts include a STANDARDS section when .utopia/standards/ contains at least one doc
+        - The STANDARDS section lists each doc's id, description, tags, and file path
+        - The STANDARDS section instructs the executor to read relevant standards docs from .utopia/standards/ before implementing
+        - Only frontmatter metadata is injected into the prompt, never full doc content
+        - No STANDARDS section is injected when .utopia/standards/ is missing or empty
+        - Docs with unparseable frontmatter are skipped without failing the chunk operation
