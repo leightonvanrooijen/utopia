@@ -147,8 +147,9 @@ func TestRunner_getGitDiff(t *testing.T) {
 		t.Fatalf("git commit failed: %v", err)
 	}
 
-	// Create second commit with changes
-	if err := os.WriteFile(tmpDir+"/file.txt", []byte("changed content"), 0644); err != nil {
+	// Create a second commit representing the previous work item. Its changes
+	// are committed, so they must NOT appear in the current work item's diff.
+	if err := os.WriteFile(tmpDir+"/file.txt", []byte("prior workitem"), 0644); err != nil {
 		t.Fatalf("failed to write file: %v", err)
 	}
 
@@ -156,8 +157,14 @@ func TestRunner_getGitDiff(t *testing.T) {
 		t.Fatalf("git add failed: %v", err)
 	}
 
-	if err := runGit("commit", "-m", "second commit"); err != nil {
+	if err := runGit("commit", "-m", "prior workitem"); err != nil {
 		t.Fatalf("git commit failed: %v", err)
+	}
+
+	// The current work item's changes are uncommitted, as they are when
+	// after-workitem validators run (before the commit).
+	if err := os.WriteFile(tmpDir+"/file.txt", []byte("current workitem"), 0644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
 	}
 
 	// Test getGitDiff
@@ -168,23 +175,30 @@ func TestRunner_getGitDiff(t *testing.T) {
 		t.Fatalf("getGitDiff failed: %v", err)
 	}
 
-	// Verify diff contains expected content
+	// Verify diff contains the current work item's uncommitted change
 	if !strings.Contains(diff, "file.txt") {
 		t.Errorf("diff should contain file.txt, got: %s", diff)
 	}
 
-	if !strings.Contains(diff, "-initial") || !strings.Contains(diff, "+changed content") {
-		t.Errorf("diff should show changes, got: %s", diff)
+	if !strings.Contains(diff, "-prior workitem") || !strings.Contains(diff, "+current workitem") {
+		t.Errorf("diff should show the uncommitted change against HEAD, got: %s", diff)
+	}
+
+	// Verify the diff does NOT reach back past HEAD into an earlier commit -
+	// "initial" belonged to a commit before HEAD and would only appear if the
+	// diff base were HEAD~1.
+	if strings.Contains(diff, "initial") {
+		t.Errorf("diff should be scoped to HEAD, not HEAD~1, but included an earlier commit: %s", diff)
 	}
 }
 
-func TestRunner_getGitDiff_NoHistory(t *testing.T) {
+func TestRunner_getGitDiff_SingleCommit(t *testing.T) {
 	// Skip if not in a git repo
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not found, skipping test")
 	}
 
-	// Create a temporary git repo with only one commit
+	// Create a temporary git repo whose only commit is the one under review.
 	tmpDir, err := os.MkdirTemp("", "validator-test-*")
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
@@ -209,7 +223,7 @@ func TestRunner_getGitDiff_NoHistory(t *testing.T) {
 		t.Fatalf("git config name failed: %v", err)
 	}
 
-	// Create only one commit (no HEAD~1 exists)
+	// Create the only commit (no HEAD~1 exists).
 	if err := os.WriteFile(tmpDir+"/file.txt", []byte("content"), 0644); err != nil {
 		t.Fatalf("failed to write file: %v", err)
 	}
@@ -222,12 +236,22 @@ func TestRunner_getGitDiff_NoHistory(t *testing.T) {
 		t.Fatalf("git commit failed: %v", err)
 	}
 
-	// Test getGitDiff should fail (no HEAD~1)
-	r := NewRunner(tmpDir)
-	_, err = r.getGitDiff(context.Background())
+	// Make an uncommitted change - the current work item under review.
+	if err := os.WriteFile(tmpDir+"/file.txt", []byte("current workitem"), 0644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
 
-	if err == nil {
-		t.Error("expected error when no HEAD~1 exists")
+	// getGitDiff must compute the diff against HEAD rather than erroring on
+	// the missing HEAD~1.
+	r := NewRunner(tmpDir)
+	diff, err := r.getGitDiff(context.Background())
+
+	if err != nil {
+		t.Fatalf("getGitDiff should succeed on a single-commit repo, got: %v", err)
+	}
+
+	if !strings.Contains(diff, "-content") || !strings.Contains(diff, "+current workitem") {
+		t.Errorf("diff should show the uncommitted change against the only commit, got: %s", diff)
 	}
 }
 

@@ -75,12 +75,12 @@ func (r *Runner) resolveModel(validator *domain.Validator) string {
 	return r.modelConfig.ModelForCommand("validators")
 }
 
-// Run executes a validator against the changed files from the last commit.
+// Run executes a validator against the current work item's uncommitted changes.
 // It loads the git diff, expands the validator prompt, invokes Claude,
 // and checks the output for the <PASSED> token.
 // The model used is resolved via: validator override > models.validators > models.default.
 func (r *Runner) Run(ctx context.Context, validator *domain.Validator) (*Result, error) {
-	// Get the git diff of changed files from last commit
+	// Get the git diff of the current work item's uncommitted changes
 	changedFiles, err := r.getGitDiff(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get git diff: %w", err)
@@ -239,16 +239,20 @@ func (r *Runner) runWithDiff(ctx context.Context, validator *domain.Validator, c
 	return result, nil
 }
 
-// GetGitDiff returns the diff of changes from the last commit.
+// GetGitDiff returns the uncommitted changes of the current work item.
 // This is useful when you need to compute the diff once and share it
 // across multiple operations (e.g., parallel verification and validation).
 func (r *Runner) GetGitDiff(ctx context.Context) (string, error) {
 	return r.getGitDiff(ctx)
 }
 
-// getGitDiff returns the diff of changes from the last commit
+// getGitDiff returns the diff of the current work item's uncommitted changes.
+// Validators run before the work item is committed, so HEAD is the previous
+// work item's commit and "git diff HEAD" scopes exactly to the changes under
+// review. It also works on a repo whose only commit is HEAD, where "HEAD~1"
+// would not resolve.
 func (r *Runner) getGitDiff(ctx context.Context) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", "diff", "HEAD~1")
+	cmd := exec.CommandContext(ctx, "git", "diff", "HEAD")
 	cmd.Dir = r.workDir
 
 	var stdout, stderr bytes.Buffer

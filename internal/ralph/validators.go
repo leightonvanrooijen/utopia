@@ -3,6 +3,7 @@ package ralph
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 	"github.com/leightonvanrooijen/utopia/internal/validators"
@@ -68,20 +69,33 @@ func hasTrigger(list []*domain.Validator, trigger domain.RunTrigger) bool {
 func validatorAction(runner *validators.Runner, list []*domain.Validator, trigger domain.RunTrigger, concurrency int) Action {
 	name := "validators:" + string(trigger)
 	return func(ctx context.Context, e Event) func() ConnectorResult {
-		done := make(chan *validators.AggregateResult, 1)
+		type outcome struct {
+			agg *validators.AggregateResult
+			err error
+		}
+		done := make(chan outcome, 1)
 		go func() {
 			// The diff is computed once here and shared across all validators
-			// for this run, matching the pre-migration diff scoping. A diff
-			// error yields an empty diff, as the after-workitem call site did.
-			diff, _ := runner.GetGitDiff(ctx)
+			// for this run. A failure to compute the diff is surfaced as an
+			// error rather than silently swallowed into an empty diff, which
+			// would let validators pass vacuously against no changes.
+			diff, err := runner.GetGitDiff(ctx)
+			if err != nil {
+				done <- outcome{err: err}
+				return
+			}
 			results := runner.RunAllWithDiffLimited(ctx, list, trigger, diff, concurrency)
-			done <- validators.AggregateResults(results)
+			done <- outcome{agg: validators.AggregateResults(results)}
 		}()
 		return func() ConnectorResult {
-			agg := <-done
+			o := <-done
 			res := ConnectorResult{Name: name, Event: e.Name}
-			if !agg.Passed {
-				res.Stdout = agg.Feedback
+			if o.err != nil {
+				res.Err = fmt.Errorf("failed to compute git diff: %w", o.err)
+				return res
+			}
+			if !o.agg.Passed {
+				res.Stdout = o.agg.Feedback
 				res.Err = errors.New("validators failed")
 			}
 			return res
