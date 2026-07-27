@@ -1,34 +1,34 @@
 id: standards-error-handling
 type: refactor
 title: Conform internal/cli to the error-handling standard (one exit point, errors.As matching)
-status: draft
+status: in-progress
 tasks:
-  - id: remove-handler-exits
-    description: Remove all os.Exit calls from command handlers (cr.go has four, format.go has one), returning errors from RunE so the single Execute() chokepoint in root.go handles printing and exit
-    acceptance_criteria:
-      - os.Exit appears nowhere in internal/cli except root.go's Execute()
-      - Every failure path still exits with code 1 and its message reaches the user (now on stderr via Execute(), per the standard)
-      - format --check still exits nonzero when files would be reformatted, via a sentinel error with SilenceUsage/SilenceErrors set, not os.Exit
-      - All existing tests pass
-    hints:
-      - Violations at cr.go:89, cr.go:113, cr.go:119, cr.go:125 and format.go:110
-      - The check-mode sentinel pattern is spelled out in .utopia/standards/error-handling.md ("The check-mode exception")
-      - cr.go currently prints errors to stdout before exiting - returning them routes to stderr, which is the standard-mandated behavior
-  - id: replace-error-type-assertions
-    description: Replace direct type assertions on error types with errors.As so matching survives wrapping
-    acceptance_criteria:
-      - No err.(*domain.XxxError) type assertions remain in the codebase; matching uses errors.As/errors.Is
-      - The not-found branches in promote.go produce the same user-facing messages as before
-      - All existing tests pass
-    hints:
-      - Violations at promote.go:55 and promote.go:167
-      - "Pattern: var nfe *domain.NotFoundError; if errors.As(err, &nfe) { ... }"
-  - id: audit-error-message-style
-    description: Sweep internal/cli error values for standard violations - bare returns across package boundaries, capitalized/punctuated messages, %v wrapping of errors - and fix any found
-    acceptance_criteria:
-      - Error values created in touched files are lowercase, unpunctuated, wrap with %w, and add caller context (resource, id)
-      - Error message content changes only where required to meet the style rules; wrapped error chains still match via errors.Is/As
-      - All existing tests pass
-    hints:
-      - A prior grep found no %v-wrapping in internal/cli, so this is expected to be a small cleanup pass
-      - Keep this task scoped to error values, not console messages (those belong to the terminal-output standard)
+    - id: remove-handler-exits
+      description: Remove all os.Exit calls from command handlers (cr.go has four, format.go has one), returning errors from RunE so the single Execute() chokepoint in root.go handles printing and exit
+      acceptance_criteria:
+        - os.Exit appears nowhere in internal/cli except root.go's Execute()
+        - Every failure path still exits with code 1 and its message reaches the user (now on stderr via Execute(), per the standard)
+        - format --check still exits nonzero when files would be reformatted, via a sentinel error with SilenceUsage/SilenceErrors set, not os.Exit
+        - All existing tests pass
+      hints:
+        - Violations at cr.go:89, cr.go:113, cr.go:119, cr.go:125 and format.go:110
+        - The check-mode sentinel pattern is spelled out in .utopia/standards/error-handling.md ("The check-mode exception")
+        - cr.go currently prints errors to stdout before exiting - returning them routes to stderr, which is the standard-mandated behavior
+    - id: replace-error-type-assertions
+      description: Replace direct type assertions on error types with errors.As so matching survives wrapping
+      acceptance_criteria:
+        - No err.(*domain.XxxError) type assertions remain in the codebase; matching uses errors.As/errors.Is
+        - The not-found branches in promote.go produce the same user-facing messages as before
+        - All existing tests pass
+      hints:
+        - Violations at promote.go:55 and promote.go:167
+        - 'Pattern: var nfe *domain.NotFoundError; if errors.As(err, &nfe) { ... }'
+    - id: audit-error-message-style
+      description: Sweep internal/cli error values for standard violations - bare returns across package boundaries, capitalized/punctuated messages, %v wrapping of errors - and fix any found
+      acceptance_criteria:
+        - Error values created in touched files are lowercase, unpunctuated, wrap with %w, and add caller context (resource, id)
+        - Error message content changes only where required to meet the style rules; wrapped error chains still match via errors.Is/As
+        - All existing tests pass
+      hints:
+        - A prior grep found no %v-wrapping in internal/cli, so this is expected to be a small cleanup pass
+        - Keep this task scoped to error values, not console messages (those belong to the terminal-output standard)
