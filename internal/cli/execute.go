@@ -56,6 +56,7 @@ Run the command again to resume from where you left off.`,
 	cmd.Flags().IntVarP(&executeTimeoutFlag, "timeout", "t", 0, "timeout in minutes (0 means no timeout)")
 	cmd.Flags().BoolVar(&executeAllFlag, "all", false, "execute all CRs in .utopia/change-requests/ in alphabetical order")
 	cmd.Flags().StringVar(&executeModelFlag, "model", "", "model to use (haiku, sonnet, opus)")
+	cmd.AddCommand(newExecuteRunCmd())
 	return cmd
 }
 
