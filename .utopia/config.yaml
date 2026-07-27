@@ -6,8 +6,8 @@ project_context:
   language, concepts, and architectural decision records.
 models:
   default: opus
-  execute: sonnet
-  validators: sonnet
+  execute: opus
+  validators: opus
 strategies:
   spec: guided
   chunk: ralph-sequential
