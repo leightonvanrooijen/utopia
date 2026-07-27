@@ -1,10 +1,10 @@
 id: validators-as-skills
 type: initiative
 title: Fix the validator diff basis, then make validators skill-like - a recall-biased router selects which validators run per change
-status: draft
+status: in-progress
 phases:
     - type: bugfix
-      status: pending
+      status: in-progress
       tasks:
         - id: fix-workitem-diff-basis
           description: |
@@ -16,13 +16,13 @@ phases:
             and pass everything). Validators run BEFORE the work item is committed, so
             the current work item's changes are uncommitted and HEAD is the previous
             work item's commit. The correct diff for a single work item is `git diff HEAD`.
-          spec: agentic-validators
-          feature_id: validator-runner
           acceptance_criteria:
             - After-workitem validators receive exactly the current work item's uncommitted changes (git diff HEAD), not changes from prior commits
             - On a repo whose only commit is the one under review, the work-item diff is still computed correctly rather than erroring
             - A failure to compute the diff surfaces as an error rather than being silently swallowed into an empty diff
             - The diff-scope logic lives in the validators package (runner) so any caller - current loop or a future engine adapter - gets the correct diff
+          spec: agentic-validators
+          feature_id: validator-runner
           hints:
             - The offending command is `git diff HEAD~1` in getGitDiff in internal/validators/runner.go
             - The current call site is `gitDiff, _ := validatorRunner.GetGitDiff(ctx)` in internal/ralph/ralph.go around the completion-token branch - the discarded error is the silent-empty-diff bug
@@ -32,12 +32,12 @@ phases:
             After-phase validators should review the whole phase, not one commit.
             Give after-phase validators the cumulative diff of every commit produced
             during the phase, rather than the same HEAD~1 diff.
-          spec: agentic-validators
-          feature_id: validator-run-triggers
           acceptance_criteria:
             - After-phase validators receive the cumulative diff of all commits produced during the phase
             - The phase diff is computed against a recorded phase-start baseline, not a fixed HEAD offset
             - If no commits were produced during the phase, the phase diff is empty and validators handle it gracefully
+          spec: agentic-validators
+          feature_id: validator-run-triggers
           hints:
             - Record the HEAD SHA at phase start and diff `<phase-start-sha>..HEAD`
             - after-phase validators are driven by runAfterPhaseValidators in internal/ralph/ralph.go, which currently calls RunAll (recomputing HEAD~1 internally)
@@ -48,13 +48,13 @@ phases:
             exists - a single hung Claude invocation blocks the whole gate (g.Wait)
             until a global Ctrl+C. Add a per-validator timeout so a stuck validator
             resolves as a failure on its own without stalling the rest.
-          spec: agentic-validators
-          feature_id: validator-parallel-execution
           acceptance_criteria:
             - Each validator runs under its own timeout derived from a per-run context
             - A validator that exceeds its timeout resolves as a failed ValidatorResult with a clear timeout message
             - One validator timing out does not delay or cancel the other validators in the batch
             - Global context cancellation (Ctrl+C) still stops all validators
+          spec: agentic-validators
+          feature_id: validator-parallel-execution
           hints:
             - The errgroup batch is in RunAllWithDiffLimited in internal/validators/runner.go
             - Derive a child context per validator (context.WithTimeout) inside each g.Go closure
