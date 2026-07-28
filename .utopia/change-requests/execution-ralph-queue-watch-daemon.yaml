@@ -1,7 +1,7 @@
 id: execution-ralph-queue-watch-daemon
 type: feature
 title: Watch the queue and execute approved change requests as they become ready
-status: draft
+status: in-progress
 changes:
     - operation: add
       spec: execution-ralph
