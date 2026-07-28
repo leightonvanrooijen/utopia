@@ -1,6 +1,9 @@
-.PHONY: build build-dev test health clean help fmt version
+.PHONY: build build-dev install test health clean help fmt version
 
 GOBIN := $(shell go env GOPATH)/bin
+
+# Where `make install` puts the binary. Override with `make install BINDIR=/usr/local/bin`
+BINDIR ?= $(HOME)/.local/bin
 
 # Version info - uses git tag if available, otherwise "dev"
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -20,6 +23,14 @@ build: ## Build the utopia binary with version info
 
 build-dev: ## Build without version info (faster for development)
 	go build -o utopia ./cmd/utopia
+
+install: build ## Build (with version info) and install to BINDIR (default ~/.local/bin)
+	@mkdir -p $(BINDIR)
+	@if [ "$$(readlink $(BINDIR)/utopia 2>/dev/null)" = "$(CURDIR)/utopia" ]; then \
+		echo "utopia is symlinked into $(BINDIR); build already updated it in place"; \
+	else \
+		cp utopia $(BINDIR)/utopia && echo "Installed utopia -> $(BINDIR)/utopia"; \
+	fi
 
 version: ## Show version that would be embedded
 	@echo "Version:    $(VERSION)"
