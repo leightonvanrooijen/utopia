@@ -1,0 +1,92 @@
+id: claude-authentication
+title: claude-authentication
+created: "2026-07-28T21:42:14.203433+10:00"
+updated: "2026-07-28T21:42:14.203446+10:00"
+description: ""
+features:
+    - id: auth-config-structure
+      description: |
+        Define the auth section in .utopia/config.yaml selecting which
+        credential the claude subprocess authenticates with.
+      acceptance_criteria:
+        - Config supports an optional auth section
+        - auth.mode accepts the value api-key
+        - auth.mode accepts the value subscription
+        - An auth.mode value other than api-key or subscription produces a clear error naming the invalid value at config load time
+        - Validation runs inside LoadConfig alongside the existing model and connector validation
+        - A config with no auth section loads with no error and no warning
+
+    - id: auth-cli-flag
+      description: |
+        Add an --auth flag to all Claude-invoking commands for per-invocation
+        credential override.
+      acceptance_criteria:
+        - Flag is available on cr, harvest, execute, discover, standards, refactor, shape, validator create, and validator edit
+        - Flag accepts api-key or subscription
+        - Flag overrides config.auth.mode for that single invocation
+        - An invalid flag value produces a clear error before any claude process is started
+        - Flag is optional and defaults to the configured value
+
+    - id: auth-mode-api-key
+      description: |
+        In api-key mode, resolve an API key and make it the credential the
+        claude subprocess uses.
+      acceptance_criteria:
+        - ANTHROPIC_API_KEY is resolved from .utopia/.env first, then from the ambient environment
+        - The resolved key is present in the claude subprocess environment
+        - ANTHROPIC_AUTH_TOKEN is removed from the claude subprocess environment, because sending both credentials causes the API to reject the request with 401
+        - If no key can be resolved from either location, the command errors before any claude process is started
+        - The error message names both locations that were searched
+
+    - id: auth-mode-subscription
+      description: |
+        In subscription mode, suppress API-key credentials so the claude CLI
+        falls through to its OAuth profile.
+      acceptance_criteria:
+        - ANTHROPIC_API_KEY is absent from the claude subprocess environment even when it is set in the parent environment
+        - ANTHROPIC_AUTH_TOKEN is absent from the claude subprocess environment even when it is set in the parent environment
+        - Both variables are removed from the environment entirely rather than set to an empty string, because an empty value still occupies its slot in the precedence chain and authenticates as an empty credential
+        - .utopia/.env is not consulted for a key in this mode
+        - Every inherited environment variable other than those two is passed through unchanged
+
+    - id: anthropic-env-file
+      description: |
+        Read Anthropic credentials from .utopia/.env so the secret lives in a
+        gitignored file rather than in committed config.
+      acceptance_criteria:
+        - .utopia/.env is read when present
+        - Only keys matching the ANTHROPIC_ prefix are loaded from the file
+        - Keys not matching that prefix are ignored and never reach the claude subprocess
+        - A missing .utopia/.env is not an error
+        - A value in .utopia/.env takes precedence over the same variable in the ambient environment
+        - .utopia/.env is listed in .gitignore
+
+    - id: auth-env-injection
+      description: |
+        Pass the resolved credential environment to every claude subprocess
+        the CLI wrapper spawns.
+      acceptance_criteria:
+        - All three exec.CommandContext call sites in internal/claude.go set cmd.Env
+        - Prompt, streamingPrompt, and SessionWithCapture apply identical credential resolution
+        - The resolved auth mode is carried on the CLI struct rather than read from global state at each call site
+        - When no auth mode is configured, cmd.Env contains the same set of variables as os.Environ()
+
+    - id: auth-resolution-logging
+      description: |
+        Report which credential was selected before running, so a billing
+        switch is never silent.
+      acceptance_criteria:
+        - The resolved auth mode is printed before the first claude process starts
+        - In subscription mode, when an ambient ANTHROPIC_API_KEY was suppressed, the output says the variable was ignored
+        - In api-key mode, the output names where the key was resolved from, either .utopia/.env or the environment
+        - The credential value is never printed, in full or in part
+        - The line is emitted once per command invocation, not once per spawned claude subprocess
+
+    - id: auth-backward-compatibility
+      description: |
+        Preserve today's behaviour when no credential selection is configured.
+      acceptance_criteria:
+        - With no auth section in config and no --auth flag, the claude subprocess receives an environment identical to the inherited one
+        - Existing projects require no config migration
+        - No warning is emitted for a config that has no auth section
+        - The configured auth mode is consumed at runtime by every command that accepts the --auth flag, not only validated at load time
