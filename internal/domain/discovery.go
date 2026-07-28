@@ -41,6 +41,9 @@ type Config struct {
 	// Connectors registers external commands that run on lifecycle events
 	// emitted by the execution loop. See ConnectorConfig for the entry format.
 	Connectors []ConnectorConfig `yaml:"connectors,omitempty"`
+	// Auth selects which Anthropic credential the claude subprocess uses.
+	// If omitted entirely, the subprocess inherits the ambient environment.
+	Auth *AuthConfig `yaml:"auth,omitempty"`
 }
 
 // PathsConfig configures where the specs, adrs, concepts, and domain folders live.

@@ -271,7 +271,8 @@ func (s *YAMLStore) SaveConfig(config *domain.Config) error {
 }
 
 // LoadConfig reads the project configuration.
-// Returns an error if any configured model names are invalid.
+// Returns an error if any configured model names, connector entries, or the
+// auth mode are invalid.
 func (s *YAMLStore) LoadConfig() (*domain.Config, error) {
 	config, err := Load[domain.Config](s, "config.yaml")
 	if err != nil {
@@ -285,6 +286,11 @@ func (s *YAMLStore) LoadConfig() (*domain.Config, error) {
 
 	// Validate connector entries at load time
 	if err := domain.ValidateConnectors(config.Connectors); err != nil {
+		return nil, fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// Validate the auth mode at load time
+	if err := domain.ValidateAuthConfig(config.Auth); err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 

@@ -1373,6 +1373,106 @@ paths:
 	}
 }
 
+// Tests for the auth section
+
+func TestConfigAuth_LoadWithAPIKeyMode(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	configContent := `verification:
+    command: ./test.sh
+auth:
+    mode: api-key
+`
+	if err := os.WriteFile(filepath.Join(store.baseDir, "config.yaml"), []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	config, err := store.LoadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error loading config: %v", err)
+	}
+	if config.Auth.GetMode() != domain.AuthModeAPIKey {
+		t.Errorf("expected auth mode %q, got %q", domain.AuthModeAPIKey, config.Auth.GetMode())
+	}
+}
+
+func TestConfigAuth_LoadWithSubscriptionMode(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	configContent := `verification:
+    command: ./test.sh
+auth:
+    mode: subscription
+`
+	if err := os.WriteFile(filepath.Join(store.baseDir, "config.yaml"), []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	config, err := store.LoadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error loading config: %v", err)
+	}
+	if config.Auth.GetMode() != domain.AuthModeSubscription {
+		t.Errorf("expected auth mode %q, got %q", domain.AuthModeSubscription, config.Auth.GetMode())
+	}
+}
+
+func TestConfigAuth_OmittedSectionLoadsCleanly(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	configContent := `project_context: Test context
+verification:
+    command: ./test.sh
+`
+	if err := os.WriteFile(filepath.Join(store.baseDir, "config.yaml"), []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	config, err := store.LoadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error loading config without auth section: %v", err)
+	}
+	if config.Auth != nil {
+		t.Errorf("expected nil Auth when not configured, got %+v", config.Auth)
+	}
+	// The omitted section must resolve to "no selection", which is what keeps
+	// the subprocess environment inherited unchanged.
+	if config.Auth.GetMode() != "" {
+		t.Errorf("expected empty auth mode when not configured, got %q", config.Auth.GetMode())
+	}
+}
+
+func TestConfigAuth_InvalidModeProducesError(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	configContent := `verification:
+    command: ./test.sh
+auth:
+    mode: oauth
+`
+	if err := os.WriteFile(filepath.Join(store.baseDir, "config.yaml"), []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	_, err := store.LoadConfig()
+	if err == nil {
+		t.Fatal("expected error for invalid auth mode, got nil")
+	}
+	if !strings.Contains(err.Error(), "oauth") {
+		t.Errorf("expected error to name the invalid value 'oauth', got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "api-key") || !strings.Contains(err.Error(), "subscription") {
+		t.Errorf("expected error to list the valid options, got: %v", err)
+	}
+	if !errors.Is(err, &domain.InvalidAuthModeError{}) {
+		t.Errorf("expected error to match *domain.InvalidAuthModeError, got %T", err)
+	}
+}
+
 // Tests for standards index loading
 
 func TestLoadStandardsIndex_MissingDir(t *testing.T) {
