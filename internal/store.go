@@ -372,9 +372,69 @@ func stripNumericPrefix(base string) string {
 	return base[i+1:]
 }
 
-// DeleteChangeRequest removes a change request file from .utopia/change-requests/{id}.yaml
+// ChangeRequestPath returns the absolute path of the change request file
+// addressed by id, tolerating the numeric filename prefixes used to order CRs.
+// It mirrors ResolveChangeRequest's resolution but yields the on-disk path
+// rather than the loaded CR, so callers that stage or delete the file (the
+// post-validation auto-commit and the post-merge deletion) act on the real
+// filename instead of a reconstructed change-requests/<id>.yaml. A canonical
+// <id>.yaml wins; otherwise a file whose basename, with a leading numeric
+// prefix stripped, equals id is used - so "reusable-core" resolves
+// "01_reusable-core.yaml". An id that strip-matches more than one file is
+// reported as ambiguous rather than silently resolved, and a *domain.NotFoundError
+// is returned when no file matches.
+func (s *YAMLStore) ChangeRequestPath(id string) (string, error) {
+	dir := filepath.Join(s.baseDir, "change-requests")
+
+	// A canonical filename always wins, so an un-prefixed CR resolves directly.
+	canonical := filepath.Join(dir, id+".yaml")
+	if _, err := os.Stat(canonical); err == nil {
+		return canonical, nil
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", &domain.NotFoundError{Resource: "change request", ID: id}
+		}
+		return "", fmt.Errorf("failed to read change requests directory: %w", err)
+	}
+
+	// os.ReadDir returns entries sorted by filename, so candidates are already
+	// in a stable order for reporting.
+	var candidates []string
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
+			continue
+		}
+		if entry.Name() == "_template.yaml" {
+			continue
+		}
+		base := strings.TrimSuffix(entry.Name(), ".yaml")
+		if stripNumericPrefix(base) == id {
+			candidates = append(candidates, entry.Name())
+		}
+	}
+
+	switch len(candidates) {
+	case 0:
+		return "", &domain.NotFoundError{Resource: "change request", ID: id}
+	case 1:
+		return filepath.Join(dir, candidates[0]), nil
+	default:
+		return "", fmt.Errorf("change request %q is ambiguous; candidate files: %s", id, strings.Join(candidates, ", "))
+	}
+}
+
+// DeleteChangeRequest removes a change request file, resolving the real on-disk
+// filename (which may carry a numeric ordering prefix) so a CR saved as
+// 01_reusable-core.yaml is deleted rather than a reconstructed reusable-core.yaml.
 func (s *YAMLStore) DeleteChangeRequest(id string) error {
-	return Delete(s, filepath.Join("change-requests", id+".yaml"), "change request", id)
+	path, err := s.ChangeRequestPath(id)
+	if err != nil {
+		return err
+	}
+	return Delete(s, path, "change request", id)
 }
 
 // ListChangeRequests returns all change requests in the change-requests directory.

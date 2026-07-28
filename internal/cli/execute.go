@@ -653,8 +653,15 @@ func gitCommitCleanup(projectDir, crID, utopiaDir string) error {
 	return git.CommitIfChanged(projectDir, msg, workItemsDir, crFile)
 }
 
-func GitCommitCR(projectDir, crID string) (string, error) {
-	crFile := filepath.Join(projectDir, ".utopia", "change-requests", crID+".yaml")
+// GitCommitCR stages and commits a single change request after validation.
+// crID is the CR's internal id; the on-disk file is resolved via the store so a
+// numeric filename prefix (01_reusable-core.yaml) is staged correctly, while the
+// commit message stays keyed to the internal id ("cr: create reusable-core").
+func GitCommitCR(projectDir string, store *internal.YAMLStore, crID string) (string, error) {
+	crFile, err := store.ChangeRequestPath(crID)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve CR file for %s: %w", crID, err)
+	}
 	if err := git.Add(projectDir, crFile); err != nil {
 		return "", fmt.Errorf("failed to stage CR file %s: %w", crFile, err)
 	}

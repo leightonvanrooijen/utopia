@@ -1593,3 +1593,102 @@ func TestResolveChangeRequest_NotFound(t *testing.T) {
 		t.Errorf("expected *domain.NotFoundError, got %T: %v", err, err)
 	}
 }
+
+func TestChangeRequestPath_Canonical(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+	writeRawCR(t, store, "plain.yaml", "plain")
+
+	path, err := store.ChangeRequestPath("plain")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := filepath.Base(path); got != "plain.yaml" {
+		t.Errorf("resolved basename = %q, want %q", got, "plain.yaml")
+	}
+}
+
+func TestChangeRequestPath_PrefixStripped(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+	// The file carries a numeric ordering prefix; its internal id does not.
+	writeRawCR(t, store, "01_reusable-core.yaml", "reusable-core")
+
+	path, err := store.ChangeRequestPath("reusable-core")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := filepath.Base(path); got != "01_reusable-core.yaml" {
+		t.Errorf("resolved basename = %q, want the real on-disk file %q", got, "01_reusable-core.yaml")
+	}
+}
+
+func TestChangeRequestPath_CanonicalWinsOverPrefix(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+	// A bare file and a prefixed file both strip to "ai-chat"; the canonical
+	// filename must win without reporting ambiguity.
+	writeRawCR(t, store, "ai-chat.yaml", "ai-chat")
+	writeRawCR(t, store, "06_ai-chat.yaml", "ai-chat")
+
+	path, err := store.ChangeRequestPath("ai-chat")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := filepath.Base(path); got != "ai-chat.yaml" {
+		t.Errorf("resolved basename = %q, want the canonical file %q", got, "ai-chat.yaml")
+	}
+}
+
+func TestChangeRequestPath_Ambiguous(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+	// Two prefixed files strip to the same id and no canonical file exists.
+	writeRawCR(t, store, "06_ai-chat.yaml", "ai-chat")
+	writeRawCR(t, store, "07_ai-chat.yaml", "ai-chat")
+
+	_, err := store.ChangeRequestPath("ai-chat")
+	if err == nil {
+		t.Fatal("expected ambiguity error, got nil")
+	}
+	var nfe *domain.NotFoundError
+	if errors.As(err, &nfe) {
+		t.Fatalf("ambiguous id should not surface as NotFoundError, got: %v", err)
+	}
+	for _, want := range []string{"06_ai-chat.yaml", "07_ai-chat.yaml"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("ambiguity error should list candidate %q, got: %v", want, err)
+		}
+	}
+}
+
+func TestChangeRequestPath_NotFound(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+	writeRawCR(t, store, "01_reusable-core.yaml", "reusable-core")
+
+	_, err := store.ChangeRequestPath("does-not-exist")
+	if err == nil {
+		t.Fatal("expected not-found error, got nil")
+	}
+	var nfe *domain.NotFoundError
+	if !errors.As(err, &nfe) {
+		t.Errorf("expected *domain.NotFoundError, got %T: %v", err, err)
+	}
+}
+
+func TestDeleteChangeRequest_NumericPrefix(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+	// A CR saved under a prefixed filename must be deleted by its real path,
+	// not a reconstructed reusable-core.yaml that does not exist.
+	writeRawCR(t, store, "01_reusable-core.yaml", "reusable-core")
+
+	if err := store.DeleteChangeRequest("reusable-core"); err != nil {
+		t.Fatalf("unexpected error deleting prefixed CR: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(store.baseDir, "change-requests", "01_reusable-core.yaml")); !os.IsNotExist(err) {
+		t.Errorf("prefixed CR file should be gone, stat err = %v", err)
+	}
+}

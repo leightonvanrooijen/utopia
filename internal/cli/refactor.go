@@ -262,7 +262,7 @@ func runRefactor(cmd *cobra.Command, args []string) error {
 	}
 
 	for _, cr := range crs {
-		sha, commitErr := GitCommitCR(absPath, cr.ID)
+		sha, commitErr := GitCommitCR(absPath, store, cr.ID)
 		if commitErr != nil {
 			out.Warnf("Failed to commit CR %s: %v", cr.ID, commitErr)
 			continue
