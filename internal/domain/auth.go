@@ -109,6 +109,64 @@ type APIKeyCredential struct {
 	Source CredentialSource
 }
 
+// AuthSelection is the credential one invocation resolved, reduced to what can
+// be said out loud: which mode won, where an api-key came from, and which
+// ambient credential variables were removed. It deliberately holds no key, so
+// no formatting mistake can leak one.
+type AuthSelection struct {
+	// Mode is the resolved auth mode, or empty when no selection was made.
+	Mode AuthMode
+	// Source is the location an api-key was resolved from. Empty in other modes.
+	Source CredentialSource
+	// Suppressed names the credential variables the mode dropped from the
+	// inherited environment.
+	Suppressed []string
+}
+
+// Report renders the one line a command prints before spawning claude, naming
+// the account that pays so a switch of credential is never silent.
+//
+// The empty mode renders the empty string, and callers print nothing: no
+// credential was selected, the subprocess inherits the environment utopia is
+// running with, and there is no switch to announce. That is what keeps a project
+// with no auth section looking exactly as it did before the feature existed.
+//
+// Each mode reports the fact that would surprise its user. api-key mode names
+// the location, because a key in .utopia/.env silently outranking the shell's is
+// the confusing case. subscription mode names what it ignored, because a key
+// sitting in the environment while the subscription pays is the confusing case -
+// a direnv .envrc exporting one is the motivating example.
+func (s AuthSelection) Report() string {
+	switch s.Mode {
+	case "":
+		return ""
+	case AuthModeAPIKey:
+		return fmt.Sprintf("Auth: %s (%s from %s)", AuthModeAPIKey, APIKeyEnvVar, s.Source)
+	case AuthModeSubscription:
+		if len(s.Suppressed) == 0 {
+			return fmt.Sprintf("Auth: %s", AuthModeSubscription)
+		}
+		return fmt.Sprintf("Auth: %s (ambient %s ignored)",
+			AuthModeSubscription, strings.Join(s.Suppressed, ", "))
+	default:
+		return fmt.Sprintf("Auth: %s", s.Mode)
+	}
+}
+
+// SuppressedCredentialVars names the credential variables present in an
+// environment that SubscriptionEnv removes from it, in a fixed order so the
+// reported line is stable. A variable set to the empty string is not reported:
+// there was no credential there to ignore.
+func SuppressedCredentialVars(ambient []string) []string {
+	var suppressed []string
+	for _, name := range []string{APIKeyEnvVar, AuthTokenEnvVar} {
+		if lookupEnv(ambient, name) != "" {
+			suppressed = append(suppressed, name)
+		}
+	}
+	return suppressed
+}
+
 // ResolveAPIKeyCredential picks the API key an api-key mode run authenticates
 // with. A key in .utopia/.env wins over the ambient environment, so a project
 // can pin the account that pays without unsetting whatever the shell exports.

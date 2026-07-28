@@ -2,6 +2,7 @@ package internal
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -312,5 +313,157 @@ func TestResolveAPIKeyEnvUsesRealProcessEnvironment(t *testing.T) {
 	}
 	if !sawKey {
 		t.Error("resolved key missing from the subprocess environment")
+	}
+}
+
+func TestResolveAuthSelection(t *testing.T) {
+	const ambientKey = "sk-ant-ambient-DO-NOT-PRINT"
+	const fileKey = "sk-ant-file-DO-NOT-PRINT"
+
+	tests := []struct {
+		name       string
+		mode       domain.AuthMode
+		envFile    string
+		ambient    []string
+		wantReport string
+	}{
+		{
+			name:       "no mode selected reports nothing",
+			mode:       "",
+			ambient:    []string{domain.APIKeyEnvVar + "=" + ambientKey},
+			wantReport: "",
+		},
+		{
+			name:       "api-key resolved from the project env file",
+			mode:       domain.AuthModeAPIKey,
+			envFile:    domain.APIKeyEnvVar + "=" + fileKey + "\n",
+			ambient:    []string{domain.APIKeyEnvVar + "=" + ambientKey},
+			wantReport: "Auth: api-key (ANTHROPIC_API_KEY from .utopia/.env)",
+		},
+		{
+			name:       "api-key resolved from the inherited environment",
+			mode:       domain.AuthModeAPIKey,
+			envFile:    "",
+			ambient:    []string{domain.APIKeyEnvVar + "=" + ambientKey},
+			wantReport: "Auth: api-key (ANTHROPIC_API_KEY from the environment)",
+		},
+		{
+			name:       "subscription with nothing to suppress",
+			mode:       domain.AuthModeSubscription,
+			ambient:    []string{"PATH=/usr/bin"},
+			wantReport: "Auth: subscription",
+		},
+		{
+			// The case the report exists for: the shell exports a key, the run
+			// bills the subscription anyway, and the user is told so.
+			name:       "subscription over an ambient api key",
+			mode:       domain.AuthModeSubscription,
+			envFile:    domain.APIKeyEnvVar + "=" + fileKey + "\n",
+			ambient:    []string{domain.APIKeyEnvVar + "=" + ambientKey},
+			wantReport: "Auth: subscription (ambient ANTHROPIC_API_KEY ignored)",
+		},
+		{
+			name: "subscription over both ambient credentials",
+			mode: domain.AuthModeSubscription,
+			ambient: []string{
+				domain.APIKeyEnvVar + "=" + ambientKey,
+				domain.AuthTokenEnvVar + "=token-ambient",
+			},
+			wantReport: "Auth: subscription (ambient ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN ignored)",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			utopiaDir := writeEnvFile(t, tc.envFile)
+
+			selection, err := ResolveAuthSelection(tc.mode, utopiaDir, tc.ambient)
+			if err != nil {
+				t.Fatalf("ResolveAuthSelection() error = %v", err)
+			}
+
+			report := selection.Report()
+			if report != tc.wantReport {
+				t.Errorf("Report() = %q, want %q", report, tc.wantReport)
+			}
+			for _, key := range []string{ambientKey, fileKey} {
+				if strings.Contains(report, key) {
+					t.Errorf("Report() = %q leaks a credential", report)
+				}
+			}
+		})
+	}
+}
+
+// The selection carries no credential at all, so nothing downstream of it can
+// print one even by accident.
+func TestResolveAuthSelectionHoldsNoCredential(t *testing.T) {
+	const fileKey = "sk-ant-file-DO-NOT-PRINT"
+
+	utopiaDir := writeEnvFile(t, domain.APIKeyEnvVar+"="+fileKey+"\n")
+
+	selection, err := ResolveAuthSelection(domain.AuthModeAPIKey, utopiaDir, nil)
+	if err != nil {
+		t.Fatalf("ResolveAuthSelection() error = %v", err)
+	}
+
+	if rendered := fmt.Sprintf("%+v", selection); strings.Contains(rendered, fileKey) {
+		t.Errorf("selection %s holds the credential", rendered)
+	}
+}
+
+// Reporting resolves the credential too, so api-key mode with no key anywhere
+// fails while reporting - before the command does any work - rather than at the
+// first spawn.
+func TestResolveAuthSelectionAPIKeyMissing(t *testing.T) {
+	_, err := ResolveAuthSelection(domain.AuthModeAPIKey, writeEnvFile(t, ""), nil)
+	if err == nil {
+		t.Fatal("ResolveAuthSelection should fail when api-key mode can resolve no key")
+	}
+
+	if !errors.Is(err, &domain.MissingAPIKeyError{}) {
+		t.Errorf("error %v is not a *MissingAPIKeyError", err)
+	}
+}
+
+func TestResolveAuthSelectionUnknownMode(t *testing.T) {
+	_, err := ResolveAuthSelection(domain.AuthMode("teamplan"), "", nil)
+	if err == nil {
+		t.Fatal("ResolveAuthSelection should fail for an unrecognised auth mode")
+	}
+
+	if !errors.Is(err, &domain.InvalidAuthModeError{}) {
+		t.Errorf("error %v is not an *InvalidAuthModeError", err)
+	}
+}
+
+// The report must describe the environment the subprocess actually gets. One
+// resolution returns both halves so they cannot disagree; this pins the pairing
+// for each mode.
+func TestResolveAuthMatchesTheEnvironmentItReports(t *testing.T) {
+	const fileKey = "sk-ant-file"
+	ambient := []string{"PATH=/usr/bin", domain.APIKeyEnvVar + "=sk-ambient"}
+	utopiaDir := writeEnvFile(t, domain.APIKeyEnvVar+"="+fileKey+"\n")
+
+	env, selection, err := ResolveAuth(domain.AuthModeAPIKey, utopiaDir, ambient)
+	if err != nil {
+		t.Fatalf("ResolveAuth(api-key) error = %v", err)
+	}
+	if selection.Source != domain.CredentialSourceEnvFile {
+		t.Errorf("reported source = %q, want %q", selection.Source, domain.CredentialSourceEnvFile)
+	}
+	if got := lookupTestEnv(env, domain.APIKeyEnvVar); got != fileKey {
+		t.Errorf("environment carries %q, but the report named %q", got, selection.Source)
+	}
+
+	env, selection, err = ResolveAuth(domain.AuthModeSubscription, utopiaDir, ambient)
+	if err != nil {
+		t.Fatalf("ResolveAuth(subscription) error = %v", err)
+	}
+	if len(selection.Suppressed) != 1 || selection.Suppressed[0] != domain.APIKeyEnvVar {
+		t.Errorf("reported suppressed = %v, want [%s]", selection.Suppressed, domain.APIKeyEnvVar)
+	}
+	if envVarNames(env)[domain.APIKeyEnvVar] {
+		t.Errorf("%s reported as ignored but still present in the environment", domain.APIKeyEnvVar)
 	}
 }

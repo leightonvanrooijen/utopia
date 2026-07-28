@@ -622,3 +622,141 @@ func TestInvalidAuthModeError_Is(t *testing.T) {
 		t.Error("errors.Is should match any InvalidAuthModeError")
 	}
 }
+
+func TestAuthSelectionReport(t *testing.T) {
+	tests := []struct {
+		name      string
+		selection AuthSelection
+		want      string
+	}{
+		{
+			name:      "no selection reports nothing",
+			selection: AuthSelection{},
+			want:      "",
+		},
+		{
+			name:      "api-key names the project env file it came from",
+			selection: AuthSelection{Mode: AuthModeAPIKey, Source: CredentialSourceEnvFile},
+			want:      "Auth: api-key (ANTHROPIC_API_KEY from .utopia/.env)",
+		},
+		{
+			name:      "api-key names the inherited environment it came from",
+			selection: AuthSelection{Mode: AuthModeAPIKey, Source: CredentialSourceEnvironment},
+			want:      "Auth: api-key (ANTHROPIC_API_KEY from the environment)",
+		},
+		{
+			name:      "subscription with a clean environment names only the mode",
+			selection: AuthSelection{Mode: AuthModeSubscription},
+			want:      "Auth: subscription",
+		},
+		{
+			name: "subscription says an ambient key was ignored",
+			selection: AuthSelection{
+				Mode:       AuthModeSubscription,
+				Suppressed: []string{APIKeyEnvVar},
+			},
+			want: "Auth: subscription (ambient ANTHROPIC_API_KEY ignored)",
+		},
+		{
+			name: "subscription names every credential it ignored",
+			selection: AuthSelection{
+				Mode:       AuthModeSubscription,
+				Suppressed: []string{APIKeyEnvVar, AuthTokenEnvVar},
+			},
+			want: "Auth: subscription (ambient ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN ignored)",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.selection.Report(); got != tc.want {
+				t.Errorf("Report() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// The report exists to name the account that pays, never the credential itself -
+// a key in any field of the selection must not reach the line. AuthSelection has
+// no field to hold one, and this pins that: a key placed where a value could
+// plausibly be mistaken for a location still cannot appear.
+func TestAuthSelectionReportNeverPrintsACredential(t *testing.T) {
+	const secret = "sk-ant-api03-DO-NOT-PRINT"
+
+	selections := []AuthSelection{
+		{Mode: AuthModeAPIKey, Source: CredentialSourceEnvFile},
+		{Mode: AuthModeAPIKey, Source: CredentialSourceEnvironment},
+		{Mode: AuthModeSubscription, Suppressed: []string{APIKeyEnvVar, AuthTokenEnvVar}},
+	}
+
+	for _, selection := range selections {
+		report := selection.Report()
+		if strings.Contains(report, secret) {
+			t.Errorf("Report() = %q leaks the credential", report)
+		}
+		// Not even a prefix of it: a truncated key is still key material.
+		if strings.Contains(report, secret[:12]) {
+			t.Errorf("Report() = %q leaks part of the credential", report)
+		}
+	}
+}
+
+// An unrecognised mode is still reported rather than passed over in silence. It
+// cannot reach here through either entry point, but a report is the wrong place
+// to decide a mode does not exist - the resolution that rejects it is.
+func TestAuthSelectionReportUnknownMode(t *testing.T) {
+	got := AuthSelection{Mode: AuthMode("teamplan")}.Report()
+	if want := "Auth: teamplan"; got != want {
+		t.Errorf("Report() = %q, want %q", got, want)
+	}
+}
+
+func TestSuppressedCredentialVars(t *testing.T) {
+	tests := []struct {
+		name    string
+		ambient []string
+		want    []string
+	}{
+		{
+			name:    "a clean environment suppresses nothing",
+			ambient: []string{"PATH=/usr/bin", "HOME=/home/dev"},
+			want:    nil,
+		},
+		{
+			name:    "an ambient api key",
+			ambient: []string{"PATH=/usr/bin", APIKeyEnvVar + "=sk-ambient"},
+			want:    []string{APIKeyEnvVar},
+		},
+		{
+			name:    "an ambient auth token",
+			ambient: []string{AuthTokenEnvVar + "=token-ambient"},
+			want:    []string{AuthTokenEnvVar},
+		},
+		{
+			name:    "both, always in the same order",
+			ambient: []string{AuthTokenEnvVar + "=token-ambient", APIKeyEnvVar + "=sk-ambient"},
+			want:    []string{APIKeyEnvVar, AuthTokenEnvVar},
+		},
+		{
+			// An empty value is not a credential, so there is nothing to say was
+			// ignored - and SubscriptionEnv drops it either way.
+			name:    "an empty value is not a suppressed credential",
+			ambient: []string{APIKeyEnvVar + "=", AuthTokenEnvVar + "="},
+			want:    nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := SuppressedCredentialVars(tc.ambient)
+			if len(got) != len(tc.want) {
+				t.Fatalf("SuppressedCredentialVars() = %v, want %v", got, tc.want)
+			}
+			for i, name := range tc.want {
+				if got[i] != name {
+					t.Errorf("SuppressedCredentialVars()[%d] = %q, want %q", i, got[i], name)
+				}
+			}
+		})
+	}
+}

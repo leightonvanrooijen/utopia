@@ -85,8 +85,8 @@ func runExecuteWatch(cmd *cobra.Command, intervalSec int) error {
 		return err
 	}
 
-	// Validate auth flag early before any work (resolution applies at spawn time)
-	if _, err := ResolveAuthFlag(cmd); err != nil {
+	// Report the credential this invocation runs with, before any work starts
+	if _, err := ResolveAuth(cmd); err != nil {
 		return err
 	}
 	if intervalSec <= 0 {

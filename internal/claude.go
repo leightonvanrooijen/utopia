@@ -96,31 +96,14 @@ func (c *CLI) WithAuth(mode domain.AuthMode, utopiaDir string) *CLI {
 // one-shot prompt, a streamed prompt and an interactive session all bill to the
 // same account.
 //
-// The empty mode returns os.Environ() as-is: no credential was selected, so the
-// subprocess inherits whatever utopia itself is running with.
-//
-// A non-empty mode utopia does not recognise is an error rather than a fall
-// through to the inherited environment. Both entry points validate the mode
-// already, so reaching here with an unknown one is a wiring bug - and the
-// failure mode of guessing is a run that silently bills the wrong account,
-// which is the outcome this whole feature exists to prevent.
+// The selection half of the resolution is discarded here. Reporting which
+// credential was chosen belongs to the command, not the subprocess: ralph loops
+// until a work item is done and discover fans out over goroutines, so a line
+// printed here would repeat per iteration and interleave across goroutines for a
+// credential that was only ever chosen once.
 func (c *CLI) subprocessEnv() ([]string, error) {
-	ambient := os.Environ()
-
-	switch c.authMode {
-	case "":
-		return ambient, nil
-	case domain.AuthModeSubscription:
-		return domain.SubscriptionEnv(ambient), nil
-	case domain.AuthModeAPIKey:
-		env, _, err := ResolveAPIKeyEnv(c.utopiaDir, ambient)
-		if err != nil {
-			return nil, fmt.Errorf("failed to resolve credentials for auth mode %s: %w", domain.AuthModeAPIKey, err)
-		}
-		return env, nil
-	default:
-		return nil, &domain.InvalidAuthModeError{Mode: string(c.authMode)}
-	}
+	env, _, err := ResolveAuth(c.authMode, c.utopiaDir, os.Environ())
+	return env, err
 }
 
 // baseArgs returns common arguments for all Claude invocations
