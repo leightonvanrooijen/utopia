@@ -79,6 +79,53 @@ func TestGitCommitCR_NumericPrefix(t *testing.T) {
 	}
 }
 
+// The post-merge cleanup commit must stage the removal of the CR's real
+// on-disk file, which may carry a numeric ordering prefix. The path is
+// resolved before deletion (as AutoMergeCR does) and threaded to the commit,
+// so a CR saved as 01_reusable-core.yaml has its deletion recorded. A path
+// reconstructed as change-requests/reusable-core.yaml would never match the
+// tracked file, leaving it tracked and the removal uncommitted.
+func TestGitCommitCleanup_NumericPrefix(t *testing.T) {
+	projectDir, store := setupCRRepo(t, "01_reusable-core.yaml", "reusable-core")
+	utopiaDir := filepath.Join(projectDir, ".utopia")
+
+	// Track the prefixed CR file so its removal is something git can stage.
+	if _, err := GitCommitCR(projectDir, store, "reusable-core"); err != nil {
+		t.Fatalf("failed to commit CR: %v", err)
+	}
+
+	// Mirror AutoMergeCR: resolve the real path, then delete, then commit the
+	// cleanup. Resolution must find the prefixed file, not reusable-core.yaml.
+	crFile, err := store.ChangeRequestPath("reusable-core")
+	if err != nil {
+		t.Fatalf("failed to resolve CR path: %v", err)
+	}
+	if want := filepath.Join(utopiaDir, "change-requests", "01_reusable-core.yaml"); crFile != want {
+		t.Fatalf("resolved CR path = %q, want %q", crFile, want)
+	}
+	if err := store.DeleteChangeRequest("reusable-core"); err != nil {
+		t.Fatalf("failed to delete CR: %v", err)
+	}
+
+	if err := gitCommitCleanup(projectDir, crFile, "reusable-core", utopiaDir); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got, want := lastCommitSubject(t, projectDir), "cleanup: complete reusable-core"; got != want {
+		t.Errorf("commit subject = %q, want %q", got, want)
+	}
+
+	// The prefixed CR file's removal was committed: it is no longer tracked.
+	tracked := exec.Command("git", "ls-files", ".utopia/change-requests")
+	tracked.Dir = projectDir
+	out, err := tracked.Output()
+	if err != nil {
+		t.Fatalf("git ls-files failed: %v", err)
+	}
+	if got := string(out); got != "" {
+		t.Errorf("tracked CR files = %q, want none (removal committed)", got)
+	}
+}
+
 // An ambiguous id (two prefixed files, no canonical) must fail before any
 // commit rather than silently staging one of them (AC2).
 func TestGitCommitCR_AmbiguousFails(t *testing.T) {

@@ -646,9 +646,16 @@ func gitCommitChunk(projectDir, crID string) error {
 	return git.CommitIfChanged(projectDir, msg, workItemsDir)
 }
 
-func gitCommitCleanup(projectDir, crID, utopiaDir string) error {
+// gitCommitCleanup stages the post-merge removal of a CR and its work items as
+// one commit. crFile is the CR's real on-disk path, resolved by the caller via
+// store.ChangeRequestPath before deletion, so a CR saved under a numeric
+// ordering prefix (.utopia/change-requests/01_reusable-core.yaml) has its
+// removal staged - a path reconstructed as change-requests/<id>.yaml would not
+// match the tracked file and the deletion would silently never be committed.
+// Work items always live under the internal id, so that path is reconstructed.
+// The commit message stays keyed to the internal id.
+func gitCommitCleanup(projectDir, crFile, crID, utopiaDir string) error {
 	workItemsDir := filepath.Join(utopiaDir, "work-items", crID)
-	crFile := filepath.Join(utopiaDir, "change-requests", crID+".yaml")
 	msg := fmt.Sprintf("cleanup: complete %s", crID)
 	return git.CommitIfChanged(projectDir, msg, workItemsDir, crFile)
 }

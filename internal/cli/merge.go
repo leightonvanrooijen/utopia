@@ -697,6 +697,13 @@ func AutoMergeCR(out *ui.Printer, cr *domain.ChangeRequest, crID string, store *
 	}
 	out.Successf("Created git commit for spec merge")
 
+	// Resolve the CR's real on-disk path before cleanup deletes it, so the
+	// cleanup commit stages the actual filename (which may carry a numeric
+	// ordering prefix, e.g. 01_reusable-core.yaml) rather than a reconstructed
+	// change-requests/<id>.yaml. Deletion resolves the same path, so a
+	// successful CleanupAfterMerge implies this resolved cleanly.
+	crFile, crFileErr := store.ChangeRequestPath(crID)
+
 	// Step 3: Clean up CR and work items (now safe - commit exists for rollback)
 	if err := CleanupAfterMerge(cr, crID, utopiaDir, store); err != nil {
 		// Log but don't fail - commit succeeded, cleanup is non-critical
@@ -705,7 +712,9 @@ func AutoMergeCR(out *ui.Printer, cr *domain.ChangeRequest, crID string, store *
 		out.Successf("Cleaned up CR and work items")
 
 		// Step 4: Create cleanup commit for removed CR and work items
-		if err := gitCommitCleanup(projectDir, crID, utopiaDir); err != nil {
+		if crFileErr != nil {
+			out.Warnf("Cleanup commit warning: %s", crFileErr)
+		} else if err := gitCommitCleanup(projectDir, crFile, crID, utopiaDir); err != nil {
 			out.Warnf("Cleanup commit warning: %s", err)
 		} else {
 			out.Successf("Created cleanup commit")
