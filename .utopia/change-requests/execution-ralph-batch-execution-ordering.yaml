@@ -1,0 +1,18 @@
+id: execution-ralph-batch-execution-ordering
+type: enhancement
+title: Order execute --all by numeric filename prefix
+status: draft
+changes:
+  - operation: modify
+    spec: execution-ralph
+    feature_id: batch-execution
+    criteria:
+      edit:
+        - old: CRs are executed in alphabetical order by filename
+          new: CRs are executed in filename order; a leading numeric prefix on the CR filename (e.g. "1_", "2_") controls the execution sequence
+      add:
+        - Numeric filename prefixes are compared numerically, so "2_" runs before "10_" regardless of zero-padding
+        - CRs without a numeric prefix are executed after all prefixed CRs, in alphabetical order
+    hints:
+      - The batch ordering is where execute --all enumerates .utopia/change-requests/ - update that sort comparator
+      - Parse the leading digits before the first underscore as an int for the numeric-aware sort; treat no-prefix as "after" prefixed entries
