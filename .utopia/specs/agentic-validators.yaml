@@ -1,7 +1,7 @@
 id: agentic-validators
 title: agentic-validators
 created: "2026-03-17T19:24:58.958332+11:00"
-updated: "2026-03-20T22:26:41.987881+11:00"
+updated: "2026-07-27T22:29:14.040999+10:00"
 description: ""
 features:
     - id: validator-config
@@ -22,15 +22,18 @@ features:
 
     - id: validator-file-format
       description: |
-        Self-contained validator files using YAML frontmatter + markdown body.
+        Add the description field to the documented format and stop documenting the
+        `run` field in frontmatter, which the loader has already deprecated (it warns
+        and reads run from config.yaml instead).
       acceptance_criteria:
         - Each validator is a single .md file with YAML frontmatter
-        - Frontmatter contains id (required), run (optional), allowed_tools (optional)
         - Markdown body is the prompt sent to Claude
         - Prompt can reference {{changed_files}} placeholder for diff injection
         - Files are loaded at execution time (not cached)
-        - run defaults to "after-workitem" if not specified
         - allowed_tools defaults to ["Read", "Glob", "Grep"] if not specified
+        - Frontmatter contains id (required), description (optional), allowed_tools (optional)
+        - The description is a short line stating what the validator checks and when it applies, used by the relevance router
+        - run is configured in config.yaml, not frontmatter; a run field in frontmatter is deprecated and warns on load
 
     - id: validator-runner
       description: |
@@ -178,9 +181,9 @@ features:
 
     - id: validator-assistant-prompt
       description: |
-        The system prompt that powers the AI assistant for create and edit commands.
-        Encodes best practices for writing effective validation agents including
-        prompt engineering, agent evaluation patterns, and verbose feedback.
+        The create/edit assistant must treat the description as a first-class,
+        quality-gated output (the router is only as good as the descriptions), and
+        must stop emitting the deprecated run field in generated frontmatter.
       acceptance_criteria:
         - Prompt includes knowledge of validator file format (YAML frontmatter + markdown)
         - Prompt includes best practices for grading outputs vs. prescribing paths
@@ -192,6 +195,8 @@ features:
         - Prompt instructs AI to extract patterns from example code/docs
         - Prompt instructs AI to explain trade-offs and ask clarifying questions
         - Prompt is stored as an embedded template (not hardcoded in Go)
+        - Prompt instructs the assistant to author a specific, router-usable description stating what the validator checks and when it applies
+        - Prompt instructs the assistant to place run in config.yaml guidance rather than frontmatter, and never to emit a run field in the generated file
 
     - id: failure-stdout-logging
       description: |
@@ -201,3 +206,50 @@ features:
         - When a validator fails, its ID and failure feedback are printed to stdout
         - Output is printed before being injected into the AI retry prompt
         - Uses the same content that would be fed to the AI for retry
+
+    - id: validator-description
+      description: |
+        Give each validator a skill-style `description` in its frontmatter - a
+        short "what this checks and when it applies" line. This is the field the
+        relevance router reads to decide whether a validator is worth running for
+        a given change, exactly as Claude skills route on their description. The
+        validator body (the expensive prompt) stays the on-demand payload.
+      acceptance_criteria:
+        - Validator frontmatter supports an optional `description` field parsed into the Validator model
+        - A validator with no description still loads and is treated as always-applicable by the router (never silently skipped)
+        - The description is available to the router without loading or sending the validator body
+
+    - id: validator-relevance-router
+      description: |
+        A recall-biased router that selects which validators run for a given
+        change, replacing the current "run every validator's full prompt and let
+        it self-gate to <PASSED>" model. The router makes one cheap model call
+        over the changed diff plus every validator's id and description, and
+        returns the ids that might apply. Only the selected validators then run
+        their full body. It is deliberately a recall filter, not a precise
+        classifier - the validator body remains the exact pass/fail gate, so an
+        over-inclusive router only costs an extra run while a missed validator
+        would ship an unchecked violation. There is no deterministic path/glob
+        pre-filter by design - relevance is a semantic judgement and this is the
+        place where model-driven selection is the right tool.
+      acceptance_criteria:
+        - Before validators execute, the router selects the applicable subset from the configured validators for the current change
+        - The router is fed the change diff and each validator's id and description, and returns the applicable ids
+        - The router is instructed to include a validator whenever relevance is uncertain (biased toward recall)
+        - The router uses a cheap model independent of the validators execution model
+        - A validator marked always true bypasses the router and always runs
+        - A validator with no description bypasses the router and always runs
+        - The router runs once per work item when it first reaches the validation gate; the selection is persisted on the work item and reused across retries and resumes rather than re-routed each iteration
+        - on-demand validators are never selected by the router
+        - Selection happens in the validators package so it is independent of the loop-versus-engine choreography
+        - If the router call fails, execution falls back to running all applicable validators rather than skipping validation
+
+    - id: validator-always-run
+      description: |
+        An optional `always` flag on a validator's config entry that opts it out
+        of routing so it runs on every change - the escape hatch for the one or
+        two checks (e.g. security) you cannot risk the router skipping.
+      acceptance_criteria:
+        - ValidatorConfig supports an optional `always` boolean (default false)
+        - A validator with always true is never filtered out by the router
+        - always composes with run triggers - an always after-phase validator always runs at phase gates, not work-item gates

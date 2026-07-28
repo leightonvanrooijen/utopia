@@ -22,14 +22,28 @@ func DefaultAllowedTools() []string {
 // Validator represents a project standards validator loaded from a .md file.
 // Validators use YAML frontmatter for configuration and markdown body for the prompt.
 //
-// Valid frontmatter fields: id, allowed_tools, prompt
+// Valid frontmatter fields: id, description, allowed_tools
 // The "run" field should be configured in config.yaml, not in the validator file.
 type Validator struct {
 	// ID is the unique identifier for this validator (required)
 	ID string `yaml:"id"`
 
+	// Description is a short "what this checks and when it applies" line read by
+	// the relevance router to decide whether this validator is worth running for a
+	// given change - exactly as Claude skills route on their description, without
+	// loading the (expensive) Prompt body. Optional: an empty Description means the
+	// router has no signal to route on and must treat the validator as always
+	// applicable, never silently skipping it.
+	Description string `yaml:"description,omitempty"`
+
 	// AllowedTools specifies which tools the validator can use (optional, defaults to ["Read", "Glob", "Grep"])
 	AllowedTools []string `yaml:"allowed_tools,omitempty"`
+
+	// Always, when set from config.yaml, opts this validator out of the relevance
+	// router so it runs on every change - the escape hatch for checks (e.g.
+	// security) too important to risk the router skipping. Not stored in the
+	// validator file's frontmatter.
+	Always bool `yaml:"-"`
 
 	// Prompt is the markdown body sent to Claude (not stored in frontmatter)
 	Prompt string `yaml:"-"`
@@ -42,6 +56,15 @@ type Validator struct {
 	// Defaults to "after-workitem" if not configured.
 	// This is not stored in the validator file's frontmatter (deprecated there).
 	Run RunTrigger `yaml:"-"`
+}
+
+// BypassesRouter reports whether this validator must run for every change
+// regardless of the relevance router's selection. Two cases bypass routing: a
+// validator explicitly marked always-run (the escape hatch for checks too
+// important to risk skipping), and a validator with no description, since the
+// router has no signal to route on and must not silently skip it.
+func (v *Validator) BypassesRouter() bool {
+	return v.Always || strings.TrimSpace(v.Description) == ""
 }
 
 // GetRun returns the run trigger from config, defaulting to "after-workitem".

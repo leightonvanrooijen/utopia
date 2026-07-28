@@ -1,0 +1,184 @@
+package discover
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/leightonvanrooijen/utopia/internal"
+	"github.com/leightonvanrooijen/utopia/internal/domain"
+)
+
+const domainSystemPrompt = `You are a Domain Discovery Claude - an AI assistant that analyzes codebases to identify domain vocabulary, bounded contexts, and canonical terminology.
+
+## Your Role
+Analyze the provided codebase context and identify bounded contexts with their domain vocabulary.
+
+**IMPORTANT**: Create a SEPARATE draft domain document for EACH bounded context identified.
+
+## Codebase Context
+%s
+
+## Existing Domain Documents
+%s
+
+## Output Format
+Generate draft domain documents in this EXACT YAML format:
+
+` + "```yaml" + `
+drafts:
+  - id: bounded-context-name
+    title: "Human Readable Context Title"
+    bounded_context: bounded-context-name
+    description: |
+      Clear description of what this bounded context owns.
+    confidence: high|medium|low
+    discovered_from:
+      - "path/to/type_definition.go"
+    uncertainty_notes:
+      - "Note about what's unclear (only for low confidence)"
+    evidence:
+      type_files:
+        - "path/to/types.go"
+      package_files:
+        - "path/to/package/main.go"
+      schema_files:
+        - "path/to/schema.yaml"
+      comments:
+        - "Relevant code comment"
+    terms:
+      - term: CanonicalTermName
+        canonical: true
+        code_usage: "path/to/file.go - StructName"
+        definition: "Clear definition of what this term means"
+        aliases:
+          - "AlternativeName"
+        cross_context_note: "Optional note about how this term differs in other contexts"
+        evidence:
+          files:
+            - "path/to/file.go"
+          lines:
+            - "path/to/file.go:42"
+    entities:
+      - name: EntityName
+        description: "What this entity represents"
+        relationships:
+          - type: contains
+            target: OtherEntity
+` + "```" + `
+
+Now analyze the codebase and generate draft domain documents.`
+
+// DomainOptions configures the domain vocabulary discovery pipeline.
+type DomainOptions struct {
+	// ProjectDir is the absolute path of the project to scan
+	ProjectDir string
+	// Scope restricts which files are scanned
+	Scope Scope
+	// Verbose enables detailed file-by-file progress output
+	Verbose bool
+	// Model is an optional Claude model override
+	Model string
+	// Incremental restricts scanning to files modified after LastRun
+	Incremental bool
+	// LastRun is the previous discovery run time (used when Incremental is true)
+	LastRun time.Time
+	// ExistingDocs are summarized in the prompt so Claude builds on prior discovery
+	ExistingDocs []*domain.DomainDoc
+}
+
+// DomainResult represents the outcome of the domain discovery pipeline.
+type DomainResult struct {
+	// FilesAnalyzed maps each analyzed file to its modification time
+	FilesAnalyzed map[string]time.Time
+	// Drafts are the draft domain documents that were saved
+	Drafts []*domain.DraftDomainDoc
+}
+
+// Domain runs the domain vocabulary discovery pipeline: scan type definitions
+// and schemas, analyze them with Claude, parse the draft domain documents,
+// save them via the store, and record the discovery state for incremental
+// runs. It returns early (with a nil error) when a stage produces nothing to
+// carry forward; callers inspect the result to frame the outcome.
+func Domain(ctx context.Context, store *internal.YAMLStore, opts DomainOptions) (*DomainResult, error) {
+	prog := newProgress(4, opts.Verbose)
+
+	prog.StartPhase(1, "Scanning files")
+	codebaseContext, filesAnalyzed, err := collectDomainContextIncremental(opts.ProjectDir, opts.LastRun, opts.Incremental, opts.Scope, prog)
+	if err != nil {
+		return nil, fmt.Errorf("failed to collect codebase context: %w", err)
+	}
+	result := &DomainResult{FilesAnalyzed: filesAnalyzed}
+	if len(filesAnalyzed) == 0 {
+		fmt.Printf(" done (no new files)\n")
+		return result, nil
+	}
+	prog.EndPhase(fmt.Sprintf("%d files found", len(filesAnalyzed)))
+
+	domainDocsSummary := buildExistingDomainDocsSummary(opts.ExistingDocs)
+	systemPrompt := fmt.Sprintf(domainSystemPrompt, codebaseContext, domainDocsSummary)
+
+	prog.StartPhase(2, "Analyzing codebase with Claude")
+	cli := internal.NewCLI().WithVerbose(true)
+	if opts.Model != "" {
+		cli = cli.WithModel(opts.Model)
+	}
+	promptResult, err := cli.Prompt(ctx, systemPrompt)
+	if err != nil {
+		return nil, fmt.Errorf("claude analysis failed: %w", err)
+	}
+	prog.EndPhase("")
+
+	prog.StartPhase(3, "Parsing draft domain documents")
+	drafts, err := parseDomainDraftsFromOutput(promptResult.Stdout)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse drafts: %w", err)
+	}
+	result.Drafts = drafts
+	if len(drafts) == 0 {
+		fmt.Printf(" done (no drafts found)\n")
+		return result, nil
+	}
+	prog.EndPhase(fmt.Sprintf("%d drafts parsed", len(drafts)))
+
+	prog.StartPhase(4, "Saving drafts")
+	for _, draft := range drafts {
+		prog.Verbosef("\n  Saving %s.yaml", draft.ID)
+		if err := store.SaveDraftDomainDoc(draft); err != nil {
+			return nil, fmt.Errorf("failed to save draft %s: %w", draft.ID, err)
+		}
+	}
+	prog.EndPhase(fmt.Sprintf("%d drafts saved", len(drafts)))
+
+	newState := &domain.DomainDiscoveryState{LastRun: time.Now(), FilesAnalyzed: filesAnalyzed}
+	if len(opts.Scope.Paths) > 0 || len(opts.Scope.ExcludePatterns) > 0 {
+		newState.Scope = &domain.DiscoveryScope{Paths: opts.Scope.Paths, ExcludePatterns: opts.Scope.ExcludePatterns}
+	}
+	if err := store.SaveDomainDiscoveryState(newState); err != nil {
+		return nil, fmt.Errorf("failed to save domain discovery state: %w", err)
+	}
+
+	return result, nil
+}
+
+func buildExistingDomainDocsSummary(docs []*domain.DomainDoc) string {
+	if len(docs) == 0 {
+		return "(No existing domain documents)"
+	}
+	var sb strings.Builder
+	for _, doc := range docs {
+		sb.WriteString(fmt.Sprintf("- **%s** (%s): %s\n", doc.Title, doc.BoundedContext, truncateContent(doc.Description, 100)))
+		for _, term := range doc.Terms {
+			sb.WriteString(fmt.Sprintf("  - %s: %s\n", term.Term, truncateContent(term.Definition, 80)))
+		}
+	}
+	return sb.String()
+}
+
+func titleCase(s string) string {
+	if len(s) == 0 {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}

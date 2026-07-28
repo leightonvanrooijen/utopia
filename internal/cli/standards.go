@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/leightonvanrooijen/utopia/internal"
+	"github.com/leightonvanrooijen/utopia/internal/cli/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -196,6 +197,8 @@ tags:
 ` + "```" + ``
 
 func runStandardsGenerate(cmd *cobra.Command, args []string) error {
+	out := ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr())
+
 	// Validate model flag early before any work
 	modelID, err := ResolveModelFlag(cmd)
 	if err != nil {
@@ -216,10 +219,8 @@ func runStandardsGenerate(cmd *cobra.Command, args []string) error {
 	// Build the system prompt with format and path
 	systemPrompt := fmt.Sprintf(standardsSystemPrompt, standardsDocumentFormat, standardsDir)
 
-	fmt.Println("Starting standards generation session...")
-	fmt.Println()
-	fmt.Println("Standards will be saved to:", standardsDir)
-	fmt.Println()
+	out.Progressf("Starting standards generation session...\n\n")
+	out.Printf("Standards will be saved to: %s\n\n", standardsDir)
 
 	// Run interactive Claude session
 	ctx := context.Background()
@@ -234,8 +235,7 @@ func runStandardsGenerate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("claude session failed: %w", sessionErr)
 	}
 
-	fmt.Println()
-	fmt.Println("Session ended.")
+	out.Progressf("\nSession ended.\n")
 
 	return nil
 }

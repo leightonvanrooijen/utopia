@@ -54,6 +54,18 @@ type WorkItem struct {
 	// LastValidatorFeedback stores feedback from validators that failed in the previous iteration.
 	// Kept separate from LastFailureOutput to allow distinct prompt sections.
 	LastValidatorFeedback string `yaml:"last_validator_feedback,omitempty"`
+
+	// SelectedValidators holds the validator IDs the relevance router chose for
+	// this work item. It is populated once, when the item first reaches the
+	// validation gate, and reused across retries and resumes so the routing model
+	// call happens once per work item rather than every iteration. See
+	// ValidatorsRouted to distinguish "not yet routed" from "routed, selected none".
+	SelectedValidators []string `yaml:"selected_validators,omitempty"`
+
+	// ValidatorsRouted records whether the relevance router has already run for
+	// this work item. Once true, SelectedValidators is authoritative even when
+	// empty, so routing is not repeated on retries or after a resume.
+	ValidatorsRouted bool `yaml:"validators_routed,omitempty"`
 }
 
 // NewWorkItem creates a work item from a spec feature.

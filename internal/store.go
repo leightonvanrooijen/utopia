@@ -283,6 +283,11 @@ func (s *YAMLStore) LoadConfig() (*domain.Config, error) {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 
+	// Validate connector entries at load time
+	if err := domain.ValidateConnectors(config.Connectors); err != nil {
+		return nil, fmt.Errorf("failed to load config: %w", err)
+	}
+
 	return config, nil
 }
 
@@ -670,6 +675,53 @@ func (s *YAMLStore) ListConceptDocs() ([]*domain.ConceptDoc, error) {
 	return docs, nil
 }
 
+// LoadStandardsIndex reads the frontmatter metadata of every standards doc
+// in .utopia/standards/. Docs with missing or unparseable frontmatter are
+// skipped so a single bad doc never fails chunking. Returns an empty index
+// when the directory is missing or empty.
+func (s *YAMLStore) LoadStandardsIndex() []domain.StandardsDocMeta {
+	dir := filepath.Join(s.baseDir, "standards")
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+
+	var docs []domain.StandardsDocMeta
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
+			continue
+		}
+
+		bytes, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+		if err != nil {
+			continue
+		}
+
+		content := string(bytes)
+		if !strings.HasPrefix(content, "---\n") {
+			continue
+		}
+		endMarker := strings.Index(content[4:], "\n---")
+		if endMarker == -1 {
+			continue
+		}
+
+		var meta domain.StandardsDocMeta
+		if err := yaml.Unmarshal([]byte(content[4:4+endMarker]), &meta); err != nil {
+			continue
+		}
+		if meta.ID == "" {
+			continue
+		}
+
+		meta.Path = filepath.ToSlash(filepath.Join(".utopia", "standards", entry.Name()))
+		docs = append(docs, meta)
+	}
+
+	return docs
+}
+
 // SaveDraft writes a draft spec to .utopia/drafts/specs/{id}.yaml
 func (s *YAMLStore) SaveDraft(draft *domain.DraftSpec) error {
 	return Save(s, filepath.Join("drafts", "specs", draft.ID+".yaml"), draft)
@@ -786,6 +838,7 @@ func (s *YAMLStore) DeleteValidator(path string) error {
 // It includes the deprecated 'run' field to detect and warn about its usage.
 type validatorFrontmatter struct {
 	ID           string   `yaml:"id"`
+	Description  string   `yaml:"description,omitempty"`
 	AllowedTools []string `yaml:"allowed_tools,omitempty"`
 	Run          string   `yaml:"run,omitempty"` // deprecated: configure in config.yaml instead
 }
@@ -794,7 +847,7 @@ type validatorFrontmatter struct {
 // The path should be relative to the store's base directory (e.g., "validators/component-standards.md").
 // Returns the validator with frontmatter fields populated and Prompt containing the markdown body.
 //
-// Valid frontmatter fields: id, allowed_tools
+// Valid frontmatter fields: id, description, allowed_tools
 // The "run" field is deprecated in validator files and should be configured in config.yaml.
 // If "run" is found in the file, a warning is logged but the file continues to load.
 func (s *YAMLStore) LoadValidator(path string) (*domain.Validator, error) {
@@ -839,6 +892,7 @@ func (s *YAMLStore) LoadValidator(path string) (*domain.Validator, error) {
 	// Build validator (without deprecated run field)
 	validator := &domain.Validator{
 		ID:           fm.ID,
+		Description:  fm.Description,
 		AllowedTools: fm.AllowedTools,
 	}
 

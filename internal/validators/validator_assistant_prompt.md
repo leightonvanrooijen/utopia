@@ -13,7 +13,7 @@ Validators have this structure:
 ```yaml
 ---
 id: my-validator-id
-run: after-workitem
+description: Checks REST API endpoints for naming and error-response conventions; applies when API route files change
 allowed_tools: [Read, Glob, Grep]
 ---
 Your validation prompt here.
@@ -30,8 +30,10 @@ If all checks pass, output: <PASSED>
 ### Frontmatter Fields
 
 - **id** (required): Unique identifier using kebab-case (e.g., "api-standards", "component-structure")
-- **run** (optional): When to run - "after-workitem" (default), "after-phase", or "on-demand"
+- **description** (required unless the validator is always-on): Treat this as a first-class output and author it with as much care as the validation prompt itself - the relevance router is only as good as the descriptions it reads. Write a specific, router-usable line stating **what** the validator checks and **when** it applies (e.g. "Checks REST endpoint naming and error-response shapes; applies when API route files change"). The router reads this - just like a Claude skill description - to decide whether the validator is worth running for a given change, without loading the full prompt. Avoid vague or generic descriptions like "checks code quality" or "validates the code": they give the router no signal to match against and make it run the validator on irrelevant changes. Before writing the file, sanity-check the description against the prompt: does it name the concrete thing being checked and the kind of change that should trigger it? Leave it empty only when the validator is deliberately meant to run on every change - an empty description gives the router no signal, so it treats the validator as always applicable rather than silently skipping it.
 - **allowed_tools** (optional): Tools the validator can use. Defaults to ["Read", "Glob", "Grep"]. Add "WebFetch" for external documentation lookups.
+
+> **Note:** Never emit a `run` field in the generated validator file - a `run` field in frontmatter is deprecated and warns on load. *When* a validator runs (`after-workitem`, `after-phase`, or `on-demand`) is configured per validator in `.utopia/config.yaml`, not in the validator file. When you help the user choose a trigger, put that decision in the `.utopia/config.yaml` guidance you give them, never in the validator frontmatter.
 
 ### Prompt Requirements
 
@@ -42,7 +44,7 @@ If all checks pass, output: <PASSED>
 
 ## Run Trigger Selection
 
-Choose the appropriate trigger based on the validator's purpose:
+Run triggers are configured per validator in `.utopia/config.yaml` (not in the validator file). Choose the appropriate trigger based on the validator's purpose:
 
 | Trigger | When it Runs | Best For |
 |---------|-------------|----------|
@@ -203,7 +205,7 @@ Help users make informed decisions by explaining trade-offs:
 ```yaml
 ---
 id: code-style
-run: after-workitem
+description: Checks code style - JSDoc on exports, no stray console.log, sorted imports; applies to source file changes
 allowed_tools: [Read, Glob, Grep]
 ---
 Review the following changes for code style violations:
@@ -227,7 +229,7 @@ Otherwise, list each violation with:
 ```yaml
 ---
 id: api-standards
-run: after-workitem
+description: Checks REST endpoint naming and error/success response shapes; applies when API endpoints change
 allowed_tools: [Read, Glob, Grep]
 ---
 Review the following API changes:
@@ -252,7 +254,7 @@ Otherwise, list violations with file, line, and specific fix needed.
 ```yaml
 ---
 id: test-coverage
-run: after-phase
+description: Checks that new source files have matching test files; applies when source files are added or changed
 allowed_tools: [Read, Glob, Grep]
 ---
 Review the following changes to verify test coverage:

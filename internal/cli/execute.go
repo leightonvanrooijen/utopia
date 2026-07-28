@@ -15,6 +15,7 @@ import (
 
 	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/chunk"
+	"github.com/leightonvanrooijen/utopia/internal/cli/ui"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 	"github.com/leightonvanrooijen/utopia/internal/git"
 	"github.com/leightonvanrooijen/utopia/internal/ralph"
@@ -55,10 +56,13 @@ Run the command again to resume from where you left off.`,
 	cmd.Flags().IntVarP(&executeTimeoutFlag, "timeout", "t", 0, "timeout in minutes (0 means no timeout)")
 	cmd.Flags().BoolVar(&executeAllFlag, "all", false, "execute all CRs in .utopia/change-requests/ in alphabetical order")
 	cmd.Flags().StringVar(&executeModelFlag, "model", "", "model to use (haiku, sonnet, opus)")
+	cmd.AddCommand(newExecuteRunCmd())
 	return cmd
 }
 
 func runExecute(cmd *cobra.Command, args []string) error {
+	out := ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr())
+
 	// Validate model flag early before any work
 	modelID, err := ResolveModelFlag(cmd)
 	if err != nil {
@@ -82,14 +86,14 @@ func runExecute(cmd *cobra.Command, args []string) error {
 		if len(args) > 0 {
 			return fmt.Errorf("cannot specify CR ID with --all flag")
 		}
-		return runExecuteAll(cmd, store, config, absPath, utopiaDir, modelID)
+		return runExecuteAll(out, store, config, absPath, utopiaDir, modelID)
 	}
 
 	var crID string
 	if len(args) > 0 {
 		crID = args[0]
 	} else {
-		selectedID, err := selectChangeRequest(store)
+		selectedID, err := selectChangeRequest(out, store)
 		if err != nil {
 			return err
 		}
@@ -102,7 +106,7 @@ func runExecute(cmd *cobra.Command, args []string) error {
 	}
 
 	if cr.Type == domain.CRTypeInitiative {
-		return executeInitiative(cmd, cr, store, config, absPath, utopiaDir, modelID)
+		return executeInitiative(out, cr, store, config, absPath, utopiaDir, modelID)
 	}
 
 	items, err := store.ListWorkItemsForSpec(crID)
@@ -110,19 +114,19 @@ func runExecute(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load work items: %w", err)
 	}
 	if len(items) == 0 {
-		items, err = chunkCR(cr, crID, store, config, absPath)
+		items, err = chunkCR(out, cr, crID, store, config, absPath)
 		if err != nil {
 			return err
 		}
 	} else {
-		fmt.Printf("Found %d existing work item(s) for %s\n", len(items), crID)
+		out.Progressf("Found %d existing work item(s) for %s\n", len(items), crID)
 	}
 
-	fmt.Printf("Executing CR: %s (%d work items)\n", crID, len(items))
+	out.Progressf("Executing CR: %s (%d work items)\n", crID, len(items))
 	if executeTimeoutFlag > 0 {
-		fmt.Printf("Timeout: %d minute(s)\n", executeTimeoutFlag)
+		out.Progressf("Timeout: %d minute(s)\n", executeTimeoutFlag)
 	}
-	fmt.Println()
+	out.Progressf("\n")
 
 	sessionStart := time.Now()
 	var ctx context.Context
@@ -138,7 +142,7 @@ func runExecute(cmd *cobra.Command, args []string) error {
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-sigChan
-		fmt.Println("\n\nInterrupt received, saving state and stopping...")
+		out.Progressf("\n\nInterrupt received, saving state and stopping...\n")
 		cancel()
 	}()
 
@@ -146,39 +150,38 @@ func runExecute(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
 			sessionDuration := time.Since(sessionStart).Round(time.Second)
-			fmt.Printf("\n  TIMEOUT REACHED\n")
-			fmt.Printf("Session duration: %s\n", sessionDuration)
-			fmt.Printf("Completed: %d/%d work items\n", result.Completed, result.Total)
+			out.Progressf("\n  TIMEOUT REACHED\n")
+			out.Progressf("Session duration: %s\n", sessionDuration)
+			out.Progressf("Completed: %d/%d work items\n", result.Completed, result.Total)
 			if result.StoppedAt != "" {
-				fmt.Printf("Stopped at: %s\n", result.StoppedAt)
+				out.Progressf("Stopped at: %s\n", result.StoppedAt)
 			}
-			fmt.Printf("\nProgress has been saved. Run 'utopia execute %s' to resume from where you left off.\n", crID)
+			out.Progressf("\nProgress has been saved. Run 'utopia execute %s' to resume from where you left off.\n", crID)
 			return fmt.Errorf("execution timed out after %d minute(s)", executeTimeoutFlag)
 		}
 		if ctx.Err() == context.Canceled {
-			fmt.Printf("\nExecution stopped by user.\n")
-			fmt.Printf("Completed: %d/%d work items\n", result.Completed, result.Total)
+			out.Progressf("\nExecution stopped by user.\n")
+			out.Progressf("Completed: %d/%d work items\n", result.Completed, result.Total)
 			if result.StoppedAt != "" {
-				fmt.Printf("Stopped at: %s\n", result.StoppedAt)
+				out.Progressf("Stopped at: %s\n", result.StoppedAt)
 			}
-			fmt.Println("\nRun 'utopia execute " + crID + "' to resume from where you left off.")
+			out.Progressf("\nRun 'utopia execute %s' to resume from where you left off.\n", crID)
 			return nil
 		}
-		fmt.Printf("\nExecution stopped: %s\n", err)
-		fmt.Printf("Completed: %d/%d work items\n", result.Completed, result.Total)
+		out.Progressf("\nExecution stopped: %s\n", err)
+		out.Progressf("Completed: %d/%d work items\n", result.Completed, result.Total)
 		if result.StoppedAt != "" {
-			fmt.Printf("Stopped at: %s\n", result.StoppedAt)
+			out.Progressf("Stopped at: %s\n", result.StoppedAt)
 		}
-		return err
+		return fmt.Errorf("CR %q failed: %w", crID, err)
 	}
 
-	fmt.Printf("\nAll work items completed successfully!\n")
-	fmt.Printf("Completed: %d/%d work items\n", result.Completed, result.Total)
-	fmt.Println()
-	fmt.Println("Merging CR into specs...")
-	if err := AutoMergeCR(cr, crID, store, absPath, utopiaDir); err != nil {
-		fmt.Printf("\n  Merge failed: %s\n", err)
-		fmt.Printf("Work items remain completed. You can retry merge with: utopia merge %s\n", crID)
+	out.Printf("\nAll work items completed successfully!\n")
+	out.Printf("Completed: %d/%d work items\n", result.Completed, result.Total)
+	out.Progressf("\nMerging CR into specs...\n")
+	if err := AutoMergeCR(out, cr, crID, store, absPath, utopiaDir); err != nil {
+		out.Progressf("\n  Merge failed: %s\n", err)
+		out.Progressf("Work items remain completed. You can retry merge with: utopia merge %s\n", crID)
 		return nil
 	}
 	return nil
@@ -188,7 +191,7 @@ func runExecute(cmd *cobra.Command, args []string) error {
 // BATCH EXECUTION
 // ============================================================================
 
-func runExecuteAll(cmd *cobra.Command, store *internal.YAMLStore, config *domain.Config, projectDir, utopiaDir, modelID string) error {
+func runExecuteAll(out *ui.Printer, store *internal.YAMLStore, config *domain.Config, projectDir, utopiaDir, modelID string) error {
 	crs, err := store.ListChangeRequests()
 	if err != nil {
 		return fmt.Errorf("failed to list change requests: %w", err)
@@ -199,7 +202,7 @@ func runExecuteAll(cmd *cobra.Command, store *internal.YAMLStore, config *domain
 
 	sort.Slice(crs, func(i, j int) bool { return crs[i].ID < crs[j].ID })
 	totalCRs := len(crs)
-	fmt.Printf("Found %d change request(s) to execute\n\n", totalCRs)
+	out.Progressf("Found %d change request(s) to execute\n\n", totalCRs)
 
 	sessionStart := time.Now()
 	var ctx context.Context
@@ -215,7 +218,7 @@ func runExecuteAll(cmd *cobra.Command, store *internal.YAMLStore, config *domain
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-sigChan
-		fmt.Println("\n\nInterrupt received, stopping batch execution...")
+		out.Progressf("\n\nInterrupt received, stopping batch execution...\n")
 		cancel()
 	}()
 
@@ -224,60 +227,60 @@ func runExecuteAll(cmd *cobra.Command, store *internal.YAMLStore, config *domain
 		if ctx.Err() != nil {
 			if ctx.Err() == context.DeadlineExceeded {
 				sessionDuration := time.Since(sessionStart).Round(time.Second)
-				fmt.Printf("\n  TIMEOUT REACHED\n")
-				fmt.Printf("Session duration: %s\n", sessionDuration)
-				fmt.Printf("Completed: %d/%d CRs\n", completedCRs, totalCRs)
+				out.Progressf("\n  TIMEOUT REACHED\n")
+				out.Progressf("Session duration: %s\n", sessionDuration)
+				out.Progressf("Completed: %d/%d CRs\n", completedCRs, totalCRs)
 				return fmt.Errorf("batch execution timed out after %d minute(s)", executeTimeoutFlag)
 			}
-			fmt.Printf("\n\nBatch execution stopped by user.\n")
-			fmt.Printf("Completed: %d/%d CRs\n", completedCRs, totalCRs)
+			out.Progressf("\n\nBatch execution stopped by user.\n")
+			out.Progressf("Completed: %d/%d CRs\n", completedCRs, totalCRs)
 			return nil
 		}
 
-		fmt.Printf("================================================================\n")
-		fmt.Printf("Executing CR %d of %d: %s\n", i+1, totalCRs, cr.Title)
-		fmt.Printf("================================================================\n\n")
+		out.Progressf("================================================================\n")
+		out.Progressf("Executing CR %d of %d: %s\n", i+1, totalCRs, cr.Title)
+		out.Progressf("================================================================\n\n")
 
-		if err := executeSingleCR(ctx, cr, store, config, projectDir, utopiaDir, modelID); err != nil {
+		if err := executeSingleCR(ctx, out, cr, store, config, projectDir, utopiaDir, modelID); err != nil {
 			if ctx.Err() != nil {
 				if ctx.Err() == context.DeadlineExceeded {
 					sessionDuration := time.Since(sessionStart).Round(time.Second)
-					fmt.Printf("\n  TIMEOUT REACHED\n")
-					fmt.Printf("Session duration: %s\n", sessionDuration)
-					fmt.Printf("Completed: %d/%d CRs\n", completedCRs, totalCRs)
+					out.Progressf("\n  TIMEOUT REACHED\n")
+					out.Progressf("Session duration: %s\n", sessionDuration)
+					out.Progressf("Completed: %d/%d CRs\n", completedCRs, totalCRs)
 					return fmt.Errorf("batch execution timed out after %d minute(s)", executeTimeoutFlag)
 				}
-				fmt.Printf("\n\nBatch execution stopped by user.\n")
-				fmt.Printf("Completed: %d/%d CRs\n", completedCRs, totalCRs)
+				out.Progressf("\n\nBatch execution stopped by user.\n")
+				out.Progressf("Completed: %d/%d CRs\n", completedCRs, totalCRs)
 				return nil
 			}
-			fmt.Printf("\n================================================================\n")
-			fmt.Printf("BATCH EXECUTION FAILED\n")
-			fmt.Printf("================================================================\n")
-			fmt.Printf("Failed CR: %s (%s)\n", cr.Title, cr.ID)
-			fmt.Printf("Error: %s\n", err)
-			fmt.Printf("Completed: %d/%d CRs before failure\n", completedCRs, totalCRs)
-			fmt.Printf("\nFix the issue and run 'utopia execute --all' to resume.\n")
+			out.Progressf("\n================================================================\n")
+			out.Progressf("BATCH EXECUTION FAILED\n")
+			out.Progressf("================================================================\n")
+			out.Progressf("Failed CR: %s (%s)\n", cr.Title, cr.ID)
+			out.Progressf("Error: %s\n", err)
+			out.Progressf("Completed: %d/%d CRs before failure\n", completedCRs, totalCRs)
+			out.Progressf("\nFix the issue and run 'utopia execute --all' to resume.\n")
 			return fmt.Errorf("CR %q failed: %w", cr.ID, err)
 		}
 
 		completedCRs++
-		fmt.Printf("\n  CR %d of %d completed: %s\n\n", i+1, totalCRs, cr.Title)
+		out.Progressf("\n  CR %d of %d completed: %s\n\n", i+1, totalCRs, cr.Title)
 	}
 
 	sessionDuration := time.Since(sessionStart).Round(time.Second)
-	fmt.Printf("================================================================\n")
-	fmt.Printf("BATCH EXECUTION COMPLETE\n")
-	fmt.Printf("================================================================\n")
-	fmt.Printf("Successfully executed: %d/%d CRs\n", completedCRs, totalCRs)
-	fmt.Printf("Total duration: %s\n", sessionDuration)
+	out.Printf("================================================================\n")
+	out.Printf("BATCH EXECUTION COMPLETE\n")
+	out.Printf("================================================================\n")
+	out.Printf("Successfully executed: %d/%d CRs\n", completedCRs, totalCRs)
+	out.Printf("Total duration: %s\n", sessionDuration)
 	return nil
 }
 
-func executeSingleCR(ctx context.Context, cr *domain.ChangeRequest, store *internal.YAMLStore, config *domain.Config, projectDir, utopiaDir, modelID string) error {
+func executeSingleCR(ctx context.Context, out *ui.Printer, cr *domain.ChangeRequest, store *internal.YAMLStore, config *domain.Config, projectDir, utopiaDir, modelID string) error {
 	crID := cr.ID
 	if cr.Type == domain.CRTypeInitiative {
-		return executeSingleInitiative(ctx, cr, store, config, projectDir, utopiaDir, modelID)
+		return executeSingleInitiative(ctx, out, cr, store, config, projectDir, utopiaDir, modelID)
 	}
 
 	items, err := store.ListWorkItemsForSpec(crID)
@@ -285,40 +288,39 @@ func executeSingleCR(ctx context.Context, cr *domain.ChangeRequest, store *inter
 		return fmt.Errorf("failed to load work items: %w", err)
 	}
 	if len(items) == 0 {
-		items, err = chunkCR(cr, crID, store, config, projectDir)
+		items, err = chunkCR(out, cr, crID, store, config, projectDir)
 		if err != nil {
 			return err
 		}
 	} else {
-		fmt.Printf("Found %d existing work item(s) for %s\n", len(items), crID)
+		out.Progressf("Found %d existing work item(s) for %s\n", len(items), crID)
 	}
 
-	fmt.Printf("Executing CR: %s (%d work items)\n\n", crID, len(items))
+	out.Progressf("Executing CR: %s (%d work items)\n\n", crID, len(items))
 	result, err := ralph.Execute(ctx, crID, store, config, projectDir, modelID)
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded || ctx.Err() == context.Canceled {
-			fmt.Printf("\nExecution stopped.\n")
-			fmt.Printf("Completed: %d/%d work items\n", result.Completed, result.Total)
+			out.Progressf("\nExecution stopped.\n")
+			out.Progressf("Completed: %d/%d work items\n", result.Completed, result.Total)
 			if result.StoppedAt != "" {
-				fmt.Printf("Stopped at: %s\n", result.StoppedAt)
+				out.Progressf("Stopped at: %s\n", result.StoppedAt)
 			}
 			return ctx.Err()
 		}
-		fmt.Printf("\nExecution stopped: %s\n", err)
-		fmt.Printf("Completed: %d/%d work items\n", result.Completed, result.Total)
+		out.Progressf("\nExecution stopped: %s\n", err)
+		out.Progressf("Completed: %d/%d work items\n", result.Completed, result.Total)
 		if result.StoppedAt != "" {
-			fmt.Printf("Stopped at: %s\n", result.StoppedAt)
+			out.Progressf("Stopped at: %s\n", result.StoppedAt)
 		}
 		return err
 	}
 
-	fmt.Printf("\nAll work items completed successfully!\n")
-	fmt.Printf("Completed: %d/%d work items\n", result.Completed, result.Total)
-	fmt.Println()
-	fmt.Println("Merging CR into specs...")
-	if err := AutoMergeCR(cr, crID, store, projectDir, utopiaDir); err != nil {
-		fmt.Printf("\n  Merge failed: %s\n", err)
-		fmt.Printf("Work items remain completed. You can retry merge with: utopia merge %s\n", crID)
+	out.Printf("\nAll work items completed successfully!\n")
+	out.Printf("Completed: %d/%d work items\n", result.Completed, result.Total)
+	out.Progressf("\nMerging CR into specs...\n")
+	if err := AutoMergeCR(out, cr, crID, store, projectDir, utopiaDir); err != nil {
+		out.Progressf("\n  Merge failed: %s\n", err)
+		out.Progressf("Work items remain completed. You can retry merge with: utopia merge %s\n", crID)
 		return nil
 	}
 	return nil
@@ -328,13 +330,13 @@ func executeSingleCR(ctx context.Context, cr *domain.ChangeRequest, store *inter
 // INITIATIVE EXECUTION
 // ============================================================================
 
-func executeInitiative(cmd *cobra.Command, cr *domain.ChangeRequest, store *internal.YAMLStore, config *domain.Config, projectDir, utopiaDir, modelID string) error {
-	fmt.Printf("Executing initiative: %s\n", cr.Title)
-	fmt.Printf("Phases: %d total, current: %d\n", len(cr.Phases), cr.CurrentPhase+1)
+func executeInitiative(out *ui.Printer, cr *domain.ChangeRequest, store *internal.YAMLStore, config *domain.Config, projectDir, utopiaDir, modelID string) error {
+	out.Progressf("Executing initiative: %s\n", cr.Title)
+	out.Progressf("Phases: %d total, current: %d\n", len(cr.Phases), cr.CurrentPhase+1)
 
 	if cr.CurrentPhase >= len(cr.Phases) {
-		fmt.Printf("\nAll phases complete!\n")
-		fmt.Printf("Run 'utopia merge %s' to finalize the initiative\n", cr.ID)
+		out.Printf("\nAll phases complete!\n")
+		out.Printf("Run 'utopia merge %s' to finalize the initiative\n", cr.ID)
 		return nil
 	}
 
@@ -352,30 +354,30 @@ func executeInitiative(cmd *cobra.Command, cr *domain.ChangeRequest, store *inte
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-sigChan
-		fmt.Println("\n\nInterrupt received, saving state and stopping...")
+		out.Progressf("\n\nInterrupt received, saving state and stopping...\n")
 		cancel()
 	}()
 
-	err := executeInitiativeCore(ctx, cr, store, config, projectDir, utopiaDir, true, true, sessionStart, true, modelID)
+	err := executeInitiativeCore(ctx, out, cr, store, config, projectDir, utopiaDir, true, true, sessionStart, true, modelID)
 	if err == context.Canceled {
 		return nil
 	}
 	return err
 }
 
-func executeSingleInitiative(ctx context.Context, cr *domain.ChangeRequest, store *internal.YAMLStore, config *domain.Config, projectDir, utopiaDir, modelID string) error {
-	fmt.Printf("Executing initiative: %s\n", cr.Title)
-	fmt.Printf("Phases: %d total, current: %d\n", len(cr.Phases), cr.CurrentPhase+1)
+func executeSingleInitiative(ctx context.Context, out *ui.Printer, cr *domain.ChangeRequest, store *internal.YAMLStore, config *domain.Config, projectDir, utopiaDir, modelID string) error {
+	out.Progressf("Executing initiative: %s\n", cr.Title)
+	out.Progressf("Phases: %d total, current: %d\n", len(cr.Phases), cr.CurrentPhase+1)
 
 	if cr.CurrentPhase >= len(cr.Phases) {
-		fmt.Printf("\nAll phases already complete!\n")
+		out.Printf("\nAll phases already complete!\n")
 		return nil
 	}
-	return executeInitiativeCore(ctx, cr, store, config, projectDir, utopiaDir, false, false, time.Time{}, true, modelID)
+	return executeInitiativeCore(ctx, out, cr, store, config, projectDir, utopiaDir, false, false, time.Time{}, true, modelID)
 }
 
 func executeInitiativeCore(
-	ctx context.Context, cr *domain.ChangeRequest, store *internal.YAMLStore, config *domain.Config,
+	ctx context.Context, out *ui.Printer, cr *domain.ChangeRequest, store *internal.YAMLStore, config *domain.Config,
 	projectDir, utopiaDir string, showTimeoutDetails, showPhaseSummary bool, sessionStart time.Time, autoMerge bool, modelID string,
 ) error {
 	for cr.CurrentPhase < len(cr.Phases) {
@@ -400,55 +402,55 @@ func executeInitiativeCore(
 			if err := store.SaveChangeRequest(cr); err != nil {
 				return fmt.Errorf("failed to update CR status: %w", err)
 			}
-			items, err = chunkPhase(cr.ID, phaseIndex, &phase, store, config, projectDir)
+			items, err = chunkPhase(out, cr.ID, phaseIndex, &phase, store, config, projectDir)
 			if err != nil {
 				return err
 			}
 		} else {
-			fmt.Printf("Found %d existing work item(s) for phase %d\n", len(items), phaseIndex+1)
+			out.Progressf("Found %d existing work item(s) for phase %d\n", len(items), phaseIndex+1)
 		}
 
-		fmt.Printf("\nExecuting phase %d/%d (type: %s)\n", phaseIndex+1, len(cr.Phases), phase.Type)
-		fmt.Printf("Work items: %d\n", len(items))
+		out.Progressf("\nExecuting phase %d/%d (type: %s)\n", phaseIndex+1, len(cr.Phases), phase.Type)
+		out.Progressf("Work items: %d\n", len(items))
 		if showTimeoutDetails && executeTimeoutFlag > 0 {
-			fmt.Printf("Timeout: %d minute(s)\n", executeTimeoutFlag)
+			out.Progressf("Timeout: %d minute(s)\n", executeTimeoutFlag)
 		}
-		fmt.Println()
+		out.Progressf("\n")
 
 		result, err := ralph.Execute(ctx, phaseWorkDir, store, config, projectDir, modelID)
 		if err != nil {
 			if showTimeoutDetails && ctx.Err() == context.DeadlineExceeded {
 				sessionDuration := time.Since(sessionStart).Round(time.Second)
-				fmt.Printf("\n  TIMEOUT REACHED\n")
-				fmt.Printf("Session duration: %s\n", sessionDuration)
-				fmt.Printf("Phase %d completed: %d/%d work items\n", phaseIndex+1, result.Completed, result.Total)
+				out.Progressf("\n  TIMEOUT REACHED\n")
+				out.Progressf("Session duration: %s\n", sessionDuration)
+				out.Progressf("Phase %d completed: %d/%d work items\n", phaseIndex+1, result.Completed, result.Total)
 				if result.StoppedAt != "" {
-					fmt.Printf("Stopped at: %s\n", result.StoppedAt)
+					out.Progressf("Stopped at: %s\n", result.StoppedAt)
 				}
-				fmt.Printf("\nProgress saved. Run 'utopia execute %s' to resume.\n", cr.ID)
+				out.Progressf("\nProgress saved. Run 'utopia execute %s' to resume.\n", cr.ID)
 				return fmt.Errorf("execution timed out after %d minute(s)", executeTimeoutFlag)
 			}
 			if ctx.Err() != nil {
 				if showTimeoutDetails {
-					fmt.Printf("\nExecution stopped by user.\n")
+					out.Progressf("\nExecution stopped by user.\n")
 				} else {
-					fmt.Printf("\nPhase %d stopped.\n", phaseIndex+1)
+					out.Progressf("\nPhase %d stopped.\n", phaseIndex+1)
 				}
-				fmt.Printf("Completed: %d/%d work items\n", result.Completed, result.Total)
+				out.Progressf("Completed: %d/%d work items\n", result.Completed, result.Total)
 				if result.StoppedAt != "" {
-					fmt.Printf("Stopped at: %s\n", result.StoppedAt)
+					out.Progressf("Stopped at: %s\n", result.StoppedAt)
 				}
 				if showTimeoutDetails {
-					fmt.Println("\nRun 'utopia execute " + cr.ID + "' to resume.")
+					out.Progressf("\nRun 'utopia execute %s' to resume.\n", cr.ID)
 				}
 				return ctx.Err()
 			}
-			fmt.Printf("\nExecution stopped: %s\n", err)
-			fmt.Printf("Phase %d completed: %d/%d work items\n", phaseIndex+1, result.Completed, result.Total)
+			out.Progressf("\nExecution stopped: %s\n", err)
+			out.Progressf("Phase %d completed: %d/%d work items\n", phaseIndex+1, result.Completed, result.Total)
 			if result.StoppedAt != "" {
-				fmt.Printf("Stopped at: %s\n", result.StoppedAt)
+				out.Progressf("Stopped at: %s\n", result.StoppedAt)
 			}
-			return err
+			return fmt.Errorf("phase %d of CR %q failed: %w", phaseIndex+1, cr.ID, err)
 		}
 
 		cr.Phases[phaseIndex].Status = domain.PhaseStatusComplete
@@ -456,27 +458,26 @@ func executeInitiativeCore(
 		if err := store.SaveChangeRequest(cr); err != nil {
 			return fmt.Errorf("failed to update CR status: %w", err)
 		}
-		fmt.Printf("\nPhase %d completed successfully! (%d/%d work items)\n", phaseIndex+1, result.Completed, result.Total)
+		out.Progressf("\nPhase %d completed successfully! (%d/%d work items)\n", phaseIndex+1, result.Completed, result.Total)
 	}
 
-	fmt.Printf("\nAll phases complete!\n")
+	out.Printf("\nAll phases complete!\n")
 	if showPhaseSummary {
-		fmt.Printf("\nInitiative progress:\n")
+		out.Printf("\nInitiative progress:\n")
 		for i, p := range cr.Phases {
 			status := "pending"
 			if p.Status != "" {
 				status = string(p.Status)
 			}
-			fmt.Printf("  [%d] %s (%s)\n", i+1, p.Type, status)
+			out.Printf("  [%d] %s (%s)\n", i+1, p.Type, status)
 		}
 	}
 
 	if autoMerge {
-		fmt.Println()
-		fmt.Println("Merging initiative CR into specs...")
-		if err := AutoMergeCR(cr, cr.ID, store, projectDir, utopiaDir); err != nil {
-			fmt.Printf("\n  Merge failed: %s\n", err)
-			fmt.Printf("Work items remain completed. You can retry merge with: utopia merge %s\n", cr.ID)
+		out.Progressf("\nMerging initiative CR into specs...\n")
+		if err := AutoMergeCR(out, cr, cr.ID, store, projectDir, utopiaDir); err != nil {
+			out.Progressf("\n  Merge failed: %s\n", err)
+			out.Progressf("Work items remain completed. You can retry merge with: utopia merge %s\n", cr.ID)
 			return nil
 		}
 	}
@@ -487,15 +488,15 @@ func executeInitiativeCore(
 // CHUNKING
 // ============================================================================
 
-func chunkCR(cr *domain.ChangeRequest, crID string, store *internal.YAMLStore, config *domain.Config, projectDir string) ([]*domain.WorkItem, error) {
-	fmt.Printf("Chunking change request: %s\n", cr.Title)
+func chunkCR(out *ui.Printer, cr *domain.ChangeRequest, crID string, store *internal.YAMLStore, config *domain.Config, projectDir string) ([]*domain.WorkItem, error) {
+	out.Progressf("Chunking change request: %s\n", cr.Title)
 
 	cr.Status = domain.ChangeRequestInProgress
 	if err := store.SaveChangeRequest(cr); err != nil {
 		return nil, fmt.Errorf("failed to update CR status: %w", err)
 	}
 
-	workItems, err := chunk.Chunk(cr, store.LoadSpec)
+	workItems, err := chunk.Chunk(cr, store.LoadSpec, store.LoadStandardsIndex())
 	if err != nil {
 		return nil, fmt.Errorf("chunking failed: %w", err)
 	}
@@ -506,25 +507,25 @@ func chunkCR(cr *domain.ChangeRequest, crID string, store *internal.YAMLStore, c
 		}
 	}
 
-	fmt.Printf("Created %d work item(s)\n\n", len(workItems))
+	out.Progressf("Created %d work item(s)\n\n", len(workItems))
 	if err := gitCommitChunk(projectDir, crID); err != nil {
-		fmt.Printf("  Git commit warning: %s\n", err)
+		out.Progressf("  Git commit warning: %s\n", err)
 	} else {
-		fmt.Printf("  Committed work items for %s\n", crID)
+		out.Progressf("  Committed work items for %s\n", crID)
 	}
 
-	fmt.Println("Work items:")
+	out.Progressf("Work items:\n")
 	for _, item := range workItems {
-		fmt.Printf("  [%d] %s\n", item.Order, item.ID)
+		out.Progressf("  [%d] %s\n", item.Order, item.ID)
 	}
-	fmt.Println()
+	out.Progressf("\n")
 	return workItems, nil
 }
 
-func chunkPhase(crID string, phaseIndex int, phase *domain.Phase, store *internal.YAMLStore, config *domain.Config, projectDir string) ([]*domain.WorkItem, error) {
-	fmt.Printf("Chunking phase %d (type: %s)\n", phaseIndex+1, phase.Type)
+func chunkPhase(out *ui.Printer, crID string, phaseIndex int, phase *domain.Phase, store *internal.YAMLStore, config *domain.Config, projectDir string) ([]*domain.WorkItem, error) {
+	out.Progressf("Chunking phase %d (type: %s)\n", phaseIndex+1, phase.Type)
 
-	workItems, err := chunk.ChunkPhase(crID, phaseIndex, phase, store.LoadSpec)
+	workItems, err := chunk.ChunkPhase(crID, phaseIndex, phase, store.LoadSpec, store.LoadStandardsIndex())
 	if err != nil {
 		return nil, fmt.Errorf("chunking failed: %w", err)
 	}
@@ -536,18 +537,18 @@ func chunkPhase(crID string, phaseIndex int, phase *domain.Phase, store *interna
 		}
 	}
 
-	fmt.Printf("Created %d work item(s)\n\n", len(workItems))
+	out.Progressf("Created %d work item(s)\n\n", len(workItems))
 	if err := gitCommitChunk(projectDir, crID); err != nil {
-		fmt.Printf("  Git commit warning: %s\n", err)
+		out.Progressf("  Git commit warning: %s\n", err)
 	} else {
-		fmt.Printf("  Committed work items for %s phase %d\n", crID, phaseIndex+1)
+		out.Progressf("  Committed work items for %s phase %d\n", crID, phaseIndex+1)
 	}
 
-	fmt.Println("Work items:")
+	out.Progressf("Work items:\n")
 	for _, item := range workItems {
-		fmt.Printf("  [%d] %s\n", item.Order, item.ID)
+		out.Progressf("  [%d] %s\n", item.Order, item.ID)
 	}
-	fmt.Println()
+	out.Progressf("\n")
 	return workItems, nil
 }
 
@@ -555,7 +556,7 @@ func chunkPhase(crID string, phaseIndex int, phase *domain.Phase, store *interna
 // CR SELECTION
 // ============================================================================
 
-func selectChangeRequest(store *internal.YAMLStore) (string, error) {
+func selectChangeRequest(out *ui.Printer, store *internal.YAMLStore) (string, error) {
 	crs, err := store.ListChangeRequests()
 	if err != nil {
 		return "", fmt.Errorf("failed to list change requests: %w", err)
@@ -564,15 +565,14 @@ func selectChangeRequest(store *internal.YAMLStore) (string, error) {
 		return "", fmt.Errorf("no change requests found in .utopia/change-requests/\n\nCreate one with: utopia cr")
 	}
 
-	fmt.Println("Available change requests:")
-	fmt.Println()
+	out.Printf("Available change requests:\n\n")
 	for i, cr := range crs {
-		fmt.Printf("  [%d] %s\n", i+1, cr.Title)
+		out.Printf("  [%d] %s\n", i+1, cr.Title)
 	}
-	fmt.Println()
+	out.Printf("\n")
 
 	reader := bufio.NewReader(os.Stdin)
-	fmt.Print("Select a change request (number): ")
+	out.Printf("Select a change request (number): ")
 	input, err := reader.ReadString('\n')
 	if err != nil {
 		return "", fmt.Errorf("failed to read input: %w", err)
@@ -585,7 +585,7 @@ func selectChangeRequest(store *internal.YAMLStore) (string, error) {
 	}
 
 	selectedCR := crs[selection-1]
-	fmt.Printf("\nSelected: %s\n\n", selectedCR.Title)
+	out.Printf("\nSelected: %s\n\n", selectedCR.Title)
 	return selectedCR.ID, nil
 }
 
@@ -609,14 +609,14 @@ func gitCommitCleanup(projectDir, crID, utopiaDir string) error {
 func GitCommitCR(projectDir, crID string) (string, error) {
 	crFile := filepath.Join(projectDir, ".utopia", "change-requests", crID+".yaml")
 	if err := git.Add(projectDir, crFile); err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to stage CR file %s: %w", crFile, err)
 	}
 	if !git.HasStagedChanges(projectDir) {
 		return "", nil
 	}
 	msg := fmt.Sprintf("cr: create %s", crID)
 	if err := git.Commit(projectDir, msg); err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to commit CR %s: %w", crID, err)
 	}
 	return git.HeadSHA(projectDir)
 }

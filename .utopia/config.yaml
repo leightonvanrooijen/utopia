@@ -1,8 +1,13 @@
-project_context: You are working inside Utopia, a system where all changes are driven by change requests with explicit decisions, domain language, and constraints. Specs represent the current state of the system and are the source of truth for what exists now. The system self-documents by harvesting conversations into domain language, concepts, and architectural decision records.
+project_context:
+  You are working inside Utopia, a system where all changes are driven by change
+  requests with explicit decisions, domain language, and constraints. Specs
+  represent the current state of the system and are the source of truth for what
+  exists now. The system self-documents by harvesting conversations into domain
+  language, concepts, and architectural decision records.
 models:
   default: opus
-  execute: sonnet
-  validators: sonnet
+  execute: opus
+  validators: opus
 strategies:
   spec: guided
   chunk: ralph-sequential

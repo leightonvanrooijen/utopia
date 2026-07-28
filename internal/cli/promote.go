@@ -1,10 +1,12 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/leightonvanrooijen/utopia/internal"
+	"github.com/leightonvanrooijen/utopia/internal/cli/ui"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 	"github.com/spf13/cobra"
 )
@@ -37,13 +39,14 @@ func init() {
 }
 
 func runPromote(cmd *cobra.Command, args []string) error {
+	out := ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr())
 	_, _, store, err := ResolveProject(cmd)
 	if err != nil {
 		return err
 	}
 
 	if promoteListFlag {
-		return listDraftsForPromotion(store)
+		return listDraftsForPromotion(out, store)
 	}
 	if len(args) == 0 {
 		return fmt.Errorf("draft ID required (use --list to see available drafts)")
@@ -52,7 +55,8 @@ func runPromote(cmd *cobra.Command, args []string) error {
 	draftID := args[0]
 	draft, err := store.LoadDraft(draftID)
 	if err != nil {
-		if _, ok := err.(*domain.NotFoundError); ok {
+		var nfe *domain.NotFoundError
+		if errors.As(err, &nfe) {
 			return fmt.Errorf("draft '%s' not found (use --list to see available drafts)", draftID)
 		}
 		return fmt.Errorf("failed to load draft: %w", err)
@@ -68,20 +72,15 @@ func runPromote(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to save spec: %w", err)
 	}
 	if err := store.DeleteDraft(draftID); err != nil {
-		fmt.Printf("Warning: spec created but failed to delete draft: %v\n", err)
+		out.Warnf("Warning: spec created but failed to delete draft: %v", err)
 	}
 
-	fmt.Println("═══════════════════════════════════════════════════════════════")
-	fmt.Printf("                 DRAFT PROMOTED TO SPEC\n")
-	fmt.Println("═══════════════════════════════════════════════════════════════")
-	fmt.Println()
-	fmt.Printf("  Draft:  %s\n", draft.ID)
-	fmt.Printf("  Title:  %s\n", spec.Title)
-	fmt.Printf("  Features: %d\n", len(spec.Features))
-	fmt.Println()
-	fmt.Printf("Spec saved to: .utopia/specs/%s.yaml\n", spec.ID)
-	fmt.Printf("Draft removed: .utopia/drafts/specs/%s.yaml\n", draft.ID)
-	fmt.Println()
+	out.Banner("DRAFT PROMOTED TO SPEC")
+	out.Printf("  Draft:  %s\n", draft.ID)
+	out.Printf("  Title:  %s\n", spec.Title)
+	out.Printf("  Features: %d\n\n", len(spec.Features))
+	out.Printf("Spec saved to: .utopia/specs/%s.yaml\n", spec.ID)
+	out.Printf("Draft removed: .utopia/drafts/specs/%s.yaml\n\n", draft.ID)
 	return nil
 }
 
@@ -92,27 +91,25 @@ func draftToSpec(draft *domain.DraftSpec) *domain.Spec {
 	}
 }
 
-func listDraftsForPromotion(store *internal.YAMLStore) error {
+func listDraftsForPromotion(out *ui.Printer, store *internal.YAMLStore) error {
 	drafts, err := store.ListDrafts()
 	if err != nil {
 		return fmt.Errorf("failed to load drafts: %w", err)
 	}
 	if len(drafts) == 0 {
-		fmt.Println("No drafts available for promotion.")
-		fmt.Println("Run 'utopia discover' to analyze your codebase and create drafts.")
+		out.Printf("No drafts available for promotion.\n")
+		out.Printf("Run 'utopia discover' to analyze your codebase and create drafts.\n")
 		return nil
 	}
 
-	fmt.Println("Available drafts for promotion:")
-	fmt.Println()
+	out.Printf("Available drafts for promotion:\n\n")
 	for _, draft := range drafts {
-		fmt.Printf("  %s\n", draft.ID)
-		fmt.Printf("    Title:      %s\n", draft.Title)
-		fmt.Printf("    Confidence: %s\n", draft.Confidence)
-		fmt.Printf("    Features:   %d\n", len(draft.Features))
-		fmt.Println()
+		out.Printf("  %s\n", draft.ID)
+		out.Printf("    Title:      %s\n", draft.Title)
+		out.Printf("    Confidence: %s\n", draft.Confidence)
+		out.Printf("    Features:   %d\n\n", len(draft.Features))
 	}
-	fmt.Println("Usage: utopia promote <draft-id>")
+	out.Printf("Usage: utopia promote <draft-id>\n")
 	return nil
 }
 
@@ -149,13 +146,14 @@ func init() {
 }
 
 func runPromoteDomain(cmd *cobra.Command, args []string) error {
+	out := ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr())
 	_, _, store, err := ResolveProject(cmd)
 	if err != nil {
 		return err
 	}
 
 	if promoteDomainListFlag {
-		return listDomainDraftsForPromotion(store)
+		return listDomainDraftsForPromotion(out, store)
 	}
 	if len(args) == 0 {
 		return fmt.Errorf("draft ID required (use --list to see available domain drafts)")
@@ -164,7 +162,8 @@ func runPromoteDomain(cmd *cobra.Command, args []string) error {
 	draftID := args[0]
 	draft, err := store.LoadDraftDomainDoc(draftID)
 	if err != nil {
-		if _, ok := err.(*domain.NotFoundError); ok {
+		var nfe *domain.NotFoundError
+		if errors.As(err, &nfe) {
 			return fmt.Errorf("domain draft '%s' not found (use --list to see available drafts)", draftID)
 		}
 		return fmt.Errorf("failed to load domain draft: %w", err)
@@ -180,22 +179,17 @@ func runPromoteDomain(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to save merged domain doc: %w", err)
 		}
 		if err := store.DeleteDraftDomainDoc(draftID); err != nil {
-			fmt.Printf("Warning: domain doc merged but failed to delete draft: %v\n", err)
+			out.Warnf("Warning: domain doc merged but failed to delete draft: %v", err)
 		}
 
-		fmt.Println("═══════════════════════════════════════════════════════════════")
-		fmt.Printf("           DOMAIN DRAFT MERGED INTO EXISTING DOC\n")
-		fmt.Println("═══════════════════════════════════════════════════════════════")
-		fmt.Println()
-		fmt.Printf("  Draft:          %s\n", draft.ID)
-		fmt.Printf("  Bounded Context: %s\n", draft.BoundedContext)
-		fmt.Printf("  Terms Added:     %d\n", newTermCount)
-		fmt.Printf("  Entities Added:  %d\n", newEntityCount)
-		fmt.Printf("  Total Terms:     %d\n", len(mergedDoc.Terms))
-		fmt.Println()
-		fmt.Printf("Domain doc updated: .utopia/domain/%s.yaml\n", mergedDoc.ID)
-		fmt.Printf("Draft removed:      .utopia/drafts/domain/%s.yaml\n", draft.ID)
-		fmt.Println()
+		out.Banner("DOMAIN DRAFT MERGED INTO EXISTING DOC")
+		out.Printf("  Draft:          %s\n", draft.ID)
+		out.Printf("  Bounded Context: %s\n", draft.BoundedContext)
+		out.Printf("  Terms Added:     %d\n", newTermCount)
+		out.Printf("  Entities Added:  %d\n", newEntityCount)
+		out.Printf("  Total Terms:     %d\n\n", len(mergedDoc.Terms))
+		out.Printf("Domain doc updated: .utopia/domain/%s.yaml\n", mergedDoc.ID)
+		out.Printf("Draft removed:      .utopia/drafts/domain/%s.yaml\n\n", draft.ID)
 		return nil
 	}
 
@@ -204,22 +198,17 @@ func runPromoteDomain(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to save domain doc: %w", err)
 	}
 	if err := store.DeleteDraftDomainDoc(draftID); err != nil {
-		fmt.Printf("Warning: domain doc created but failed to delete draft: %v\n", err)
+		out.Warnf("Warning: domain doc created but failed to delete draft: %v", err)
 	}
 
-	fmt.Println("═══════════════════════════════════════════════════════════════")
-	fmt.Printf("            DOMAIN DRAFT PROMOTED TO DOMAIN DOC\n")
-	fmt.Println("═══════════════════════════════════════════════════════════════")
-	fmt.Println()
-	fmt.Printf("  Draft:          %s\n", draft.ID)
-	fmt.Printf("  Title:          %s\n", doc.Title)
-	fmt.Printf("  Bounded Context: %s\n", doc.BoundedContext)
-	fmt.Printf("  Terms:          %d\n", len(doc.Terms))
-	fmt.Printf("  Entities:       %d\n", len(doc.Entities))
-	fmt.Println()
-	fmt.Printf("Domain doc saved to: .utopia/domain/%s.yaml\n", doc.ID)
-	fmt.Printf("Draft removed:       .utopia/drafts/domain/%s.yaml\n", draft.ID)
-	fmt.Println()
+	out.Banner("DOMAIN DRAFT PROMOTED TO DOMAIN DOC")
+	out.Printf("  Draft:          %s\n", draft.ID)
+	out.Printf("  Title:          %s\n", doc.Title)
+	out.Printf("  Bounded Context: %s\n", doc.BoundedContext)
+	out.Printf("  Terms:          %d\n", len(doc.Terms))
+	out.Printf("  Entities:       %d\n\n", len(doc.Entities))
+	out.Printf("Domain doc saved to: .utopia/domain/%s.yaml\n", doc.ID)
+	out.Printf("Draft removed:       .utopia/drafts/domain/%s.yaml\n\n", draft.ID)
 	return nil
 }
 
@@ -291,28 +280,26 @@ func countNewEntities(existing *domain.DomainDoc, draft *domain.DraftDomainDoc) 
 	return count
 }
 
-func listDomainDraftsForPromotion(store *internal.YAMLStore) error {
+func listDomainDraftsForPromotion(out *ui.Printer, store *internal.YAMLStore) error {
 	drafts, err := store.ListDraftDomainDocs()
 	if err != nil {
 		return fmt.Errorf("failed to load domain drafts: %w", err)
 	}
 	if len(drafts) == 0 {
-		fmt.Println("No domain drafts available for promotion.")
-		fmt.Println("Run 'utopia discover domain' to analyze your codebase and create domain drafts.")
+		out.Printf("No domain drafts available for promotion.\n")
+		out.Printf("Run 'utopia discover domain' to analyze your codebase and create domain drafts.\n")
 		return nil
 	}
 
-	fmt.Println("Available domain drafts for promotion:")
-	fmt.Println()
+	out.Printf("Available domain drafts for promotion:\n\n")
 	for _, draft := range drafts {
-		fmt.Printf("  %s\n", draft.ID)
-		fmt.Printf("    Title:          %s\n", draft.Title)
-		fmt.Printf("    Bounded Context: %s\n", draft.BoundedContext)
-		fmt.Printf("    Confidence:     %s\n", draft.Confidence)
-		fmt.Printf("    Terms:          %d\n", len(draft.Terms))
-		fmt.Printf("    Entities:       %d\n", len(draft.Entities))
-		fmt.Println()
+		out.Printf("  %s\n", draft.ID)
+		out.Printf("    Title:          %s\n", draft.Title)
+		out.Printf("    Bounded Context: %s\n", draft.BoundedContext)
+		out.Printf("    Confidence:     %s\n", draft.Confidence)
+		out.Printf("    Terms:          %d\n", len(draft.Terms))
+		out.Printf("    Entities:       %d\n\n", len(draft.Entities))
 	}
-	fmt.Println("Usage: utopia promote domain <draft-id>")
+	out.Printf("Usage: utopia promote domain <draft-id>\n")
 	return nil
 }

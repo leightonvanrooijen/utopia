@@ -1,19 +1,31 @@
 package ralph
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/leightonvanrooijen/utopia/internal"
 )
 
-// rateLimitPattern matches the Claude rate limit message format:
-// "Limit reached · resets {time} ({timezone})"
+// rateLimitPattern matches the Claude rolling usage-limit message across the
+// legacy and current formats. Every rolling-limit message names a reset time;
+// the timezone is only present in the legacy format, so it is optional here.
+// Recognised prefixes:
+// - "Limit reached · resets {time} ({timezone})"   (legacy)
+// - "You've hit your session limit · resets {time}" (current)
+// - "You've hit your Opus limit · resets {time}"    (current)
 // Examples:
 // - "Limit reached · resets 1am (Australia/Sydney)"
 // - "Limit reached · resets 12:30pm (America/New_York)"
-var rateLimitPattern = regexp.MustCompile(`Limit reached.*resets\s+(\d{1,2}(?::\d{2})?(?:am|pm))\s+\(([^)]+)\)`)
+// - "You've hit your session limit · resets 5pm"
+// - "You've hit your Opus limit · resets 3:30pm"
+// The timezone capture group (matches[2]) is empty when the message omits it,
+// in which case the reset time is interpreted in the system local timezone.
+var rateLimitPattern = regexp.MustCompile(`(?:Limit reached|You've hit your [^·]*?limit)\s*·\s*resets\s+(\d{1,2}(?::\d{2})?(?:am|pm))(?:\s+\(([^)]+)\))?`)
 
 // RateLimitInfo contains parsed rate limit information
 type RateLimitInfo struct {
@@ -72,11 +84,17 @@ func ParseRateLimitWait(stdout, stderr string) (time.Duration, error) {
 }
 
 // parseResetTime converts a time string and timezone into a time.Time for today or tomorrow.
+// An empty timezone means the message omitted one (current message formats), so
+// the reset time is interpreted in the system local timezone.
 func parseResetTime(timeStr, tzStr string) (time.Time, error) {
-	// Load the timezone
-	loc, err := time.LoadLocation(tzStr)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("invalid timezone %q: %w", tzStr, err)
+	// Load the timezone, defaulting to system local when none was provided.
+	loc := time.Local
+	if tzStr != "" {
+		var err error
+		loc, err = time.LoadLocation(tzStr)
+		if err != nil {
+			return time.Time{}, fmt.Errorf("invalid timezone %q: %w", tzStr, err)
+		}
 	}
 
 	// Parse the time string
@@ -173,5 +191,146 @@ func FormatWaitMessage(stdout, stderr string) string {
 	// Format the resume time in 12-hour format
 	resumeTimeStr := resumeTime.Format("3:04pm")
 
-	return fmt.Sprintf("Rate limit hit, waiting until %s %s to resume...", resumeTimeStr, tzStr)
+	// When the message omitted a timezone, the reset time was interpreted in
+	// system local time; label it with the local zone abbreviation.
+	tzLabel := tzStr
+	if tzLabel == "" {
+		tzLabel = resumeTime.Format("MST")
+	}
+
+	return fmt.Sprintf("Rate limit hit, waiting until %s %s to resume...", resumeTimeStr, tzLabel)
+}
+
+// spendLimitPattern matches the Claude org monthly spend-limit message. Unlike
+// rolling usage limits, this message carries no reset time - no API exposes one
+// either - so the loop cannot compute a wait duration and must probe until the
+// limit lifts.
+var spendLimitPattern = regexp.MustCompile(`You've hit your org's monthly spend limit`)
+
+// ProbeInterval is how long the loop waits between probe attempts while the org
+// monthly spend limit is in effect.
+const ProbeInterval = 30 * time.Minute
+
+// spendLimitProbePrompt is the trivial prompt used to check whether the spend
+// limit has lifted. It is deliberately minimal to keep probe cost negligible.
+const spendLimitProbePrompt = "ping"
+
+// DetectSpendLimit reports whether the output indicates the org monthly spend
+// limit has been reached. It checks both stdout and stderr, as the message may
+// appear in either.
+func DetectSpendLimit(stdout, stderr string) bool {
+	combined := stdout + "\n" + stderr
+	return spendLimitPattern.MatchString(combined)
+}
+
+// SpendLimitNoticeMessage explains that the org monthly spend limit was hit,
+// that no reset time is available, and that the loop will probe until recovery.
+func SpendLimitNoticeMessage() string {
+	return fmt.Sprintf("Org monthly spend limit reached. No reset time is available for this limit, "+
+		"so the loop will probe with a minimal Claude invocation every %v until usage is restored.", ProbeInterval)
+}
+
+// limitOutcome describes how handleClaudeLimits classified a Claude invocation.
+type limitOutcome int
+
+const (
+	// limitNone means no usage limit was detected; the caller handles the
+	// invocation result normally.
+	limitNone limitOutcome = iota
+	// limitWaited means a usage limit was detected and has since cleared; the
+	// caller should retry the iteration without counting it against max
+	// iterations.
+	limitWaited
+)
+
+// handleClaudeLimits inspects a Claude invocation result for the two kinds of
+// usage limit and blocks until the limit clears.
+//
+// Rolling usage limits carry a reset time, so the loop sleeps until that time
+// (plus a buffer) before retrying. The org monthly spend limit carries no reset
+// time, so the loop enters probe mode and periodically retries a minimal Claude
+// invocation until one succeeds.
+//
+// It returns limitWaited if a limit was detected and has since cleared (the
+// caller should retry the iteration without counting it) or limitNone if none
+// was present. A non-nil error is returned only when ctx is cancelled while
+// waiting or probing (Ctrl+C / session timeout), letting the caller take the
+// existing graceful shutdown path.
+func handleClaudeLimits(ctx context.Context, result *internal.PromptResult) (limitOutcome, error) {
+	if result == nil {
+		return limitNone, nil
+	}
+
+	// Rolling usage limit: wait until the reported reset time.
+	if DetectRateLimit(result.Stdout, result.Stderr) {
+		waitDuration, parseErr := ParseRateLimitWait(result.Stdout, result.Stderr)
+		if parseErr != nil {
+			fmt.Printf("  Rate limit detected but failed to parse reset time: %v\n", parseErr)
+			fmt.Printf("  Falling back to %v wait...\n", DefaultRateLimitWait)
+		}
+		fmt.Printf("  %s\n", FormatWaitMessage(result.Stdout, result.Stderr))
+
+		select {
+		case <-ctx.Done():
+			return limitWaited, ctx.Err()
+		case <-time.After(waitDuration):
+			return limitWaited, nil
+		}
+	}
+
+	// Org monthly spend limit: no reset time exists, so probe until it lifts.
+	if DetectSpendLimit(result.Stdout, result.Stderr) {
+		probeCLI := internal.NewCLI()
+		probe := func(pctx context.Context) (*internal.PromptResult, error) {
+			return probeCLI.Prompt(pctx, spendLimitProbePrompt)
+		}
+		if err := probeUntilRecovered(ctx, probe, ProbeInterval); err != nil {
+			return limitWaited, err
+		}
+		return limitWaited, nil
+	}
+
+	return limitNone, nil
+}
+
+// probeUntilRecovered enters spend-limit probe mode: it periodically runs a
+// minimal Claude invocation until the spend limit lifts. Each attempt is logged
+// with a timestamp and its outcome (still limited or recovered). It returns nil
+// once a probe succeeds, or a context error if ctx is cancelled during a wait
+// or probe (Ctrl+C / session timeout), so the caller can take the graceful
+// shutdown path. Probe attempts never count against the max iterations limit.
+func probeUntilRecovered(ctx context.Context, probe func(context.Context) (*internal.PromptResult, error), interval time.Duration) error {
+	fmt.Printf("  %s\n", SpendLimitNoticeMessage())
+
+	for {
+		// Wait out the probe interval. Ctrl+C or the elapsing session timeout
+		// cancels ctx and drops us onto the graceful shutdown path.
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(interval):
+		}
+
+		ts := time.Now().Format("2006-01-02 15:04:05")
+		result, err := probe(ctx)
+
+		// If the wait or the probe itself was cancelled, shut down gracefully
+		// rather than interpreting the aborted probe as a recovery.
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		stillLimited := result != nil && DetectSpendLimit(result.Stdout, result.Stderr)
+		switch {
+		case !stillLimited && err == nil:
+			fmt.Printf("  [%s] probe succeeded: org monthly spend limit lifted, resuming...\n", ts)
+			return nil
+		case stillLimited:
+			fmt.Printf("  [%s] probe: still limited\n", ts)
+		default:
+			// Probe failed for a reason other than the spend limit (e.g. a
+			// transient error). Treat as still limited and keep probing.
+			fmt.Printf("  [%s] probe: still limited (probe error: %v)\n", ts, err)
+		}
+	}
 }

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/leightonvanrooijen/utopia/internal"
+	"github.com/leightonvanrooijen/utopia/internal/cli/ui"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 	"github.com/spf13/cobra"
 )
@@ -46,6 +47,7 @@ Use --dry-run to preview changes without applying them.`,
 }
 
 func runMerge(cmd *cobra.Command, args []string, dryRun bool) error {
+	out := ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr())
 	changeRequestID := args[0]
 
 	_, utopiaDir, store, err := ResolveProject(cmd)
@@ -59,17 +61,17 @@ func runMerge(cmd *cobra.Command, args []string, dryRun bool) error {
 		return &domain.NotFoundError{Resource: "change request", ID: changeRequestID}
 	}
 
-	fmt.Printf("Change Request: %s\n", cr.Title)
-	fmt.Printf("Type: %s\n", cr.Type)
+	out.Printf("Change Request: %s\n", cr.Title)
+	out.Printf("Type: %s\n", cr.Type)
 
 	// Refactor and bugfix CRs don't modify specs - just delete the CR
 	if cr.Type == domain.CRTypeRefactor || cr.Type == domain.CRTypeBugfix {
-		return mergeRefactor(cr, changeRequestID, utopiaDir, store, dryRun)
+		return mergeRefactor(out, cr, changeRequestID, utopiaDir, store, dryRun)
 	}
 
 	// Initiative CRs have phases that each need to be merged
 	if cr.Type == domain.CRTypeInitiative {
-		return mergeInitiative(cr, changeRequestID, utopiaDir, store, dryRun)
+		return mergeInitiative(out, cr, changeRequestID, utopiaDir, store, dryRun)
 	}
 
 	// Feature/enhancement/removal CRs modify specs
@@ -94,9 +96,8 @@ func runMerge(cmd *cobra.Command, args []string, dryRun bool) error {
 
 	// Print summary header
 	if len(specIDs) > 0 || len(deleteSpecChanges) > 0 {
-		fmt.Printf("Target specs: %d\n", len(specIDs)+len(deleteSpecChanges))
-		fmt.Println()
-		fmt.Println("Changes to apply:")
+		out.Printf("Target specs: %d\n\n", len(specIDs)+len(deleteSpecChanges))
+		out.Printf("Changes to apply:\n")
 	}
 
 	// Summarize regular changes per spec
@@ -116,29 +117,29 @@ func runMerge(cmd *cobra.Command, args []string, dryRun bool) error {
 		totalAdd += addCount
 		totalModify += modifyCount
 		totalRemove += removeCount
-		fmt.Printf("  %s: +%d ~%d -%d\n", specID, addCount, modifyCount, removeCount)
+		out.Printf("  %s: +%d ~%d -%d\n", specID, addCount, modifyCount, removeCount)
 		for _, change := range changes {
 			switch change.Operation {
 			case "add":
 				if change.Feature != nil {
-					fmt.Printf("    + Add feature: %s\n", change.Feature.ID)
+					out.Printf("    + Add feature: %s\n", change.Feature.ID)
 				}
 				if len(change.DomainKnowledge) > 0 {
-					fmt.Printf("    + Add %d domain knowledge item(s)\n", len(change.DomainKnowledge))
+					out.Printf("    + Add %d domain knowledge item(s)\n", len(change.DomainKnowledge))
 				}
 			case "modify":
 				if change.FeatureID != "" {
-					fmt.Printf("    ~ Modify feature: %s\n", change.FeatureID)
+					out.Printf("    ~ Modify feature: %s\n", change.FeatureID)
 				}
 				if change.DomainKnowledgeMod != nil {
-					fmt.Printf("    ~ Modify domain knowledge\n")
+					out.Printf("    ~ Modify domain knowledge\n")
 				}
 			case "remove":
 				if change.FeatureID != "" {
-					fmt.Printf("    - Remove feature: %s\n", change.FeatureID)
+					out.Printf("    "+ui.Bullet+" Remove feature: %s\n", change.FeatureID)
 				}
 				if len(change.DomainKnowledge) > 0 {
-					fmt.Printf("    - Remove %d domain knowledge item(s)\n", len(change.DomainKnowledge))
+					out.Printf("    "+ui.Bullet+" Remove %d domain knowledge item(s)\n", len(change.DomainKnowledge))
 				}
 			}
 		}
@@ -146,20 +147,20 @@ func runMerge(cmd *cobra.Command, args []string, dryRun bool) error {
 
 	// Summarize delete-spec operations
 	for _, change := range deleteSpecChanges {
-		fmt.Printf("  %s: DELETE SPEC\n", change.Spec)
-		fmt.Printf("    ✗ Delete entire spec file\n")
+		out.Printf("  %s: DELETE SPEC\n", change.Spec)
+		out.Printf("    %s Delete entire spec file\n", ui.Failure)
 		if change.Reason != "" {
-			fmt.Printf("      Reason: %s\n", change.Reason)
+			out.Printf("      Reason: %s\n", change.Reason)
 		}
 	}
 
 	if len(specIDs) > 0 || len(deleteSpecChanges) > 0 {
-		fmt.Println()
+		out.Printf("\n")
 	}
 
 	if dryRun {
-		fmt.Println("Dry run mode - no changes applied")
-		fmt.Printf("\nWould merge %d add, %d modify, %d remove, %d delete-spec operation(s)\n",
+		out.Printf("Dry run mode - no changes applied\n")
+		out.Printf("\nWould merge %d add, %d modify, %d remove, %d delete-spec operation(s)\n",
 			totalAdd, totalModify, totalRemove, totalDeleteSpec)
 		return nil
 	}
@@ -168,7 +169,7 @@ func runMerge(cmd *cobra.Command, args []string, dryRun bool) error {
 	var validDeleteSpecs []domain.Change
 	for _, change := range deleteSpecChanges {
 		if _, err := store.LoadSpec(change.Spec); err != nil {
-			fmt.Printf("⚠ Spec %q not found (already deleted?), skipping\n", change.Spec)
+			out.Warnf("Spec %q not found (already deleted?), skipping", change.Spec)
 			continue
 		}
 		validDeleteSpecs = append(validDeleteSpecs, change)
@@ -209,9 +210,9 @@ func runMerge(cmd *cobra.Command, args []string, dryRun bool) error {
 			return fmt.Errorf("failed to save spec %s: %w - some specs may have been saved, manual cleanup may be required", specID, err)
 		}
 		if createdSpecs[specID] {
-			fmt.Printf("✓ Created spec: %s\n", specID)
+			out.Successf("Created spec: %s", specID)
 		} else {
-			fmt.Printf("✓ Updated spec: %s\n", specID)
+			out.Successf("Updated spec: %s", specID)
 		}
 	}
 
@@ -222,7 +223,7 @@ func runMerge(cmd *cobra.Command, args []string, dryRun bool) error {
 			return fmt.Errorf("failed to delete spec %s: %w", change.Spec, err)
 		}
 		deletedSpecs[change.Spec] = true
-		fmt.Printf("✓ Deleted spec: %s\n", change.Spec)
+		out.Successf("Deleted spec: %s", change.Spec)
 	}
 
 	// Mark CR as complete before deletion
@@ -235,7 +236,7 @@ func runMerge(cmd *cobra.Command, args []string, dryRun bool) error {
 	if err := store.DeleteChangeRequest(changeRequestID); err != nil {
 		return fmt.Errorf("failed to delete change request: %w", err)
 	}
-	fmt.Printf("✓ Deleted change request: %s\n", changeRequestID)
+	out.Successf("Deleted change request: %s", changeRequestID)
 
 	// Delete work items directory if it exists
 	workItemsDir := filepath.Join(utopiaDir, "work-items", changeRequestID)
@@ -243,23 +244,22 @@ func runMerge(cmd *cobra.Command, args []string, dryRun bool) error {
 		if err := os.RemoveAll(workItemsDir); err != nil {
 			return fmt.Errorf("failed to delete work items: %w", err)
 		}
-		fmt.Printf("✓ Deleted work items: %s\n", changeRequestID)
+		out.Successf("Deleted work items: %s", changeRequestID)
 	}
 
 	// Print summary
-	fmt.Println()
-	fmt.Println("Merge Summary:")
-	fmt.Printf("  Total changes: %d\n", len(cr.Changes))
-	fmt.Printf("  Specs affected: %d\n", len(specIDs)+len(deletedSpecs))
+	out.Printf("\nMerge Summary:\n")
+	out.Printf("  Total changes: %d\n", len(cr.Changes))
+	out.Printf("  Specs affected: %d\n", len(specIDs)+len(deletedSpecs))
 	for _, specID := range specIDs {
 		if createdSpecs[specID] {
-			fmt.Printf("    - %s (created)\n", specID)
+			out.Printf("    "+ui.Bullet+" %s (created)\n", specID)
 		} else {
-			fmt.Printf("    - %s (updated)\n", specID)
+			out.Printf("    "+ui.Bullet+" %s (updated)\n", specID)
 		}
 	}
 	for specID := range deletedSpecs {
-		fmt.Printf("    - %s (deleted)\n", specID)
+		out.Printf("    "+ui.Bullet+" %s (deleted)\n", specID)
 	}
 
 	return nil
@@ -303,8 +303,8 @@ func allAdds(changes []domain.Change) bool {
 // mergeInitiative handles merge for initiative CRs with multiple phases.
 // Each phase's changes are applied to their target specs in order.
 // Refactor phases don't modify specs (they only restructure code).
-func mergeInitiative(cr *domain.ChangeRequest, changeRequestID, utopiaDir string, store *internal.YAMLStore, dryRun bool) error {
-	fmt.Printf("Phases: %d total\n", len(cr.Phases))
+func mergeInitiative(out *ui.Printer, cr *domain.ChangeRequest, changeRequestID, utopiaDir string, store *internal.YAMLStore, dryRun bool) error {
+	out.Printf("Phases: %d total\n", len(cr.Phases))
 
 	// Check all phases are complete
 	for i, phase := range cr.Phases {
@@ -313,7 +313,7 @@ func mergeInitiative(cr *domain.ChangeRequest, changeRequestID, utopiaDir string
 		}
 	}
 
-	fmt.Println()
+	out.Printf("\n")
 
 	// Collect all changes from non-refactor/non-bugfix phases
 	var allChanges []domain.Change
@@ -321,17 +321,17 @@ func mergeInitiative(cr *domain.ChangeRequest, changeRequestID, utopiaDir string
 	for i, phase := range cr.Phases {
 		if phase.Type == domain.CRTypeRefactor || phase.Type == domain.CRTypeBugfix {
 			taskOnlyPhaseCount++
-			fmt.Printf("Phase %d (%s): %d tasks - no spec changes\n", i+1, phase.Type, len(phase.Tasks))
+			out.Printf("Phase %d (%s): %d tasks - no spec changes\n", i+1, phase.Type, len(phase.Tasks))
 			continue
 		}
-		fmt.Printf("Phase %d (%s): %d changes\n", i+1, phase.Type, len(phase.Changes))
+		out.Printf("Phase %d (%s): %d changes\n", i+1, phase.Type, len(phase.Changes))
 		allChanges = append(allChanges, phase.Changes...)
 	}
-	fmt.Println()
+	out.Printf("\n")
 
 	if len(allChanges) == 0 && taskOnlyPhaseCount == len(cr.Phases) {
 		// All phases were refactors/bugfixes - just clean up
-		fmt.Println("All phases were refactors/bugfixes - no spec modifications needed")
+		out.Printf("All phases were refactors/bugfixes - no spec modifications needed\n")
 	} else if len(allChanges) > 0 {
 		// Separate delete-spec operations from other operations
 		var regularChanges []domain.Change
@@ -348,7 +348,7 @@ func mergeInitiative(cr *domain.ChangeRequest, changeRequestID, utopiaDir string
 		changesBySpec := groupChangesBySpec(regularChanges)
 		specIDs := sortedSpecIDs(changesBySpec)
 
-		fmt.Println("Changes to apply:")
+		out.Printf("Changes to apply:\n")
 		var totalAdd, totalModify, totalRemove, totalDeleteSpec int
 		totalDeleteSpec = len(deleteSpecChanges)
 		for _, specID := range specIDs {
@@ -367,16 +367,16 @@ func mergeInitiative(cr *domain.ChangeRequest, changeRequestID, utopiaDir string
 			totalAdd += addCount
 			totalModify += modifyCount
 			totalRemove += removeCount
-			fmt.Printf("  %s: +%d ~%d -%d\n", specID, addCount, modifyCount, removeCount)
+			out.Printf("  %s: +%d ~%d -%d\n", specID, addCount, modifyCount, removeCount)
 		}
 		for _, change := range deleteSpecChanges {
-			fmt.Printf("  %s: DELETE SPEC\n", change.Spec)
+			out.Printf("  %s: DELETE SPEC\n", change.Spec)
 		}
-		fmt.Println()
+		out.Printf("\n")
 
 		if dryRun {
-			fmt.Println("Dry run mode - no changes applied")
-			fmt.Printf("\nWould merge %d add, %d modify, %d remove, %d delete-spec operation(s)\n",
+			out.Printf("Dry run mode - no changes applied\n")
+			out.Printf("\nWould merge %d add, %d modify, %d remove, %d delete-spec operation(s)\n",
 				totalAdd, totalModify, totalRemove, totalDeleteSpec)
 			return nil
 		}
@@ -385,7 +385,7 @@ func mergeInitiative(cr *domain.ChangeRequest, changeRequestID, utopiaDir string
 		var validDeleteSpecs []domain.Change
 		for _, change := range deleteSpecChanges {
 			if _, err := store.LoadSpec(change.Spec); err != nil {
-				fmt.Printf("⚠ Spec %q not found (already deleted?), skipping\n", change.Spec)
+				out.Warnf("Spec %q not found (already deleted?), skipping", change.Spec)
 				continue
 			}
 			validDeleteSpecs = append(validDeleteSpecs, change)
@@ -424,9 +424,9 @@ func mergeInitiative(cr *domain.ChangeRequest, changeRequestID, utopiaDir string
 				return fmt.Errorf("failed to save spec %s: %w", specID, err)
 			}
 			if createdSpecs[specID] {
-				fmt.Printf("✓ Created spec: %s\n", specID)
+				out.Successf("Created spec: %s", specID)
 			} else {
-				fmt.Printf("✓ Updated spec: %s\n", specID)
+				out.Successf("Updated spec: %s", specID)
 			}
 		}
 
@@ -435,12 +435,12 @@ func mergeInitiative(cr *domain.ChangeRequest, changeRequestID, utopiaDir string
 			if err := store.DeleteSpec(change.Spec); err != nil {
 				return fmt.Errorf("failed to delete spec %s: %w", change.Spec, err)
 			}
-			fmt.Printf("✓ Deleted spec: %s\n", change.Spec)
+			out.Successf("Deleted spec: %s", change.Spec)
 		}
 	}
 
 	if dryRun {
-		fmt.Println("Dry run mode - no changes applied")
+		out.Printf("Dry run mode - no changes applied\n")
 		return nil
 	}
 
@@ -454,7 +454,7 @@ func mergeInitiative(cr *domain.ChangeRequest, changeRequestID, utopiaDir string
 	if err := store.DeleteChangeRequest(changeRequestID); err != nil {
 		return fmt.Errorf("failed to delete change request: %w", err)
 	}
-	fmt.Printf("✓ Deleted change request: %s\n", changeRequestID)
+	out.Successf("Deleted change request: %s", changeRequestID)
 
 	// Delete work items for all phases
 	for i := range cr.Phases {
@@ -463,7 +463,7 @@ func mergeInitiative(cr *domain.ChangeRequest, changeRequestID, utopiaDir string
 			if err := os.RemoveAll(phaseWorkDir); err != nil {
 				return fmt.Errorf("failed to delete work items for phase %d: %w", i+1, err)
 			}
-			fmt.Printf("✓ Deleted work items: phase %d\n", i+1)
+			out.Successf("Deleted work items: phase %d", i+1)
 		}
 	}
 
@@ -473,8 +473,7 @@ func mergeInitiative(cr *domain.ChangeRequest, changeRequestID, utopiaDir string
 		os.Remove(crWorkDir)
 	}
 
-	fmt.Println()
-	fmt.Printf("Successfully merged initiative: %s\n", cr.Title)
+	out.Printf("\nSuccessfully merged initiative: %s\n", cr.Title)
 
 	return nil
 }
@@ -482,20 +481,19 @@ func mergeInitiative(cr *domain.ChangeRequest, changeRequestID, utopiaDir string
 // mergeRefactor handles merge for refactor CRs, which don't modify specs.
 // Refactors only restructure code while preserving behavior, so merge
 // simply deletes the CR and its work items.
-func mergeRefactor(cr *domain.ChangeRequest, changeRequestID, utopiaDir string, store *internal.YAMLStore, dryRun bool) error {
-	fmt.Printf("Tasks completed: %d\n", len(cr.Tasks))
-	fmt.Println()
+func mergeRefactor(out *ui.Printer, cr *domain.ChangeRequest, changeRequestID, utopiaDir string, store *internal.YAMLStore, dryRun bool) error {
+	out.Printf("Tasks completed: %d\n\n", len(cr.Tasks))
 
 	// Summarize tasks
-	fmt.Println("Completed tasks:")
+	out.Printf("Completed tasks:\n")
 	for _, task := range cr.Tasks {
-		fmt.Printf("  ✓ %s: %s\n", task.ID, task.Description)
+		out.Printf("  %s %s: %s\n", ui.Success, task.ID, task.Description)
 	}
-	fmt.Println()
+	out.Printf("\n")
 
 	if dryRun {
-		fmt.Println("Dry run mode - no changes applied")
-		fmt.Printf("\nWould delete refactor CR: %s (no specs modified)\n", changeRequestID)
+		out.Printf("Dry run mode - no changes applied\n")
+		out.Printf("\nWould delete refactor CR: %s (no specs modified)\n", changeRequestID)
 		return nil
 	}
 
@@ -509,7 +507,7 @@ func mergeRefactor(cr *domain.ChangeRequest, changeRequestID, utopiaDir string, 
 	if err := store.DeleteChangeRequest(changeRequestID); err != nil {
 		return fmt.Errorf("failed to delete change request: %w", err)
 	}
-	fmt.Printf("✓ Deleted change request: %s\n", changeRequestID)
+	out.Successf("Deleted change request: %s", changeRequestID)
 
 	// Delete work items directory if it exists
 	workItemsDir := filepath.Join(utopiaDir, "work-items", changeRequestID)
@@ -517,11 +515,10 @@ func mergeRefactor(cr *domain.ChangeRequest, changeRequestID, utopiaDir string, 
 		if err := os.RemoveAll(workItemsDir); err != nil {
 			return fmt.Errorf("failed to delete work items: %w", err)
 		}
-		fmt.Printf("✓ Deleted work items: %s\n", changeRequestID)
+		out.Successf("Deleted work items: %s", changeRequestID)
 	}
 
-	fmt.Println()
-	fmt.Printf("Successfully completed refactor: %s (no specs modified)\n", cr.Title)
+	out.Printf("\nSuccessfully completed refactor: %s (no specs modified)\n", cr.Title)
 
 	return nil
 }
@@ -537,7 +534,7 @@ type MergeResult struct {
 // This is used by the execute command to auto-merge after successful completion.
 // Returns MergeResult on success, or error if merge fails.
 // Note: This does NOT delete the CR or work items - caller handles cleanup after git commit.
-func PerformMerge(cr *domain.ChangeRequest, store *internal.YAMLStore) (*MergeResult, error) {
+func PerformMerge(out *ui.Printer, cr *domain.ChangeRequest, store *internal.YAMLStore) (*MergeResult, error) {
 	result := &MergeResult{}
 
 	// Refactor and bugfix CRs don't modify specs
@@ -548,16 +545,16 @@ func PerformMerge(cr *domain.ChangeRequest, store *internal.YAMLStore) (*MergeRe
 
 	// Initiative CRs have phases
 	if cr.Type == domain.CRTypeInitiative {
-		return performMergeInitiative(cr, store)
+		return performMergeInitiative(out, cr, store)
 	}
 
 	// Feature/enhancement/removal CRs modify specs
-	return performMergeChanges(cr.Changes, store)
+	return performMergeChanges(out, cr.Changes, store)
 }
 
 // performMergeChanges applies a set of changes to specs.
 // Used for both regular CRs and initiative phases.
-func performMergeChanges(changes []domain.Change, store *internal.YAMLStore) (*MergeResult, error) {
+func performMergeChanges(out *ui.Printer, changes []domain.Change, store *internal.YAMLStore) (*MergeResult, error) {
 	result := &MergeResult{}
 
 	// Separate delete-spec operations from other operations
@@ -579,7 +576,7 @@ func performMergeChanges(changes []domain.Change, store *internal.YAMLStore) (*M
 	var validDeleteSpecs []domain.Change
 	for _, change := range deleteSpecChanges {
 		if _, err := store.LoadSpec(change.Spec); err != nil {
-			fmt.Printf("⚠ Spec %q not found (already deleted?), skipping\n", change.Spec)
+			out.Warnf("Spec %q not found (already deleted?), skipping", change.Spec)
 			continue
 		}
 		validDeleteSpecs = append(validDeleteSpecs, change)
@@ -634,7 +631,7 @@ func performMergeChanges(changes []domain.Change, store *internal.YAMLStore) (*M
 }
 
 // performMergeInitiative applies all phase changes from an initiative CR.
-func performMergeInitiative(cr *domain.ChangeRequest, store *internal.YAMLStore) (*MergeResult, error) {
+func performMergeInitiative(out *ui.Printer, cr *domain.ChangeRequest, store *internal.YAMLStore) (*MergeResult, error) {
 	result := &MergeResult{}
 
 	// Check all phases are complete
@@ -661,7 +658,7 @@ func performMergeInitiative(cr *domain.ChangeRequest, store *internal.YAMLStore)
 	}
 
 	if len(allChanges) > 0 {
-		phaseResult, err := performMergeChanges(allChanges, store)
+		phaseResult, err := performMergeChanges(out, allChanges, store)
 		if err != nil {
 			return nil, err
 		}
@@ -675,22 +672,22 @@ func performMergeInitiative(cr *domain.ChangeRequest, store *internal.YAMLStore)
 // AutoMergeCR performs the merge after all work items complete successfully.
 // It applies CR changes to specs, creates a git commit, then cleans up CR/work items.
 // On failure, work item completion state is preserved for manual retry.
-func AutoMergeCR(cr *domain.ChangeRequest, crID string, store *internal.YAMLStore, projectDir, utopiaDir string) error {
+func AutoMergeCR(out *ui.Printer, cr *domain.ChangeRequest, crID string, store *internal.YAMLStore, projectDir, utopiaDir string) error {
 	// Step 1: Apply changes to specs (without deleting CR/work items)
-	mergeResult, err := PerformMerge(cr, store)
+	mergeResult, err := PerformMerge(out, cr, store)
 	if err != nil {
 		return fmt.Errorf("failed to apply spec changes: %w", err)
 	}
 
 	// Print merge summary
 	if mergeResult.IsRefactor {
-		fmt.Println("Refactor CR - no spec modifications")
+		out.Printf("Refactor CR - no spec modifications\n")
 	} else {
 		for _, specID := range mergeResult.SpecsModified {
-			fmt.Printf("✓ Updated spec: %s\n", specID)
+			out.Successf("Updated spec: %s", specID)
 		}
 		for _, specID := range mergeResult.SpecsDeleted {
-			fmt.Printf("✓ Deleted spec: %s\n", specID)
+			out.Successf("Deleted spec: %s", specID)
 		}
 	}
 
@@ -698,30 +695,30 @@ func AutoMergeCR(cr *domain.ChangeRequest, crID string, store *internal.YAMLStor
 	if err := GitCommitSpecMerge(projectDir, cr, mergeResult, store.SpecsDir()); err != nil {
 		return fmt.Errorf("failed to create git commit: %w", err)
 	}
-	fmt.Println("✓ Created git commit for spec merge")
+	out.Successf("Created git commit for spec merge")
 
 	// Step 3: Clean up CR and work items (now safe - commit exists for rollback)
 	if err := CleanupAfterMerge(cr, crID, utopiaDir, store); err != nil {
 		// Log but don't fail - commit succeeded, cleanup is non-critical
-		fmt.Printf("⚠ Cleanup warning: %s\n", err)
+		out.Warnf("Cleanup warning: %s", err)
 	} else {
-		fmt.Printf("✓ Cleaned up CR and work items\n")
+		out.Successf("Cleaned up CR and work items")
 
 		// Step 4: Create cleanup commit for removed CR and work items
 		if err := gitCommitCleanup(projectDir, crID, utopiaDir); err != nil {
-			fmt.Printf("⚠ Cleanup commit warning: %s\n", err)
+			out.Warnf("Cleanup commit warning: %s", err)
 		} else {
-			fmt.Printf("✓ Created cleanup commit\n")
+			out.Successf("Created cleanup commit")
 		}
 	}
 
 	// Step 5: Mark conversations that reference this CR as ready for harvest
 	// Transitions pending-execution → unprocessed so harvest can find them
 	if err := store.MarkConversationsReadyForHarvest(crID); err != nil {
-		fmt.Printf("⚠ Failed to update conversation status: %s\n", err)
+		out.Warnf("Failed to update conversation status: %s", err)
 	}
 
-	fmt.Printf("\nSuccessfully merged: %s\n", cr.Title)
+	out.Printf("\nSuccessfully merged: %s\n", cr.Title)
 	return nil
 }
 

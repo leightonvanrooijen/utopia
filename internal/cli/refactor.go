@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/leightonvanrooijen/utopia/internal"
+	"github.com/leightonvanrooijen/utopia/internal/cli/ui"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 	"github.com/leightonvanrooijen/utopia/internal/git"
 	"github.com/spf13/cobra"
@@ -181,6 +182,8 @@ If the user wants to:
 Start by warmly greeting the user and asking what code they'd like to refactor.`
 
 func runRefactor(cmd *cobra.Command, args []string) error {
+	out := ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr())
+
 	// Validate model flag early before any work
 	modelID, err := ResolveModelFlag(cmd)
 	if err != nil {
@@ -201,10 +204,8 @@ func runRefactor(cmd *cobra.Command, args []string) error {
 	// Build the system prompt with the change requests directory path
 	systemPrompt := fmt.Sprintf(refactorSystemPrompt, changeRequestsDir, changeRequestsDir)
 
-	fmt.Println("Starting refactor change request session...")
-	fmt.Println()
-	fmt.Println("Change requests will be saved to:", changeRequestsDir)
-	fmt.Println()
+	out.Progressf("Starting refactor change request session...\n\n")
+	out.Printf("Change requests will be saved to: %s\n\n", changeRequestsDir)
 
 	// Run interactive Claude session with transcript capture
 	ctx := context.Background()
@@ -220,8 +221,7 @@ func runRefactor(cmd *cobra.Command, args []string) error {
 	// Capture transcript - persists even on Ctrl+C due to defer in SessionWithCapture
 	transcript, sessionErr := cli.SessionWithCapture(ctx, systemPrompt)
 
-	fmt.Println()
-	fmt.Println("Session ended. Validating change requests...")
+	out.Progressf("\nSession ended. Validating change requests...\n")
 
 	// Track CRs and commits for conversation metadata
 	var crsCreated []domain.CRCommit
@@ -230,58 +230,54 @@ func runRefactor(cmd *cobra.Command, args []string) error {
 	// Validate all change requests
 	crValidationErr := validateChangeRequests(store)
 	if crValidationErr != nil {
-		fmt.Println()
-		fmt.Printf("✗ Change request validation failed:\n%s\n", crValidationErr)
-		fmt.Println()
-		fmt.Println("Starting Claude session to fix validation errors...")
-		fmt.Println()
+		out.Progressf("\n%s Change request validation failed:\n%s\n\n", ui.Failure, crValidationErr)
+		out.Progressf("Starting Claude session to fix validation errors...\n\n")
 
 		fixPrompt := fmt.Sprintf(crFixSystemPrompt, utopiaDir, crValidationErr)
 		fixTranscript, fixErr := cli.SessionWithCapture(ctx, fixPrompt)
 		transcript += "\n\n--- Fix Session ---\n\n" + fixTranscript
 		if fixErr != nil {
 			// Save conversation before returning error
-			saveRefactorConversation(store, sessionStart, branch, transcript, crsCreated, commits)
+			saveRefactorConversation(out, store, sessionStart, branch, transcript, crsCreated, commits)
 			return fmt.Errorf("claude fix session failed: %w", fixErr)
 		}
 
 		// Re-validate after fix session
 		crValidationErr = validateChangeRequests(store)
 		if crValidationErr != nil {
-			fmt.Println()
-			fmt.Printf("✗ Change request validation still failed:\n%s\n", crValidationErr)
+			out.Progressf("\n%s Change request validation still failed:\n%s\n", ui.Failure, crValidationErr)
 			// Save conversation before returning error
-			saveRefactorConversation(store, sessionStart, branch, transcript, crsCreated, commits)
+			saveRefactorConversation(out, store, sessionStart, branch, transcript, crsCreated, commits)
 			return fmt.Errorf("change request validation failed after fix attempt")
 		}
 	}
 
-	fmt.Println("✓ All change requests are valid")
+	out.Successf("All change requests are valid")
 
 	// Auto-commit valid CRs and track commits
 	crs, err := store.ListChangeRequests()
 	if err != nil {
-		saveRefactorConversation(store, sessionStart, branch, transcript, crsCreated, commits)
+		saveRefactorConversation(out, store, sessionStart, branch, transcript, crsCreated, commits)
 		return fmt.Errorf("failed to list change requests for commit: %w", err)
 	}
 
 	for _, cr := range crs {
 		sha, commitErr := GitCommitCR(absPath, cr.ID)
 		if commitErr != nil {
-			fmt.Printf("⚠ Failed to commit CR %s: %v\n", cr.ID, commitErr)
+			out.Warnf("Failed to commit CR %s: %v", cr.ID, commitErr)
 			continue
 		}
 		if sha != "" {
-			fmt.Printf("✓ Committed CR: %s (%s)\n", cr.ID, sha[:8])
+			out.Successf("Committed CR: %s (%s)", cr.ID, sha[:8])
 			crsCreated = append(crsCreated, domain.CRCommit{CRID: cr.ID, CommitSHA: sha})
 			commits = append(commits, sha)
 		}
 	}
 
 	// Save the conversation transcript with metadata (skips empty conversations)
-	convID := saveRefactorConversation(store, sessionStart, branch, transcript, crsCreated, commits)
+	convID := saveRefactorConversation(out, store, sessionStart, branch, transcript, crsCreated, commits)
 	if convID != "" {
-		fmt.Printf("✓ Conversation saved: %s\n", convID)
+		out.Successf("Conversation saved: %s", convID)
 	}
 
 	// Return session error if there was one (transcript still saved above)
@@ -294,7 +290,7 @@ func runRefactor(cmd *cobra.Command, args []string) error {
 
 // saveRefactorConversation persists a refactor conversation transcript with metadata
 // Returns the conversation ID, or empty string if conversation has no meaningful content
-func saveRefactorConversation(store *internal.YAMLStore, sessionStart time.Time, branch, transcript string, crsCreated []domain.CRCommit, commits []string) string {
+func saveRefactorConversation(out *ui.Printer, store *internal.YAMLStore, sessionStart time.Time, branch, transcript string, crsCreated []domain.CRCommit, commits []string) string {
 	// Skip persisting empty conversations (no transcript, no CRs, no commits)
 	if transcript == "" && len(crsCreated) == 0 && len(commits) == 0 {
 		return ""
@@ -321,7 +317,7 @@ func saveRefactorConversation(store *internal.YAMLStore, sessionStart time.Time,
 	}
 
 	if err := store.SaveConversation(conv); err != nil {
-		fmt.Printf("⚠ Failed to save conversation: %v\n", err)
+		out.Warnf("Failed to save conversation: %v", err)
 		return ""
 	}
 

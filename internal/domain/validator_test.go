@@ -180,6 +180,9 @@ func TestValidatorConfig_UnmarshalYAML_StringFormat(t *testing.T) {
 	if vc.GetRun() != "" {
 		t.Errorf("expected empty run, got %q", vc.GetRun())
 	}
+	if vc.GetAlways() {
+		t.Errorf("expected always to default to false for string format, got %v", vc.GetAlways())
+	}
 }
 
 func TestValidatorConfig_UnmarshalYAML_ObjectFormat(t *testing.T) {
@@ -187,6 +190,7 @@ func TestValidatorConfig_UnmarshalYAML_ObjectFormat(t *testing.T) {
 path: validators/security.md
 model: opus
 run: after-phase
+always: true
 `
 
 	var vc ValidatorConfig
@@ -203,6 +207,9 @@ run: after-phase
 	}
 	if vc.GetRun() != "after-phase" {
 		t.Errorf("expected run 'after-phase', got %q", vc.GetRun())
+	}
+	if !vc.GetAlways() {
+		t.Errorf("expected always true, got %v", vc.GetAlways())
 	}
 }
 
@@ -226,6 +233,9 @@ path: validators/naming.md
 	}
 	if vc.GetRun() != "" {
 		t.Errorf("expected empty run, got %q", vc.GetRun())
+	}
+	if vc.GetAlways() {
+		t.Errorf("expected always to default to false, got %v", vc.GetAlways())
 	}
 }
 
@@ -267,5 +277,25 @@ func TestValidatorConfig_UnmarshalYAML_MixedList(t *testing.T) {
 	// Third: string format
 	if configs[2].GetPath() != "validators/naming.md" {
 		t.Errorf("expected third path 'validators/naming.md', got %q", configs[2].GetPath())
+	}
+}
+
+func TestValidator_BypassesRouter(t *testing.T) {
+	tests := []struct {
+		name string
+		v    Validator
+		want bool
+	}{
+		{"always-run bypasses", Validator{ID: "sec", Description: "checks secrets", Always: true}, true},
+		{"empty description bypasses", Validator{ID: "x"}, true},
+		{"whitespace-only description bypasses", Validator{ID: "x", Description: "   \n"}, true},
+		{"described, not always -> routed", Validator{ID: "x", Description: "checks naming"}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.v.BypassesRouter(); got != tt.want {
+				t.Errorf("BypassesRouter() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }

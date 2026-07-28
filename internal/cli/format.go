@@ -2,14 +2,21 @@ package cli
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/leightonvanrooijen/utopia/internal"
+	"github.com/leightonvanrooijen/utopia/internal/cli/ui"
 	"github.com/spf13/cobra"
 )
+
+// ErrCheckFailed signals that format --check found files needing reformatting.
+// It carries exit-status semantics (like gofmt -l), not an error to dump:
+// the handler silences cobra's usage/error output and Execute() supplies exit code 1.
+var ErrCheckFailed = errors.New("files would be reformatted")
 
 // Flag for format command (package-level for Cobra compatibility)
 var formatCheckFlag bool
@@ -39,6 +46,7 @@ Use --check to verify files are formatted without making changes (useful for CI)
 }
 
 func runFormat(cmd *cobra.Command, args []string, checkOnly bool) error {
+	out := ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr())
 	absPath, utopiaDir, _, err := ResolveProject(cmd)
 	if err != nil {
 		return err
@@ -68,7 +76,7 @@ func runFormat(cmd *cobra.Command, args []string, checkOnly bool) error {
 	}
 
 	if len(files) == 0 {
-		fmt.Println("No YAML files to format")
+		out.Printf("No YAML files to format\n")
 		return nil
 	}
 
@@ -93,26 +101,28 @@ func runFormat(cmd *cobra.Command, args []string, checkOnly bool) error {
 		if checkOnly {
 			wouldChangeCount++
 			relPath, _ := filepath.Rel(absPath, file)
-			fmt.Printf("Would reformat: %s\n", relPath)
+			out.Printf("Would reformat: %s\n", relPath)
 		} else {
 			if err := os.WriteFile(file, formatted, 0644); err != nil {
 				return fmt.Errorf("failed to write %s: %w", file, err)
 			}
 			formattedCount++
 			relPath, _ := filepath.Rel(absPath, file)
-			fmt.Printf("Formatted: %s\n", relPath)
+			out.Printf("Formatted: %s\n", relPath)
 		}
 	}
 
 	if checkOnly {
 		if wouldChangeCount > 0 {
-			fmt.Printf("\n%d file(s) would be reformatted\n", wouldChangeCount)
-			os.Exit(1)
+			out.Printf("\n%d file(s) would be reformatted\n", wouldChangeCount)
+			cmd.SilenceUsage = true
+			cmd.SilenceErrors = true
+			return ErrCheckFailed
 		}
-		fmt.Printf("%d file(s) already formatted\n", len(files))
+		out.Printf("%d file(s) already formatted\n", len(files))
 		return nil
 	}
 
-	fmt.Printf("\nFormatted %d file(s)\n", formattedCount)
+	out.Printf("\nFormatted %d file(s)\n", formattedCount)
 	return nil
 }

@@ -18,7 +18,7 @@ func TestChunk_SingleFeature(t *testing.T) {
 		},
 	}
 
-	items, err := Chunk(cr, nil)
+	items, err := Chunk(cr, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestChunk_MultipleFeatures(t *testing.T) {
 		},
 	}
 
-	items, err := Chunk(cr, nil)
+	items, err := Chunk(cr, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestChunk_NoFeatures(t *testing.T) {
 		Changes: []domain.Change{},
 	}
 
-	items, err := Chunk(cr, nil)
+	items, err := Chunk(cr, nil, nil)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
@@ -119,7 +119,7 @@ func TestChunk_Validate_NoAcceptanceCriteria(t *testing.T) {
 		},
 	}
 
-	_, err := Chunk(cr, nil)
+	_, err := Chunk(cr, nil, nil)
 	if err == nil {
 		t.Fatal("Chunk() should return error for feature without acceptance criteria")
 	}
@@ -151,7 +151,7 @@ func TestChunk_Validate_MultipleEmptyCriteria(t *testing.T) {
 		},
 	}
 
-	_, err := Chunk(cr, nil)
+	_, err := Chunk(cr, nil, nil)
 	if err == nil {
 		t.Fatal("Chunk() should return error for features without acceptance criteria")
 	}
@@ -177,7 +177,7 @@ func TestChunk_MergeConstraints_DefaultsOnly(t *testing.T) {
 		},
 	}
 
-	items, err := Chunk(cr, nil)
+	items, err := Chunk(cr, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -270,7 +270,7 @@ func TestChunk_RefactorCR_InjectsConstraints(t *testing.T) {
 		},
 	}
 
-	items, err := Chunk(cr, nil)
+	items, err := Chunk(cr, nil, nil)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
@@ -318,7 +318,7 @@ func TestChunk_NonRefactorCR_NoRefactorConstraints(t *testing.T) {
 		},
 	}
 
-	items, err := Chunk(cr, nil)
+	items, err := Chunk(cr, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -344,7 +344,7 @@ func TestChunk_MergeConstraints_RefactorConstraintsFirst(t *testing.T) {
 		},
 	}
 
-	items, err := Chunk(cr, nil)
+	items, err := Chunk(cr, nil, nil)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
@@ -386,7 +386,7 @@ func TestChunk_RefactorCR_MultipleTasks(t *testing.T) {
 		},
 	}
 
-	items, err := Chunk(cr, nil)
+	items, err := Chunk(cr, nil, nil)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
@@ -437,7 +437,7 @@ func TestChunk_FeatureCR_NoRefactorConstraints(t *testing.T) {
 		},
 	}
 
-	items, err := Chunk(cr, nil)
+	items, err := Chunk(cr, nil, nil)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
@@ -467,7 +467,7 @@ func TestChunkPhase_SingleTask(t *testing.T) {
 		},
 	}
 
-	items, err := ChunkPhase("initiative-1", 0, phase, nil)
+	items, err := ChunkPhase("initiative-1", 0, phase, nil, nil)
 	if err != nil {
 		t.Fatalf("ChunkPhase() error = %v", err)
 	}
@@ -494,7 +494,7 @@ func TestChunkPhase_RefactorPhase(t *testing.T) {
 		},
 	}
 
-	items, err := ChunkPhase("initiative-1", 1, phase, nil)
+	items, err := ChunkPhase("initiative-1", 1, phase, nil, nil)
 	if err != nil {
 		t.Fatalf("ChunkPhase() error = %v", err)
 	}
@@ -529,7 +529,7 @@ func TestChunkPhase_WithChanges(t *testing.T) {
 		},
 	}
 
-	items, err := ChunkPhase("initiative-1", 0, phase, nil)
+	items, err := ChunkPhase("initiative-1", 0, phase, nil, nil)
 	if err != nil {
 		t.Fatalf("ChunkPhase() error = %v", err)
 	}
@@ -557,7 +557,7 @@ func TestChunk_ExtractFeatures_RemoveOperation(t *testing.T) {
 		},
 	}
 
-	items, err := Chunk(cr, nil)
+	items, err := Chunk(cr, nil, nil)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
@@ -593,7 +593,7 @@ func TestChunk_ExtractFeatures_ModifyOperation(t *testing.T) {
 		},
 	}
 
-	items, err := Chunk(cr, nil)
+	items, err := Chunk(cr, nil, nil)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
@@ -626,7 +626,7 @@ func TestChunk_ExtractFeatures_DeleteSpecOperation(t *testing.T) {
 		},
 	}
 
-	items, err := Chunk(cr, nil)
+	items, err := Chunk(cr, nil, nil)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
@@ -684,7 +684,7 @@ func TestChunk_BugfixCR_InjectsConstraints(t *testing.T) {
 		},
 	}
 
-	items, err := Chunk(cr, nil)
+	items, err := Chunk(cr, nil, nil)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
@@ -758,7 +758,7 @@ func TestChunk_BugfixCR_WithSpecReference(t *testing.T) {
 		},
 	}
 
-	items, err := Chunk(cr, specLoader)
+	items, err := Chunk(cr, specLoader, nil)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
@@ -800,7 +800,7 @@ func TestChunk_BugfixCR_MissingSpec(t *testing.T) {
 		},
 	}
 
-	_, err := Chunk(cr, specLoader)
+	_, err := Chunk(cr, specLoader, nil)
 	if err == nil {
 		t.Fatal("Chunk() should return error when referenced spec not found")
 	}
@@ -836,7 +836,7 @@ func TestChunk_BugfixCR_MissingFeature(t *testing.T) {
 		},
 	}
 
-	_, err := Chunk(cr, specLoader)
+	_, err := Chunk(cr, specLoader, nil)
 	if err == nil {
 		t.Fatal("Chunk() should return error when referenced feature not found")
 	}
@@ -863,7 +863,7 @@ func TestChunk_BugfixCR_NoSpecLoader(t *testing.T) {
 		},
 	}
 
-	_, err := Chunk(cr, nil) // No spec loader
+	_, err := Chunk(cr, nil, nil) // No spec loader
 	if err == nil {
 		t.Fatal("Chunk() should return error when spec loader not configured")
 	}
@@ -903,7 +903,7 @@ func TestChunkPhase_BugfixPhase_WithSpecReference(t *testing.T) {
 		},
 	}
 
-	items, err := ChunkPhase("initiative-1", 0, phase, specLoader)
+	items, err := ChunkPhase("initiative-1", 0, phase, specLoader, nil)
 	if err != nil {
 		t.Fatalf("ChunkPhase() error = %v", err)
 	}
@@ -938,7 +938,7 @@ func TestBuildPromptWithConstraints_CustomConstraints(t *testing.T) {
 	}
 
 	constraints := []string{"Custom constraint 1", "Custom constraint 2"}
-	prompt := BuildPromptWithConstraints(feature, constraints, nil, nil, nil)
+	prompt := BuildPromptWithConstraints(feature, constraints, nil, nil, nil, nil)
 
 	if !strings.Contains(prompt, "Custom constraint 1") {
 		t.Error("Prompt should contain custom constraint 1")
@@ -961,7 +961,7 @@ func TestBuildPromptWithConstraints_WithReference(t *testing.T) {
 		AcceptanceCriteria: []string{"Reference criterion"},
 	}
 
-	prompt := BuildPromptWithConstraints(feature, DefaultConstraints, nil, refFeature, nil)
+	prompt := BuildPromptWithConstraints(feature, DefaultConstraints, nil, refFeature, nil, nil)
 
 	if !strings.Contains(prompt, "## REFERENCE") {
 		t.Error("Prompt should contain REFERENCE section")
@@ -982,7 +982,7 @@ func TestBuildPromptWithConstraints_WithHints(t *testing.T) {
 	}
 
 	hints := []string{"Look at foo.go for patterns", "Use the BarService"}
-	prompt := BuildPromptWithConstraints(feature, DefaultConstraints, nil, nil, hints)
+	prompt := BuildPromptWithConstraints(feature, DefaultConstraints, nil, nil, hints, nil)
 
 	if !strings.Contains(prompt, "## HINTS") {
 		t.Error("Prompt should contain HINTS section")
@@ -1008,10 +1008,152 @@ func TestBuildPromptWithConstraints_NoHints(t *testing.T) {
 		AcceptanceCriteria: []string{"Criterion 1"},
 	}
 
-	prompt := BuildPromptWithConstraints(feature, DefaultConstraints, nil, nil, nil)
+	prompt := BuildPromptWithConstraints(feature, DefaultConstraints, nil, nil, nil, nil)
 
 	if strings.Contains(prompt, "## HINTS") {
 		t.Error("Prompt should not contain HINTS section when no hints provided")
+	}
+}
+
+func TestBuildPromptWithConstraints_WithStandards(t *testing.T) {
+	feature := domain.Feature{
+		ID:                 "test",
+		Description:        "Test feature",
+		AcceptanceCriteria: []string{"Criterion 1"},
+	}
+
+	standards := []domain.StandardsDocMeta{
+		{
+			ID:          "cli-organization",
+			Title:       "CLI Package Organization",
+			Description: "How to structure cobra commands",
+			Tags:        []string{"go", "cli"},
+			Path:        ".utopia/standards/cli-organization.md",
+		},
+		{
+			ID:          "error-handling",
+			Description: "Error wrapping conventions",
+			Path:        ".utopia/standards/error-handling.md",
+		},
+	}
+	prompt := BuildPromptWithConstraints(feature, DefaultConstraints, nil, nil, nil, standards)
+
+	if !strings.Contains(prompt, "## STANDARDS") {
+		t.Error("Prompt should contain STANDARDS section")
+	}
+	if !strings.Contains(prompt, "id: cli-organization") {
+		t.Error("Prompt should contain first doc id")
+	}
+	if !strings.Contains(prompt, "description: How to structure cobra commands") {
+		t.Error("Prompt should contain first doc description")
+	}
+	if !strings.Contains(prompt, "tags: go, cli") {
+		t.Error("Prompt should contain first doc tags")
+	}
+	if !strings.Contains(prompt, "path: .utopia/standards/cli-organization.md") {
+		t.Error("Prompt should contain first doc path")
+	}
+	if !strings.Contains(prompt, "id: error-handling") {
+		t.Error("Prompt should contain second doc id")
+	}
+	if !strings.Contains(prompt, "read the standards docs relevant") {
+		t.Error("Prompt should instruct the executor to read relevant standards docs")
+	}
+	// Verify STANDARDS section appears before CONSTRAINTS
+	standardsIdx := strings.Index(prompt, "## STANDARDS")
+	constraintsIdx := strings.Index(prompt, "## CONSTRAINTS")
+	if standardsIdx > constraintsIdx {
+		t.Error("STANDARDS section should appear before CONSTRAINTS section")
+	}
+}
+
+func TestBuildPromptWithConstraints_NoStandards(t *testing.T) {
+	feature := domain.Feature{
+		ID:                 "test",
+		Description:        "Test feature",
+		AcceptanceCriteria: []string{"Criterion 1"},
+	}
+
+	prompt := BuildPromptWithConstraints(feature, DefaultConstraints, nil, nil, nil, nil)
+	if strings.Contains(prompt, "## STANDARDS") {
+		t.Error("Prompt should not contain STANDARDS section when no standards provided")
+	}
+
+	prompt = BuildPromptWithConstraints(feature, DefaultConstraints, nil, nil, nil, []domain.StandardsDocMeta{})
+	if strings.Contains(prompt, "## STANDARDS") {
+		t.Error("Prompt should not contain STANDARDS section for an empty index")
+	}
+}
+
+func TestChunk_InjectsStandardsIndex(t *testing.T) {
+	cr := &domain.ChangeRequest{
+		ID:   "test-cr",
+		Type: domain.CRTypeFeature,
+		Tasks: []domain.Task{
+			{
+				ID:                 "task-1",
+				Description:        "Build the thing",
+				AcceptanceCriteria: []string{"Thing works"},
+			},
+		},
+	}
+
+	standards := []domain.StandardsDocMeta{
+		{
+			ID:          "error-handling",
+			Description: "Error wrapping conventions",
+			Tags:        []string{"go"},
+			Path:        ".utopia/standards/error-handling.md",
+		},
+	}
+
+	workItems, err := Chunk(cr, nil, standards)
+	if err != nil {
+		t.Fatalf("Chunk failed: %v", err)
+	}
+	if len(workItems) != 1 {
+		t.Fatalf("Expected 1 work item, got %d", len(workItems))
+	}
+
+	prompt := workItems[0].Prompt
+	if !strings.Contains(prompt, "## STANDARDS") {
+		t.Error("Work item prompt should contain STANDARDS section")
+	}
+	if !strings.Contains(prompt, "path: .utopia/standards/error-handling.md") {
+		t.Error("Work item prompt should contain the doc path")
+	}
+}
+
+func TestChunkPhase_InjectsStandardsIndex(t *testing.T) {
+	phase := &domain.Phase{
+		Type: domain.CRTypeFeature,
+		Tasks: []domain.Task{
+			{
+				ID:                 "task-1",
+				Description:        "Build the thing",
+				AcceptanceCriteria: []string{"Thing works"},
+			},
+		},
+	}
+
+	standards := []domain.StandardsDocMeta{
+		{
+			ID:          "error-handling",
+			Description: "Error wrapping conventions",
+			Path:        ".utopia/standards/error-handling.md",
+		},
+	}
+
+	workItems, err := ChunkPhase("initiative-1", 0, phase, nil, standards)
+	if err != nil {
+		t.Fatalf("ChunkPhase failed: %v", err)
+	}
+	if len(workItems) != 1 {
+		t.Fatalf("Expected 1 work item, got %d", len(workItems))
+	}
+
+	if !strings.Contains(workItems[0].Prompt, "## STANDARDS") {
+		t.Error("Phase work item prompt should contain STANDARDS section")
 	}
 }
 
@@ -1029,7 +1171,7 @@ func TestChunk_PreservesTaskHints(t *testing.T) {
 		},
 	}
 
-	workItems, err := Chunk(cr, nil)
+	workItems, err := Chunk(cr, nil, nil)
 	if err != nil {
 		t.Fatalf("Chunk failed: %v", err)
 	}
@@ -1064,7 +1206,7 @@ func TestChunk_PreservesFeatureHints(t *testing.T) {
 		},
 	}
 
-	workItems, err := Chunk(cr, nil)
+	workItems, err := Chunk(cr, nil, nil)
 	if err != nil {
 		t.Fatalf("Chunk failed: %v", err)
 	}

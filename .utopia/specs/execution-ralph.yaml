@@ -1,7 +1,7 @@
 id: execution-ralph
 title: Ralph Execution Loop
 created: "0001-01-01T00:00:00+00:00"
-updated: "2026-07-26T17:42:38.203332+10:00"
+updated: "2026-07-28T10:03:57.842118+10:00"
 description: |
     The Ralph execution loop runs WorkItems produced by the chunker.
 
@@ -161,16 +161,31 @@ features:
 
     - id: rate-limit-handling
       description: |
-        Detect Claude API rate limit errors and automatically wait until the reset time
-        before retrying, rather than burning iterations on failed requests.
+        Detect Claude limit errors and respond appropriately to each kind.
+        Rolling usage limits include a reset time in the message, so the loop
+        waits until that time before retrying. The org monthly spend limit
+        carries no reset time and no API exposes one, so the loop enters probe
+        mode: it periodically retries a minimal Claude invocation and resumes
+        work when a probe succeeds. Neither kind of limited attempt burns
+        iterations.
       acceptance_criteria:
-        - Detects "Limit reached · resets {time} ({timezone})" pattern in Claude invocation stderr/stdout
+        - Detects rolling-limit reset patterns in Claude invocation stderr/stdout (legacy and current message formats)
         - Parses reset time with timezone awareness (e.g., "1am (Australia/Sydney)")
         - Calculates sleep duration until reset time plus 2 minute buffer
         - Prints message indicating rate limit hit and wait time (e.g., "Rate limit hit, waiting until 1:02am Australia/Sydney to resume...")
         - Sleeps until calculated time then retries the iteration
         - Rate-limited attempts do not count against max iterations limit
         - Falls back to 10 minute retry delay if time parsing fails
+        - Detects "You've hit your org's monthly spend limit" pattern in Claude invocation stdout/stderr
+        - On spend-limit detection, prints a message explaining the org monthly spend limit was hit, that no reset time is available, and that the loop will probe periodically until usage is restored
+        - In probe mode, the loop invokes a minimal Claude prompt (claude --print with a trivial prompt) every 30 minutes to check whether the limit has lifted
+        - Each probe attempt is logged with a timestamp and its outcome (still limited or recovered)
+        - When a probe succeeds, the loop prints a recovery message and resumes the interrupted iteration with a normally rebuilt prompt
+        - Spend-limited attempts and probe attempts do not count against max iterations limit
+        - Ctrl+C during a probe wait triggers the existing graceful shutdown path (state saved, resumable)
+        - Session --timeout continues to elapse during probe mode and triggers graceful shutdown if reached
+        - Detects the newer rolling-limit message formats "You've hit your session limit · resets {time}" and "You've hit your Opus limit · resets {time}" in addition to the legacy "Limit reached · resets {time} ({timezone})" format
+        - When a rolling-limit message omits the timezone, the reset time is interpreted in the system local timezone
 
     - id: lifecycle-commits
       description: |
@@ -188,3 +203,31 @@ features:
         - The project .gitignore no longer excludes .utopia/work-items/
         - A full 'utopia execute' run on a clean repo produces no 'git add failed' or 'Cleanup commit warning' output and leaves the working tree clean
         - Initiative phase cleanup commits work the same way as regular CR cleanup commits
+
+    - id: queue-watch-daemon
+      description: |
+        A long-running daemon mode that watches the change-request queue and
+        executes work as it becomes ready, instead of the one-shot execute
+        command. Surfaced as `utopia execute run`.
+
+        Readiness is status-based: a change request is ready when its status
+        is `approved`. Detection is by polling - the daemon re-scans
+        .utopia/change-requests/ from disk on a fixed interval, so a CR
+        approved by any process (a human editing YAML, another utopia
+        invocation) is picked up without in-process coordination. Ready CRs
+        are executed strictly one at a time, because the Ralph engine is
+        single-goroutine and parallel CRs would collide on git.
+
+        Picking up a CR chunks it, which transitions it to `in-progress`, so
+        it leaves the ready set and is not re-processed on the next scan.
+      acceptance_criteria:
+        - Exposes a `run` subcommand under execute (utopia execute run) that does not exit after one CR
+        - Accepts an --interval flag (seconds between queue scans) defaulting to 10, and rejects a non-positive interval
+        - Accepts a --model flag consistent with `utopia execute`
+        - On each scan, treats a change request as ready when and only when its status is `approved` (draft, in-progress, and complete are left alone)
+        - Executes each ready CR via the same path as `utopia execute <cr-id>` (chunk if needed, run the Ralph loop, then auto-merge into specs)
+        - Executes ready CRs sequentially, never concurrently
+        - When the queue has nothing ready, idles until the next scan rather than exiting
+        - Ctrl+C (SIGINT/SIGTERM) stops the daemon cleanly; an in-flight CR saves its state and is resumable with `utopia execute <cr-id>`
+        - A transient queue-scan read error is logged and retried on the next tick rather than killing the daemon
+        - The failure policy for a CR that fails to execute is isolated in one place and documented, with a default that keeps the daemon watching (logs and skips the failed CR rather than exiting)

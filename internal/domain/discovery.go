@@ -38,6 +38,9 @@ type Config struct {
 	// Paths configures where artifact folders live.
 	// If omitted entirely, all artifacts live in their default locations under .utopia/.
 	Paths *PathsConfig `yaml:"paths,omitempty"`
+	// Connectors registers external commands that run on lifecycle events
+	// emitted by the execution loop. See ConnectorConfig for the entry format.
+	Connectors []ConnectorConfig `yaml:"connectors,omitempty"`
 }
 
 // PathsConfig configures where the specs, adrs, concepts, and domain folders live.
@@ -63,6 +66,11 @@ type ValidatorConfig struct {
 	// Run specifies when this validator should execute (after-workitem, after-phase, on-demand)
 	// If set, overrides the run trigger specified in the validator file's frontmatter
 	Run string `yaml:"run,omitempty"`
+	// Always, when true, opts this validator out of the relevance router so it runs
+	// on every change - the escape hatch for checks (e.g. security) too important to
+	// risk the router skipping. It composes with Run: an always after-phase validator
+	// still only runs at phase gates. Defaults to false.
+	Always bool `yaml:"always,omitempty"`
 }
 
 // UnmarshalYAML implements custom unmarshaling to support both string and object formats.
@@ -102,6 +110,12 @@ func (vc *ValidatorConfig) GetRun() string {
 	return vc.Run
 }
 
+// GetAlways reports whether this validator opts out of the relevance router and
+// runs on every change. Defaults to false.
+func (vc *ValidatorConfig) GetAlways() bool {
+	return vc.Always
+}
+
 // ModelConfig specifies model selection for commands.
 // Each field corresponds to a Utopia command and accepts model names: haiku, sonnet, opus.
 type ModelConfig struct {
@@ -110,10 +124,15 @@ type ModelConfig struct {
 	Default string `yaml:"default,omitempty"`
 
 	// Per-command model overrides
-	CR              string `yaml:"cr,omitempty"`
-	Harvest         string `yaml:"harvest,omitempty"`
-	Execute         string `yaml:"execute,omitempty"`
-	Validators      string `yaml:"validators,omitempty"`
+	CR         string `yaml:"cr,omitempty"`
+	Harvest    string `yaml:"harvest,omitempty"`
+	Execute    string `yaml:"execute,omitempty"`
+	Validators string `yaml:"validators,omitempty"`
+	// ValidatorRouter selects the model for the cheap relevance router that picks
+	// which validators run for a change. It defaults to a haiku-tier model
+	// independently of Validators and Default (see the validators package), so
+	// routing stays cheap even when validators run on a larger model.
+	ValidatorRouter string `yaml:"validator_router,omitempty"`
 	Discover        string `yaml:"discover,omitempty"`
 	Standards       string `yaml:"standards,omitempty"`
 	Refactor        string `yaml:"refactor,omitempty"`
@@ -139,6 +158,8 @@ func (c *ModelConfig) ModelForCommand(command string) string {
 		override = c.Execute
 	case "validators":
 		override = c.Validators
+	case "validator_router":
+		override = c.ValidatorRouter
 	case "discover":
 		override = c.Discover
 	case "standards":

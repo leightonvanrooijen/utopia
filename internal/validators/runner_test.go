@@ -147,8 +147,9 @@ func TestRunner_getGitDiff(t *testing.T) {
 		t.Fatalf("git commit failed: %v", err)
 	}
 
-	// Create second commit with changes
-	if err := os.WriteFile(tmpDir+"/file.txt", []byte("changed content"), 0644); err != nil {
+	// Create a second commit representing the previous work item. Its changes
+	// are committed, so they must NOT appear in the current work item's diff.
+	if err := os.WriteFile(tmpDir+"/file.txt", []byte("prior workitem"), 0644); err != nil {
 		t.Fatalf("failed to write file: %v", err)
 	}
 
@@ -156,8 +157,14 @@ func TestRunner_getGitDiff(t *testing.T) {
 		t.Fatalf("git add failed: %v", err)
 	}
 
-	if err := runGit("commit", "-m", "second commit"); err != nil {
+	if err := runGit("commit", "-m", "prior workitem"); err != nil {
 		t.Fatalf("git commit failed: %v", err)
+	}
+
+	// The current work item's changes are uncommitted, as they are when
+	// after-workitem validators run (before the commit).
+	if err := os.WriteFile(tmpDir+"/file.txt", []byte("current workitem"), 0644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
 	}
 
 	// Test getGitDiff
@@ -168,23 +175,30 @@ func TestRunner_getGitDiff(t *testing.T) {
 		t.Fatalf("getGitDiff failed: %v", err)
 	}
 
-	// Verify diff contains expected content
+	// Verify diff contains the current work item's uncommitted change
 	if !strings.Contains(diff, "file.txt") {
 		t.Errorf("diff should contain file.txt, got: %s", diff)
 	}
 
-	if !strings.Contains(diff, "-initial") || !strings.Contains(diff, "+changed content") {
-		t.Errorf("diff should show changes, got: %s", diff)
+	if !strings.Contains(diff, "-prior workitem") || !strings.Contains(diff, "+current workitem") {
+		t.Errorf("diff should show the uncommitted change against HEAD, got: %s", diff)
+	}
+
+	// Verify the diff does NOT reach back past HEAD into an earlier commit -
+	// "initial" belonged to a commit before HEAD and would only appear if the
+	// diff base were HEAD~1.
+	if strings.Contains(diff, "initial") {
+		t.Errorf("diff should be scoped to HEAD, not HEAD~1, but included an earlier commit: %s", diff)
 	}
 }
 
-func TestRunner_getGitDiff_NoHistory(t *testing.T) {
+func TestRunner_getGitDiff_SingleCommit(t *testing.T) {
 	// Skip if not in a git repo
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not found, skipping test")
 	}
 
-	// Create a temporary git repo with only one commit
+	// Create a temporary git repo whose only commit is the one under review.
 	tmpDir, err := os.MkdirTemp("", "validator-test-*")
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
@@ -209,7 +223,7 @@ func TestRunner_getGitDiff_NoHistory(t *testing.T) {
 		t.Fatalf("git config name failed: %v", err)
 	}
 
-	// Create only one commit (no HEAD~1 exists)
+	// Create the only commit (no HEAD~1 exists).
 	if err := os.WriteFile(tmpDir+"/file.txt", []byte("content"), 0644); err != nil {
 		t.Fatalf("failed to write file: %v", err)
 	}
@@ -222,12 +236,140 @@ func TestRunner_getGitDiff_NoHistory(t *testing.T) {
 		t.Fatalf("git commit failed: %v", err)
 	}
 
-	// Test getGitDiff should fail (no HEAD~1)
-	r := NewRunner(tmpDir)
-	_, err = r.getGitDiff(context.Background())
+	// Make an uncommitted change - the current work item under review.
+	if err := os.WriteFile(tmpDir+"/file.txt", []byte("current workitem"), 0644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
 
-	if err == nil {
-		t.Error("expected error when no HEAD~1 exists")
+	// getGitDiff must compute the diff against HEAD rather than erroring on
+	// the missing HEAD~1.
+	r := NewRunner(tmpDir)
+	diff, err := r.getGitDiff(context.Background())
+
+	if err != nil {
+		t.Fatalf("getGitDiff should succeed on a single-commit repo, got: %v", err)
+	}
+
+	if !strings.Contains(diff, "-content") || !strings.Contains(diff, "+current workitem") {
+		t.Errorf("diff should show the uncommitted change against the only commit, got: %s", diff)
+	}
+}
+
+func TestRunner_GetGitDiffSince(t *testing.T) {
+	// Skip if not in a git repo
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not found, skipping test")
+	}
+
+	tmpDir, err := os.MkdirTemp("", "validator-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	runGit := func(args ...string) error {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = tmpDir
+		return cmd.Run()
+	}
+	headSHA := func() string {
+		cmd := exec.Command("git", "rev-parse", "HEAD")
+		cmd.Dir = tmpDir
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("git rev-parse failed: %v", err)
+		}
+		return strings.TrimSpace(string(out))
+	}
+
+	if err := runGit("init"); err != nil {
+		t.Fatalf("git init failed: %v", err)
+	}
+	if err := runGit("config", "user.email", "test@example.com"); err != nil {
+		t.Fatalf("git config email failed: %v", err)
+	}
+	if err := runGit("config", "user.name", "Test User"); err != nil {
+		t.Fatalf("git config name failed: %v", err)
+	}
+
+	// Phase-start baseline: an initial commit before any work item runs.
+	if err := os.WriteFile(tmpDir+"/file.txt", []byte("baseline"), 0644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+	if err := runGit("add", "."); err != nil {
+		t.Fatalf("git add failed: %v", err)
+	}
+	if err := runGit("commit", "-m", "baseline"); err != nil {
+		t.Fatalf("git commit failed: %v", err)
+	}
+	phaseStart := headSHA()
+
+	// Two work items, each committed - the phase produced two commits.
+	if err := os.WriteFile(tmpDir+"/file.txt", []byte("workitem one"), 0644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+	if err := runGit("add", "."); err != nil {
+		t.Fatalf("git add failed: %v", err)
+	}
+	if err := runGit("commit", "-m", "workitem 1"); err != nil {
+		t.Fatalf("git commit failed: %v", err)
+	}
+	if err := os.WriteFile(tmpDir+"/file.txt", []byte("workitem two"), 0644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+	if err := runGit("add", "."); err != nil {
+		t.Fatalf("git add failed: %v", err)
+	}
+	if err := runGit("commit", "-m", "workitem 2"); err != nil {
+		t.Fatalf("git commit failed: %v", err)
+	}
+
+	r := NewRunner(tmpDir)
+
+	// The phase diff spans the baseline through the working tree, so it shows
+	// the cumulative change of every commit in the phase - "git diff HEAD"
+	// would be empty here because every work item is already committed.
+	diff, err := r.GetGitDiffSince(context.Background(), phaseStart)
+	if err != nil {
+		t.Fatalf("GetGitDiffSince failed: %v", err)
+	}
+	if !strings.Contains(diff, "-baseline") || !strings.Contains(diff, "+workitem two") {
+		t.Errorf("phase diff should span baseline..working tree, got: %s", diff)
+	}
+
+	// An in-progress after-phase fix stays uncommitted; the phase diff must
+	// still reflect it so re-validation sees the latest state.
+	if err := os.WriteFile(tmpDir+"/file.txt", []byte("workitem two fixed"), 0644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+	diff, err = r.GetGitDiffSince(context.Background(), phaseStart)
+	if err != nil {
+		t.Fatalf("GetGitDiffSince failed: %v", err)
+	}
+	if !strings.Contains(diff, "+workitem two fixed") {
+		t.Errorf("phase diff should include the uncommitted fix, got: %s", diff)
+	}
+
+	// No commits produced during the phase (baseline == HEAD, clean tree):
+	// the phase diff is empty and validators handle it gracefully.
+	if err := runGit("checkout", "--", "file.txt"); err != nil {
+		t.Fatalf("git checkout failed: %v", err)
+	}
+	if err := runGit("reset", "--hard", phaseStart); err != nil {
+		t.Fatalf("git reset failed: %v", err)
+	}
+	diff, err = r.GetGitDiffSince(context.Background(), phaseStart)
+	if err != nil {
+		t.Fatalf("GetGitDiffSince failed: %v", err)
+	}
+	if strings.TrimSpace(diff) != "" {
+		t.Errorf("phase diff should be empty when no commits were produced, got: %s", diff)
+	}
+
+	// An empty baseline (repo with no commit at phase start) falls back to the
+	// uncommitted-changes diff rather than erroring on an unresolvable ref.
+	if _, err := r.GetGitDiffSince(context.Background(), ""); err != nil {
+		t.Fatalf("GetGitDiffSince with empty baseline should fall back, got: %v", err)
 	}
 }
 
@@ -613,6 +755,79 @@ func TestRunner_RunAllWithDiffLimited_FiltersByTrigger(t *testing.T) {
 
 	if ids["v2"] {
 		t.Error("v2 should not be included (wrong trigger)")
+	}
+}
+
+func TestRunner_RunAllWithDiffLimited_ValidatorTimeout(t *testing.T) {
+	validators := []*domain.Validator{
+		{ID: "v1", Run: domain.RunAfterWorkitem, Prompt: "test"},
+		{ID: "v2", Run: domain.RunAfterWorkitem, Prompt: "test"},
+		{ID: "v3", Run: domain.RunAfterWorkitem, Prompt: "test"},
+	}
+
+	// A sub-nanosecond timeout guarantees each validator's child deadline trips
+	// before (or during) its Claude invocation, so every validator resolves as a
+	// timeout regardless of whether the claude binary is present.
+	r := NewRunner("/tmp").WithValidatorTimeout(time.Nanosecond)
+
+	start := time.Now()
+	results := r.RunAllWithDiffLimited(context.Background(), validators, domain.RunAfterWorkitem, "fake diff", 4)
+	elapsed := time.Since(start)
+
+	if len(results) != 3 {
+		t.Fatalf("expected 3 results, got %d", len(results))
+	}
+
+	for _, vr := range results {
+		// A timed-out validator resolves as a failure carrying a clear timeout
+		// message, not a validation verdict about the diff.
+		if vr.Err == nil {
+			t.Errorf("validator %s should have timed out with an error, got Result=%v", vr.ID, vr.Result)
+			continue
+		}
+		if !strings.Contains(vr.Err.Error(), "timed out") {
+			t.Errorf("validator %s error should mention the timeout, got: %v", vr.ID, vr.Err)
+		}
+		if vr.Result != nil {
+			t.Errorf("validator %s should have no Result when it times out, got %v", vr.ID, vr.Result)
+		}
+	}
+
+	// Independent timeouts fire concurrently - the batch resolves quickly rather
+	// than one stuck validator serializing or stalling the others.
+	if elapsed > 2*time.Second {
+		t.Errorf("timeouts should resolve quickly in parallel, batch took %v", elapsed)
+	}
+}
+
+func TestRunner_RunAllWithDiffLimited_GlobalCancellation(t *testing.T) {
+	validators := []*domain.Validator{
+		{ID: "v1", Run: domain.RunAfterWorkitem, Prompt: "test"},
+		{ID: "v2", Run: domain.RunAfterWorkitem, Prompt: "test"},
+	}
+
+	// Simulate Ctrl+C: the run context is already cancelled. A generous
+	// per-validator timeout ensures any error comes from the cancellation, not
+	// the deadline.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	r := NewRunner("/tmp").WithValidatorTimeout(10 * time.Minute)
+	results := r.RunAllWithDiffLimited(ctx, validators, domain.RunAfterWorkitem, "fake diff", 4)
+
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+
+	for _, vr := range results {
+		if vr.Err == nil {
+			t.Errorf("validator %s should error under global cancellation", vr.ID)
+			continue
+		}
+		// Cancellation must not be mislabeled as a per-validator timeout.
+		if strings.Contains(vr.Err.Error(), "timed out") {
+			t.Errorf("validator %s cancellation should not be reported as a timeout, got: %v", vr.ID, vr.Err)
+		}
 	}
 }
 

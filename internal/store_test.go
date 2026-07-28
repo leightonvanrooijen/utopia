@@ -756,6 +756,7 @@ func TestLoadValidator_FullFormat(t *testing.T) {
 	// Note: run field is deprecated in validator files but should still load without error
 	content := `---
 id: code-standards
+description: Checks naming conventions; applies to Go source changes
 allowed_tools: [Read, Glob, Grep, WebFetch]
 ---
 Review the following changes for code standards:
@@ -776,6 +777,9 @@ If all standards are met, output: <PASSED>
 
 	if validator.ID != "code-standards" {
 		t.Errorf("expected ID 'code-standards', got %q", validator.ID)
+	}
+	if validator.Description != "Checks naming conventions; applies to Go source changes" {
+		t.Errorf("expected description to be parsed from frontmatter, got %q", validator.Description)
 	}
 	// Run should default since it's not configured (run in file is deprecated/ignored)
 	if validator.GetRun() != domain.RunAfterWorkitem {
@@ -821,6 +825,12 @@ Simple prompt with {{changed_files}} placeholder.
 
 	if validator.ID != "minimal-validator" {
 		t.Errorf("expected ID 'minimal-validator', got %q", validator.ID)
+	}
+
+	// A validator with no description must still load; empty Description is the
+	// router's signal to treat it as always applicable rather than skip it.
+	if validator.Description != "" {
+		t.Errorf("expected empty description when frontmatter omits it, got %q", validator.Description)
 	}
 
 	// Verify defaults are applied via getter methods
@@ -1359,5 +1369,95 @@ paths:
 	}
 	if config.Paths.ADRs != "docs/adrs" {
 		t.Errorf("expected paths.adrs 'docs/adrs', got %q", config.Paths.ADRs)
+	}
+}
+
+// Tests for standards index loading
+
+func TestLoadStandardsIndex_MissingDir(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	docs := store.LoadStandardsIndex()
+	if len(docs) != 0 {
+		t.Errorf("expected empty index for missing standards dir, got %d docs", len(docs))
+	}
+}
+
+func TestLoadStandardsIndex_ParsesFrontmatter(t *testing.T) {
+	dir := t.TempDir()
+	standardsDir := filepath.Join(dir, "standards")
+	if err := os.MkdirAll(standardsDir, 0755); err != nil {
+		t.Fatalf("failed to create standards dir: %v", err)
+	}
+
+	doc := `---
+id: cli-organization
+title: "CLI Package Organization"
+description: "How to structure cobra commands"
+tags:
+  - go
+  - cli
+---
+
+Full body content that must never appear in the index.
+`
+	if err := os.WriteFile(filepath.Join(standardsDir, "cli-organization.md"), []byte(doc), 0644); err != nil {
+		t.Fatalf("failed to write standards doc: %v", err)
+	}
+
+	store := NewYAMLStore(dir)
+	docs := store.LoadStandardsIndex()
+
+	if len(docs) != 1 {
+		t.Fatalf("expected 1 doc in index, got %d", len(docs))
+	}
+	got := docs[0]
+	if got.ID != "cli-organization" {
+		t.Errorf("expected id 'cli-organization', got %q", got.ID)
+	}
+	if got.Title != "CLI Package Organization" {
+		t.Errorf("expected title 'CLI Package Organization', got %q", got.Title)
+	}
+	if got.Description != "How to structure cobra commands" {
+		t.Errorf("expected description 'How to structure cobra commands', got %q", got.Description)
+	}
+	if len(got.Tags) != 2 || got.Tags[0] != "go" || got.Tags[1] != "cli" {
+		t.Errorf("expected tags [go cli], got %v", got.Tags)
+	}
+	if got.Path != ".utopia/standards/cli-organization.md" {
+		t.Errorf("expected path '.utopia/standards/cli-organization.md', got %q", got.Path)
+	}
+}
+
+func TestLoadStandardsIndex_SkipsUnparseableDocs(t *testing.T) {
+	dir := t.TempDir()
+	standardsDir := filepath.Join(dir, "standards")
+	if err := os.MkdirAll(standardsDir, 0755); err != nil {
+		t.Fatalf("failed to create standards dir: %v", err)
+	}
+
+	files := map[string]string{
+		"valid.md":          "---\nid: valid\ndescription: A valid doc\n---\nBody.\n",
+		"no-frontmatter.md": "Just a markdown file with no frontmatter.\n",
+		"unclosed.md":       "---\nid: unclosed\ndescription: never closed\n",
+		"bad-yaml.md":       "---\nid: [unbalanced\n---\nBody.\n",
+		"no-id.md":          "---\ndescription: missing the id field\n---\nBody.\n",
+		"not-markdown.txt":  "---\nid: ignored\n---\nBody.\n",
+	}
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(standardsDir, name), []byte(content), 0644); err != nil {
+			t.Fatalf("failed to write %s: %v", name, err)
+		}
+	}
+
+	store := NewYAMLStore(dir)
+	docs := store.LoadStandardsIndex()
+
+	if len(docs) != 1 {
+		t.Fatalf("expected only the valid doc in index, got %d docs", len(docs))
+	}
+	if docs[0].ID != "valid" {
+		t.Errorf("expected id 'valid', got %q", docs[0].ID)
 	}
 }
