@@ -143,6 +143,29 @@ func TestResolveAPIKeyEnv(t *testing.T) {
 			wantEnv:    []string{"PATH=/usr/bin", "ANTHROPIC_API_KEY=sk-ambient"},
 			wantSource: domain.CredentialSourceEnvironment,
 		},
+		{
+			name:       "other anthropic variables in the file reach the subprocess",
+			content:    "ANTHROPIC_API_KEY=sk-file\nANTHROPIC_BASE_URL=https://gateway\n",
+			ambient:    []string{"PATH=/usr/bin"},
+			wantEnv:    []string{"PATH=/usr/bin", "ANTHROPIC_BASE_URL=https://gateway", "ANTHROPIC_API_KEY=sk-file"},
+			wantSource: domain.CredentialSourceEnvFile,
+		},
+		{
+			name:       "the file overrides an ambient anthropic variable",
+			content:    "ANTHROPIC_API_KEY=sk-file\nANTHROPIC_BASE_URL=https://file\n",
+			ambient:    []string{"ANTHROPIC_BASE_URL=https://ambient", "PATH=/usr/bin"},
+			wantEnv:    []string{"ANTHROPIC_BASE_URL=https://file", "PATH=/usr/bin", "ANTHROPIC_API_KEY=sk-file"},
+			wantSource: domain.CredentialSourceEnvFile,
+		},
+		{
+			// An auth token in the file must not ride along with the resolved key:
+			// sending both credentials is a 401.
+			name:       "an auth token in the file is not restored alongside the key",
+			content:    "ANTHROPIC_API_KEY=sk-file\nANTHROPIC_AUTH_TOKEN=tok-file\n",
+			ambient:    []string{"PATH=/usr/bin"},
+			wantEnv:    []string{"PATH=/usr/bin", "ANTHROPIC_API_KEY=sk-file"},
+			wantSource: domain.CredentialSourceEnvFile,
+		},
 	}
 
 	for _, tc := range tests {
@@ -164,6 +187,36 @@ func TestResolveAPIKeyEnv(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// The ANTHROPIC_ filter is what stops .utopia/.env being general-purpose
+// environment injection. A file that tries to redirect PATH, add a shell
+// preload, or leak another provider's secret must contribute none of it - not
+// even by overriding a name the subprocess already inherited.
+func TestResolveAPIKeyEnvIgnoresNamesOutsideTheAnthropicPrefix(t *testing.T) {
+	utopiaDir := writeEnvFile(t, strings.Join([]string{
+		"ANTHROPIC_API_KEY=sk-file",
+		"PATH=/evil",
+		"LD_PRELOAD=/evil/lib.so",
+		"AWS_SECRET_ACCESS_KEY=nope",
+		"", // trailing newline
+	}, "\n"))
+	ambient := []string{"PATH=/usr/bin", "HOME=/home/u"}
+
+	env, _, err := ResolveAPIKeyEnv(utopiaDir, ambient)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	want := []string{"PATH=/usr/bin", "HOME=/home/u", "ANTHROPIC_API_KEY=sk-file"}
+	if len(env) != len(want) {
+		t.Fatalf("env = %v, want %v", env, want)
+	}
+	for i := range want {
+		if env[i] != want[i] {
+			t.Errorf("env[%d] = %q, want %q", i, env[i], want[i])
+		}
 	}
 }
 

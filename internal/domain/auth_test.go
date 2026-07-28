@@ -378,6 +378,115 @@ func TestAPIKeyCredential_EnvDoesNotMutateAmbient(t *testing.T) {
 	}
 }
 
+func TestApplyEnvFile(t *testing.T) {
+	tests := []struct {
+		name    string
+		ambient []string
+		envFile map[string]string
+		want    []string
+	}{
+		{
+			name:    "a file-only variable is appended",
+			ambient: []string{"PATH=/usr/bin"},
+			envFile: map[string]string{"ANTHROPIC_BASE_URL": "https://gateway"},
+			want:    []string{"PATH=/usr/bin", "ANTHROPIC_BASE_URL=https://gateway"},
+		},
+		{
+			name:    "the file wins over the same ambient variable",
+			ambient: []string{"ANTHROPIC_BASE_URL=https://ambient", "PATH=/usr/bin"},
+			envFile: map[string]string{"ANTHROPIC_BASE_URL": "https://file"},
+			want:    []string{"ANTHROPIC_BASE_URL=https://file", "PATH=/usr/bin"},
+		},
+		{
+			name:    "an overridden variable is replaced, not duplicated",
+			ambient: []string{"ANTHROPIC_BASE_URL=https://ambient"},
+			envFile: map[string]string{"ANTHROPIC_BASE_URL": "https://file"},
+			want:    []string{"ANTHROPIC_BASE_URL=https://file"},
+		},
+		{
+			name:    "a name duplicated in ambient is overridden at every position",
+			ambient: []string{"ANTHROPIC_BASE_URL=https://first", "ANTHROPIC_BASE_URL=https://second"},
+			envFile: map[string]string{"ANTHROPIC_BASE_URL": "https://file"},
+			want:    []string{"ANTHROPIC_BASE_URL=https://file", "ANTHROPIC_BASE_URL=https://file"},
+		},
+		{
+			name:    "file-only variables are appended in sorted order",
+			ambient: []string{"PATH=/usr/bin"},
+			envFile: map[string]string{
+				"ANTHROPIC_SMALL_FAST_MODEL": "haiku",
+				"ANTHROPIC_BASE_URL":         "https://gateway",
+				"ANTHROPIC_LOG":              "debug",
+			},
+			want: []string{
+				"PATH=/usr/bin",
+				"ANTHROPIC_BASE_URL=https://gateway",
+				"ANTHROPIC_LOG=debug",
+				"ANTHROPIC_SMALL_FAST_MODEL=haiku",
+			},
+		},
+		{
+			// The auth mode owns the credential slot; the file's copy must not be
+			// reapplied here or api-key mode would send both credentials at once.
+			name:    "credential variables are not overlaid",
+			ambient: []string{"PATH=/usr/bin"},
+			envFile: map[string]string{
+				APIKeyEnvVar:    "sk-file",
+				AuthTokenEnvVar: "tok-file",
+			},
+			want: []string{"PATH=/usr/bin"},
+		},
+		{
+			name:    "an ambient credential is left for the mode to handle",
+			ambient: []string{"ANTHROPIC_API_KEY=sk-ambient", "PATH=/usr/bin"},
+			envFile: map[string]string{APIKeyEnvVar: "sk-file"},
+			want:    []string{"ANTHROPIC_API_KEY=sk-ambient", "PATH=/usr/bin"},
+		},
+		{
+			name:    "an empty value from the file still overrides",
+			ambient: []string{"ANTHROPIC_LOG=debug"},
+			envFile: map[string]string{"ANTHROPIC_LOG": ""},
+			want:    []string{"ANTHROPIC_LOG="},
+		},
+		{
+			name:    "a missing file leaves the environment alone",
+			ambient: []string{"PATH=/usr/bin"},
+			envFile: nil,
+			want:    []string{"PATH=/usr/bin"},
+		},
+		{
+			name:    "an empty ambient environment yields just the file",
+			ambient: nil,
+			envFile: map[string]string{"ANTHROPIC_BASE_URL": "https://gateway"},
+			want:    []string{"ANTHROPIC_BASE_URL=https://gateway"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ApplyEnvFile(tc.ambient, tc.envFile)
+
+			if len(got) != len(tc.want) {
+				t.Fatalf("ApplyEnvFile() = %v, want %v", got, tc.want)
+			}
+			for i := range tc.want {
+				if got[i] != tc.want[i] {
+					t.Errorf("ApplyEnvFile()[%d] = %q, want %q", i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestApplyEnvFileDoesNotMutateAmbient(t *testing.T) {
+	ambient := []string{"ANTHROPIC_BASE_URL=https://ambient", "PATH=/usr/bin"}
+
+	ApplyEnvFile(ambient, map[string]string{"ANTHROPIC_BASE_URL": "https://file"})
+
+	if ambient[0] != "ANTHROPIC_BASE_URL=https://ambient" || ambient[1] != "PATH=/usr/bin" {
+		t.Errorf("ApplyEnvFile() mutated the ambient slice: %v", ambient)
+	}
+}
+
 func TestSubscriptionEnv(t *testing.T) {
 	tests := []struct {
 		name    string

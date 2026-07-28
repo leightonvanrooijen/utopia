@@ -21,12 +21,18 @@ const anthropicEnvPrefix = "ANTHROPIC_"
 
 // ResolveAPIKeyEnv builds the environment for a claude subprocess running in
 // api-key mode: the resolved ANTHROPIC_API_KEY is present, ANTHROPIC_AUTH_TOKEN
-// is removed, and every other inherited variable is passed through unchanged.
-// Pass os.Environ() as ambient.
+// is removed, the remaining ANTHROPIC_ variables defined in .utopia/.env are
+// applied on top of the inherited ones, and every other inherited variable is
+// passed through unchanged. Pass os.Environ() as ambient.
 //
 // The key is looked for in .utopia/.env first and the ambient environment
 // second. Both locations failing is an error, not a silent unauthenticated run,
 // and it surfaces here - before any claude process is started.
+//
+// The file is applied before the credential so the mode has the last word on the
+// credential slot: everything else in the file overrides the environment utopia
+// inherited, but which credential authenticates the run is decided by the auth
+// mode, not by a stray variable in the file.
 func ResolveAPIKeyEnv(utopiaDir string, ambient []string) (env []string, source domain.CredentialSource, err error) {
 	envFile, err := LoadAnthropicEnvFile(utopiaDir)
 	if err != nil {
@@ -38,7 +44,7 @@ func ResolveAPIKeyEnv(utopiaDir string, ambient []string) (env []string, source 
 		return nil, "", err
 	}
 
-	return credential.Env(ambient), credential.Source, nil
+	return credential.Env(domain.ApplyEnvFile(ambient, envFile)), credential.Source, nil
 }
 
 // LoadAnthropicEnvFile reads the ANTHROPIC_-prefixed variables defined in

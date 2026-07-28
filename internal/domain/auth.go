@@ -2,6 +2,7 @@ package domain
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -136,6 +137,62 @@ func ResolveAPIKeyCredential(envFile map[string]string, ambient []string) (APIKe
 // occupies its slot in the credential precedence chain.
 func (c APIKeyCredential) Env(ambient []string) []string {
 	return append(withoutCredentialVars(ambient, 1), APIKeyEnvVar+"="+c.Key)
+}
+
+// ApplyEnvFile overlays the variables loaded from .utopia/.env onto an inherited
+// environment, so a project can pin Anthropic settings in a gitignored file
+// instead of relying on whatever the shell exports.
+//
+// The file wins over the ambient environment: a name defined in both places
+// takes the file's value, written into the position the ambient entry held rather
+// than appended as a second entry, so the ambient value is replaced outright.
+// Names only the file defines are appended in sorted order, which keeps the
+// result deterministic despite map iteration being randomised. When the file
+// contributes nothing, ambient is returned unchanged.
+//
+// The two credential variables are skipped here because the auth mode owns that
+// slot. api-key mode has already resolved APIKeyEnvVar with the file taking
+// precedence, and dropped AuthTokenEnvVar; reapplying the file's copy of either
+// would put both credentials in the environment at once, which the API answers
+// with a 401. Overlaying only the remaining names is also what keeps this from
+// widening into general-purpose env injection - the ANTHROPIC_ filter already
+// applied at the parse boundary bounds what can arrive here at all.
+func ApplyEnvFile(ambient []string, envFile map[string]string) []string {
+	overlay := make(map[string]string, len(envFile))
+	for name, value := range envFile {
+		switch name {
+		case APIKeyEnvVar, AuthTokenEnvVar:
+			continue
+		}
+		overlay[name] = value
+	}
+	if len(overlay) == 0 {
+		return ambient
+	}
+
+	// Overridden names are recorded rather than deleted from the overlay, so a
+	// name duplicated in ambient gets the file's value at every position it
+	// occupies - otherwise the later, un-overridden entry would win.
+	overridden := make(map[string]bool, len(overlay))
+	env := make([]string, 0, len(ambient)+len(overlay))
+	for _, entry := range ambient {
+		name := envName(entry)
+		if value, ok := overlay[name]; ok {
+			entry = name + "=" + value
+			overridden[name] = true
+		}
+		env = append(env, entry)
+	}
+
+	added := make([]string, 0, len(overlay))
+	for name, value := range overlay {
+		if !overridden[name] {
+			added = append(added, name+"="+value)
+		}
+	}
+	sort.Strings(added)
+
+	return append(env, added...)
 }
 
 // SubscriptionEnv returns the environment a claude subprocess should run with in
