@@ -1,0 +1,53 @@
+id: unified-change-request-system-commit-prefixed-cr-files-modify-cr-lifecycle
+spec_ref: unified-change-request-system-commit-prefixed-cr-files.modify-cr-lifecycle
+title: Modify the cr-lifecycle feature
+status: pending
+prompt: |-
+    ## TASK
+
+    Modify the cr-lifecycle feature
+
+    Acceptance criteria:
+    - The auto-commit after validation stages the CR's actual on-disk file, resolving a leading numeric filename prefix (a run of digits followed by an underscore) so a CR saved as 01_reusable-core.yaml with id reusable-core is committed instead of failing with a git pathspec ("did not match any files") error
+    - The auto-commit resolves at most one file per CR id; if a stripped-prefix id matches more than one file the commit reports an error listing the candidate files instead of silently choosing one
+    - The "cr: create {cr-id}" commit message uses the CR's internal id independent of any numeric filename prefix, so 01_reusable-core.yaml with id reusable-core commits as "cr: create reusable-core"
+    - Post-merge deletion removes the CR's actual on-disk file even when its filename carries a numeric prefix (deletes 01_reusable-core.yaml, not a path reconstructed as reusable-core.yaml)
+
+
+
+    ## STANDARDS
+
+    This project defines coding standards in .utopia/standards/. Before implementing, read the standards docs relevant to the files this task touches:
+
+    - id: cli-organization
+      description: How to structure cobra commands in internal/cli: thin handlers that own the CLI frame and delegate the algorithm to domain packages.
+      tags: go, cli, cobra, architecture
+      path: .utopia/standards/cli-organization.md
+    - id: error-handling
+      description: How errors are created, wrapped, matched, and surfaced: typed domain errors for branching, %w wrapping for infrastructure, one exit point in root.go.
+      tags: go, errors, cli
+      path: .utopia/standards/error-handling.md
+    - id: terminal-output
+      description: One shared output vocabulary (glyphs, banners, progress) routed through cobra's injectable writers so command output is consistent and testable.
+      tags: go, cli, ux, output
+      path: .utopia/standards/terminal-output.md
+
+
+    ## CONSTRAINTS
+
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+order: 0
+estimated_complexity: medium
