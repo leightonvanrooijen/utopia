@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -1459,5 +1460,136 @@ func TestLoadStandardsIndex_SkipsUnparseableDocs(t *testing.T) {
 	}
 	if docs[0].ID != "valid" {
 		t.Errorf("expected id 'valid', got %q", docs[0].ID)
+	}
+}
+
+// writeRawCR writes a CR file at an arbitrary filename whose internal id may
+// differ from the basename - which SaveChangeRequest cannot do, since it always
+// derives the filename from cr.ID. This lets the resolution tests exercise the
+// numeric-prefix decoupling (06_ai-chat.yaml with internal id ai-chat).
+func writeRawCR(t *testing.T, store *YAMLStore, filename, id string) {
+	t.Helper()
+	content := fmt.Sprintf("id: %s\ntype: refactor\ntitle: %s\nstatus: approved\n", id, id)
+	path := filepath.Join(store.baseDir, "change-requests", filename)
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write %s: %v", filename, err)
+	}
+}
+
+func TestStripNumericPrefix(t *testing.T) {
+	tests := []struct{ base, want string }{
+		{"01_reusable-core", "reusable-core"},
+		{"06_ai-chat", "ai-chat"},
+		{"2_second", "second"},
+		{"000_zero", "zero"},                 // an explicit zero prefix is still a prefix
+		{"reusable-core", "reusable-core"},   // no underscore, no prefix
+		{"2024-migration", "2024-migration"}, // digits not followed by "_"
+		{"2a_mixed", "2a_mixed"},             // non-digit inside the run
+		{"_leading", "_leading"},             // empty digit run
+	}
+	for _, tt := range tests {
+		if got := stripNumericPrefix(tt.base); got != tt.want {
+			t.Errorf("stripNumericPrefix(%q) = %q, want %q", tt.base, got, tt.want)
+		}
+	}
+}
+
+func TestResolveChangeRequest_ExactFilename(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+	writeRawCR(t, store, "plain.yaml", "plain")
+
+	cr, err := store.ResolveChangeRequest("plain")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cr.ID != "plain" {
+		t.Errorf("cr.ID = %q, want %q", cr.ID, "plain")
+	}
+}
+
+func TestResolveChangeRequest_PrefixStrippedName(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+	// The file carries a numeric prefix; its internal id does not.
+	writeRawCR(t, store, "01_reusable-core.yaml", "reusable-core")
+
+	cr, err := store.ResolveChangeRequest("reusable-core")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cr.ID != "reusable-core" {
+		t.Errorf("cr.ID = %q, want %q", cr.ID, "reusable-core")
+	}
+}
+
+func TestResolveChangeRequest_RunnableByBothNames(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+	writeRawCR(t, store, "06_ai-chat.yaml", "ai-chat")
+
+	// Both the full filename and the prefix-stripped name resolve the same CR.
+	for _, name := range []string{"06_ai-chat", "ai-chat"} {
+		cr, err := store.ResolveChangeRequest(name)
+		if err != nil {
+			t.Fatalf("ResolveChangeRequest(%q): unexpected error: %v", name, err)
+		}
+		if cr.ID != "ai-chat" {
+			t.Errorf("ResolveChangeRequest(%q).ID = %q, want %q", name, cr.ID, "ai-chat")
+		}
+	}
+}
+
+func TestResolveChangeRequest_ExactMatchWinsOverPrefix(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+	// A bare file and a prefixed file both strip to "ai-chat"; the exact
+	// filename match must win without reporting ambiguity.
+	writeRawCR(t, store, "ai-chat.yaml", "ai-chat-exact")
+	writeRawCR(t, store, "06_ai-chat.yaml", "ai-chat-prefixed")
+
+	cr, err := store.ResolveChangeRequest("ai-chat")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cr.ID != "ai-chat-exact" {
+		t.Errorf("cr.ID = %q, want the exact-match file's id %q", cr.ID, "ai-chat-exact")
+	}
+}
+
+func TestResolveChangeRequest_Ambiguous(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+	// Two prefixed files strip to the same name and no exact match exists.
+	writeRawCR(t, store, "06_ai-chat.yaml", "ai-chat")
+	writeRawCR(t, store, "07_ai-chat.yaml", "ai-chat")
+
+	_, err := store.ResolveChangeRequest("ai-chat")
+	if err == nil {
+		t.Fatal("expected ambiguity error, got nil")
+	}
+	var nfe *domain.NotFoundError
+	if errors.As(err, &nfe) {
+		t.Fatalf("ambiguous name should not surface as NotFoundError, got: %v", err)
+	}
+	for _, want := range []string{"06_ai-chat.yaml", "07_ai-chat.yaml"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("ambiguity error should list candidate %q, got: %v", want, err)
+		}
+	}
+}
+
+func TestResolveChangeRequest_NotFound(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+	writeRawCR(t, store, "01_reusable-core.yaml", "reusable-core")
+
+	_, err := store.ResolveChangeRequest("does-not-exist")
+	if err == nil {
+		t.Fatal("expected not-found error, got nil")
+	}
+	var nfe *domain.NotFoundError
+	if !errors.As(err, &nfe) {
+		t.Errorf("expected *domain.NotFoundError, got %T: %v", err, err)
 	}
 }

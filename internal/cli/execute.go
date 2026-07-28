@@ -103,10 +103,15 @@ func runExecute(cmd *cobra.Command, args []string) error {
 		crID = selectedID
 	}
 
-	cr, crErr := store.LoadChangeRequest(crID)
-	if crErr != nil {
-		return &domain.NotFoundError{Resource: "change request", ID: crID}
+	cr, err := store.ResolveChangeRequest(crID)
+	if err != nil {
+		return err
 	}
+	// Pivot from the requested name to the CR's internal id: work items,
+	// chunking, execution, and merge all key off the id, so a prefixed file
+	// (06_ai-chat.yaml, id ai-chat) always uses work-items/ai-chat/ - and is
+	// not re-chunked - whether it was run as "ai-chat" or "06_ai-chat".
+	crID = cr.ID
 
 	if cr.Type == domain.CRTypeInitiative {
 		return executeInitiative(out, cr, store, config, absPath, utopiaDir, modelID)

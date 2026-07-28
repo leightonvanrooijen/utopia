@@ -301,6 +301,77 @@ func (s *YAMLStore) LoadChangeRequest(id string) (*domain.ChangeRequest, error) 
 	return Load[domain.ChangeRequest](s, filepath.Join("change-requests", id+".yaml"))
 }
 
+// ResolveChangeRequest loads the change request addressed by name, tolerating
+// the numeric filename prefixes used to order CRs. It first tries an exact
+// filename match (change-requests/<name>.yaml); only when that file is absent
+// does it fall back to a file whose basename, with a leading numeric prefix
+// (a run of digits followed by "_") stripped, equals name - so "reusable-core"
+// resolves "01_reusable-core.yaml" and "06_ai-chat" still resolves its own file
+// directly. A name that strip-matches more than one file is reported as
+// ambiguous rather than silently resolved. The returned CR carries its own
+// internal id (independent of any filename prefix), which callers use to key
+// work items.
+func (s *YAMLStore) ResolveChangeRequest(name string) (*domain.ChangeRequest, error) {
+	// An exact filename match always wins, so a prefixed CR stays runnable by
+	// its full filename (e.g. "06_ai-chat") even if a bare "ai-chat.yaml" also
+	// exists.
+	if cr, err := s.LoadChangeRequest(name); err == nil {
+		return cr, nil
+	}
+
+	dir := filepath.Join(s.baseDir, "change-requests")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, &domain.NotFoundError{Resource: "change request", ID: name}
+		}
+		return nil, fmt.Errorf("failed to read change requests directory: %w", err)
+	}
+
+	// os.ReadDir returns entries sorted by filename, so candidates are already
+	// in a stable order for reporting.
+	var candidates []string // matching filenames
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
+			continue
+		}
+		if entry.Name() == "_template.yaml" {
+			continue
+		}
+		base := strings.TrimSuffix(entry.Name(), ".yaml")
+		if stripNumericPrefix(base) == name {
+			candidates = append(candidates, entry.Name())
+		}
+	}
+
+	switch len(candidates) {
+	case 0:
+		return nil, &domain.NotFoundError{Resource: "change request", ID: name}
+	case 1:
+		return s.LoadChangeRequest(strings.TrimSuffix(candidates[0], ".yaml"))
+	default:
+		return nil, fmt.Errorf("change request %q is ambiguous; candidate files: %s", name, strings.Join(candidates, ", "))
+	}
+}
+
+// stripNumericPrefix removes a leading numeric ordering prefix - a run of one
+// or more digits followed by "_" - from a CR filename basename, mirroring the
+// numeric-prefix convention that also orders batch execution. "01_reusable-core"
+// becomes "reusable-core"; a basename with no such prefix (no "_", an empty
+// digit run, or a non-digit before the "_") is returned unchanged.
+func stripNumericPrefix(base string) string {
+	i := strings.IndexByte(base, '_')
+	if i <= 0 {
+		return base
+	}
+	for j := 0; j < i; j++ {
+		if base[j] < '0' || base[j] > '9' {
+			return base
+		}
+	}
+	return base[i+1:]
+}
+
 // DeleteChangeRequest removes a change request file from .utopia/change-requests/{id}.yaml
 func (s *YAMLStore) DeleteChangeRequest(id string) error {
 	return Delete(s, filepath.Join("change-requests", id+".yaml"), "change request", id)
