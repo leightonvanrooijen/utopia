@@ -1,71 +1,58 @@
 id: harvest-execution-runs
 type: initiative
 title: Persist Ralph execution runs and harvest them for ADRs and domain terms
-status: draft
+status: in-progress
 phases:
-  # ---------------------------------------------------------------------------
-  # Phase 1: Make execution runs durable.
-  # Today Ralph's streamed output is captured only in-memory for <COMPLETE>
-  # detection and then discarded. Nothing can harvest runs until they persist.
-  # ---------------------------------------------------------------------------
-  - type: feature
-    changes:
-      - operation: add
-        spec: execution-ralph
-        feature:
-          id: run-transcript-persistence
-          description: >
-            Persist each WorkItem's Ralph execution run as a durable, harvestable
-            artifact so the implementation decisions made during execution are no
-            longer lost when the loop moves on. The run transcript reuses the
-            streamed Claude output already captured for completion-token detection.
-          acceptance_criteria:
-            - Each WorkItem execution writes a run transcript to .utopia/runs/<cr-id>/<workitem-id>.yaml
-            - The run transcript captures the streamed Claude output already collected for <COMPLETE> token detection
-            - The run record includes workitem_id, cr_id, spec_ref, iteration count, completed_at, and outcome (completed or failed)
-            - The run transcript is committed as part of the same commit as its WorkItem (workitem-commit)
-            - The project .gitignore does not exclude .utopia/runs/
-            - Failure to write a run transcript logs a warning but does not block the execution loop
-            - Each run record can be joined back to its originating CR and conversation via cr_id and workitem_id
-          hints:
-            - Reuse the in-memory output buffer already assembled by the streaming-output feature rather than re-capturing
-            - Mirror the non-blocking, warn-on-failure behavior of the existing workitem-commit feature
-            - Write and commit the run transcript at the same point in the loop where the workitem commit is created
-  # ---------------------------------------------------------------------------
-  # Phase 2: Teach the knowledge pipeline to mine persisted runs.
-  # Runs are maximally system-truth (they are what actually got built), so they
-  # are a high-priority ADR source and a source of new canonical terms.
-  # Concepts are intentionally out of scope for this initiative.
-  # ---------------------------------------------------------------------------
-  - type: enhancement
-    changes:
-      - operation: modify
-        spec: conversations
-        feature_id: exploratory-vs-system-truth
-        criteria:
-          add:
-            - Execution runs are recognized as a distinct source type (execution), representing what was actually built
-            - Execution runs are treated as system-truth and are prioritized at least as highly as executed conversations for ADR signals
-      - operation: modify
-        spec: knowledge-artifacts
-        feature_id: adr-discovery
-        criteria:
-          add:
-            - Scans .utopia/runs/ for unprocessed execution runs in addition to .utopia/conversations/
-            - Applies the existing ADR qualification test (AWS category and reversal cost) to implementation decisions found in runs
-            - Implementation decisions surfaced from a run are cross-referenced to their originating CR and conversation
-            - Marks execution runs as processed after review, consistent with conversation handling
-      - operation: modify
-        spec: knowledge-artifacts
-        feature_id: domain-discovery
-        criteria:
-          add:
-            - Scans .utopia/runs/ for canonical terms introduced while building, in addition to .utopia/conversations/
-            - Applies the existing domain qualification test (ambiguity-without-definition) to terms found in runs
-      - operation: modify
-        spec: harvest
-        feature_id: harvest-command
-        criteria:
-          add:
-            - /harvest scans .utopia/runs/ for unprocessed execution runs alongside .utopia/conversations/
-            - Execution runs are marked processed only after the user completes or exits harvest, consistent with conversations
+    - type: feature
+      status: in-progress
+      changes:
+        - operation: add
+          spec: execution-ralph
+          feature:
+            id: run-transcript-persistence
+            description: |
+                Persist each WorkItem's Ralph execution run as a durable, harvestable artifact so the implementation decisions made during execution are no longer lost when the loop moves on. The run transcript reuses the streamed Claude output already captured for completion-token detection.
+            acceptance_criteria:
+                - Each WorkItem execution writes a run transcript to .utopia/runs/<cr-id>/<workitem-id>.yaml
+                - The run transcript captures the streamed Claude output already collected for <COMPLETE> token detection
+                - The run record includes workitem_id, cr_id, spec_ref, iteration count, completed_at, and outcome (completed or failed)
+                - The run transcript is committed as part of the same commit as its WorkItem (workitem-commit)
+                - The project .gitignore does not exclude .utopia/runs/
+                - Failure to write a run transcript logs a warning but does not block the execution loop
+                - Each run record can be joined back to its originating CR and conversation via cr_id and workitem_id
+            hints:
+                - Reuse the in-memory output buffer already assembled by the streaming-output feature rather than re-capturing
+                - Mirror the non-blocking, warn-on-failure behavior of the existing workitem-commit feature
+                - Write and commit the run transcript at the same point in the loop where the workitem commit is created
+    - type: enhancement
+      changes:
+        - operation: modify
+          spec: conversations
+          feature_id: exploratory-vs-system-truth
+          criteria:
+            add:
+                - Execution runs are recognized as a distinct source type (execution), representing what was actually built
+                - Execution runs are treated as system-truth and are prioritized at least as highly as executed conversations for ADR signals
+        - operation: modify
+          spec: knowledge-artifacts
+          feature_id: adr-discovery
+          criteria:
+            add:
+                - Scans .utopia/runs/ for unprocessed execution runs in addition to .utopia/conversations/
+                - Applies the existing ADR qualification test (AWS category and reversal cost) to implementation decisions found in runs
+                - Implementation decisions surfaced from a run are cross-referenced to their originating CR and conversation
+                - Marks execution runs as processed after review, consistent with conversation handling
+        - operation: modify
+          spec: knowledge-artifacts
+          feature_id: domain-discovery
+          criteria:
+            add:
+                - Scans .utopia/runs/ for canonical terms introduced while building, in addition to .utopia/conversations/
+                - Applies the existing domain qualification test (ambiguity-without-definition) to terms found in runs
+        - operation: modify
+          spec: harvest
+          feature_id: harvest-command
+          criteria:
+            add:
+                - /harvest scans .utopia/runs/ for unprocessed execution runs alongside .utopia/conversations/
+                - Execution runs are marked processed only after the user completes or exits harvest, consistent with conversations
