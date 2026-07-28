@@ -1,0 +1,20 @@
+id: unified-change-request-system-commit-prefixed-cr-files
+type: enhancement
+title: Commit and clean up CRs by their real on-disk filename so numeric-prefixed CRs are not skipped
+status: draft
+changes:
+  - operation: modify
+    spec: unified-change-request-system
+    feature_id: cr-lifecycle
+    criteria:
+      add:
+        - The auto-commit after validation stages the CR's actual on-disk file, resolving a leading numeric filename prefix (a run of digits followed by an underscore) so a CR saved as 01_reusable-core.yaml with id reusable-core is committed instead of failing with a git pathspec ("did not match any files") error
+        - The auto-commit resolves at most one file per CR id; if a stripped-prefix id matches more than one file the commit reports an error listing the candidate files instead of silently choosing one
+        - 'The "cr: create {cr-id}" commit message uses the CR''s internal id independent of any numeric filename prefix, so 01_reusable-core.yaml with id reusable-core commits as "cr: create reusable-core"'
+        - Post-merge deletion removes the CR's actual on-disk file even when its filename carries a numeric prefix (deletes 01_reusable-core.yaml, not a path reconstructed as reusable-core.yaml)
+  - operation: modify
+    spec: execution-ralph
+    feature_id: execute-command
+    criteria:
+      add:
+        - The cleanup commit resolves the CR's actual on-disk filename, staging removal of a numeric-prefixed CR file (e.g. .utopia/change-requests/01_reusable-core.yaml) rather than a path reconstructed from the CR id
