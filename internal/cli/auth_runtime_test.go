@@ -261,41 +261,32 @@ func TestConfigWithoutAuthSectionLoadsSilently(t *testing.T) {
 // it is written.
 func TestEveryAuthHandlerConsumesResolvedMode(t *testing.T) {
 	fset := token.NewFileSet()
-	pkgs, err := parser.ParseDir(fset, ".", func(fi os.FileInfo) bool {
-		return !strings.HasSuffix(fi.Name(), "_test.go")
-	}, 0)
-	if err != nil {
-		t.Fatalf("failed to parse the cli package: %v", err)
-	}
 
 	callsFound := 0
-	for _, pkg := range pkgs {
-		for path, file := range pkg.Files {
-			ast.Inspect(file, func(n ast.Node) bool {
-				switch stmt := n.(type) {
-				case *ast.AssignStmt:
-					for _, rhs := range stmt.Rhs {
-						if !isResolveAuthCall(rhs) {
-							continue
-						}
-						callsFound++
-						// The mode is the first result; _ means it was dropped.
-						if ident, ok := stmt.Lhs[0].(*ast.Ident); ok && ident.Name == "_" {
-							t.Errorf("%s: the auth mode from ResolveAuth is discarded into _ - pass it to the claude spawn site instead",
-								fset.Position(stmt.Pos()))
-						}
+	for _, file := range parsePackageSource(t, fset, ".") {
+		ast.Inspect(file, func(n ast.Node) bool {
+			switch stmt := n.(type) {
+			case *ast.AssignStmt:
+				for _, rhs := range stmt.Rhs {
+					if !isResolveAuthCall(rhs) {
+						continue
 					}
-				case *ast.ExprStmt:
-					if isResolveAuthCall(stmt.X) {
-						callsFound++
-						t.Errorf("%s: ResolveAuth is called for its report only - pass the mode it returns to the claude spawn site",
+					callsFound++
+					// The mode is the first result; _ means it was dropped.
+					if ident, ok := stmt.Lhs[0].(*ast.Ident); ok && ident.Name == "_" {
+						t.Errorf("%s: the auth mode from ResolveAuth is discarded into _ - pass it to the claude spawn site instead",
 							fset.Position(stmt.Pos()))
 					}
 				}
-				return true
-			})
-			_ = path
-		}
+			case *ast.ExprStmt:
+				if isResolveAuthCall(stmt.X) {
+					callsFound++
+					t.Errorf("%s: ResolveAuth is called for its report only - pass the mode it returns to the claude spawn site",
+						fset.Position(stmt.Pos()))
+				}
+			}
+			return true
+		})
 	}
 
 	// Without this the test would pass vacuously if ResolveAuth were renamed.
@@ -303,6 +294,35 @@ func TestEveryAuthHandlerConsumesResolvedMode(t *testing.T) {
 		t.Errorf("found %d ResolveAuth call sites, want at least %d (one per command that accepts --auth)",
 			callsFound, len(claudeCommandPaths))
 	}
+}
+
+// parsePackageSource parses every non-test Go file directly inside dir.
+//
+// It reads the directory itself rather than calling parser.ParseDir, which is
+// deprecated for assigning files to packages without honouring build tags. The
+// module-wide walk below already parses file by file, so both structural tests
+// now see source the same way.
+func parsePackageSource(t *testing.T, fset *token.FileSet, dir string) []*ast.File {
+	t.Helper()
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("failed to read %s: %v", dir, err)
+	}
+
+	var files []*ast.File
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(fset, filepath.Join(dir, name), nil, 0)
+		if err != nil {
+			t.Fatalf("failed to parse %s: %v", name, err)
+		}
+		files = append(files, file)
+	}
+	return files
 }
 
 // isResolveAuthCall reports whether an expression calls the package-level
