@@ -1,0 +1,47 @@
+id: cli-extract-services-layer-extract-discover-service
+spec_ref: cli-extract-services-layer.extract-discover-service
+title: |
+    Extract discovery logic from cli/discover.go and cli/discover_domain.go
+    into application/discover_service.go. Move prompt engineering, candidate
+    finding, and qualification logic while leaving CLI flag parsing in place.
+status: completed
+prompt: |-
+    ## TASK
+
+    Extract discovery logic from cli/discover.go and cli/discover_domain.go
+    into application/discover_service.go. Move prompt engineering, candidate
+    finding, and qualification logic while leaving CLI flag parsing in place.
+
+
+    Acceptance criteria:
+    - cli/discover.go reduced to ~50-100 LOC (flag parsing + service call)
+    - application/discover_service.go contains discovery business logic
+    - All existing discover command behavior preserved
+    - discover command tests pass
+
+
+    ## CONSTRAINTS
+
+    - This is a refactor. Existing behavior MUST be preserved.
+    - All existing tests must pass without modification
+    - Do not introduce new abstractions, interfaces, or packages
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - This is a refactor. Existing behavior MUST be preserved.
+    - All existing tests must pass without modification
+    - Do not introduce new abstractions, interfaces, or packages
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+order: 1
+estimated_complexity: medium
+iteration_count: 2

@@ -193,6 +193,24 @@ Captures terminology and entity definitions specific to your project — the ubi
 └── domain/               # Domain terminology
 ```
 
+### Relocating artifact folders
+
+By default the knowledge artifacts live under `.utopia/`, but `specs/`, `adrs/`,
+`concepts/`, and `domain/` can be moved anywhere via an optional `paths:` block
+in `.utopia/config.yaml`:
+
+```yaml
+paths:
+  specs: docs/specs        # relative paths resolve from the project root
+  adrs: docs/adrs
+  concepts: docs/concepts
+  domain: /abs/path/domain # absolute paths are used as-is
+```
+
+Each key is optional and falls back to its standard location under `.utopia/`
+when omitted. Note that `config.yaml` itself, along with `change-requests/`,
+`work-items/`, and `conversations/`, always remain under `.utopia/`.
+
 ## Status
 
 **Alpha** — Works, but expect rough edges. The core loop is functional. APIs may change.

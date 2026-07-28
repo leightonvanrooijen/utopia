@@ -1,0 +1,35 @@
+id: unified-change-request-system-existing-spec-exploration
+spec_ref: unified-change-request-system.existing-spec-exploration
+title: |
+    Claude receives summaries of existing specs to inform classification decisions.
+status: completed
+prompt: |-
+    ## TASK
+
+    Claude receives summaries of existing specs to inform classification decisions.
+
+
+    Acceptance criteria:
+    - All specs from .utopia/specs/ are loaded at session start
+    - Spec summaries include id, title, description, and feature IDs
+    - Summaries are injected into the system prompt
+    - Claude references existing specs when classifying user intent
+    - Claude can identify which spec(s) a change should target
+
+    ## CONSTRAINTS
+
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+order: 7
+estimated_complexity: medium
+iteration_count: 1

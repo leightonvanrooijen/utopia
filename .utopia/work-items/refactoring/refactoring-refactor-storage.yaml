@@ -1,0 +1,34 @@
+id: refactoring-refactor-storage
+spec_ref: refactoring.refactor-storage
+title: |
+    Define where refactor documents are stored.
+status: completed
+prompt: |-
+    ## TASK
+
+    Define where refactor documents are stored.
+
+
+    Acceptance criteria:
+    - Refactors are stored in .utopia/refactors/ directory
+    - File naming is <refactor-id>.yaml
+    - Draft refactors go directly to .utopia/refactors/ (no _drafts subdirectory)
+    - Directory is created if it does not exist
+
+    ## CONSTRAINTS
+
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+order: 1
+estimated_complexity: medium
+iteration_count: 1

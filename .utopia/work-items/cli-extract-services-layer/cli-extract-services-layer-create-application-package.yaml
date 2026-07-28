@@ -1,0 +1,44 @@
+id: cli-extract-services-layer-create-application-package
+spec_ref: cli-extract-services-layer.create-application-package
+title: |
+    Create the internal/application/ package structure with service interfaces
+    that define the contracts for each use case.
+status: completed
+prompt: |-
+    ## TASK
+
+    Create the internal/application/ package structure with service interfaces
+    that define the contracts for each use case.
+
+
+    Acceptance criteria:
+    - internal/application/ package exists
+    - Service interfaces are defined for each major use case (Discover, Harvest, Merge, Execute, Shape, Promote, Init, CR)
+    - Interfaces follow Go conventions (small, focused, named by behavior)
+
+
+    ## CONSTRAINTS
+
+    - This is a refactor. Existing behavior MUST be preserved.
+    - All existing tests must pass without modification
+    - Do not introduce new abstractions, interfaces, or packages
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - This is a refactor. Existing behavior MUST be preserved.
+    - All existing tests must pass without modification
+    - Do not introduce new abstractions, interfaces, or packages
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+order: 0
+estimated_complexity: medium
+iteration_count: 1

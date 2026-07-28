@@ -16,8 +16,8 @@ func TestCRNumericPrefix(t *testing.T) {
 		{"1_first", 1, true},
 		{"2_second", 2, true},
 		{"10_tenth", 10, true},
-		{"02_padded", 2, true},   // zero-padding collapses to the same value
-		{"000_zero", 0, true},    // an explicit zero prefix is still a prefix
+		{"02_padded", 2, true}, // zero-padding collapses to the same value
+		{"000_zero", 0, true},  // an explicit zero prefix is still a prefix
 		{"cleanup-legacy", 0, false},
 		{"2024-migration", 0, false}, // digits not followed by "_" is not a prefix
 		{"2a_mixed", 0, false},       // non-digit inside the run

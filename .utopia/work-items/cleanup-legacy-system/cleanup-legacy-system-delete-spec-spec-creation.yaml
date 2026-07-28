@@ -1,0 +1,32 @@
+id: cleanup-legacy-system-delete-spec-spec-creation
+spec_ref: cleanup-legacy-system.delete-spec-spec-creation
+title: Delete the entire spec-creation spec file
+status: completed
+prompt: |-
+    ## TASK
+
+    Delete the entire spec-creation spec file
+
+    Acceptance criteria:
+    - All code implementing features from spec "spec-creation" is removed
+    - All tests for features from spec "spec-creation" are removed
+    - The spec file .utopia/specs/spec-creation.yaml is deleted
+    - Deletion reason: Replaced by unified-change-request-system
+
+    ## CONSTRAINTS
+
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+order: 4
+estimated_complexity: medium
+iteration_count: 1

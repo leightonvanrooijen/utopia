@@ -1,0 +1,35 @@
+id: unified-change-request-system-classification-guidance
+spec_ref: unified-change-request-system.classification-guidance
+title: |
+    System helps classify user intent into correct CR type.
+status: completed
+prompt: |-
+    ## TASK
+
+    System helps classify user intent into correct CR type.
+
+
+    Acceptance criteria:
+    - Claude asks clarifying questions when intent is ambiguous
+    - Key question is "does this change observable behavior?"
+    - If behavior unchanged, type is refactor
+    - If new capability, type is feature
+    - If modifying existing capability, type is enhancement
+
+    ## CONSTRAINTS
+
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+order: 6
+estimated_complexity: medium
+iteration_count: 1

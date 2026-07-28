@@ -1,0 +1,35 @@
+id: unified-change-request-system-per-change-spec-targeting
+spec_ref: unified-change-request-system.per-change-spec-targeting
+title: |
+    Each change within a CR specifies which spec it affects.
+status: completed
+prompt: |-
+    ## TASK
+
+    Each change within a CR specifies which spec it affects.
+
+
+    Acceptance criteria:
+    - Changes have a spec field identifying the target spec
+    - spec field is required for feature/enhancement/removal types
+    - spec field is omitted for refactor tasks (no spec impact)
+    - Multiple changes can target different specs in one CR
+    - Changes can target specs that don't exist yet (will be created)
+
+    ## CONSTRAINTS
+
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+order: 1
+estimated_complexity: medium
+iteration_count: 1

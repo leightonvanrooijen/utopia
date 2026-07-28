@@ -1,0 +1,44 @@
+id: cli-extract-services-layer-extract-shape-service
+spec_ref: cli-extract-services-layer.extract-shape-service
+title: |
+    Extract shape logic from cli/shape.go and cli/shape_domain.go into
+    application/shape_service.go. Move spec shaping and domain shaping logic.
+status: pending
+prompt: |-
+    ## TASK
+
+    Extract shape logic from cli/shape.go and cli/shape_domain.go into
+    application/shape_service.go. Move spec shaping and domain shaping logic.
+
+
+    Acceptance criteria:
+    - cli/shape.go reduced to ~50-100 LOC (flag parsing + service call)
+    - application/shape_service.go contains shape business logic
+    - All existing shape command behavior preserved
+    - shape command tests pass
+
+
+    ## CONSTRAINTS
+
+    - This is a refactor. Existing behavior MUST be preserved.
+    - All existing tests must pass without modification
+    - Do not introduce new abstractions, interfaces, or packages
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - This is a refactor. Existing behavior MUST be preserved.
+    - All existing tests must pass without modification
+    - Do not introduce new abstractions, interfaces, or packages
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+order: 4
+estimated_complexity: medium

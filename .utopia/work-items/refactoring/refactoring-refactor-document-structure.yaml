@@ -1,0 +1,40 @@
+id: refactoring-refactor-document-structure
+spec_ref: refactoring.refactor-document-structure
+title: |
+    Define the structure of a refactor document.
+    Minimal structure focused on tasks with acceptance criteria.
+status: completed
+prompt: |-
+    ## TASK
+
+    Define the structure of a refactor document.
+    Minimal structure focused on tasks with acceptance criteria.
+
+
+    Acceptance criteria:
+    - Refactor has id field (kebab-case identifier)
+    - Refactor has title field (human readable description)
+    - Refactor has status field (draft, ready, in-progress, complete)
+    - Refactor has tasks array
+    - Each task has id, description, and acceptance_criteria fields
+    - Refactor does NOT have scope field (discovered during implementation)
+    - Refactor does NOT have constraints field (system-level enforcement)
+    - Refactor does NOT have triggered_by or parent_spec field (standalone)
+
+    ## CONSTRAINTS
+
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+order: 0
+estimated_complexity: medium
+iteration_count: 1

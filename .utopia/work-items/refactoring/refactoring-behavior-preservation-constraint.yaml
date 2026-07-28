@@ -1,0 +1,37 @@
+id: refactoring-behavior-preservation-constraint
+spec_ref: refactoring.behavior-preservation-constraint
+title: |
+    System-level constraint injected into Ralph prompts for refactors.
+    Ensures all refactors preserve existing behavior.
+status: completed
+prompt: |-
+    ## TASK
+
+    System-level constraint injected into Ralph prompts for refactors.
+    Ensures all refactors preserve existing behavior.
+
+
+    Acceptance criteria:
+    - Constraint text includes "This is a refactor. Existing behavior MUST be preserved."
+    - Constraint text includes "All existing tests must pass without modification"
+    - Constraint is automatically injected for all refactor WorkItems
+    - Constraint appears in CONSTRAINTS section of the prompt template
+    - Constraint is not stored in the refactor document itself
+
+    ## CONSTRAINTS
+
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+order: 5
+estimated_complexity: medium
+iteration_count: 1

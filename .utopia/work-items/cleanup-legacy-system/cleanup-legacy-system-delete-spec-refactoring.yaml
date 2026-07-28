@@ -1,0 +1,32 @@
+id: cleanup-legacy-system-delete-spec-refactoring
+spec_ref: cleanup-legacy-system.delete-spec-refactoring
+title: Delete the entire refactoring spec file
+status: completed
+prompt: |-
+    ## TASK
+
+    Delete the entire refactoring spec file
+
+    Acceptance criteria:
+    - All code implementing features from spec "refactoring" is removed
+    - All tests for features from spec "refactoring" are removed
+    - The spec file .utopia/specs/refactoring.yaml is deleted
+    - Deletion reason: Replaced by unified-change-request-system
+
+    ## CONSTRAINTS
+
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+order: 6
+estimated_complexity: medium
+iteration_count: 1

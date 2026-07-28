@@ -1,0 +1,35 @@
+id: unified-change-request-system-initiative-phases
+spec_ref: unified-change-request-system.initiative-phases
+title: |
+    Initiative CRs contain ordered phases, each with its own type.
+status: completed
+prompt: |-
+    ## TASK
+
+    Initiative CRs contain ordered phases, each with its own type.
+
+
+    Acceptance criteria:
+    - Initiative CRs have phases array
+    - Each phase has type (feature, refactor, etc.) and corresponding content
+    - Phases execute in order (phase 2 waits for phase 1 to complete)
+    - Each phase is chunked and executed independently
+    - Initiative tracks overall progress across phases
+
+    ## CONSTRAINTS
+
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+order: 4
+estimated_complexity: medium
+iteration_count: 1

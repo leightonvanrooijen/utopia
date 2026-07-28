@@ -1,0 +1,32 @@
+id: cleanup-legacy-system-simplify-storage
+spec_ref: cleanup-legacy-system.simplify-storage
+title: Remove polymorphic loading, use only CRs
+status: completed
+prompt: |-
+    ## TASK
+
+    Remove polymorphic loading, use only CRs
+
+    Acceptance criteria:
+    - LoadSpecOrChangeRequestOrRefactor function is removed
+    - LoadChangeRequest is the only entry point for loading CRs
+    - ToSpec() conversion methods are removed
+    - All tests pass
+
+    ## CONSTRAINTS
+
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+order: 1
+estimated_complexity: medium
+iteration_count: 1

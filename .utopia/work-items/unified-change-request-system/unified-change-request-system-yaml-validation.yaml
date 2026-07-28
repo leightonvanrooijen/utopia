@@ -1,0 +1,38 @@
+id: unified-change-request-system-yaml-validation
+spec_ref: unified-change-request-system.yaml-validation
+title: |
+    Validate generated CR YAML after session ends with automatic fix sessions.
+status: completed
+prompt: |-
+    ## TASK
+
+    Validate generated CR YAML after session ends with automatic fix sessions.
+
+
+    Acceptance criteria:
+    - CR files are validated after AI session ends
+    - Validation checks YAML syntax and required fields
+    - Required fields depend on type (changes for feature, tasks for refactor, phases for initiative)
+    - If validation fails, error message is displayed
+    - A fix session is started automatically on validation failure
+    - Fix session receives validation error details
+    - Claude reads the problematic file and fixes issues
+    - Fixed files are saved automatically
+
+    ## CONSTRAINTS
+
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+order: 8
+estimated_complexity: medium
+iteration_count: 1

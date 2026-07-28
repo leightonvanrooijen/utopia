@@ -1,0 +1,34 @@
+id: refactoring-refactor-lifecycle
+spec_ref: refactoring.refactor-lifecycle
+title: |
+    Define the lifecycle of a refactor document.
+status: completed
+prompt: |-
+    ## TASK
+
+    Define the lifecycle of a refactor document.
+
+
+    Acceptance criteria:
+    - Refactors are created in draft status
+    - Refactors can transition to ready, in-progress, complete
+    - Completed refactors are deleted (not archived)
+    - Deletion happens after successful execution and verification
+
+    ## CONSTRAINTS
+
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+order: 3
+estimated_complexity: medium
+iteration_count: 1

@@ -1,0 +1,38 @@
+id: unified-change-request-system-cr-command
+spec_ref: unified-change-request-system.cr-command
+title: |
+    CLI command to create change requests via AI-guided conversation.
+status: completed
+prompt: |-
+    ## TASK
+
+    CLI command to create change requests via AI-guided conversation.
+
+
+    Acceptance criteria:
+    - Command is "utopia cr" with no required arguments
+    - Command loads existing specs and provides summaries to Claude
+    - Command sets up output path to .utopia/change-requests/
+    - Claude guides user through defining the CR
+    - Claude determines type based on conversation
+    - Claude asks one question at a time
+    - Output is written to .utopia/change-requests/<cr-id>.yaml
+    - Command prints helpful tips (e.g., watch command for live updates)
+
+    ## CONSTRAINTS
+
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+order: 11
+estimated_complexity: medium
+iteration_count: 1

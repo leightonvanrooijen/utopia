@@ -1,0 +1,32 @@
+id: cleanup-legacy-system-remove-legacy-commands
+spec_ref: cleanup-legacy-system.remove-legacy-commands
+title: Remove separate spec and refactor CLI commands
+status: completed
+prompt: |-
+    ## TASK
+
+    Remove separate spec and refactor CLI commands
+
+    Acceptance criteria:
+    - internal/cli/refactor.go is deleted
+    - internal/cli/spec.go is deleted
+    - utopia cr is the unified entry point
+    - All tests pass
+
+    ## CONSTRAINTS
+
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+order: 2
+estimated_complexity: medium
+iteration_count: 1

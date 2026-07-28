@@ -1,0 +1,39 @@
+id: unified-change-request-system-operation-structure
+spec_ref: unified-change-request-system.operation-structure
+title: |
+    Define the detailed structure of add/modify/remove operations within changes.
+status: completed
+prompt: |-
+    ## TASK
+
+    Define the detailed structure of add/modify/remove operations within changes.
+
+
+    Acceptance criteria:
+    - Add operation can add a feature with full definition (id, description, acceptance_criteria)
+    - Add operation can add domain_knowledge as a list of strings
+    - Modify operation targets by feature_id which must exist in target spec
+    - Modify operation can update feature description
+    - Modify operation supports criteria.add, criteria.remove, criteria.edit
+    - criteria.edit uses old/new pairs for replacement
+    - Remove operation specifies feature_id to remove
+    - Remove operation can include optional reason field
+    - All remove/modify text matching is exact (no fuzzy matching)
+
+    ## CONSTRAINTS
+
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+order: 9
+estimated_complexity: medium
+iteration_count: 1

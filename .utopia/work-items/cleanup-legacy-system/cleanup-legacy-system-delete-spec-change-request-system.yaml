@@ -1,0 +1,32 @@
+id: cleanup-legacy-system-delete-spec-change-request-system
+spec_ref: cleanup-legacy-system.delete-spec-change-request-system
+title: Delete the entire change-request-system spec file
+status: completed
+prompt: |-
+    ## TASK
+
+    Delete the entire change-request-system spec file
+
+    Acceptance criteria:
+    - All code implementing features from spec "change-request-system" is removed
+    - All tests for features from spec "change-request-system" are removed
+    - The spec file .utopia/specs/change-request-system.yaml is deleted
+    - Deletion reason: Replaced by unified-change-request-system
+
+    ## CONSTRAINTS
+
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+order: 5
+estimated_complexity: medium
+iteration_count: 1

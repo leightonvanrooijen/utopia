@@ -1,0 +1,35 @@
+id: unified-change-request-system-behavior-preservation-constraints
+spec_ref: unified-change-request-system.behavior-preservation-constraints
+title: |
+    Specific constraint text injected for refactor CRs during chunking.
+status: completed
+prompt: |-
+    ## TASK
+
+    Specific constraint text injected for refactor CRs during chunking.
+
+
+    Acceptance criteria:
+    - Constraint text includes "This is a refactor. Existing behavior MUST be preserved."
+    - Constraint text includes "All existing tests must pass without modification"
+    - Constraints are prepended to the CONSTRAINTS section of WorkItem prompts
+    - Only type refactor CRs receive these constraints
+    - Constraints are not stored in the CR document itself (injected at chunk time)
+
+    ## CONSTRAINTS
+
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+order: 12
+estimated_complexity: medium
+iteration_count: 1

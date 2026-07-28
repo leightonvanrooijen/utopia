@@ -1,0 +1,52 @@
+id: cli-extract-services-layer-verify-no-cli-business-logic
+spec_ref: cli-extract-services-layer.verify-no-cli-business-logic
+title: |
+    Final verification that cli/ package only contains:
+    - Command definitions (cobra setup)
+    - Flag parsing
+    - Service instantiation and calls
+    - Output formatting
+status: pending
+prompt: |-
+    ## TASK
+
+    Final verification that cli/ package only contains:
+    - Command definitions (cobra setup)
+    - Flag parsing
+    - Service instantiation and calls
+    - Output formatting
+
+
+    Acceptance criteria:
+    - cli/ package LOC reduced from ~14.4K to ~3K or less
+    - No domain logic remains in cli/
+    - No Claude prompt engineering in cli/
+    - All integration tests pass
+    - go build succeeds
+    - go test ./... passes
+
+
+    ## CONSTRAINTS
+
+    - This is a refactor. Existing behavior MUST be preserved.
+    - All existing tests must pass without modification
+    - Do not introduce new abstractions, interfaces, or packages
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - This is a refactor. Existing behavior MUST be preserved.
+    - All existing tests must pass without modification
+    - Do not introduce new abstractions, interfaces, or packages
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+order: 8
+estimated_complexity: medium

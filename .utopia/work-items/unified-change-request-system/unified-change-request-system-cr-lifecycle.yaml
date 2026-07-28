@@ -1,0 +1,37 @@
+id: unified-change-request-system-cr-lifecycle
+spec_ref: unified-change-request-system.cr-lifecycle
+title: |
+    Define the status lifecycle for change requests.
+status: completed
+prompt: |-
+    ## TASK
+
+    Define the status lifecycle for change requests.
+
+
+    Acceptance criteria:
+    - CRs are created in draft status
+    - Status transitions are draft → in-progress → complete
+    - Status is updated when chunking begins (in-progress)
+    - Status is updated when merge completes (complete)
+    - Completed CRs are deleted after successful merge
+    - Deletion includes the CR file and its work-items directory
+    - Refactor CRs follow same lifecycle (deleted after merge, no spec changes)
+
+    ## CONSTRAINTS
+
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+order: 10
+estimated_complexity: medium
+iteration_count: 1

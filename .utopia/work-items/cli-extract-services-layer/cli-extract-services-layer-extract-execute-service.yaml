@@ -1,0 +1,46 @@
+id: cli-extract-services-layer-extract-execute-service
+spec_ref: cli-extract-services-layer.extract-execute-service
+title: |
+    Extract execute orchestration from cli/execute.go into
+    application/execute_service.go. The strategy execution itself stays
+    in strategies/, but the orchestration logic moves to services.
+status: pending
+prompt: |-
+    ## TASK
+
+    Extract execute orchestration from cli/execute.go into
+    application/execute_service.go. The strategy execution itself stays
+    in strategies/, but the orchestration logic moves to services.
+
+
+    Acceptance criteria:
+    - cli/execute.go reduced to ~50-100 LOC (flag parsing + service call)
+    - application/execute_service.go contains execution orchestration
+    - All existing execute command behavior preserved
+    - execute command tests pass
+
+
+    ## CONSTRAINTS
+
+    - This is a refactor. Existing behavior MUST be preserved.
+    - All existing tests must pass without modification
+    - Do not introduce new abstractions, interfaces, or packages
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - This is a refactor. Existing behavior MUST be preserved.
+    - All existing tests must pass without modification
+    - Do not introduce new abstractions, interfaces, or packages
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+order: 5
+estimated_complexity: medium

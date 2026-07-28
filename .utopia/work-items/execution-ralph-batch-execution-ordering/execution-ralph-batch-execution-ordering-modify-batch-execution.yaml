@@ -1,7 +1,7 @@
 id: execution-ralph-batch-execution-ordering-modify-batch-execution
 spec_ref: execution-ralph-batch-execution-ordering.modify-batch-execution
 title: Modify the batch-execution feature
-status: pending
+status: completed
 prompt: |-
     ## TASK
 
@@ -50,3 +50,4 @@ constraints:
     - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
 order: 0
 estimated_complexity: medium
+iteration_count: 1

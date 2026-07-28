@@ -1,0 +1,35 @@
+id: unified-change-request-system-multi-spec-merge
+spec_ref: unified-change-request-system.multi-spec-merge
+title: |
+    Merge command handles CRs that affect multiple specs.
+status: completed
+prompt: |-
+    ## TASK
+
+    Merge command handles CRs that affect multiple specs.
+
+
+    Acceptance criteria:
+    - Merge groups changes by target spec
+    - Each spec is loaded, modified, and saved independently
+    - If target spec doesn't exist, it is created (for add operations)
+    - All changes applied atomically (rollback on failure)
+    - Merge prints summary showing which specs were affected
+
+    ## CONSTRAINTS
+
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+order: 3
+estimated_complexity: medium
+iteration_count: 1

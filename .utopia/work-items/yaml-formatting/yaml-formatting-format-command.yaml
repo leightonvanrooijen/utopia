@@ -1,0 +1,35 @@
+id: yaml-formatting-format-command
+spec_ref: yaml-formatting.format-command
+title: |
+  CLI command to format YAML files in the .utopia directory.
+status: completed
+prompt: |-
+  ## TASK
+
+  CLI command to format YAML files in the .utopia directory.
+
+
+  Acceptance criteria:
+  - Command is "utopia format" with no required arguments
+  - Formats all files matching .utopia/**/*.yaml
+  - Excludes .utopia/config.yaml
+  - Prints count of files formatted
+  - Supports --check flag that exits non-zero if files would be changed (for CI)
+
+  ## CONSTRAINTS
+
+  - Do not introduce new abstractions, interfaces, or packages
+  - Do not refactor unrelated code
+  - Architecture is already correct
+
+
+  ---
+
+  When complete, commit your changes and output: <COMPLETE>
+constraints:
+  - Do not introduce new abstractions, interfaces, or packages
+  - Do not refactor unrelated code
+  - Architecture is already correct
+order: 1
+estimated_complexity: medium
+iteration_count: 1

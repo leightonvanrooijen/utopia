@@ -1,0 +1,35 @@
+id: refactoring-refactor-yaml-validation
+spec_ref: refactoring.refactor-yaml-validation
+title: |
+    Validate generated refactor YAML after session ends.
+status: completed
+prompt: |-
+    ## TASK
+
+    Validate generated refactor YAML after session ends.
+
+
+    Acceptance criteria:
+    - Refactor files are validated after session
+    - Validation checks YAML syntax and required fields (id, title, status, tasks)
+    - Each task must have id, description, and at least one acceptance criterion
+    - If validation fails, error message is displayed
+    - A fix session is started automatically on validation failure
+
+    ## CONSTRAINTS
+
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+order: 4
+estimated_complexity: medium
+iteration_count: 1

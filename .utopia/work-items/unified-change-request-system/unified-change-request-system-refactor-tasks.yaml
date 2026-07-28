@@ -1,0 +1,35 @@
+id: unified-change-request-system-refactor-tasks
+spec_ref: unified-change-request-system.refactor-tasks
+title: |
+    Refactor CRs use tasks instead of changes since they don't affect specs.
+status: completed
+prompt: |-
+    ## TASK
+
+    Refactor CRs use tasks instead of changes since they don't affect specs.
+
+
+    Acceptance criteria:
+    - Refactor CRs have tasks array (not changes)
+    - Each task has id, description, acceptance_criteria
+    - Tasks do not have a spec field
+    - Behavior-preservation constraint is auto-injected during chunking
+    - Merge for refactors deletes the CR without modifying any specs
+
+    ## CONSTRAINTS
+
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+order: 2
+estimated_complexity: medium
+iteration_count: 1

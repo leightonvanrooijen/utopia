@@ -1,0 +1,32 @@
+id: cleanup-legacy-system-remove-refactor-domain
+spec_ref: cleanup-legacy-system.remove-refactor-domain
+title: Remove the separate Refactor domain type
+status: completed
+prompt: |-
+    ## TASK
+
+    Remove the separate Refactor domain type
+
+    Acceptance criteria:
+    - internal/domain/refactor.go is deleted
+    - internal/domain/refactor_test.go is deleted (if exists)
+    - All references to domain.Refactor are removed
+    - All tests pass
+
+    ## CONSTRAINTS
+
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+order: 0
+estimated_complexity: medium
+iteration_count: 1

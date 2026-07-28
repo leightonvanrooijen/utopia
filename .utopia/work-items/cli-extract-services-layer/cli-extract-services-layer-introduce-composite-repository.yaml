@@ -1,0 +1,46 @@
+id: cli-extract-services-layer-introduce-composite-repository
+spec_ref: cli-extract-services-layer.introduce-composite-repository
+title: |
+    Create a composite Repository interface in domain/ that groups all
+    repository interfaces. Update services to accept the composite
+    interface instead of individual repositories.
+status: pending
+prompt: |-
+    ## TASK
+
+    Create a composite Repository interface in domain/ that groups all
+    repository interfaces. Update services to accept the composite
+    interface instead of individual repositories.
+
+
+    Acceptance criteria:
+    - domain/repository.go contains composite Repository interface
+    - Services accept Repository instead of individual repos
+    - Reduces parameter count in service constructors
+    - All tests pass
+
+
+    ## CONSTRAINTS
+
+    - This is a refactor. Existing behavior MUST be preserved.
+    - All existing tests must pass without modification
+    - Do not introduce new abstractions, interfaces, or packages
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - This is a refactor. Existing behavior MUST be preserved.
+    - All existing tests must pass without modification
+    - Do not introduce new abstractions, interfaces, or packages
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+order: 7
+estimated_complexity: medium

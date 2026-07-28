@@ -1,0 +1,48 @@
+id: cli-extract-services-layer-extract-remaining-services
+spec_ref: cli-extract-services-layer.extract-remaining-services
+title: |
+    Extract remaining CLI business logic into services:
+    - cli/promote.go → application/promote_service.go
+    - cli/init.go → application/init_service.go
+    - cli/cr.go → application/cr_service.go
+status: pending
+prompt: |-
+    ## TASK
+
+    Extract remaining CLI business logic into services:
+    - cli/promote.go → application/promote_service.go
+    - cli/init.go → application/init_service.go
+    - cli/cr.go → application/cr_service.go
+
+
+    Acceptance criteria:
+    - Each CLI handler reduced to flag parsing + service call
+    - Services contain the extracted business logic
+    - All command behavior preserved
+    - All tests pass
+
+
+    ## CONSTRAINTS
+
+    - This is a refactor. Existing behavior MUST be preserved.
+    - All existing tests must pass without modification
+    - Do not introduce new abstractions, interfaces, or packages
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - This is a refactor. Existing behavior MUST be preserved.
+    - All existing tests must pass without modification
+    - Do not introduce new abstractions, interfaces, or packages
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+order: 6
+estimated_complexity: medium

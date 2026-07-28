@@ -1,0 +1,39 @@
+id: refactoring-refactor-command
+spec_ref: refactoring.refactor-command
+title: |
+    CLI command to create refactors via AI-guided conversation.
+    Same flow as utopia spec but for refactors.
+status: completed
+prompt: |-
+    ## TASK
+
+    CLI command to create refactors via AI-guided conversation.
+    Same flow as utopia spec but for refactors.
+
+
+    Acceptance criteria:
+    - Command is "utopia refactor"
+    - Command starts an AI-guided session
+    - Claude guides user through defining refactor tasks
+    - Claude asks one question at a time
+    - Claude captures tasks with specific, testable acceptance criteria
+    - Output is written to .utopia/refactors/<refactor-id>.yaml
+    - Command prints helpful tips (e.g., watch command for live updates)
+
+    ## CONSTRAINTS
+
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Do not introduce new abstractions, interfaces, or packages
+    - Do not refactor unrelated code
+    - Architecture is already correct
+order: 2
+estimated_complexity: medium
+iteration_count: 1

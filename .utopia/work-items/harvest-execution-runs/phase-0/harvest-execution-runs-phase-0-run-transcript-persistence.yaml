@@ -2,7 +2,7 @@ id: harvest-execution-runs-phase-0-run-transcript-persistence
 spec_ref: harvest-execution-runs-phase-0.run-transcript-persistence
 title: |
     Persist each WorkItem's Ralph execution run as a durable, harvestable artifact so the implementation decisions made during execution are no longer lost when the loop moves on. The run transcript reuses the streamed Claude output already captured for completion-token detection.
-status: pending
+status: in_progress
 prompt: |-
     ## TASK
 
@@ -64,3 +64,4 @@ constraints:
     - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
 order: 0
 estimated_complexity: medium
+iteration_count: 1
