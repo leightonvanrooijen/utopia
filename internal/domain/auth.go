@@ -1,6 +1,19 @@
 package domain
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
+
+// Environment variables the claude CLI reads its Anthropic credential from.
+const (
+	// APIKeyEnvVar holds a long-lived Anthropic API key.
+	APIKeyEnvVar = "ANTHROPIC_API_KEY"
+	// AuthTokenEnvVar holds a bearer token. It shares the credential slot with
+	// APIKeyEnvVar, and sending both makes the API reject the request with 401,
+	// so whichever credential is selected the other must be absent.
+	AuthTokenEnvVar = "ANTHROPIC_AUTH_TOKEN"
+)
 
 // AuthMode selects which Anthropic credential the claude subprocess
 // authenticates with.
@@ -75,6 +88,96 @@ func ValidateAuthConfig(ac *AuthConfig) error {
 		return nil
 	}
 	return ValidateAuthMode(ac.Mode)
+}
+
+// CredentialSource names the location a credential was resolved from. The
+// values are the user-facing location names, so they can be reported directly.
+type CredentialSource string
+
+const (
+	// CredentialSourceEnvFile is the gitignored per-project credential file.
+	CredentialSourceEnvFile CredentialSource = ".utopia/.env"
+	// CredentialSourceEnvironment is the environment utopia itself inherited.
+	CredentialSourceEnvironment CredentialSource = "the environment"
+)
+
+// APIKeyCredential is a resolved ANTHROPIC_API_KEY and the location it came
+// from. The key is never printed; Source is what gets reported.
+type APIKeyCredential struct {
+	Key    string
+	Source CredentialSource
+}
+
+// ResolveAPIKeyCredential picks the API key an api-key mode run authenticates
+// with. A key in .utopia/.env wins over the ambient environment, so a project
+// can pin the account that pays without unsetting whatever the shell exports.
+// An empty value counts as absent in both locations.
+//
+// Returns a *MissingAPIKeyError when neither location holds a key. Callers must
+// resolve before spawning claude, so an unauthenticated run fails immediately
+// rather than after a subprocess starts.
+func ResolveAPIKeyCredential(envFile map[string]string, ambient []string) (APIKeyCredential, error) {
+	if key := envFile[APIKeyEnvVar]; key != "" {
+		return APIKeyCredential{Key: key, Source: CredentialSourceEnvFile}, nil
+	}
+	if key := lookupEnv(ambient, APIKeyEnvVar); key != "" {
+		return APIKeyCredential{Key: key, Source: CredentialSourceEnvironment}, nil
+	}
+	return APIKeyCredential{}, &MissingAPIKeyError{}
+}
+
+// Env returns the environment a claude subprocess should run with: every
+// inherited variable unchanged, except that APIKeyEnvVar becomes the resolved
+// key and AuthTokenEnvVar is dropped entirely.
+//
+// Both variables are filtered out of the inherited entries before the key is
+// appended, so an ambient key is replaced rather than shadowed by a duplicate,
+// and the token is removed outright rather than blanked - an empty value still
+// occupies its slot in the credential precedence chain.
+func (c APIKeyCredential) Env(ambient []string) []string {
+	env := make([]string, 0, len(ambient)+1)
+	for _, entry := range ambient {
+		switch envName(entry) {
+		case APIKeyEnvVar, AuthTokenEnvVar:
+			continue
+		}
+		env = append(env, entry)
+	}
+	return append(env, APIKeyEnvVar+"="+c.Key)
+}
+
+// envName returns the variable name from a "NAME=value" environment entry.
+func envName(entry string) string {
+	name, _, _ := strings.Cut(entry, "=")
+	return name
+}
+
+// lookupEnv returns the value of name in a "NAME=value" environment slice, or
+// the empty string when it is absent. A later entry wins over an earlier one,
+// matching how os/exec resolves a duplicated name.
+func lookupEnv(ambient []string, name string) string {
+	value := ""
+	for _, entry := range ambient {
+		if entryName, entryValue, ok := strings.Cut(entry, "="); ok && entryName == name {
+			value = entryValue
+		}
+	}
+	return value
+}
+
+// MissingAPIKeyError indicates api-key mode was selected but no API key could
+// be resolved from any of the locations searched.
+type MissingAPIKeyError struct{}
+
+func (e *MissingAPIKeyError) Error() string {
+	return fmt.Sprintf("no %s found in %s or %s (required by auth mode %s)",
+		APIKeyEnvVar, CredentialSourceEnvFile, CredentialSourceEnvironment, AuthModeAPIKey)
+}
+
+// Is allows errors.Is to match any MissingAPIKeyError.
+func (e *MissingAPIKeyError) Is(target error) bool {
+	_, ok := target.(*MissingAPIKeyError)
+	return ok
 }
 
 // InvalidAuthModeError indicates an unrecognized auth mode was provided.

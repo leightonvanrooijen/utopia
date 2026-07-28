@@ -1,3 +1,4 @@
 .utopia/conversations/
+.utopia/.env
 .envrc
 utopia
