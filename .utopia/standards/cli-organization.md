@@ -168,6 +168,9 @@ Resolver reference:
   `utopia init`).
 - `ResolveModelFlag(cmd)` - validates `--model` via `domain.ResolveModel`, `""`
   if unset.
+- `ResolveAuthFlag(cmd)` - validates `--auth` via `domain.ValidateAuthMode`, `""`
+  if unset (meaning `config.auth.mode` applies; combine with
+  `domain.ResolveAuthMode`).
 
 ### One-way imports
 

@@ -45,6 +45,7 @@ var (
 	discoverExcludeFlags []string
 	discoverVerboseFlag  bool
 	discoverModelFlag    string
+	discoverAuthFlag     string
 )
 
 func init() {
@@ -53,6 +54,7 @@ func init() {
 	discoverCmd.Flags().StringSliceVar(&discoverExcludeFlags, "exclude", nil, "Exclude files matching glob pattern (can be specified multiple times)")
 	discoverCmd.Flags().BoolVarP(&discoverVerboseFlag, "verbose", "v", false, "Enable detailed file-by-file progress output")
 	discoverCmd.Flags().StringVar(&discoverModelFlag, "model", "", "model to use (haiku, sonnet, opus)")
+	discoverCmd.Flags().StringVar(&discoverAuthFlag, "auth", "", "credential to use (api-key, subscription), overriding config.auth.mode")
 }
 
 func runDiscover(cmd *cobra.Command, args []string) error {
@@ -61,6 +63,11 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 	// Validate model flag early before any work
 	modelID, err := ResolveModelFlag(cmd)
 	if err != nil {
+		return err
+	}
+
+	// Validate auth flag early before any work (resolution applies at spawn time)
+	if _, err := ResolveAuthFlag(cmd); err != nil {
 		return err
 	}
 
@@ -178,6 +185,7 @@ var (
 	discoverDomainExcludeFlags []string
 	discoverDomainVerboseFlag  bool
 	discoverDomainModelFlag    string
+	discoverDomainAuthFlag     string
 )
 
 func init() {
@@ -187,6 +195,7 @@ func init() {
 	discoverDomainCmd.Flags().StringSliceVar(&discoverDomainExcludeFlags, "exclude", nil, "Exclude files matching glob pattern (can be specified multiple times)")
 	discoverDomainCmd.Flags().BoolVarP(&discoverDomainVerboseFlag, "verbose", "v", false, "Enable detailed file-by-file progress output")
 	discoverDomainCmd.Flags().StringVar(&discoverDomainModelFlag, "model", "", "model to use (haiku, sonnet, opus)")
+	discoverDomainCmd.Flags().StringVar(&discoverDomainAuthFlag, "auth", "", "credential to use (api-key, subscription), overriding config.auth.mode")
 }
 
 func runDiscoverDomain(cmd *cobra.Command, args []string) error {
@@ -195,6 +204,11 @@ func runDiscoverDomain(cmd *cobra.Command, args []string) error {
 	// Validate model flag early before any work
 	modelID, err := ResolveModelFlag(cmd)
 	if err != nil {
+		return err
+	}
+
+	// Validate auth flag early before any work (resolution applies at spawn time)
+	if _, err := ResolveAuthFlag(cmd); err != nil {
 		return err
 	}
 

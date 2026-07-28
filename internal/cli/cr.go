@@ -16,7 +16,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var crModelFlag string
+var (
+	crModelFlag string
+	crAuthFlag  string
+)
 
 var crCmd = &cobra.Command{
 	Use:   "cr",
@@ -46,6 +49,7 @@ Tip: Run a file watcher to see updates in real-time:
 func init() {
 	rootCmd.AddCommand(crCmd)
 	crCmd.Flags().StringVar(&crModelFlag, "model", "", "model to use (haiku, sonnet, opus)")
+	crCmd.Flags().StringVar(&crAuthFlag, "auth", "", "credential to use (api-key, subscription), overriding config.auth.mode")
 }
 
 // ============================================================================
@@ -365,6 +369,11 @@ func runCR(cmd *cobra.Command, args []string) error {
 	// Validate model flag early before any work
 	modelID, err := ResolveModelFlag(cmd)
 	if err != nil {
+		return err
+	}
+
+	// Validate auth flag early before any work (resolution applies at spawn time)
+	if _, err := ResolveAuthFlag(cmd); err != nil {
 		return err
 	}
 

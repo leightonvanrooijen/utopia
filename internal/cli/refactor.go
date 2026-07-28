@@ -14,7 +14,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var refactorModelFlag string
+var (
+	refactorModelFlag string
+	refactorAuthFlag  string
+)
 
 var refactorCmd = &cobra.Command{
 	Use:   "refactor",
@@ -45,6 +48,7 @@ Tip: Run a file watcher to see updates in real-time:
 func init() {
 	rootCmd.AddCommand(refactorCmd)
 	refactorCmd.Flags().StringVar(&refactorModelFlag, "model", "", "model to use (haiku, sonnet, opus)")
+	refactorCmd.Flags().StringVar(&refactorAuthFlag, "auth", "", "credential to use (api-key, subscription), overriding config.auth.mode")
 }
 
 // refactorSystemPrompt guides Claude through refactor CR creation
@@ -187,6 +191,11 @@ func runRefactor(cmd *cobra.Command, args []string) error {
 	// Validate model flag early before any work
 	modelID, err := ResolveModelFlag(cmd)
 	if err != nil {
+		return err
+	}
+
+	// Validate auth flag early before any work (resolution applies at spawn time)
+	if _, err := ResolveAuthFlag(cmd); err != nil {
 		return err
 	}
 

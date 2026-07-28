@@ -57,6 +57,7 @@ it later with 'utopia execute <cr-id>').`,
 	}
 	cmd.Flags().IntVar(&intervalSec, "interval", 10, "seconds to wait between queue scans")
 	cmd.Flags().StringVar(&executeModelFlag, "model", "", "model to use (haiku, sonnet, opus)")
+	cmd.Flags().StringVar(&executeAuthFlag, "auth", "", "credential to use (api-key, subscription), overriding config.auth.mode")
 	return cmd
 }
 
@@ -81,6 +82,11 @@ func runExecuteWatch(cmd *cobra.Command, intervalSec int) error {
 
 	modelID, err := ResolveModelFlag(cmd)
 	if err != nil {
+		return err
+	}
+
+	// Validate auth flag early before any work (resolution applies at spawn time)
+	if _, err := ResolveAuthFlag(cmd); err != nil {
 		return err
 	}
 	if intervalSec <= 0 {

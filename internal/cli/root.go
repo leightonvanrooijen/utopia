@@ -124,3 +124,20 @@ func ResolveModelFlag(cmd *cobra.Command) (string, error) {
 
 	return modelID, nil
 }
+
+// ResolveAuthFlag validates and resolves the --auth flag value.
+// Returns the requested auth mode if valid, the empty mode if not provided
+// (meaning the mode from config.auth applies), or an error if the value is
+// invalid. Pair with domain.ResolveAuthMode to apply the override.
+func ResolveAuthFlag(cmd *cobra.Command) (domain.AuthMode, error) {
+	mode, _ := cmd.Flags().GetString("auth")
+	if mode == "" {
+		return "", nil
+	}
+
+	if err := domain.ValidateAuthMode(mode); err != nil {
+		return "", err
+	}
+
+	return domain.AuthMode(mode), nil
+}

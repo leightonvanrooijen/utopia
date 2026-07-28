@@ -34,7 +34,10 @@ func init() {
 // GENERATE - Generate a new standards document
 // ============================================================================
 
-var standardsGenerateModelFlag string
+var (
+	standardsGenerateModelFlag string
+	standardsGenerateAuthFlag  string
+)
 
 var standardsGenerateCmd = &cobra.Command{
 	Use:   "generate",
@@ -61,6 +64,7 @@ Standards are saved to .utopia/standards/`,
 func init() {
 	standardsCmd.AddCommand(standardsGenerateCmd)
 	standardsGenerateCmd.Flags().StringVar(&standardsGenerateModelFlag, "model", "", "model to use (haiku, sonnet, opus)")
+	standardsGenerateCmd.Flags().StringVar(&standardsGenerateAuthFlag, "auth", "", "credential to use (api-key, subscription), overriding config.auth.mode")
 }
 
 // standardsSystemPrompt guides Claude through standards document creation
@@ -202,6 +206,11 @@ func runStandardsGenerate(cmd *cobra.Command, args []string) error {
 	// Validate model flag early before any work
 	modelID, err := ResolveModelFlag(cmd)
 	if err != nil {
+		return err
+	}
+
+	// Validate auth flag early before any work (resolution applies at spawn time)
+	if _, err := ResolveAuthFlag(cmd); err != nil {
 		return err
 	}
 

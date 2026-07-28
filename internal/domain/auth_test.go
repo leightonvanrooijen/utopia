@@ -150,6 +150,60 @@ func TestAuthConfig_GetMode(t *testing.T) {
 	}
 }
 
+func TestResolveAuthMode(t *testing.T) {
+	tests := []struct {
+		name     string
+		override AuthMode
+		config   *AuthConfig
+		expected AuthMode
+	}{
+		{
+			name:     "no override and no config inherits the environment",
+			override: "",
+			config:   nil,
+			expected: "",
+		},
+		{
+			name:     "config applies when no override is given",
+			override: "",
+			config:   &AuthConfig{Mode: "subscription"},
+			expected: AuthModeSubscription,
+		},
+		{
+			name:     "override wins over the configured mode",
+			override: AuthModeAPIKey,
+			config:   &AuthConfig{Mode: "subscription"},
+			expected: AuthModeAPIKey,
+		},
+		{
+			name:     "override wins in the other direction too",
+			override: AuthModeSubscription,
+			config:   &AuthConfig{Mode: "api-key"},
+			expected: AuthModeSubscription,
+		},
+		{
+			name:     "override applies when no config section exists",
+			override: AuthModeSubscription,
+			config:   nil,
+			expected: AuthModeSubscription,
+		},
+		{
+			name:     "override matching the config is a no-op",
+			override: AuthModeAPIKey,
+			config:   &AuthConfig{Mode: "api-key"},
+			expected: AuthModeAPIKey,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ResolveAuthMode(tc.override, tc.config); got != tc.expected {
+				t.Errorf("ResolveAuthMode(%q, %v) = %q, want %q", tc.override, tc.config, got, tc.expected)
+			}
+		})
+	}
+}
+
 func TestValidAuthModes(t *testing.T) {
 	modes := ValidAuthModes()
 

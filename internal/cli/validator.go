@@ -45,7 +45,10 @@ func init() {
 // CREATE - Create a new validator
 // ============================================================================
 
-var validatorCreateModelFlag string
+var (
+	validatorCreateModelFlag string
+	validatorCreateAuthFlag  string
+)
 
 var validatorCreateCmd = &cobra.Command{
 	Use:   "create",
@@ -67,12 +70,18 @@ Examples:
 func init() {
 	validatorCmd.AddCommand(validatorCreateCmd)
 	validatorCreateCmd.Flags().StringVar(&validatorCreateModelFlag, "model", "", "model to use (haiku, sonnet, opus)")
+	validatorCreateCmd.Flags().StringVar(&validatorCreateAuthFlag, "auth", "", "credential to use (api-key, subscription), overriding config.auth.mode")
 }
 
 func runValidatorCreate(cmd *cobra.Command, args []string) error {
 	// Validate model flag early before any work
 	modelID, err := ResolveModelFlag(cmd)
 	if err != nil {
+		return err
+	}
+
+	// Validate auth flag early before any work (resolution applies at spawn time)
+	if _, err := ResolveAuthFlag(cmd); err != nil {
 		return err
 	}
 
@@ -106,7 +115,10 @@ func runValidatorCreate(cmd *cobra.Command, args []string) error {
 // EDIT - Edit an existing validator
 // ============================================================================
 
-var validatorEditModelFlag string
+var (
+	validatorEditModelFlag string
+	validatorEditAuthFlag  string
+)
 
 var validatorEditCmd = &cobra.Command{
 	Use:   "edit [validator-id]",
@@ -130,6 +142,7 @@ Examples:
 func init() {
 	validatorCmd.AddCommand(validatorEditCmd)
 	validatorEditCmd.Flags().StringVar(&validatorEditModelFlag, "model", "", "model to use (haiku, sonnet, opus)")
+	validatorEditCmd.Flags().StringVar(&validatorEditAuthFlag, "auth", "", "credential to use (api-key, subscription), overriding config.auth.mode")
 }
 
 func runValidatorEdit(cmd *cobra.Command, args []string) error {
@@ -138,6 +151,11 @@ func runValidatorEdit(cmd *cobra.Command, args []string) error {
 	// Validate model flag early before any work
 	modelID, err := ResolveModelFlag(cmd)
 	if err != nil {
+		return err
+	}
+
+	// Validate auth flag early before any work (resolution applies at spawn time)
+	if _, err := ResolveAuthFlag(cmd); err != nil {
 		return err
 	}
 

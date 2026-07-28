@@ -26,6 +26,7 @@ var (
 	executeTimeoutFlag int
 	executeAllFlag     bool
 	executeModelFlag   string
+	executeAuthFlag    string
 )
 
 func InitExecuteCmd() {
@@ -59,6 +60,7 @@ Run the command again to resume from where you left off.`,
 	cmd.Flags().IntVarP(&executeTimeoutFlag, "timeout", "t", 0, "timeout in minutes (0 means no timeout)")
 	cmd.Flags().BoolVar(&executeAllFlag, "all", false, "execute all CRs in .utopia/change-requests/ in filename order (leading numeric prefix controls the sequence)")
 	cmd.Flags().StringVar(&executeModelFlag, "model", "", "model to use (haiku, sonnet, opus)")
+	cmd.Flags().StringVar(&executeAuthFlag, "auth", "", "credential to use (api-key, subscription), overriding config.auth.mode")
 	cmd.AddCommand(newExecuteRunCmd())
 	return cmd
 }
@@ -69,6 +71,11 @@ func runExecute(cmd *cobra.Command, args []string) error {
 	// Validate model flag early before any work
 	modelID, err := ResolveModelFlag(cmd)
 	if err != nil {
+		return err
+	}
+
+	// Validate auth flag early before any work (resolution applies at spawn time)
+	if _, err := ResolveAuthFlag(cmd); err != nil {
 		return err
 	}
 

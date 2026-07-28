@@ -9,7 +9,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var harvestModelFlag string
+var (
+	harvestModelFlag string
+	harvestAuthFlag  string
+)
 
 var harvestCmd = &cobra.Command{
 	Use:   "harvest",
@@ -40,6 +43,7 @@ Benefits over individual commands (/adr, /concept, /domain):
 func init() {
 	rootCmd.AddCommand(harvestCmd)
 	harvestCmd.Flags().StringVar(&harvestModelFlag, "model", "", "model to use (haiku, sonnet, opus)")
+	harvestCmd.Flags().StringVar(&harvestAuthFlag, "auth", "", "credential to use (api-key, subscription), overriding config.auth.mode")
 }
 
 func runHarvest(cmd *cobra.Command, args []string) error {
@@ -48,6 +52,11 @@ func runHarvest(cmd *cobra.Command, args []string) error {
 	// Validate model flag early before any work
 	modelID, err := ResolveModelFlag(cmd)
 	if err != nil {
+		return err
+	}
+
+	// Validate auth flag early before any work (resolution applies at spawn time)
+	if _, err := ResolveAuthFlag(cmd); err != nil {
 		return err
 	}
 

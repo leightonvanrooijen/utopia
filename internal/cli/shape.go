@@ -15,7 +15,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var shapeModelFlag string
+var (
+	shapeModelFlag string
+	shapeAuthFlag  string
+)
 
 var shapeCmd = &cobra.Command{
 	Use:   "shape",
@@ -43,6 +46,7 @@ the automatically discovered draft specifications.`,
 func init() {
 	rootCmd.AddCommand(shapeCmd)
 	shapeCmd.Flags().StringVar(&shapeModelFlag, "model", "", "model to use (haiku, sonnet, opus)")
+	shapeCmd.Flags().StringVar(&shapeAuthFlag, "auth", "", "credential to use (api-key, subscription), overriding config.auth.mode")
 }
 
 const shapeSystemPrompt = `You are a Shape Claude - an AI assistant that helps validate and refine draft specifications through guided conversation.
@@ -134,6 +138,11 @@ func runShape(cmd *cobra.Command, args []string) error {
 	// Validate model flag early before any work
 	modelID, err := ResolveModelFlag(cmd)
 	if err != nil {
+		return err
+	}
+
+	// Validate auth flag early before any work (resolution applies at spawn time)
+	if _, err := ResolveAuthFlag(cmd); err != nil {
 		return err
 	}
 
@@ -372,11 +381,15 @@ After shaping, validated drafts can be promoted to official domain documents.`,
 	RunE: runShapeDomain,
 }
 
-var shapeDomainModelFlag string
+var (
+	shapeDomainModelFlag string
+	shapeDomainAuthFlag  string
+)
 
 func init() {
 	shapeCmd.AddCommand(shapeDomainCmd)
 	shapeDomainCmd.Flags().StringVar(&shapeDomainModelFlag, "model", "", "model to use (haiku, sonnet, opus)")
+	shapeDomainCmd.Flags().StringVar(&shapeDomainAuthFlag, "auth", "", "credential to use (api-key, subscription), overriding config.auth.mode")
 }
 
 const shapeDomainSystemPrompt = `You are a Domain Shape Claude - an AI assistant that helps validate and refine draft domain documents through guided conversation.
@@ -491,6 +504,11 @@ func runShapeDomain(cmd *cobra.Command, args []string) error {
 	// Validate model flag early before any work
 	modelID, err := ResolveModelFlag(cmd)
 	if err != nil {
+		return err
+	}
+
+	// Validate auth flag early before any work (resolution applies at spawn time)
+	if _, err := ResolveAuthFlag(cmd); err != nil {
 		return err
 	}
 

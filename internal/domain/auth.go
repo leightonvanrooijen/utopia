@@ -57,6 +57,17 @@ func ValidateAuthMode(mode string) error {
 	return &InvalidAuthModeError{Mode: mode}
 }
 
+// ResolveAuthMode picks the auth mode a single invocation runs with.
+// A mode supplied per-invocation (the --auth flag) wins over the configured
+// mode; when none is supplied the configured mode applies; when neither is
+// set the empty mode means "inherit the ambient environment".
+func ResolveAuthMode(override AuthMode, ac *AuthConfig) AuthMode {
+	if override != "" {
+		return override
+	}
+	return ac.GetMode()
+}
+
 // ValidateAuthConfig validates the auth section of a config.
 // Returns nil if the config is nil or the mode is valid.
 func ValidateAuthConfig(ac *AuthConfig) error {
