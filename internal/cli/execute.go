@@ -45,7 +45,10 @@ This command handles the full workflow:
 
 If no CR ID is provided, lists available change requests for interactive selection.
 
-Use --all to execute all CRs in .utopia/change-requests/ in alphabetical order.
+Use --all to execute all CRs in .utopia/change-requests/. CRs run in filename
+order: a leading numeric prefix (e.g. "1_", "2_") controls the sequence and is
+compared numerically, so "2_" runs before "10_" regardless of zero-padding. CRs
+without a numeric prefix run after all prefixed CRs, in alphabetical order.
 If any CR fails, execution stops and reports which CR failed.
 
 Press Ctrl+C to gracefully stop execution (current state will be saved).
@@ -54,7 +57,7 @@ Run the command again to resume from where you left off.`,
 		RunE: runExecute,
 	}
 	cmd.Flags().IntVarP(&executeTimeoutFlag, "timeout", "t", 0, "timeout in minutes (0 means no timeout)")
-	cmd.Flags().BoolVar(&executeAllFlag, "all", false, "execute all CRs in .utopia/change-requests/ in alphabetical order")
+	cmd.Flags().BoolVar(&executeAllFlag, "all", false, "execute all CRs in .utopia/change-requests/ in filename order (leading numeric prefix controls the sequence)")
 	cmd.Flags().StringVar(&executeModelFlag, "model", "", "model to use (haiku, sonnet, opus)")
 	cmd.AddCommand(newExecuteRunCmd())
 	return cmd
@@ -191,6 +194,45 @@ func runExecute(cmd *cobra.Command, args []string) error {
 // BATCH EXECUTION
 // ============================================================================
 
+// crNumericPrefix returns the leading numeric prefix of a CR filename - the run
+// of digits before the first "_" - as an integer, and whether such a prefix is
+// present. Zero-padding is collapsed by the integer parse, so "2_" and "02_"
+// both yield 2. Anything that is not a pure digit-run followed by "_" (e.g.
+// "cleanup-legacy", "2024-migration") has no numeric prefix.
+func crNumericPrefix(id string) (int, bool) {
+	i := strings.IndexByte(id, '_')
+	if i <= 0 {
+		return 0, false
+	}
+	n, err := strconv.Atoi(id[:i])
+	if err != nil || n < 0 {
+		return 0, false
+	}
+	return n, true
+}
+
+// lessCRExecutionOrder is the batch execution ordering rule: CRs run in filename
+// order, where a leading numeric prefix (e.g. "1_", "2_") controls the sequence
+// and is compared numerically ("2_" before "10_" regardless of zero-padding).
+// CRs without a numeric prefix run after all prefixed CRs, in alphabetical
+// order. Extracted as a pure function so the ordering policy is testable in
+// isolation from the batch loop.
+func lessCRExecutionOrder(a, b *domain.ChangeRequest) bool {
+	na, oka := crNumericPrefix(a.ID)
+	nb, okb := crNumericPrefix(b.ID)
+	switch {
+	case oka && okb:
+		if na != nb {
+			return na < nb
+		}
+		return a.ID < b.ID // same sequence number: stable alphabetical tie-break
+	case oka != okb:
+		return oka // prefixed CRs run before non-prefixed ones
+	default:
+		return a.ID < b.ID // neither prefixed: alphabetical
+	}
+}
+
 func runExecuteAll(out *ui.Printer, store *internal.YAMLStore, config *domain.Config, projectDir, utopiaDir, modelID string) error {
 	crs, err := store.ListChangeRequests()
 	if err != nil {
@@ -200,7 +242,7 @@ func runExecuteAll(out *ui.Printer, store *internal.YAMLStore, config *domain.Co
 		return fmt.Errorf("no change requests found in .utopia/change-requests/\n\nCreate one with: utopia cr")
 	}
 
-	sort.Slice(crs, func(i, j int) bool { return crs[i].ID < crs[j].ID })
+	sort.Slice(crs, func(i, j int) bool { return lessCRExecutionOrder(crs[i], crs[j]) })
 	totalCRs := len(crs)
 	out.Progressf("Found %d change request(s) to execute\n\n", totalCRs)
 
