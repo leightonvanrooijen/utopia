@@ -1,7 +1,7 @@
 id: unified-change-request-system
 title: Unified Change Request System
 created: "0001-01-01T00:00:00+00:00"
-updated: "2026-03-18T20:10:32.636537+11:00"
+updated: "2026-07-28T20:27:07.716501+10:00"
 description: |
     A unified system where all work flows through Change Requests. CRs are standalone
     documents that describe work to be done. Each change within a CR can target a
@@ -157,6 +157,10 @@ features:
         - CR is git-committed immediately after passing validation
         - 'Commit message follows pattern "cr: create {cr-id}"'
         - Commit SHA is available for linking in conversation metadata
+        - The auto-commit after validation stages the CR's actual on-disk file, resolving a leading numeric filename prefix (a run of digits followed by an underscore) so a CR saved as 01_reusable-core.yaml with id reusable-core is committed instead of failing with a git pathspec ("did not match any files") error
+        - The auto-commit resolves at most one file per CR id; if a stripped-prefix id matches more than one file the commit reports an error listing the candidate files instead of silently choosing one
+        - 'The "cr: create {cr-id}" commit message uses the CR''s internal id independent of any numeric filename prefix, so 01_reusable-core.yaml with id reusable-core commits as "cr: create reusable-core"'
+        - Post-merge deletion removes the CR's actual on-disk file even when its filename carries a numeric prefix (deletes 01_reusable-core.yaml, not a path reconstructed as reusable-core.yaml)
 
     - id: cr-command
       description: |
