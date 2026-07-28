@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"github.com/google/uuid"
+	"github.com/leightonvanrooijen/utopia/internal/domain"
 )
 
 // PromptResult contains the output from a Claude prompt invocation.
@@ -44,7 +45,9 @@ type CLI struct {
 	permissionMode PermissionMode
 	allowedTools   []string
 	verbose        bool
-	model          string // model override (e.g., "claude-sonnet-4-20250514")
+	model          string          // model override (e.g., "claude-sonnet-4-20250514")
+	authMode       domain.AuthMode // credential selection; empty inherits the ambient environment
+	utopiaDir      string          // project .utopia dir, where api-key mode looks for .env
 }
 
 // NewCLI creates a new Claude CLI wrapper with sensible defaults for Utopia
@@ -72,6 +75,52 @@ func (c *CLI) WithVerbose(verbose bool) *CLI {
 func (c *CLI) WithModel(model string) *CLI {
 	c.model = model
 	return c
+}
+
+// WithAuth selects the credential every claude subprocess this CLI spawns
+// authenticates with. utopiaDir is the project's .utopia directory, which
+// api-key mode searches for a .env holding the key.
+//
+// The zero value - the empty mode - inherits the ambient environment, which is
+// the pre-auth behaviour, so the call sites that never set an auth mode keep
+// spawning claude exactly as they did before.
+func (c *CLI) WithAuth(mode domain.AuthMode, utopiaDir string) *CLI {
+	c.authMode = mode
+	c.utopiaDir = utopiaDir
+	return c
+}
+
+// subprocessEnv builds the environment for one claude subprocess from the auth
+// mode carried on the CLI. Every exec site calls this, so which credential
+// authenticates a run is decided in one place rather than per call site, and a
+// one-shot prompt, a streamed prompt and an interactive session all bill to the
+// same account.
+//
+// The empty mode returns os.Environ() as-is: no credential was selected, so the
+// subprocess inherits whatever utopia itself is running with.
+//
+// A non-empty mode utopia does not recognise is an error rather than a fall
+// through to the inherited environment. Both entry points validate the mode
+// already, so reaching here with an unknown one is a wiring bug - and the
+// failure mode of guessing is a run that silently bills the wrong account,
+// which is the outcome this whole feature exists to prevent.
+func (c *CLI) subprocessEnv() ([]string, error) {
+	ambient := os.Environ()
+
+	switch c.authMode {
+	case "":
+		return ambient, nil
+	case domain.AuthModeSubscription:
+		return domain.SubscriptionEnv(ambient), nil
+	case domain.AuthModeAPIKey:
+		env, _, err := ResolveAPIKeyEnv(c.utopiaDir, ambient)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve credentials for auth mode %s: %w", domain.AuthModeAPIKey, err)
+		}
+		return env, nil
+	default:
+		return nil, &domain.InvalidAuthModeError{Mode: string(c.authMode)}
+	}
 }
 
 // baseArgs returns common arguments for all Claude invocations
@@ -106,7 +155,13 @@ func (c *CLI) Prompt(ctx context.Context, prompt string) (*PromptResult, error) 
 		return c.streamingPrompt(ctx, args)
 	}
 
+	env, err := c.subprocessEnv()
+	if err != nil {
+		return nil, err
+	}
+
 	cmd := exec.CommandContext(ctx, c.binaryPath, args...)
+	cmd.Env = env
 
 	// Capture both stdout and stderr
 	var stderr bytes.Buffer
@@ -130,7 +185,13 @@ func (c *CLI) streamingPrompt(ctx context.Context, args []string) (*PromptResult
 	// Add verbose flag for real-time output
 	args = append(args, "--verbose")
 
+	env, err := c.subprocessEnv()
+	if err != nil {
+		return nil, err
+	}
+
 	cmd := exec.CommandContext(ctx, c.binaryPath, args...)
+	cmd.Env = env
 
 	// Create pipes for stdout and stderr
 	stdout, err := cmd.StdoutPipe()
@@ -221,7 +282,15 @@ func (c *CLI) SessionWithCapture(ctx context.Context, systemPrompt string) (tran
 		args = append(args, "--system-prompt", systemPrompt)
 	}
 
+	// Resolve before the transcript defer is armed: a credential failure means no
+	// session ran, so there is no transcript to capture.
+	env, err := c.subprocessEnv()
+	if err != nil {
+		return "", err
+	}
+
 	cmd := exec.CommandContext(ctx, c.binaryPath, args...)
+	cmd.Env = env
 
 	// Connect stdin/stdout/stderr directly for full TUI experience
 	cmd.Stdin = os.Stdin

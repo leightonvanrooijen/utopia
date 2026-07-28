@@ -2,8 +2,14 @@ package internal
 
 import (
 	"context"
+	"errors"
+	"maps"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/leightonvanrooijen/utopia/internal/domain"
 )
 
 func TestNewCLI(t *testing.T) {
@@ -68,6 +74,26 @@ func TestCLI_WithModel_Empty(t *testing.T) {
 
 	if cli.model != "" {
 		t.Errorf("model should default to empty string, got %q", cli.model)
+	}
+}
+
+func TestCLI_WithAuth(t *testing.T) {
+	cli := NewCLI().WithAuth(domain.AuthModeSubscription, "/project/.utopia")
+
+	if cli.authMode != domain.AuthModeSubscription {
+		t.Errorf("authMode = %q, want %q", cli.authMode, domain.AuthModeSubscription)
+	}
+
+	if cli.utopiaDir != "/project/.utopia" {
+		t.Errorf("utopiaDir = %q, want %q", cli.utopiaDir, "/project/.utopia")
+	}
+}
+
+func TestCLI_WithAuth_Default(t *testing.T) {
+	cli := NewCLI()
+
+	if cli.authMode != "" {
+		t.Errorf("authMode should default to the empty mode, got %q", cli.authMode)
 	}
 }
 
@@ -396,5 +422,223 @@ func TestExtractAssistantContent_MixedContent(t *testing.T) {
 
 	if blocks[1] != "[Tool: Read]" {
 		t.Errorf("expected tool use, got %q", blocks[1])
+	}
+}
+
+// envVarNames returns the set of variable names in a "NAME=value" slice, which
+// is the granularity the backward-compatibility guarantee is stated at: an
+// unconfigured run must see the same variables the parent process has.
+func envVarNames(env []string) map[string]bool {
+	names := make(map[string]bool, len(env))
+	for _, entry := range env {
+		name, _, _ := strings.Cut(entry, "=")
+		names[name] = true
+	}
+	return names
+}
+
+func TestCLI_subprocessEnv_NoMode(t *testing.T) {
+	t.Setenv(domain.APIKeyEnvVar, "sk-ambient")
+
+	env, err := NewCLI().subprocessEnv()
+	if err != nil {
+		t.Fatalf("subprocessEnv failed: %v", err)
+	}
+
+	got, want := envVarNames(env), envVarNames(os.Environ())
+	if !maps.Equal(got, want) {
+		t.Errorf("with no auth mode the subprocess environment should hold the same variables as os.Environ(), got %d names, want %d", len(got), len(want))
+	}
+
+	if value := lookupTestEnv(env, domain.APIKeyEnvVar); value != "sk-ambient" {
+		t.Errorf("%s = %q, want the inherited value unchanged", domain.APIKeyEnvVar, value)
+	}
+}
+
+func TestCLI_subprocessEnv_Subscription(t *testing.T) {
+	t.Setenv(domain.APIKeyEnvVar, "sk-ambient")
+	t.Setenv(domain.AuthTokenEnvVar, "token-ambient")
+
+	// The .utopia/.env key must not be consulted in this mode - reading it would
+	// restore the credential the mode exists to suppress.
+	utopiaDir := writeEnvFile(t, "ANTHROPIC_API_KEY=sk-file\n")
+
+	env, err := NewCLI().WithAuth(domain.AuthModeSubscription, utopiaDir).subprocessEnv()
+	if err != nil {
+		t.Fatalf("subprocessEnv failed: %v", err)
+	}
+
+	for _, name := range []string{domain.APIKeyEnvVar, domain.AuthTokenEnvVar} {
+		if envVarNames(env)[name] {
+			t.Errorf("%s should be absent in subscription mode", name)
+		}
+	}
+}
+
+func TestCLI_subprocessEnv_APIKey(t *testing.T) {
+	t.Setenv(domain.APIKeyEnvVar, "sk-ambient")
+	t.Setenv(domain.AuthTokenEnvVar, "token-ambient")
+
+	utopiaDir := writeEnvFile(t, "ANTHROPIC_API_KEY=sk-file\nANTHROPIC_BASE_URL=https://proxy.internal\n")
+
+	env, err := NewCLI().WithAuth(domain.AuthModeAPIKey, utopiaDir).subprocessEnv()
+	if err != nil {
+		t.Fatalf("subprocessEnv failed: %v", err)
+	}
+
+	if value := lookupTestEnv(env, domain.APIKeyEnvVar); value != "sk-file" {
+		t.Errorf("%s = %q, want the key from .utopia/.env", domain.APIKeyEnvVar, value)
+	}
+
+	if envVarNames(env)[domain.AuthTokenEnvVar] {
+		t.Errorf("%s should be absent in api-key mode", domain.AuthTokenEnvVar)
+	}
+
+	if value := lookupTestEnv(env, "ANTHROPIC_BASE_URL"); value != "https://proxy.internal" {
+		t.Errorf("ANTHROPIC_BASE_URL = %q, want the value from .utopia/.env", value)
+	}
+}
+
+func TestCLI_subprocessEnv_APIKeyMissing(t *testing.T) {
+	t.Setenv(domain.APIKeyEnvVar, "")
+
+	utopiaDir := writeEnvFile(t, "")
+
+	_, err := NewCLI().WithAuth(domain.AuthModeAPIKey, utopiaDir).subprocessEnv()
+	if err == nil {
+		t.Fatal("subprocessEnv should fail when api-key mode can resolve no key")
+	}
+
+	if !errors.Is(err, &domain.MissingAPIKeyError{}) {
+		t.Errorf("error %v is not a *MissingAPIKeyError", err)
+	}
+}
+
+// An unrecognised mode fails rather than falling through to the inherited
+// environment: guessing would silently bill the wrong account.
+func TestCLI_subprocessEnv_UnknownMode(t *testing.T) {
+	_, err := NewCLI().WithAuth(domain.AuthMode("teamplan"), "").subprocessEnv()
+	if err == nil {
+		t.Fatal("subprocessEnv should fail for an unrecognised auth mode")
+	}
+
+	if !errors.Is(err, &domain.InvalidAuthModeError{}) {
+		t.Errorf("error %v is not an *InvalidAuthModeError", err)
+	}
+}
+
+// lookupTestEnv returns the value of name in a "NAME=value" slice.
+func lookupTestEnv(env []string, name string) string {
+	value := ""
+	for _, entry := range env {
+		if entryName, entryValue, ok := strings.Cut(entry, "="); ok && entryName == name {
+			value = entryValue
+		}
+	}
+	return value
+}
+
+// fakeClaude installs a stand-in claude binary that records the environment it
+// was spawned with, and returns a CLI pointed at it plus a reader for that
+// recording. Spawning a real process is what makes the assertion meaningful: a
+// call site that forgets cmd.Env inherits the parent environment silently, and
+// only the child can tell us which of the two happened.
+func fakeClaude(t *testing.T) (*CLI, func() []string) {
+	t.Helper()
+
+	dir := t.TempDir()
+	dumpPath := filepath.Join(dir, "env.dump")
+	binaryPath := filepath.Join(dir, "claude")
+
+	script := "#!/bin/sh\nenv > " + dumpPath + "\n"
+	if err := os.WriteFile(binaryPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("failed to write fake claude: %v", err)
+	}
+
+	cli := NewCLI()
+	cli.binaryPath = binaryPath
+
+	return cli, func() []string {
+		t.Helper()
+
+		data, err := os.ReadFile(dumpPath)
+		if err != nil {
+			t.Fatalf("fake claude did not record its environment: %v", err)
+		}
+		return strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
+	}
+}
+
+// Every way the wrapper spawns claude - a one-shot prompt, a streamed prompt and
+// an interactive session - must apply the same credential resolution.
+func TestCLI_SpawnSitesApplyCredentialEnv(t *testing.T) {
+	sites := []struct {
+		name  string
+		spawn func(t *testing.T, cli *CLI)
+	}{
+		{
+			name: "Prompt",
+			spawn: func(t *testing.T, cli *CLI) {
+				if _, err := cli.Prompt(context.Background(), "hello"); err != nil {
+					t.Fatalf("Prompt failed: %v", err)
+				}
+			},
+		},
+		{
+			name: "streamingPrompt",
+			spawn: func(t *testing.T, cli *CLI) {
+				if _, err := cli.WithVerbose(true).Prompt(context.Background(), "hello"); err != nil {
+					t.Fatalf("verbose Prompt failed: %v", err)
+				}
+			},
+		},
+		{
+			name: "SessionWithCapture",
+			spawn: func(t *testing.T, cli *CLI) {
+				// The transcript is empty because the fake writes no session file;
+				// the environment the process ran with is what is under test.
+				if _, err := cli.SessionWithCapture(context.Background(), ""); err != nil {
+					t.Fatalf("SessionWithCapture failed: %v", err)
+				}
+			},
+		},
+	}
+
+	for _, site := range sites {
+		t.Run(site.name, func(t *testing.T) {
+			t.Run("subscription suppresses the ambient key", func(t *testing.T) {
+				t.Setenv(domain.APIKeyEnvVar, "sk-ambient")
+
+				cli, recorded := fakeClaude(t)
+				site.spawn(t, cli.WithAuth(domain.AuthModeSubscription, writeEnvFile(t, "")))
+
+				if envVarNames(recorded())[domain.APIKeyEnvVar] {
+					t.Errorf("%s reached the subprocess in subscription mode", domain.APIKeyEnvVar)
+				}
+			})
+
+			t.Run("api-key injects the resolved key", func(t *testing.T) {
+				t.Setenv(domain.APIKeyEnvVar, "sk-ambient")
+
+				cli, recorded := fakeClaude(t)
+				utopiaDir := writeEnvFile(t, "ANTHROPIC_API_KEY=sk-file\n")
+				site.spawn(t, cli.WithAuth(domain.AuthModeAPIKey, utopiaDir))
+
+				if value := lookupTestEnv(recorded(), domain.APIKeyEnvVar); value != "sk-file" {
+					t.Errorf("subprocess %s = %q, want the key from .utopia/.env", domain.APIKeyEnvVar, value)
+				}
+			})
+
+			t.Run("no mode inherits the ambient environment", func(t *testing.T) {
+				t.Setenv(domain.APIKeyEnvVar, "sk-ambient")
+
+				cli, recorded := fakeClaude(t)
+				site.spawn(t, cli)
+
+				if value := lookupTestEnv(recorded(), domain.APIKeyEnvVar); value != "sk-ambient" {
+					t.Errorf("subprocess %s = %q, want the inherited value", domain.APIKeyEnvVar, value)
+				}
+			})
+		})
 	}
 }
