@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/leightonvanrooijen/utopia/internal/domain"
@@ -183,6 +184,52 @@ func TestResolveAPIKeyEnvErrorsWhenNoKeyExists(t *testing.T) {
 	}
 	if source != "" {
 		t.Errorf("expected no source on failure, got %q", source)
+	}
+}
+
+// Subscription mode is a pure function over the environment, so it lives in
+// internal/domain. Its real-process behaviour is exercised here, alongside the
+// api-key counterpart below, because only this package can write a .utopia/.env
+// to disk and confirm the mode leaves it alone.
+func TestSubscriptionEnvUsesRealProcessEnvironment(t *testing.T) {
+	// The direnv case: both credentials are genuinely exported in this process.
+	t.Setenv("ANTHROPIC_API_KEY", "sk-exported")
+	t.Setenv("ANTHROPIC_AUTH_TOKEN", "tok-exported")
+	// A key on disk must not rescue the credential either. Nothing passes this
+	// directory to SubscriptionEnv - the signature takes no path at all, which is
+	// what makes the file unreachable from this mode.
+	writeEnvFile(t, "ANTHROPIC_API_KEY=sk-file\n")
+
+	ambient := os.Environ()
+	env := domain.SubscriptionEnv(ambient)
+
+	for _, entry := range env {
+		name, _, _ := strings.Cut(entry, "=")
+		if name == "ANTHROPIC_API_KEY" || name == "ANTHROPIC_AUTH_TOKEN" {
+			t.Errorf("%s should be absent from the subprocess environment, found %q", name, entry)
+		}
+	}
+
+	// Everything else the process inherited survives, in order.
+	var want []string
+	for _, entry := range ambient {
+		name, _, _ := strings.Cut(entry, "=")
+		if name != "ANTHROPIC_API_KEY" && name != "ANTHROPIC_AUTH_TOKEN" {
+			want = append(want, entry)
+		}
+	}
+	if len(env) != len(want) {
+		t.Fatalf("passed through %d variables, want %d", len(env), len(want))
+	}
+	for i := range want {
+		if env[i] != want[i] {
+			t.Errorf("env[%d] = %q, want %q", i, env[i], want[i])
+		}
+	}
+	// PATH is always inherited, so an empty want would mean the comparison above
+	// proved nothing.
+	if len(want) == 0 {
+		t.Fatal("expected the real process environment to hold other variables")
 	}
 }
 

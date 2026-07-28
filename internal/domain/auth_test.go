@@ -378,6 +378,104 @@ func TestAPIKeyCredential_EnvDoesNotMutateAmbient(t *testing.T) {
 	}
 }
 
+func TestSubscriptionEnv(t *testing.T) {
+	tests := []struct {
+		name    string
+		ambient []string
+		want    []string
+	}{
+		{
+			name:    "ambient api key is removed",
+			ambient: []string{"PATH=/usr/bin", "ANTHROPIC_API_KEY=sk-ambient"},
+			want:    []string{"PATH=/usr/bin"},
+		},
+		{
+			name:    "ambient auth token is removed",
+			ambient: []string{"PATH=/usr/bin", "ANTHROPIC_AUTH_TOKEN=tok"},
+			want:    []string{"PATH=/usr/bin"},
+		},
+		{
+			name:    "both credentials are removed together",
+			ambient: []string{"ANTHROPIC_API_KEY=sk-ambient", "PATH=/usr/bin", "ANTHROPIC_AUTH_TOKEN=tok"},
+			want:    []string{"PATH=/usr/bin"},
+		},
+		{
+			name:    "every duplicate of a credential is removed",
+			ambient: []string{"ANTHROPIC_API_KEY=sk-one", "PATH=/usr/bin", "ANTHROPIC_API_KEY=sk-two"},
+			want:    []string{"PATH=/usr/bin"},
+		},
+		{
+			name:    "every other variable passes through unchanged and in order",
+			ambient: []string{"HOME=/home/u", "ANTHROPIC_BASE_URL=https://x", "LANG=en_NZ", "EMPTY="},
+			want:    []string{"HOME=/home/u", "ANTHROPIC_BASE_URL=https://x", "LANG=en_NZ", "EMPTY="},
+		},
+		{
+			name:    "an environment with no credentials is passed through whole",
+			ambient: []string{"PATH=/usr/bin", "TERM=xterm"},
+			want:    []string{"PATH=/usr/bin", "TERM=xterm"},
+		},
+		{
+			name:    "a name merely prefixed by a credential name is kept",
+			ambient: []string{"ANTHROPIC_API_KEY_FILE=/tmp/k", "ANTHROPIC_AUTH_TOKEN_PATH=/tmp/t"},
+			want:    []string{"ANTHROPIC_API_KEY_FILE=/tmp/k", "ANTHROPIC_AUTH_TOKEN_PATH=/tmp/t"},
+		},
+		{
+			name:    "empty ambient environment yields an empty environment",
+			ambient: nil,
+			want:    []string{},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := SubscriptionEnv(tc.ambient)
+
+			if len(got) != len(tc.want) {
+				t.Fatalf("SubscriptionEnv() = %v, want %v", got, tc.want)
+			}
+			for i := range tc.want {
+				if got[i] != tc.want[i] {
+					t.Errorf("SubscriptionEnv()[%d] = %q, want %q", i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
+
+// A nil Env makes os/exec inherit the parent environment, which would hand the
+// subprocess the ambient key this mode exists to suppress. The empty case must
+// therefore be an empty environment, not an absent one.
+func TestSubscriptionEnv_NeverReturnsNil(t *testing.T) {
+	for _, ambient := range [][]string{nil, {}, {"ANTHROPIC_API_KEY=sk-ambient"}} {
+		if SubscriptionEnv(ambient) == nil {
+			t.Errorf("SubscriptionEnv(%v) returned nil, which os/exec reads as inherit-the-parent-environment", ambient)
+		}
+	}
+}
+
+// Blanking a credential leaves it in the precedence chain, so the removed names
+// must not reappear with an empty value.
+func TestSubscriptionEnv_RemovesRatherThanBlanks(t *testing.T) {
+	ambient := []string{"ANTHROPIC_API_KEY=sk-ambient", "ANTHROPIC_AUTH_TOKEN=tok", "PATH=/usr/bin"}
+
+	for _, entry := range SubscriptionEnv(ambient) {
+		switch envName(entry) {
+		case APIKeyEnvVar, AuthTokenEnvVar:
+			t.Errorf("SubscriptionEnv() kept %q; the variable must be absent, not blank", entry)
+		}
+	}
+}
+
+func TestSubscriptionEnv_DoesNotMutateAmbient(t *testing.T) {
+	ambient := []string{"ANTHROPIC_API_KEY=sk-ambient", "PATH=/usr/bin"}
+
+	SubscriptionEnv(ambient)
+
+	if ambient[0] != "ANTHROPIC_API_KEY=sk-ambient" || ambient[1] != "PATH=/usr/bin" {
+		t.Errorf("SubscriptionEnv() mutated the ambient slice: %v", ambient)
+	}
+}
+
 func TestMissingAPIKeyError_Message(t *testing.T) {
 	err := &MissingAPIKeyError{}
 

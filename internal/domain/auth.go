@@ -135,7 +135,37 @@ func ResolveAPIKeyCredential(envFile map[string]string, ambient []string) (APIKe
 // and the token is removed outright rather than blanked - an empty value still
 // occupies its slot in the credential precedence chain.
 func (c APIKeyCredential) Env(ambient []string) []string {
-	env := make([]string, 0, len(ambient)+1)
+	return append(withoutCredentialVars(ambient, 1), APIKeyEnvVar+"="+c.Key)
+}
+
+// SubscriptionEnv returns the environment a claude subprocess should run with in
+// subscription mode: every inherited variable unchanged, except that both
+// APIKeyEnvVar and AuthTokenEnvVar are removed entirely.
+//
+// Removing rather than blanking them is the point of the mode. The claude CLI
+// reads its credential from those variables before falling back to the OAuth
+// profile it stores on disk, and an empty value still occupies its slot in that
+// precedence chain - it authenticates as an empty credential instead of falling
+// through. A direnv .envrc exporting APIKeyEnvVar is the motivating case.
+//
+// No credential is resolved here, so .utopia/.env is never consulted: a key in
+// that file exists for api-key mode, and reading it in this mode would restore
+// the credential the mode exists to suppress.
+//
+// The result is never nil, even for an empty ambient environment. A nil Env
+// makes os/exec inherit the parent environment, which would leak the very key
+// this mode removes.
+func SubscriptionEnv(ambient []string) []string {
+	return withoutCredentialVars(ambient, 0)
+}
+
+// withoutCredentialVars copies ambient with both Anthropic credential variables
+// dropped, reserving room for extra entries the caller appends. Filtering a copy
+// is what lets a variable be removed at all - the cmd.Env precedent of appending
+// to os.Environ() can only add or shadow, and a shadowing empty value still
+// counts as a credential.
+func withoutCredentialVars(ambient []string, extra int) []string {
+	env := make([]string, 0, len(ambient)+extra)
 	for _, entry := range ambient {
 		switch envName(entry) {
 		case APIKeyEnvVar, AuthTokenEnvVar:
@@ -143,7 +173,7 @@ func (c APIKeyCredential) Env(ambient []string) []string {
 		}
 		env = append(env, entry)
 	}
-	return append(env, APIKeyEnvVar+"="+c.Key)
+	return env
 }
 
 // envName returns the variable name from a "NAME=value" environment entry.
