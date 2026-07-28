@@ -1,7 +1,7 @@
 id: execution-ralph
 title: Ralph Execution Loop
 created: "0001-01-01T00:00:00+00:00"
-updated: "2026-07-28T10:03:57.842118+10:00"
+updated: "2026-07-28T19:36:23.299168+10:00"
 description: |
     The Ralph execution loop runs WorkItems produced by the chunker.
 
@@ -153,11 +153,13 @@ features:
         CRs in one batch operation.
       acceptance_criteria:
         - Command "utopia execute --all" runs all CRs in .utopia/change-requests/
-        - CRs are executed in alphabetical order by filename
+        - CRs are executed in filename order; a leading numeric prefix on the CR filename (e.g. "1_", "2_") controls the execution sequence
         - Each CR goes through the full flow (chunk, execute, merge)
         - If a CR fails, execution stops and reports which CR failed
         - 'Progress shows "Executing CR N of M: <cr-title>"'
         - Summary at end shows how many CRs completed successfully
+        - Numeric filename prefixes are compared numerically, so "2_" runs before "10_" regardless of zero-padding
+        - CRs without a numeric prefix are executed after all prefixed CRs, in alphabetical order
 
     - id: rate-limit-handling
       description: |
