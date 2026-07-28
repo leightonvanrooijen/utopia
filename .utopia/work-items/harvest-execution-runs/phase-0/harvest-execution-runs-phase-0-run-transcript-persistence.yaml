@@ -1,0 +1,66 @@
+id: harvest-execution-runs-phase-0-run-transcript-persistence
+spec_ref: harvest-execution-runs-phase-0.run-transcript-persistence
+title: |
+    Persist each WorkItem's Ralph execution run as a durable, harvestable artifact so the implementation decisions made during execution are no longer lost when the loop moves on. The run transcript reuses the streamed Claude output already captured for completion-token detection.
+status: pending
+prompt: |-
+    ## TASK
+
+    Persist each WorkItem's Ralph execution run as a durable, harvestable artifact so the implementation decisions made during execution are no longer lost when the loop moves on. The run transcript reuses the streamed Claude output already captured for completion-token detection.
+
+
+    Acceptance criteria:
+    - Each WorkItem execution writes a run transcript to .utopia/runs/<cr-id>/<workitem-id>.yaml
+    - The run transcript captures the streamed Claude output already collected for <COMPLETE> token detection
+    - The run record includes workitem_id, cr_id, spec_ref, iteration count, completed_at, and outcome (completed or failed)
+    - The run transcript is committed as part of the same commit as its WorkItem (workitem-commit)
+    - The project .gitignore does not exclude .utopia/runs/
+    - Failure to write a run transcript logs a warning but does not block the execution loop
+    - Each run record can be joined back to its originating CR and conversation via cr_id and workitem_id
+
+
+
+    ## HINTS
+
+    - Reuse the in-memory output buffer already assembled by the streaming-output feature rather than re-capturing
+    - Mirror the non-blocking, warn-on-failure behavior of the existing workitem-commit feature
+    - Write and commit the run transcript at the same point in the loop where the workitem commit is created
+
+
+
+    ## STANDARDS
+
+    This project defines coding standards in .utopia/standards/. Before implementing, read the standards docs relevant to the files this task touches:
+
+    - id: cli-organization
+      description: How to structure cobra commands in internal/cli: thin handlers that own the CLI frame and delegate the algorithm to domain packages.
+      tags: go, cli, cobra, architecture
+      path: .utopia/standards/cli-organization.md
+    - id: error-handling
+      description: How errors are created, wrapped, matched, and surfaced: typed domain errors for branching, %w wrapping for infrastructure, one exit point in root.go.
+      tags: go, errors, cli
+      path: .utopia/standards/error-handling.md
+    - id: terminal-output
+      description: One shared output vocabulary (glyphs, banners, progress) routed through cobra's injectable writers so command output is consistent and testable.
+      tags: go, cli, ux, output
+      path: .utopia/standards/terminal-output.md
+
+
+    ## CONSTRAINTS
+
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+order: 0
+estimated_complexity: medium
