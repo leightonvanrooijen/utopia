@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -81,6 +82,22 @@ func (r *Runner) WithModelConfig(mc *domain.ModelConfig) *Runner {
 		workDir:          r.workDir,
 		cli:              r.cli,
 		modelConfig:      mc,
+		validatorTimeout: r.validatorTimeout,
+	}
+}
+
+// WithAuth selects the credential every validator invocation authenticates
+// with. Validators run as part of the same invocation as the work they check,
+// so they must bill to the account that invocation resolved rather than to
+// whatever the ambient environment happens to hold.
+//
+// The empty mode inherits the ambient environment, which is the pre-auth
+// behaviour for a runner whose caller never resolved a mode.
+func (r *Runner) WithAuth(mode domain.AuthMode) *Runner {
+	return &Runner{
+		workDir:          r.workDir,
+		cli:              r.cli.WithAuth(mode, filepath.Join(r.workDir, ".utopia")),
+		modelConfig:      r.modelConfig,
 		validatorTimeout: r.validatorTimeout,
 	}
 }

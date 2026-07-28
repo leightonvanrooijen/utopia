@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/leightonvanrooijen/utopia/internal"
+	"github.com/leightonvanrooijen/utopia/internal/domain"
 )
 
 // validatorCreatorSystemPrompt is the system prompt for the AI assistant
@@ -75,6 +76,14 @@ func NewCreator(projectDir string) *Creator {
 func (c *Creator) WithModel(model string) *Creator {
 	c.model = model
 	c.cli = c.cli.WithModel(model)
+	return c
+}
+
+// WithAuth selects the credential the creation session authenticates with.
+// The empty mode inherits the ambient environment, so a caller that never
+// resolved a mode keeps the pre-auth behaviour.
+func (c *Creator) WithAuth(mode domain.AuthMode) *Creator {
+	c.cli = c.cli.WithAuth(mode, filepath.Join(c.projectDir, ".utopia"))
 	return c
 }
 

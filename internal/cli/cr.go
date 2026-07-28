@@ -372,8 +372,10 @@ func runCR(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Report the credential this invocation runs with, before any work starts
-	if _, err := ResolveAuth(cmd); err != nil {
+	// Resolve and report the credential this invocation runs with, before any
+	// work starts
+	authMode, err := ResolveAuth(cmd)
+	if err != nil {
 		return err
 	}
 
@@ -434,7 +436,7 @@ func runCR(cmd *cobra.Command, args []string) error {
 
 	// Run interactive Claude session with transcript capture
 	ctx := context.Background()
-	cli := internal.NewCLI()
+	cli := internal.NewCLI().WithAuth(authMode, utopiaDir)
 	if modelID != "" {
 		cli = cli.WithModel(modelID)
 	}

@@ -66,8 +66,10 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Report the credential this invocation runs with, before any work starts
-	if _, err := ResolveAuth(cmd); err != nil {
+	// Resolve and report the credential this invocation runs with, before any
+	// work starts
+	authMode, err := ResolveAuth(cmd)
+	if err != nil {
 		return err
 	}
 
@@ -102,6 +104,7 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 		Scope:         scope,
 		Verbose:       discoverVerboseFlag,
 		Model:         modelID,
+		Auth:          authMode,
 		ExistingSpecs: existingSpecs,
 	})
 	if err != nil {
@@ -207,8 +210,10 @@ func runDiscoverDomain(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Report the credential this invocation runs with, before any work starts
-	if _, err := ResolveAuth(cmd); err != nil {
+	// Resolve and report the credential this invocation runs with, before any
+	// work starts
+	authMode, err := ResolveAuth(cmd)
+	if err != nil {
 		return err
 	}
 
@@ -259,6 +264,7 @@ func runDiscoverDomain(cmd *cobra.Command, args []string) error {
 		Scope:        scope,
 		Verbose:      discoverDomainVerboseFlag,
 		Model:        modelID,
+		Auth:         authMode,
 		Incremental:  isIncremental,
 		LastRun:      lastRunTime,
 		ExistingDocs: existingDomainDocs,

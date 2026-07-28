@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -31,6 +32,14 @@ func newProgress(totalPhases int, verbose bool) *ui.Progress {
 	return ui.NewProgress(os.Stdout, totalPhases, verbose)
 }
 
+// utopiaDirOf returns the .utopia directory of a project, which is where
+// api-key mode looks for the .env holding the key. Both discovery pipelines are
+// handed a project directory rather than a .utopia one, so the one place that
+// needs the latter derives it.
+func utopiaDirOf(projectDir string) string {
+	return filepath.Join(projectDir, ".utopia")
+}
+
 // SpecsOptions configures the spec discovery pipeline.
 type SpecsOptions struct {
 	// ProjectDir is the absolute path of the project to scan
@@ -41,6 +50,10 @@ type SpecsOptions struct {
 	Verbose bool
 	// Model is an optional Claude model override
 	Model string
+	// Auth selects the credential every stage of the pipeline authenticates
+	// with, including the parallel refinement agents. The empty mode inherits
+	// the ambient environment.
+	Auth domain.AuthMode
 	// ExistingSpecs are summarized in the prompt so Claude skips documented capabilities
 	ExistingSpecs []*domain.Spec
 }
@@ -77,7 +90,7 @@ func Specs(ctx context.Context, store *internal.YAMLStore, opts SpecsOptions) (*
 	prog.EndPhase(fmt.Sprintf("%d files found", len(filesAnalyzed)))
 
 	specsSummary := buildExistingSpecsSummary(opts.ExistingSpecs)
-	cli := internal.NewCLI().WithVerbose(opts.Verbose)
+	cli := internal.NewCLI().WithVerbose(opts.Verbose).WithAuth(opts.Auth, utopiaDirOf(opts.ProjectDir))
 	if opts.Model != "" {
 		cli = cli.WithModel(opts.Model)
 	}
@@ -102,7 +115,7 @@ func Specs(ctx context.Context, store *internal.YAMLStore, opts SpecsOptions) (*
 	}
 
 	prog.StartPhase(3, fmt.Sprintf("Stage 2: Refining %d candidates in parallel", len(qualified)))
-	drafts, refinementErrors := runParallelRefinement(ctx, qualified, defaultRefinementIterations, opts.Verbose, opts.Model)
+	drafts, refinementErrors := runParallelRefinement(ctx, qualified, defaultRefinementIterations, opts.Verbose, opts.Model, opts.Auth, opts.ProjectDir)
 	prog.EndPhase(fmt.Sprintf("%d drafts refined", len(drafts)))
 
 	if len(refinementErrors) > 0 && opts.Verbose {
@@ -212,7 +225,7 @@ THEN: Output ONLY the YAML block with your refined specification.`,
 		iteration, maxIterations, candidate.ID, candidate.Title, candidate.Description, sourceFilesStr, candidate.QualificationReason, candidate.ID)
 }
 
-func runParallelRefinement(ctx context.Context, candidates []qualifiedCandidate, iterations int, verbose bool, modelID string) ([]*domain.DraftSpec, []error) {
+func runParallelRefinement(ctx context.Context, candidates []qualifiedCandidate, iterations int, verbose bool, modelID string, auth domain.AuthMode, projectDir string) ([]*domain.DraftSpec, []error) {
 	var (
 		drafts []*domain.DraftSpec
 		errors []error
@@ -220,7 +233,8 @@ func runParallelRefinement(ctx context.Context, candidates []qualifiedCandidate,
 		wg     sync.WaitGroup
 	)
 
-	refinementCLI := internal.NewCLI().WithVerbose(verbose).WithAllowedTools([]string{"Read", "Grep", "Glob"})
+	refinementCLI := internal.NewCLI().WithVerbose(verbose).WithAllowedTools([]string{"Read", "Grep", "Glob"}).
+		WithAuth(auth, utopiaDirOf(projectDir))
 	if modelID != "" {
 		refinementCLI = refinementCLI.WithModel(modelID)
 	}

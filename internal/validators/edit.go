@@ -124,6 +124,14 @@ func (e *Editor) WithModel(model string) *Editor {
 	return e
 }
 
+// WithAuth selects the credential the editing session authenticates with.
+// The empty mode inherits the ambient environment, so a caller that never
+// resolved a mode keeps the pre-auth behaviour.
+func (e *Editor) WithAuth(mode domain.AuthMode) *Editor {
+	e.cli = e.cli.WithAuth(mode, filepath.Join(e.projectDir, ".utopia"))
+	return e
+}
+
 // ValidatorInfo contains information about an available validator for selection.
 type ValidatorInfo struct {
 	Path      string            // Path relative to .utopia/

@@ -80,8 +80,10 @@ func runValidatorCreate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Report the credential this invocation runs with, before any work starts
-	if _, err := ResolveAuth(cmd); err != nil {
+	// Resolve and report the credential this invocation runs with, before any
+	// work starts
+	authMode, err := ResolveAuth(cmd)
+	if err != nil {
 		return err
 	}
 
@@ -104,7 +106,7 @@ func runValidatorCreate(cmd *cobra.Command, args []string) error {
 	}()
 
 	// Run the validator creation assistant
-	creator := validators.NewCreator(projectDir)
+	creator := validators.NewCreator(projectDir).WithAuth(authMode)
 	if modelID != "" {
 		creator = creator.WithModel(modelID)
 	}
@@ -154,8 +156,10 @@ func runValidatorEdit(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Report the credential this invocation runs with, before any work starts
-	if _, err := ResolveAuth(cmd); err != nil {
+	// Resolve and report the credential this invocation runs with, before any
+	// work starts
+	authMode, err := ResolveAuth(cmd)
+	if err != nil {
 		return err
 	}
 
@@ -166,7 +170,7 @@ func runValidatorEdit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create the editor
-	editor := validators.NewEditor(projectDir)
+	editor := validators.NewEditor(projectDir).WithAuth(authMode)
 	if modelID != "" {
 		editor = editor.WithModel(modelID)
 	}

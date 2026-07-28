@@ -458,7 +458,7 @@ func TestProbeUntilRecovered(t *testing.T) {
 func TestHandleClaudeLimits(t *testing.T) {
 	t.Run("no limit returns limitNone", func(t *testing.T) {
 		result := &internal.PromptResult{Stdout: "all good"}
-		outcome, err := handleClaudeLimits(context.Background(), result)
+		outcome, err := handleClaudeLimits(context.Background(), result, "", "")
 		if err != nil {
 			t.Fatalf("handleClaudeLimits() error = %v, want nil", err)
 		}
@@ -468,7 +468,7 @@ func TestHandleClaudeLimits(t *testing.T) {
 	})
 
 	t.Run("nil result returns limitNone", func(t *testing.T) {
-		outcome, err := handleClaudeLimits(context.Background(), nil)
+		outcome, err := handleClaudeLimits(context.Background(), nil, "", "")
 		if err != nil || outcome != limitNone {
 			t.Errorf("handleClaudeLimits(nil) = (%v, %v), want (limitNone, nil)", outcome, err)
 		}
@@ -478,7 +478,7 @@ func TestHandleClaudeLimits(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 		result := &internal.PromptResult{Stderr: "Limit reached · resets 1am (Australia/Sydney)"}
-		outcome, err := handleClaudeLimits(ctx, result)
+		outcome, err := handleClaudeLimits(ctx, result, "", "")
 		if outcome != limitWaited {
 			t.Errorf("handleClaudeLimits() outcome = %v, want limitWaited", outcome)
 		}

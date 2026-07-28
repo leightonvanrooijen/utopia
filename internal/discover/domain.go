@@ -80,6 +80,9 @@ type DomainOptions struct {
 	Verbose bool
 	// Model is an optional Claude model override
 	Model string
+	// Auth selects the credential the analysis authenticates with. The empty
+	// mode inherits the ambient environment.
+	Auth domain.AuthMode
 	// Incremental restricts scanning to files modified after LastRun
 	Incremental bool
 	// LastRun is the previous discovery run time (used when Incremental is true)
@@ -120,7 +123,7 @@ func Domain(ctx context.Context, store *internal.YAMLStore, opts DomainOptions) 
 	systemPrompt := fmt.Sprintf(domainSystemPrompt, codebaseContext, domainDocsSummary)
 
 	prog.StartPhase(2, "Analyzing codebase with Claude")
-	cli := internal.NewCLI().WithVerbose(true)
+	cli := internal.NewCLI().WithVerbose(true).WithAuth(opts.Auth, utopiaDirOf(opts.ProjectDir))
 	if opts.Model != "" {
 		cli = cli.WithModel(opts.Model)
 	}

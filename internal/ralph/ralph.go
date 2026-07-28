@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -34,7 +35,14 @@ type Result struct {
 // Work items are processed one at a time, in order, retrying until
 // verification passes or max iterations is reached.
 // The optional model parameter specifies a Claude model override (e.g., "claude-sonnet-4-20250514").
-func Execute(ctx context.Context, specID string, store *internal.YAMLStore, config *domain.Config, projectDir string, model ...string) (*Result, error) {
+//
+// auth selects the credential every claude subprocess this loop spawns
+// authenticates with - the work-item agents, the validators they gate on, and
+// the spend-limit probe alike. One loop can run for hours across hundreds of
+// subprocesses, so a mode that reached only some of them would split a single
+// run's usage across two accounts. The empty mode inherits the ambient
+// environment, which is the pre-auth behaviour.
+func Execute(ctx context.Context, specID string, store *internal.YAMLStore, config *domain.Config, projectDir string, auth domain.AuthMode, model ...string) (*Result, error) {
 	// Load work items for this spec
 	items, err := store.ListWorkItemsForSpec(specID)
 	if err != nil {
@@ -59,12 +67,12 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 	}
 
 	// Create dependencies
-	cli := internal.NewCLI().WithVerbose(true)
+	cli := internal.NewCLI().WithVerbose(true).WithAuth(auth, filepath.Join(projectDir, ".utopia"))
 	if len(model) > 0 && model[0] != "" {
 		cli = cli.WithModel(model[0])
 	}
 	verifier := verification.NewRunner(projectDir)
-	validatorRunner := validators.NewRunner(projectDir).WithModelConfig(config.Models)
+	validatorRunner := validators.NewRunner(projectDir).WithModelConfig(config.Models).WithAuth(auth)
 
 	// Load validators from config
 	var validatorList []*domain.Validator
@@ -138,7 +146,7 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 		fmt.Printf("[%d/%d] %s - starting execution\n", i+1, len(items), item.ID)
 
 		// Execute this work item with the Ralph loop
-		err := executeWorkItem(ctx, item, specID, store, cli, verifier, config, projectDir, dispatcher, basePayload, validatorRunner, validatorList)
+		err := executeWorkItem(ctx, item, specID, store, cli, verifier, config, projectDir, auth, dispatcher, basePayload, validatorRunner, validatorList)
 		if err != nil {
 			result.StoppedAt = item.ID
 			result.Reason = err.Error()
@@ -156,7 +164,7 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 	// fires phase-verified and phase-completed (and their gating connectors)
 	// even when no validators are configured.
 	if result.Completed == result.Total {
-		if err := runAfterPhaseValidators(ctx, cli, config, projectDir, dispatcher, basePayload, validatorRunner, validatorList); err != nil {
+		if err := runAfterPhaseValidators(ctx, cli, config, projectDir, auth, dispatcher, basePayload, validatorRunner, validatorList); err != nil {
 			result.Reason = err.Error()
 			failPayload := basePayload
 			failPayload.Reason = err.Error()
@@ -179,6 +187,7 @@ func executeWorkItem(
 	verifier *verification.Runner,
 	config *domain.Config,
 	projectDir string,
+	auth domain.AuthMode,
 	dispatcher *Dispatcher,
 	basePayload EventPayload,
 	validatorRunner *validators.Runner,
@@ -244,7 +253,7 @@ func executeWorkItem(
 		// iterations, so we undo the increment and retry with a normally
 		// rebuilt prompt. A limit error means ctx was cancelled while
 		// waiting/probing (Ctrl+C or timeout) - take the graceful shutdown path.
-		if outcome, limitErr := handleClaudeLimits(ctx, claudeResult); limitErr != nil {
+		if outcome, limitErr := handleClaudeLimits(ctx, claudeResult, auth, projectDir); limitErr != nil {
 			_ = store.SaveWorkItemForSpec(specID, item)
 			return limitErr
 		} else if outcome == limitWaited {
@@ -498,6 +507,7 @@ func runAfterPhaseValidators(
 	cli *internal.CLI,
 	config *domain.Config,
 	projectDir string,
+	auth domain.AuthMode,
 	dispatcher *Dispatcher,
 	basePayload EventPayload,
 	validatorRunner *validators.Runner,
@@ -572,7 +582,7 @@ func runAfterPhaseValidators(
 		// Detect and handle Claude usage limits without counting the attempt
 		// against max iterations. A limit error means ctx was cancelled while
 		// waiting/probing (Ctrl+C or timeout) - take the graceful shutdown path.
-		if outcome, limitErr := handleClaudeLimits(ctx, claudeResult); limitErr != nil {
+		if outcome, limitErr := handleClaudeLimits(ctx, claudeResult, auth, projectDir); limitErr != nil {
 			return limitErr
 		} else if outcome == limitWaited {
 			iteration--

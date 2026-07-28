@@ -141,8 +141,10 @@ func runShape(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Report the credential this invocation runs with, before any work starts
-	if _, err := ResolveAuth(cmd); err != nil {
+	// Resolve and report the credential this invocation runs with, before any
+	// work starts
+	authMode, err := ResolveAuth(cmd)
+	if err != nil {
 		return err
 	}
 
@@ -175,7 +177,7 @@ func runShape(cmd *cobra.Command, args []string) error {
 	out.Progressf("  "+ui.Bullet+" HIGH confidence:   %d\n\n", counts[domain.DraftConfidenceHigh])
 
 	ctx := context.Background()
-	cli := internal.NewCLI()
+	cli := internal.NewCLI().WithAuth(authMode, utopiaDir)
 	if modelID != "" {
 		cli = cli.WithModel(modelID)
 	}
@@ -507,8 +509,10 @@ func runShapeDomain(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Report the credential this invocation runs with, before any work starts
-	if _, err := ResolveAuth(cmd); err != nil {
+	// Resolve and report the credential this invocation runs with, before any
+	// work starts
+	authMode, err := ResolveAuth(cmd)
+	if err != nil {
 		return err
 	}
 
@@ -542,7 +546,7 @@ func runShapeDomain(cmd *cobra.Command, args []string) error {
 	out.Progressf("  "+ui.Bullet+" HIGH confidence:   %d\n\n", counts[domain.DraftDomainConfidenceHigh])
 
 	ctx := context.Background()
-	cli := internal.NewCLI()
+	cli := internal.NewCLI().WithAuth(authMode, utopiaDir)
 	if modelID != "" {
 		cli = cli.WithModel(modelID)
 	}

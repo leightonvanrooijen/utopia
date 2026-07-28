@@ -25,6 +25,9 @@ type Options struct {
 	UtopiaDir string
 	// Model is an optional Claude model override
 	Model string
+	// Auth selects the credential the harvest session authenticates with.
+	// The empty mode inherits the ambient environment.
+	Auth domain.AuthMode
 }
 
 // Result represents the outcome of a harvest session.
@@ -550,7 +553,7 @@ func Run(ctx context.Context, store *internal.YAMLStore, opts Options) (*Result,
 	fmt.Println()
 
 	// Run interactive Claude session
-	cli := internal.NewCLI()
+	cli := internal.NewCLI().WithAuth(opts.Auth, opts.UtopiaDir)
 	if opts.Model != "" {
 		cli = cli.WithModel(opts.Model)
 	}

@@ -85,8 +85,10 @@ func runExecuteWatch(cmd *cobra.Command, intervalSec int) error {
 		return err
 	}
 
-	// Report the credential this invocation runs with, before any work starts
-	if _, err := ResolveAuth(cmd); err != nil {
+	// Resolve and report the credential this invocation runs with, before any
+	// work starts
+	authMode, err := ResolveAuth(cmd)
+	if err != nil {
 		return err
 	}
 	if intervalSec <= 0 {
@@ -152,7 +154,7 @@ func runExecuteWatch(cmd *cobra.Command, intervalSec int) error {
 			out.Progressf("Executing ready CR: %s (%s)\n", cr.Title, cr.ID)
 			out.Progressf("================================================================\n\n")
 
-			if execErr := executeSingleCR(ctx, out, cr, store, config, absPath, utopiaDir, modelID); execErr != nil {
+			if execErr := executeSingleCR(ctx, out, cr, store, config, absPath, utopiaDir, modelID, authMode); execErr != nil {
 				// Ctrl+C / timeout during execution: stop the whole daemon cleanly.
 				if ctx.Err() != nil {
 					out.Progressf("\nWatch stopped.\n")

@@ -3,12 +3,14 @@ package ralph
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/leightonvanrooijen/utopia/internal"
+	"github.com/leightonvanrooijen/utopia/internal/domain"
 )
 
 // rateLimitPattern matches the Claude rolling usage-limit message across the
@@ -256,7 +258,12 @@ const (
 // was present. A non-nil error is returned only when ctx is cancelled while
 // waiting or probing (Ctrl+C / session timeout), letting the caller take the
 // existing graceful shutdown path.
-func handleClaudeLimits(ctx context.Context, result *internal.PromptResult) (limitOutcome, error) {
+//
+// auth and projectDir exist so the spend-limit probe authenticates with the
+// credential the run resolved. A probe on the wrong account answers the wrong
+// question: it would report the limit lifted while the account actually doing
+// the work is still capped, and the loop would spin on a limit that never clears.
+func handleClaudeLimits(ctx context.Context, result *internal.PromptResult, auth domain.AuthMode, projectDir string) (limitOutcome, error) {
 	if result == nil {
 		return limitNone, nil
 	}
@@ -280,7 +287,7 @@ func handleClaudeLimits(ctx context.Context, result *internal.PromptResult) (lim
 
 	// Org monthly spend limit: no reset time exists, so probe until it lifts.
 	if DetectSpendLimit(result.Stdout, result.Stderr) {
-		probeCLI := internal.NewCLI()
+		probeCLI := internal.NewCLI().WithAuth(auth, filepath.Join(projectDir, ".utopia"))
 		probe := func(pctx context.Context) (*internal.PromptResult, error) {
 			return probeCLI.Prompt(pctx, spendLimitProbePrompt)
 		}

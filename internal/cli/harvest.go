@@ -55,8 +55,10 @@ func runHarvest(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Report the credential this invocation runs with, before any work starts
-	if _, err := ResolveAuth(cmd); err != nil {
+	// Resolve and report the credential this invocation runs with, before any
+	// work starts
+	authMode, err := ResolveAuth(cmd)
+	if err != nil {
 		return err
 	}
 
@@ -69,6 +71,7 @@ func runHarvest(cmd *cobra.Command, args []string) error {
 		ProjectDir: absPath,
 		UtopiaDir:  utopiaDir,
 		Model:      modelID,
+		Auth:       authMode,
 	})
 	if err != nil {
 		return fmt.Errorf("harvest failed: %w", err)
