@@ -16,3 +16,5 @@ changes:
     hints:
       - The batch ordering is where execute --all enumerates .utopia/change-requests/ - update that sort comparator
       - Parse the leading digits before the first underscore as an int for the numeric-aware sort; treat no-prefix as "after" prefixed entries
+      - 'execute --all ordering lives in runExecuteAll (internal/cli/execute.go); it currently sorts by crs[i].ID (internal id), which ignores the filename prefix entirely and even contradicts the current spec text "by filename" - switch the comparator to a numeric-prefix-aware filename sort'
+      - 'ListChangeRequests (internal/store.go) discards the source filename and returns only parsed CRs, so the prefix is lost before the sort; retain each CR''s filename (or return it alongside) so the comparator can order by it'
