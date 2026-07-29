@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/leightonvanrooijen/utopia/internal/domain"
@@ -380,22 +381,44 @@ func (s *YAMLStore) ResolveChangeRequest(name string) (*domain.ChangeRequest, er
 	}
 }
 
-// stripNumericPrefix removes a leading numeric ordering prefix - a run of one
-// or more digits followed by "_" - from a CR filename basename, mirroring the
-// numeric-prefix convention that also orders batch execution. "01_reusable-core"
-// becomes "reusable-core"; a basename with no such prefix (no "_", an empty
-// digit run, or a non-digit before the "_") is returned unchanged.
-func stripNumericPrefix(base string) string {
+// NumericFilenamePrefix splits a CR filename basename on its leading numeric
+// ordering prefix - a run of one or more digits followed by "_". It returns the
+// prefix as a sequence number, the remainder after the "_", and whether such a
+// prefix was present. Zero-padding is collapsed by the integer parse, so "2_x"
+// and "02_x" both yield 2, which is what makes "2_" sort before "10_". A
+// basename with no such prefix (no "_", an empty digit run, a non-digit inside
+// the run, or a digit run too long to be a sequence number) is returned
+// unchanged with ok false.
+//
+// This is the single definition of the numeric-prefix convention, which holds
+// that the ordering prefix lives on the CR *filename* while the internal id
+// stays clean: 01_reusable-core.yaml contains id: reusable-core. Both halves of
+// the convention read it - resolution ignores the prefix (stripNumericPrefix,
+// ChangeRequestPath) and batch execution orders by it.
+func NumericFilenamePrefix(base string) (int, string, bool) {
 	i := strings.IndexByte(base, '_')
 	if i <= 0 {
-		return base
+		return 0, base, false
 	}
 	for j := 0; j < i; j++ {
 		if base[j] < '0' || base[j] > '9' {
-			return base
+			return 0, base, false
 		}
 	}
-	return base[i+1:]
+	n, err := strconv.Atoi(base[:i])
+	if err != nil {
+		// A digit run that overflows an int is not a sequence number.
+		return 0, base, false
+	}
+	return n, base[i+1:], true
+}
+
+// stripNumericPrefix removes a leading numeric ordering prefix from a CR
+// filename basename: "01_reusable-core" becomes "reusable-core", while a
+// basename carrying no prefix is returned unchanged.
+func stripNumericPrefix(base string) string {
+	_, rest, _ := NumericFilenamePrefix(base)
+	return rest
 }
 
 // ChangeRequestPath returns the absolute path of the change request file
@@ -463,20 +486,34 @@ func (s *YAMLStore) DeleteChangeRequest(id string) error {
 	return Delete(s, path, "change request", id)
 }
 
-// ListChangeRequests returns all change requests in the change-requests directory.
-// Skips _template.yaml if present.
-func (s *YAMLStore) ListChangeRequests() ([]*domain.ChangeRequest, error) {
+// ChangeRequestFile pairs a loaded change request with the basename (".yaml"
+// stripped) of the file it came from. The two are deliberately independent: the
+// numeric ordering prefix lives on the filename while the internal id stays
+// clean, so 01_reusable-core.yaml holds id: reusable-core. Nothing in the parsed
+// document records which file it came from, so callers that need the filename -
+// batch execution, which orders by it - must be handed it alongside the CR.
+type ChangeRequestFile struct {
+	Basename string
+	CR       *domain.ChangeRequest
+}
+
+// ListChangeRequestFiles returns all change requests in the change-requests
+// directory, each paired with the basename of its file. Skips _template.yaml if
+// present. Entries come back in os.ReadDir order (filename-sorted as strings);
+// callers that care about execution sequence must apply the numeric-prefix
+// ordering rule themselves.
+func (s *YAMLStore) ListChangeRequestFiles() ([]ChangeRequestFile, error) {
 	dir := filepath.Join(s.baseDir, "change-requests")
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return []*domain.ChangeRequest{}, nil
+			return []ChangeRequestFile{}, nil
 		}
 		return nil, fmt.Errorf("failed to read change requests directory: %w", err)
 	}
 
-	var crs []*domain.ChangeRequest
+	var files []ChangeRequestFile
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
 			continue
@@ -486,14 +523,30 @@ func (s *YAMLStore) ListChangeRequests() ([]*domain.ChangeRequest, error) {
 			continue
 		}
 
-		id := strings.TrimSuffix(entry.Name(), ".yaml")
-		cr, err := s.LoadChangeRequest(id)
+		base := strings.TrimSuffix(entry.Name(), ".yaml")
+		cr, err := s.LoadChangeRequest(base)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load change request %s: %w", id, err)
+			return nil, fmt.Errorf("failed to load change request %s: %w", base, err)
 		}
-		crs = append(crs, cr)
+		files = append(files, ChangeRequestFile{Basename: base, CR: cr})
 	}
 
+	return files, nil
+}
+
+// ListChangeRequests returns all change requests in the change-requests directory.
+// Skips _template.yaml if present. Use ListChangeRequestFiles when the on-disk
+// filename matters (it carries the ordering prefix, which the CR's id does not).
+func (s *YAMLStore) ListChangeRequests() ([]*domain.ChangeRequest, error) {
+	files, err := s.ListChangeRequestFiles()
+	if err != nil {
+		return nil, err
+	}
+
+	crs := make([]*domain.ChangeRequest, 0, len(files))
+	for _, f := range files {
+		crs = append(crs, f.CR)
+	}
 	return crs, nil
 }
 

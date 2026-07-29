@@ -208,56 +208,49 @@ func runExecute(cmd *cobra.Command, args []string) error {
 // BATCH EXECUTION
 // ============================================================================
 
-// crNumericPrefix returns the leading numeric prefix of a CR filename - the run
-// of digits before the first "_" - as an integer, and whether such a prefix is
-// present. Zero-padding is collapsed by the integer parse, so "2_" and "02_"
-// both yield 2. Anything that is not a pure digit-run followed by "_" (e.g.
-// "cleanup-legacy", "2024-migration") has no numeric prefix.
-func crNumericPrefix(id string) (int, bool) {
-	i := strings.IndexByte(id, '_')
-	if i <= 0 {
-		return 0, false
-	}
-	n, err := strconv.Atoi(id[:i])
-	if err != nil || n < 0 {
-		return 0, false
-	}
-	return n, true
-}
-
-// lessCRExecutionOrder is the batch execution ordering rule: CRs run in filename
-// order, where a leading numeric prefix (e.g. "1_", "2_") controls the sequence
-// and is compared numerically ("2_" before "10_" regardless of zero-padding).
-// CRs without a numeric prefix run after all prefixed CRs, in alphabetical
-// order. Extracted as a pure function so the ordering policy is testable in
-// isolation from the batch loop.
-func lessCRExecutionOrder(a, b *domain.ChangeRequest) bool {
-	na, oka := crNumericPrefix(a.ID)
-	nb, okb := crNumericPrefix(b.ID)
+// lessCRExecutionOrder is the batch execution ordering rule: CRs run in
+// filename order, where a leading numeric prefix on the filename (e.g. "1_",
+// "2_") controls the sequence and is compared numerically ("2_" before "10_"
+// regardless of zero-padding). CRs without a numeric filename prefix run after
+// all prefixed CRs, in alphabetical filename order.
+//
+// It reads the basename, never cr.ID: the ordering prefix lives on the filename
+// while the internal id stays clean (01_reusable-core.yaml holds
+// id: reusable-core), so sorting on the id sees no prefix at all and silently
+// degrades to alphabetical id order. The id remains the key for work items,
+// progress output and commit messages - only sequencing is filename-driven.
+//
+// Kept as a pure function so the ordering policy is testable in isolation from
+// the batch loop.
+func lessCRExecutionOrder(a, b internal.ChangeRequestFile) bool {
+	na, _, oka := internal.NumericFilenamePrefix(a.Basename)
+	nb, _, okb := internal.NumericFilenamePrefix(b.Basename)
 	switch {
 	case oka && okb:
 		if na != nb {
 			return na < nb
 		}
-		return a.ID < b.ID // same sequence number: stable alphabetical tie-break
+		return a.Basename < b.Basename // same sequence number: stable alphabetical tie-break
 	case oka != okb:
 		return oka // prefixed CRs run before non-prefixed ones
 	default:
-		return a.ID < b.ID // neither prefixed: alphabetical
+		return a.Basename < b.Basename // neither prefixed: alphabetical
 	}
 }
 
 func runExecuteAll(out *ui.Printer, store *internal.YAMLStore, config *domain.Config, projectDir, utopiaDir, modelID string, authMode domain.AuthMode) error {
-	crs, err := store.ListChangeRequests()
+	// The filenames come back alongside the CRs because they, not the internal
+	// ids, carry the ordering prefix.
+	crFiles, err := store.ListChangeRequestFiles()
 	if err != nil {
 		return fmt.Errorf("failed to list change requests: %w", err)
 	}
-	if len(crs) == 0 {
+	if len(crFiles) == 0 {
 		return fmt.Errorf("no change requests found in .utopia/change-requests/\n\nCreate one with: utopia cr")
 	}
 
-	sort.Slice(crs, func(i, j int) bool { return lessCRExecutionOrder(crs[i], crs[j]) })
-	totalCRs := len(crs)
+	sort.Slice(crFiles, func(i, j int) bool { return lessCRExecutionOrder(crFiles[i], crFiles[j]) })
+	totalCRs := len(crFiles)
 	out.Progressf("Found %d change request(s) to execute\n\n", totalCRs)
 
 	sessionStart := time.Now()
@@ -279,7 +272,10 @@ func runExecuteAll(out *ui.Printer, store *internal.YAMLStore, config *domain.Co
 	}()
 
 	completedCRs := 0
-	for i, cr := range crs {
+	for i, crFile := range crFiles {
+		// Sequencing used the filename; everything downstream - work item keying,
+		// progress output, commit messages - keys off the CR's internal id.
+		cr := crFile.CR
 		if ctx.Err() != nil {
 			if ctx.Err() == context.DeadlineExceeded {
 				sessionDuration := time.Since(sessionStart).Round(time.Second)

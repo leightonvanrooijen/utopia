@@ -1577,6 +1577,39 @@ func writeRawCR(t *testing.T, store *YAMLStore, filename, id string) {
 	}
 }
 
+func TestNumericFilenamePrefix(t *testing.T) {
+	tests := []struct {
+		base     string
+		wantN    int
+		wantRest string
+		wantHave bool
+	}{
+		{"1_first", 1, "first", true},
+		{"2_second", 2, "second", true},
+		{"10_tenth", 10, "tenth", true},
+		{"02_padded", 2, "padded", true}, // zero-padding collapses to the same value
+		{"000_zero", 0, "zero", true},    // an explicit zero prefix is still a prefix
+		{"01_reusable-core", 1, "reusable-core", true},
+		{"cleanup-legacy", 0, "cleanup-legacy", false},
+		{"2024-migration", 0, "2024-migration", false}, // digits not followed by "_" is not a prefix
+		{"2a_mixed", 0, "2a_mixed", false},             // non-digit inside the run
+		{"_leading", 0, "_leading", false},             // empty digit run
+		{"nodigits", 0, "nodigits", false},
+		{"+5_signed", 0, "+5_signed", false}, // a sign is not a digit run
+		{"-5_negative", 0, "-5_negative", false},
+		// A digit run too long to be a sequence number is left alone rather than
+		// silently ordering as garbage.
+		{"99999999999999999999_overflow", 0, "99999999999999999999_overflow", false},
+	}
+	for _, tt := range tests {
+		gotN, gotRest, gotHave := NumericFilenamePrefix(tt.base)
+		if gotN != tt.wantN || gotRest != tt.wantRest || gotHave != tt.wantHave {
+			t.Errorf("NumericFilenamePrefix(%q) = (%d, %q, %t), want (%d, %q, %t)",
+				tt.base, gotN, gotRest, gotHave, tt.wantN, tt.wantRest, tt.wantHave)
+		}
+	}
+}
+
 func TestStripNumericPrefix(t *testing.T) {
 	tests := []struct{ base, want string }{
 		{"01_reusable-core", "reusable-core"},
@@ -1591,6 +1624,61 @@ func TestStripNumericPrefix(t *testing.T) {
 	for _, tt := range tests {
 		if got := stripNumericPrefix(tt.base); got != tt.want {
 			t.Errorf("stripNumericPrefix(%q) = %q, want %q", tt.base, got, tt.want)
+		}
+	}
+}
+
+// TestListChangeRequestFiles_SurfacesBasename guards the seam where the filename
+// used to be lost: the listing computed each basename in order to load the file,
+// then returned only the parsed documents. Nothing in a parsed CR records which
+// file it came from, so callers that order by filename had no key left but cr.ID
+// - which by convention carries no prefix.
+func TestListChangeRequestFiles_SurfacesBasename(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+	writeRawCR(t, store, "01_reusable-core.yaml", "reusable-core")
+	writeRawCR(t, store, "plain.yaml", "plain")
+
+	files, err := store.ListChangeRequestFiles()
+	if err != nil {
+		t.Fatalf("ListChangeRequestFiles failed: %v", err)
+	}
+	if len(files) != 2 {
+		t.Fatalf("got %d CR file(s), want 2", len(files))
+	}
+
+	// os.ReadDir sorts by filename, so "01_reusable-core" comes first.
+	if files[0].Basename != "01_reusable-core" {
+		t.Errorf("basename = %q, want %q", files[0].Basename, "01_reusable-core")
+	}
+	if files[0].CR.ID != "reusable-core" {
+		t.Errorf("id = %q, want %q - the prefix belongs to the filename only", files[0].CR.ID, "reusable-core")
+	}
+	if files[1].Basename != "plain" || files[1].CR.ID != "plain" {
+		t.Errorf("second entry = (%q, %q), want (%q, %q)",
+			files[1].Basename, files[1].CR.ID, "plain", "plain")
+	}
+}
+
+// TestListChangeRequests_MatchesFileListing keeps the id-only convenience wrapper
+// honest: it must return exactly the CRs from ListChangeRequestFiles, in order.
+func TestListChangeRequests_MatchesFileListing(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+	writeRawCR(t, store, "01_reusable-core.yaml", "reusable-core")
+	writeRawCR(t, store, "plain.yaml", "plain")
+
+	crs, err := store.ListChangeRequests()
+	if err != nil {
+		t.Fatalf("ListChangeRequests failed: %v", err)
+	}
+	want := []string{"reusable-core", "plain"}
+	if len(crs) != len(want) {
+		t.Fatalf("got %d CR(s), want %d", len(crs), len(want))
+	}
+	for i, cr := range crs {
+		if cr.ID != want[i] {
+			t.Errorf("position %d = %q, want %q", i, cr.ID, want[i])
 		}
 	}
 }
