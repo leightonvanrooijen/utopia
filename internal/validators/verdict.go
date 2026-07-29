@@ -40,6 +40,23 @@ const (
 	FailureComprehension FailureClass = "comprehension"
 )
 
+// strongerFailureClass returns the class a caller must act on when two failures
+// disagree. Comprehension is the stronger class: acting on it when the failure
+// was merely mechanical costs one iteration on a more expensive executor, while
+// acting on mechanical when the intent was wrong sends the same executor back to
+// re-derive the same misreading. An empty class contributes nothing, so folding
+// over no failures leaves the result empty.
+func strongerFailureClass(a, b FailureClass) FailureClass {
+	switch {
+	case a == FailureComprehension || b == FailureComprehension:
+		return FailureComprehension
+	case a == FailureMechanical || b == FailureMechanical:
+		return FailureMechanical
+	default:
+		return ""
+	}
+}
+
 // Confidence is how sure the validator is of the class it assigned. A validator
 // that cannot tell the two apart is asked to report ConfidenceLow rather than
 // guess, because a low-confidence failure is resolved as comprehension.

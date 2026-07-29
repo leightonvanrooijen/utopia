@@ -327,26 +327,80 @@ type AggregateResult struct {
 	Passed bool
 	// Feedback contains combined failure messages from failed validators only
 	Feedback string
+	// FailureClass is the strongest class across the failing validators: empty
+	// on pass, FailureComprehension when any failure was a comprehension
+	// failure, and FailureMechanical only when every failure was mechanical.
+	// Validators that disagree resolve toward escalation - one validator
+	// reporting a misread specification is not cancelled out by three reporting
+	// lint errors.
+	FailureClass FailureClass
+	// SpecDefectSuspected is true when any failing validator suspects the
+	// specification rather than the execution. One validator raising it is
+	// enough: it is a positive claim about the spec, and the others' silence
+	// does not contradict it.
+	SpecDefectSuspected bool
+	// Failures carries each failing validator's verdict so its diagnosis and
+	// corrected_intent survive aggregation instead of being flattened into
+	// Feedback, which is prose for the next iteration rather than routing
+	// input. Ordered as the results were collected.
+	Failures []ValidatorFailure
+}
+
+// ValidatorFailure pairs a failing validator's ID with the verdict behind its
+// failure.
+type ValidatorFailure struct {
+	// ID is the failing validator's unique identifier
+	ID string
+	// Verdict is the classification the validator emitted. It is never nil: a
+	// failure that carried no usable verdict is classified rather than left for
+	// callers to interpret, matching InterpretOutput.
+	Verdict *Verdict
 }
 
 // AggregateResults combines results from parallel validator execution.
 // Overall pass requires ALL validators to pass (output <PASSED>).
 // Only failed validators are included in feedback to reduce noise.
+// Alongside the prose, the aggregate carries the classification later phases
+// route on: the strongest failure class, whether any validator suspects a spec
+// defect, and each failing validator's verdict.
 func AggregateResults(results []ValidatorResult) *AggregateResult {
 	aggregate := &AggregateResult{Passed: true}
 
 	var feedback strings.Builder
 	for _, vr := range results {
 		if vr.Err != nil {
-			aggregate.Passed = false
 			feedback.WriteString(fmt.Sprintf("Validator %s error: %v\n\n", vr.ID, vr.Err))
+			// The run never reached a verdict, so nothing in it supports the
+			// cheaper class - the same resolution unusable output gets.
+			aggregate.addFailure(vr.ID, unclassifiedFailure(fmt.Sprintf("validator did not complete: %v", vr.Err)))
 		} else if vr.Result != nil && !vr.Result.Passed {
-			aggregate.Passed = false
 			feedback.WriteString(fmt.Sprintf("Validator %s failed:\n%s\n\n", vr.ID, vr.Result.Feedback))
+			aggregate.addFailure(vr.ID, vr.Result.Verdict)
 		}
 		// Passing validators are not included in feedback
 	}
 
 	aggregate.Feedback = strings.TrimSpace(feedback.String())
 	return aggregate
+}
+
+// addFailure records one failing validator and folds its verdict into the
+// aggregate classification. A failure with no verdict, or one naming no class,
+// resolves to comprehension: comprehension is the class a caller cannot recover
+// from guessing wrong, because retrying on the same executor re-derives the same
+// wrong intent.
+func (a *AggregateResult) addFailure(id string, verdict *Verdict) {
+	a.Passed = false
+
+	if verdict == nil {
+		verdict = unclassifiedFailure("validator reported a failure with no verdict")
+	}
+	class := verdict.FailureClass
+	if class == "" {
+		class = FailureComprehension
+	}
+
+	a.Failures = append(a.Failures, ValidatorFailure{ID: id, Verdict: verdict})
+	a.FailureClass = strongerFailureClass(a.FailureClass, class)
+	a.SpecDefectSuspected = a.SpecDefectSuspected || verdict.SpecDefectSuspected
 }

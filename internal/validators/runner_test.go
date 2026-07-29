@@ -658,6 +658,178 @@ func TestAggregateResults_NilResult(t *testing.T) {
 	}
 }
 
+// failedWith builds a failing ValidatorResult carrying the given verdict, the
+// shape RunAll produces once a validator emits a <VERDICT> block.
+func failedWith(id string, v *Verdict) ValidatorResult {
+	return ValidatorResult{ID: id, Result: &Result{Passed: false, Feedback: "output of " + id, Verdict: v}}
+}
+
+func mechanicalVerdict(diagnosis string) *Verdict {
+	return &Verdict{
+		Outcome:      OutcomeFail,
+		FailureClass: FailureMechanical,
+		Diagnosis:    diagnosis,
+		Confidence:   ConfidenceHigh,
+	}
+}
+
+func comprehensionVerdict(diagnosis, correctedIntent string) *Verdict {
+	return &Verdict{
+		Outcome:         OutcomeFail,
+		FailureClass:    FailureComprehension,
+		Diagnosis:       diagnosis,
+		CorrectedIntent: correctedIntent,
+		Confidence:      ConfidenceHigh,
+	}
+}
+
+func TestAggregateResults_FailureClass(t *testing.T) {
+	tests := []struct {
+		name    string
+		results []ValidatorResult
+		want    FailureClass
+	}{
+		{
+			name:    "all passing carries no class",
+			results: []ValidatorResult{{ID: "v1", Result: &Result{Passed: true, Verdict: &Verdict{Outcome: OutcomePass}}}},
+			want:    "",
+		},
+		{
+			name: "every failure mechanical stays mechanical",
+			results: []ValidatorResult{
+				failedWith("v1", mechanicalVerdict("missing import")),
+				failedWith("v2", mechanicalVerdict("wrong signature")),
+				{ID: "v3", Result: &Result{Passed: true, Verdict: &Verdict{Outcome: OutcomePass}}},
+			},
+			want: FailureMechanical,
+		},
+		{
+			name: "one comprehension outranks three mechanical",
+			results: []ValidatorResult{
+				failedWith("v1", mechanicalVerdict("lint error")),
+				failedWith("v2", mechanicalVerdict("lint error")),
+				failedWith("v3", comprehensionVerdict("built a queue, spec asked for a stack", "the work item asks for LIFO ordering")),
+				failedWith("v4", mechanicalVerdict("lint error")),
+			},
+			want: FailureComprehension,
+		},
+		{
+			name: "a failure carrying no verdict resolves to comprehension",
+			results: []ValidatorResult{
+				failedWith("v1", mechanicalVerdict("lint error")),
+				{ID: "v2", Result: &Result{Passed: false, Feedback: "no verdict here"}},
+			},
+			want: FailureComprehension,
+		},
+		{
+			name: "a validator that never completed resolves to comprehension",
+			results: []ValidatorResult{
+				failedWith("v1", mechanicalVerdict("lint error")),
+				{ID: "v2", Err: context.DeadlineExceeded},
+			},
+			want: FailureComprehension,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := AggregateResults(tt.results).FailureClass; got != tt.want {
+				t.Errorf("FailureClass = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAggregateResults_SpecDefectSuspected(t *testing.T) {
+	suspecting := comprehensionVerdict("the spec contradicts itself", "cannot be satisfied as written")
+	suspecting.SpecDefectSuspected = true
+
+	tests := []struct {
+		name    string
+		results []ValidatorResult
+		want    bool
+	}{
+		{
+			name: "no validator suspects the spec",
+			results: []ValidatorResult{
+				failedWith("v1", mechanicalVerdict("lint error")),
+				failedWith("v2", comprehensionVerdict("misread the work item", "the work item asks for a stack")),
+			},
+			want: false,
+		},
+		{
+			name: "one of many failing validators suspects the spec",
+			results: []ValidatorResult{
+				failedWith("v1", mechanicalVerdict("lint error")),
+				failedWith("v2", suspecting),
+				failedWith("v3", mechanicalVerdict("lint error")),
+			},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := AggregateResults(tt.results).SpecDefectSuspected; got != tt.want {
+				t.Errorf("SpecDefectSuspected = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAggregateResults_RetainsFailingVerdicts(t *testing.T) {
+	results := []ValidatorResult{
+		failedWith("v1", mechanicalVerdict("missing import")),
+		{ID: "v2", Result: &Result{Passed: true, Verdict: &Verdict{Outcome: OutcomePass}}},
+		failedWith("v3", comprehensionVerdict("built a queue", "the work item asks for LIFO ordering")),
+	}
+
+	aggregate := AggregateResults(results)
+
+	if len(aggregate.Failures) != 2 {
+		t.Fatalf("expected 2 retained failures, got %d", len(aggregate.Failures))
+	}
+
+	first, second := aggregate.Failures[0], aggregate.Failures[1]
+	if first.ID != "v1" || second.ID != "v3" {
+		t.Errorf("retained failures = %q, %q, want v1, v3", first.ID, second.ID)
+	}
+	if first.Verdict.Diagnosis != "missing import" {
+		t.Errorf("v1 diagnosis = %q, want %q", first.Verdict.Diagnosis, "missing import")
+	}
+	if first.Verdict.CorrectedIntent != "" {
+		t.Errorf("v1 corrected_intent = %q, want empty on a mechanical failure", first.Verdict.CorrectedIntent)
+	}
+	if second.Verdict.Diagnosis != "built a queue" {
+		t.Errorf("v3 diagnosis = %q, want %q", second.Verdict.Diagnosis, "built a queue")
+	}
+	if second.Verdict.CorrectedIntent != "the work item asks for LIFO ordering" {
+		t.Errorf("v3 corrected_intent = %q, want the corrected intent as reported", second.Verdict.CorrectedIntent)
+	}
+	if second.Verdict.FailureClass != FailureComprehension {
+		t.Errorf("v3 failure_class = %q, want %q", second.Verdict.FailureClass, FailureComprehension)
+	}
+}
+
+func TestAggregateResults_ErrorFailureIsClassified(t *testing.T) {
+	aggregate := AggregateResults([]ValidatorResult{{ID: "v1", Err: context.DeadlineExceeded}})
+
+	if len(aggregate.Failures) != 1 {
+		t.Fatalf("expected the errored validator to be retained, got %d failures", len(aggregate.Failures))
+	}
+
+	v := aggregate.Failures[0].Verdict
+	if v.FailureClass != FailureComprehension {
+		t.Errorf("failure_class = %q, want %q", v.FailureClass, FailureComprehension)
+	}
+	if v.Confidence != ConfidenceLow {
+		t.Errorf("confidence = %q, want %q", v.Confidence, ConfidenceLow)
+	}
+	if !strings.Contains(v.Diagnosis, context.DeadlineExceeded.Error()) {
+		t.Errorf("diagnosis = %q, want it to carry the execution error", v.Diagnosis)
+	}
+}
+
 func TestRunner_RunAllWithDiffLimited_DefaultConcurrency(t *testing.T) {
 	// Verify that concurrencyLimit <= 0 defaults to DefaultValidatorConcurrency
 	validators := []*domain.Validator{
