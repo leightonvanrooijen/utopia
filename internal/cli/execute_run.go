@@ -56,7 +56,7 @@ it later with 'utopia execute <cr-id>').`,
 		},
 	}
 	cmd.Flags().IntVar(&intervalSec, "interval", 10, "seconds to wait between queue scans")
-	cmd.Flags().StringVar(&executeModelFlag, "model", "", "model to use (haiku, sonnet, opus)")
+	cmd.Flags().StringVar(&executeModelFlag, "model", "", "model alias (haiku, sonnet, opus, fable) or a full model identifier")
 	cmd.Flags().StringVar(&executeAuthFlag, "auth", "", "credential to use (api-key, subscription), overriding config.auth.mode")
 	return cmd
 }

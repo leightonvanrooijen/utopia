@@ -63,7 +63,7 @@ Standards are saved to .utopia/standards/`,
 
 func init() {
 	standardsCmd.AddCommand(standardsGenerateCmd)
-	standardsGenerateCmd.Flags().StringVar(&standardsGenerateModelFlag, "model", "", "model to use (haiku, sonnet, opus)")
+	standardsGenerateCmd.Flags().StringVar(&standardsGenerateModelFlag, "model", "", "model alias (haiku, sonnet, opus, fable) or a full model identifier")
 	standardsGenerateCmd.Flags().StringVar(&standardsGenerateAuthFlag, "auth", "", "credential to use (api-key, subscription), overriding config.auth.mode")
 }
 

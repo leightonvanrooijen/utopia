@@ -296,6 +296,11 @@ func (s *YAMLStore) LoadConfig() (*domain.Config, error) {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 
+	// Validate per-validator model overrides at load time
+	if err := domain.ValidateValidatorModels(config.Validators); err != nil {
+		return nil, fmt.Errorf("failed to load config: %w", err)
+	}
+
 	// Validate connector entries at load time
 	if err := domain.ValidateConnectors(config.Connectors); err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)

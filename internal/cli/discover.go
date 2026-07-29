@@ -53,7 +53,7 @@ func init() {
 	discoverCmd.Flags().StringSliceVar(&discoverPathFlags, "path", nil, "Limit discovery to specific directory (can be specified multiple times)")
 	discoverCmd.Flags().StringSliceVar(&discoverExcludeFlags, "exclude", nil, "Exclude files matching glob pattern (can be specified multiple times)")
 	discoverCmd.Flags().BoolVarP(&discoverVerboseFlag, "verbose", "v", false, "Enable detailed file-by-file progress output")
-	discoverCmd.Flags().StringVar(&discoverModelFlag, "model", "", "model to use (haiku, sonnet, opus)")
+	discoverCmd.Flags().StringVar(&discoverModelFlag, "model", "", "model alias (haiku, sonnet, opus, fable) or a full model identifier")
 	discoverCmd.Flags().StringVar(&discoverAuthFlag, "auth", "", "credential to use (api-key, subscription), overriding config.auth.mode")
 }
 
@@ -197,7 +197,7 @@ func init() {
 	discoverDomainCmd.Flags().StringSliceVar(&discoverDomainPathFlags, "path", nil, "Limit discovery to specific directory (can be specified multiple times)")
 	discoverDomainCmd.Flags().StringSliceVar(&discoverDomainExcludeFlags, "exclude", nil, "Exclude files matching glob pattern (can be specified multiple times)")
 	discoverDomainCmd.Flags().BoolVarP(&discoverDomainVerboseFlag, "verbose", "v", false, "Enable detailed file-by-file progress output")
-	discoverDomainCmd.Flags().StringVar(&discoverDomainModelFlag, "model", "", "model to use (haiku, sonnet, opus)")
+	discoverDomainCmd.Flags().StringVar(&discoverDomainModelFlag, "model", "", "model alias (haiku, sonnet, opus, fable) or a full model identifier")
 	discoverDomainCmd.Flags().StringVar(&discoverDomainAuthFlag, "auth", "", "credential to use (api-key, subscription), overriding config.auth.mode")
 }
 

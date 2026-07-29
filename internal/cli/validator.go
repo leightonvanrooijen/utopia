@@ -69,7 +69,7 @@ Examples:
 
 func init() {
 	validatorCmd.AddCommand(validatorCreateCmd)
-	validatorCreateCmd.Flags().StringVar(&validatorCreateModelFlag, "model", "", "model to use (haiku, sonnet, opus)")
+	validatorCreateCmd.Flags().StringVar(&validatorCreateModelFlag, "model", "", "model alias (haiku, sonnet, opus, fable) or a full model identifier")
 	validatorCreateCmd.Flags().StringVar(&validatorCreateAuthFlag, "auth", "", "credential to use (api-key, subscription), overriding config.auth.mode")
 }
 
@@ -143,7 +143,7 @@ Examples:
 
 func init() {
 	validatorCmd.AddCommand(validatorEditCmd)
-	validatorEditCmd.Flags().StringVar(&validatorEditModelFlag, "model", "", "model to use (haiku, sonnet, opus)")
+	validatorEditCmd.Flags().StringVar(&validatorEditModelFlag, "model", "", "model alias (haiku, sonnet, opus, fable) or a full model identifier")
 	validatorEditCmd.Flags().StringVar(&validatorEditAuthFlag, "auth", "", "credential to use (api-key, subscription), overriding config.auth.mode")
 }
 

@@ -1138,7 +1138,8 @@ models:
     harvest: haiku
     execute: sonnet
     validators: opus
-    discover: haiku
+    validator_router: fable
+    discover: claude-model-1-20260101
     standards: sonnet
     refactor: opus
     shape: haiku

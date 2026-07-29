@@ -62,10 +62,10 @@ func TestCLI_WithVerbose(t *testing.T) {
 }
 
 func TestCLI_WithModel(t *testing.T) {
-	cli := NewCLI().WithModel("claude-sonnet-4-20250514")
+	cli := NewCLI().WithModel("opus")
 
-	if cli.model != "claude-sonnet-4-20250514" {
-		t.Errorf("model = %q, want %q", cli.model, "claude-sonnet-4-20250514")
+	if cli.model != "opus" {
+		t.Errorf("model = %q, want %q", cli.model, "opus")
 	}
 }
 
@@ -101,7 +101,7 @@ func TestCLI_Chaining(t *testing.T) {
 	cli := NewCLI().
 		WithAllowedTools([]string{"Read"}).
 		WithVerbose(true).
-		WithModel("claude-sonnet-4-20250514")
+		WithModel("opus")
 
 	if len(cli.allowedTools) != 1 || cli.allowedTools[0] != "Read" {
 		t.Error("allowedTools not set correctly")
@@ -111,8 +111,8 @@ func TestCLI_Chaining(t *testing.T) {
 		t.Error("verbose should be true")
 	}
 
-	if cli.model != "claude-sonnet-4-20250514" {
-		t.Errorf("model = %q, want %q", cli.model, "claude-sonnet-4-20250514")
+	if cli.model != "opus" {
+		t.Errorf("model = %q, want %q", cli.model, "opus")
 	}
 }
 
@@ -178,13 +178,13 @@ func TestCLI_baseArgs_EmptyAllowedTools(t *testing.T) {
 }
 
 func TestCLI_baseArgs_WithModel(t *testing.T) {
-	cli := NewCLI().WithModel("claude-sonnet-4-20250514")
+	cli := NewCLI().WithModel("opus")
 	args := cli.baseArgs()
 
 	found := false
 	for i, arg := range args {
 		if arg == "--model" && i+1 < len(args) {
-			if args[i+1] == "claude-sonnet-4-20250514" {
+			if args[i+1] == "opus" {
 				found = true
 			}
 			break
@@ -192,7 +192,7 @@ func TestCLI_baseArgs_WithModel(t *testing.T) {
 	}
 
 	if !found {
-		t.Errorf("baseArgs should include --model claude-sonnet-4-20250514, got %v", args)
+		t.Errorf("baseArgs should include --model opus, got %v", args)
 	}
 }
 

@@ -48,7 +48,7 @@ Tip: Run a file watcher to see updates in real-time:
 
 func init() {
 	rootCmd.AddCommand(crCmd)
-	crCmd.Flags().StringVar(&crModelFlag, "model", "", "model to use (haiku, sonnet, opus)")
+	crCmd.Flags().StringVar(&crModelFlag, "model", "", "model alias (haiku, sonnet, opus, fable) or a full model identifier")
 	crCmd.Flags().StringVar(&crAuthFlag, "auth", "", "credential to use (api-key, subscription), overriding config.auth.mode")
 }
 

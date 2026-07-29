@@ -59,7 +59,7 @@ Run the command again to resume from where you left off.`,
 	}
 	cmd.Flags().IntVarP(&executeTimeoutFlag, "timeout", "t", 0, "timeout in minutes (0 means no timeout)")
 	cmd.Flags().BoolVar(&executeAllFlag, "all", false, "execute all CRs in .utopia/change-requests/ in filename order (leading numeric prefix controls the sequence)")
-	cmd.Flags().StringVar(&executeModelFlag, "model", "", "model to use (haiku, sonnet, opus)")
+	cmd.Flags().StringVar(&executeModelFlag, "model", "", "model alias (haiku, sonnet, opus, fable) or a full model identifier")
 	cmd.Flags().StringVar(&executeAuthFlag, "auth", "", "credential to use (api-key, subscription), overriding config.auth.mode")
 	cmd.AddCommand(newExecuteRunCmd())
 	return cmd

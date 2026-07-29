@@ -45,7 +45,7 @@ type CLI struct {
 	permissionMode PermissionMode
 	allowedTools   []string
 	verbose        bool
-	model          string          // model override (e.g., "claude-sonnet-4-20250514")
+	model          string          // model override: alias (e.g. "opus") or full model identifier
 	authMode       domain.AuthMode // credential selection; empty inherits the ambient environment
 	utopiaDir      string          // project .utopia dir, where api-key mode looks for .env
 }
@@ -70,8 +70,10 @@ func (c *CLI) WithVerbose(verbose bool) *CLI {
 	return c
 }
 
-// WithModel sets the model to use for this CLI instance.
-// The model should be a full Claude model identifier (e.g., "claude-sonnet-4-20250514").
+// WithModel sets the model to use for this CLI instance. The value is passed to
+// the claude binary's --model flag unchanged: either an alias the CLI resolves to
+// the current generation of that model (e.g. "opus") or a full model identifier
+// pinning a specific one.
 func (c *CLI) WithModel(model string) *CLI {
 	c.model = model
 	return c

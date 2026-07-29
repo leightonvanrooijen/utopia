@@ -120,7 +120,8 @@ func (vc *ValidatorConfig) GetAlways() bool {
 }
 
 // ModelConfig specifies model selection for commands.
-// Each field corresponds to a Utopia command and accepts model names: haiku, sonnet, opus.
+// Each field corresponds to a Utopia command and accepts a model alias the claude
+// CLI resolves - haiku, sonnet, opus, fable - or a full model identifier.
 type ModelConfig struct {
 	// Default model used when a command doesn't have a specific override.
 	// If not set, sonnet is used.

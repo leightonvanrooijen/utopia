@@ -35,7 +35,8 @@ type Result struct {
 // Execute runs all work items for a spec sequentially.
 // Work items are processed one at a time, in order, retrying until
 // verification passes or max iterations is reached.
-// The optional model parameter specifies a Claude model override (e.g., "claude-sonnet-4-20250514").
+// The optional model parameter specifies a Claude model override: an alias the
+// CLI resolves (e.g. "opus") or a full model identifier.
 //
 // auth selects the credential every claude subprocess this loop spawns
 // authenticates with - the work-item agents, the validators they gate on, and

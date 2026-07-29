@@ -45,7 +45,7 @@ the automatically discovered draft specifications.`,
 
 func init() {
 	rootCmd.AddCommand(shapeCmd)
-	shapeCmd.Flags().StringVar(&shapeModelFlag, "model", "", "model to use (haiku, sonnet, opus)")
+	shapeCmd.Flags().StringVar(&shapeModelFlag, "model", "", "model alias (haiku, sonnet, opus, fable) or a full model identifier")
 	shapeCmd.Flags().StringVar(&shapeAuthFlag, "auth", "", "credential to use (api-key, subscription), overriding config.auth.mode")
 }
 
@@ -390,7 +390,7 @@ var (
 
 func init() {
 	shapeCmd.AddCommand(shapeDomainCmd)
-	shapeDomainCmd.Flags().StringVar(&shapeDomainModelFlag, "model", "", "model to use (haiku, sonnet, opus)")
+	shapeDomainCmd.Flags().StringVar(&shapeDomainModelFlag, "model", "", "model alias (haiku, sonnet, opus, fable) or a full model identifier")
 	shapeDomainCmd.Flags().StringVar(&shapeDomainAuthFlag, "auth", "", "credential to use (api-key, subscription), overriding config.auth.mode")
 }
 

@@ -110,21 +110,25 @@ func ResolveProject(cmd *cobra.Command) (projectDir, utopiaDir string, store *in
 	return projectDir, utopiaDir, store, nil
 }
 
-// ResolveModelFlag validates and resolves the --model flag value.
-// Returns the full Claude model identifier if valid, empty string if not provided,
-// or an error if the value is invalid.
+// ResolveModelFlag validates the --model flag value and returns it unchanged for
+// the claude CLI to resolve. Returns the empty string when the flag was not
+// provided, which leaves the CLI on its own default, or an error if the value is
+// neither a recognised alias nor a plausible model identifier.
+//
+// The value is forwarded verbatim: the CLI resolves an alias to the current
+// generation of that model, so expanding it here would pin the invocation to
+// whichever model was current when Utopia was built.
 func ResolveModelFlag(cmd *cobra.Command) (string, error) {
-	modelName, _ := cmd.Flags().GetString("model")
-	if modelName == "" {
+	model, _ := cmd.Flags().GetString("model")
+	if model == "" {
 		return "", nil
 	}
 
-	modelID, err := domain.ResolveModel(modelName)
-	if err != nil {
+	if err := domain.ValidateModel(model); err != nil {
 		return "", err
 	}
 
-	return modelID, nil
+	return model, nil
 }
 
 // ResolveAuth resolves the credential this invocation authenticates with - the

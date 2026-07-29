@@ -5,70 +5,40 @@ import (
 	"testing"
 )
 
-func TestResolveModel(t *testing.T) {
+func TestValidateModel(t *testing.T) {
 	tests := []struct {
 		name      string
 		input     string
-		expected  string
 		wantError bool
 	}{
-		{
-			name:      "haiku maps correctly",
-			input:     "haiku",
-			expected:  "claude-3-5-haiku-20241022",
-			wantError: false,
-		},
-		{
-			name:      "sonnet maps correctly",
-			input:     "sonnet",
-			expected:  "claude-sonnet-4-20250514",
-			wantError: false,
-		},
-		{
-			name:      "opus maps correctly",
-			input:     "opus",
-			expected:  "claude-opus-4-20250514",
-			wantError: false,
-		},
-		{
-			name:      "invalid model returns error",
-			input:     "invalid",
-			expected:  "",
-			wantError: true,
-		},
-		{
-			name:      "empty string returns error",
-			input:     "",
-			expected:  "",
-			wantError: true,
-		},
-		{
-			name:      "case sensitive - HAIKU fails",
-			input:     "HAIKU",
-			expected:  "",
-			wantError: true,
-		},
+		{name: "haiku alias accepted", input: "haiku"},
+		{name: "sonnet alias accepted", input: "sonnet"},
+		{name: "opus alias accepted", input: "opus"},
+		{name: "fable alias accepted", input: "fable"},
+		{name: "full model identifier accepted", input: "claude-model-1-20260101"},
+		{name: "undated model identifier accepted", input: "claude-sonnet-4-6"},
+		{name: "identifier with context-window suffix accepted", input: "claude-opus-5[1m]"},
+		{name: "unrecognised name returns error", input: "invalid", wantError: true},
+		{name: "other vendor identifier returns error", input: "gpt-5", wantError: true},
+		{name: "bare claude prefix returns error", input: "claude-", wantError: true},
+		{name: "empty string returns error", input: "", wantError: true},
+		{name: "case sensitive - HAIKU fails", input: "HAIKU", wantError: true},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := ResolveModel(tc.input)
+			err := ValidateModel(tc.input)
 
 			if tc.wantError {
 				if err == nil {
-					t.Errorf("ResolveModel(%q) expected error, got nil", tc.input)
+					t.Fatalf("ValidateModel(%q) expected error, got nil", tc.input)
 				}
 				var invalidErr *InvalidModelError
 				if !errors.As(err, &invalidErr) {
-					t.Errorf("ResolveModel(%q) error type = %T, want *InvalidModelError", tc.input, err)
+					t.Errorf("ValidateModel(%q) error type = %T, want *InvalidModelError", tc.input, err)
 				}
-			} else {
-				if err != nil {
-					t.Errorf("ResolveModel(%q) unexpected error: %v", tc.input, err)
-				}
-				if got != tc.expected {
-					t.Errorf("ResolveModel(%q) = %q, want %q", tc.input, got, tc.expected)
-				}
+			} else if err != nil {
+				t.Errorf("ValidateModel(%q) unexpected error: %v", tc.input, err)
 			}
 		})
 	}
@@ -76,7 +46,7 @@ func TestResolveModel(t *testing.T) {
 
 func TestInvalidModelError_Message(t *testing.T) {
 	err := &InvalidModelError{Name: "foobar"}
-	expected := `invalid model name "foobar": valid options are haiku, sonnet, opus`
+	expected := `invalid model "foobar": use an alias (haiku, sonnet, opus, fable) or a full model identifier beginning with "claude-"`
 	if err.Error() != expected {
 		t.Errorf("Error() = %q, want %q", err.Error(), expected)
 	}
@@ -94,11 +64,11 @@ func TestInvalidModelError_Is(t *testing.T) {
 func TestValidModelNames(t *testing.T) {
 	names := ValidModelNames()
 
-	if len(names) != 3 {
-		t.Fatalf("ValidModelNames() returned %d names, want 3", len(names))
+	if len(names) != 4 {
+		t.Fatalf("ValidModelNames() returned %d names, want 4", len(names))
 	}
 
-	expected := []ModelName{ModelHaiku, ModelSonnet, ModelOpus}
+	expected := []ModelName{ModelHaiku, ModelSonnet, ModelOpus, ModelFable}
 	for i, name := range expected {
 		if names[i] != name {
 			t.Errorf("ValidModelNames()[%d] = %q, want %q", i, names[i], name)
@@ -234,7 +204,12 @@ func TestValidateModelConfig(t *testing.T) {
 		},
 		{
 			name:      "all valid model names",
-			config:    &ModelConfig{Default: "sonnet", CR: "opus", Execute: "haiku"},
+			config:    &ModelConfig{Default: "sonnet", CR: "opus", Execute: "haiku", Harvest: "fable"},
+			wantError: false,
+		},
+		{
+			name:      "full model identifier is valid",
+			config:    &ModelConfig{Default: "claude-model-1-20260101"},
 			wantError: false,
 		},
 		{
@@ -284,6 +259,49 @@ func TestValidateModelConfig(t *testing.T) {
 				if err != nil {
 					t.Errorf("unexpected error: %v", err)
 				}
+			}
+		})
+	}
+}
+
+func TestValidateValidatorModels(t *testing.T) {
+	tests := []struct {
+		name       string
+		validators []ValidatorConfig
+		wantError  bool
+	}{
+		{
+			name:       "no validators is valid",
+			validators: nil,
+		},
+		{
+			name:       "no model override is valid",
+			validators: []ValidatorConfig{{Path: "validators/a.md"}},
+		},
+		{
+			name: "aliases and identifiers are valid",
+			validators: []ValidatorConfig{
+				{Path: "validators/a.md", Model: "fable"},
+				{Path: "validators/b.md", Model: "claude-model-1-20260101"},
+			},
+		},
+		{
+			name:       "unrecognised model is invalid",
+			validators: []ValidatorConfig{{Path: "validators/a.md", Model: "gpt4"}},
+			wantError:  true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateValidatorModels(tc.validators)
+
+			if tc.wantError {
+				if !errors.Is(err, &InvalidModelConfigError{}) {
+					t.Errorf("ValidateValidatorModels() error = %v, want *InvalidModelConfigError", err)
+				}
+			} else if err != nil {
+				t.Errorf("ValidateValidatorModels() unexpected error: %v", err)
 			}
 		})
 	}

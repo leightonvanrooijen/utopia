@@ -47,7 +47,7 @@ Tip: Run a file watcher to see updates in real-time:
 
 func init() {
 	rootCmd.AddCommand(refactorCmd)
-	refactorCmd.Flags().StringVar(&refactorModelFlag, "model", "", "model to use (haiku, sonnet, opus)")
+	refactorCmd.Flags().StringVar(&refactorModelFlag, "model", "", "model alias (haiku, sonnet, opus, fable) or a full model identifier")
 	refactorCmd.Flags().StringVar(&refactorAuthFlag, "auth", "", "credential to use (api-key, subscription), overriding config.auth.mode")
 }
 

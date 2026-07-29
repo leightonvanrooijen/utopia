@@ -43,7 +43,7 @@ Benefits over individual commands (/adr, /concept, /domain):
 
 func init() {
 	rootCmd.AddCommand(harvestCmd)
-	harvestCmd.Flags().StringVar(&harvestModelFlag, "model", "", "model to use (haiku, sonnet, opus)")
+	harvestCmd.Flags().StringVar(&harvestModelFlag, "model", "", "model alias (haiku, sonnet, opus, fable) or a full model identifier")
 	harvestCmd.Flags().StringVar(&harvestAuthFlag, "auth", "", "credential to use (api-key, subscription), overriding config.auth.mode")
 }
 
