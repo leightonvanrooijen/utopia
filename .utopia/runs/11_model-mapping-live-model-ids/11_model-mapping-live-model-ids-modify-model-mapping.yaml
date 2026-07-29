@@ -1,0 +1,30 @@
+workitem_id: 11_model-mapping-live-model-ids-modify-model-mapping
+cr_id: 11_model-mapping-live-model-ids
+spec_ref: 11_model-mapping-live-model-ids.modify-model-mapping
+iterations: 1
+completed_at: 2026-07-29T22:01:10.842914+10:00
+outcome: completed
+status: unprocessed
+transcript: |
+    --- iteration 1 ---
+    Done. What changed:
+
+    **`internal/domain/model.go`** - `modelMappings` (the three dated IDs) deleted. `ResolveModel` replaced by `ValidateModel(name) error`:
+    - aliases `haiku`, `sonnet`, `opus`, `fable` (added `ModelFable`)
+    - full identifier accepted via shape check `^claude-[a-z0-9][a-z0-9.-]*(\[[a-z0-9]+\])?$` (bracket suffix covers `claude-opus-5[1m]`) - plausibility, not existence; CLI is the authority
+    - anything else -> `*InvalidModelError`, message now lists aliases + `"claude-"` prefix, no dated example
+    - new `ValidateValidatorModels` so per-validator `model:` overrides in config.yaml also fail at load time (previously reached CLI unchecked)
+
+    **`internal/cli/root.go`** - `ResolveModelFlag` validates and returns the flag value unchanged. Name kept; 13 call sites untouched.
+
+    **Flag help** (12 registrations) - "model alias (haiku, sonnet, opus, fable) or a full model identifier".
+
+    **`internal/store.go`** - LoadConfig also validates validator model overrides.
+
+    **Doc comments** in `claude.go`, `ralph.go`, `discovery.go` - dated-ID examples removed. Zero dated identifiers remain in `internal/`, `cmd/`, `README.md`.
+
+    Tests: `ValidateModel` table (aliases, identifiers, rejections), `ValidModelNames` = 4, config tests include `fable` + an identifier, `claude_test` now asserts the alias reaches `--model` verbatim. `go test ./...` 907 passed, `staticcheck` clean, `gofmt` clean.
+
+    Not touched: `.utopia/specs/` (per constraint), `.utopia/notes/*` (records of the stale-ID finding, incl. 4 untracked notes left uncommitted).
+
+    <COMPLETE>

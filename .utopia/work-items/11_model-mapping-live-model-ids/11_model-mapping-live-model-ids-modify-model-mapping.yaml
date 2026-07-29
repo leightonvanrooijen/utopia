@@ -15,7 +15,7 @@ title: |
     identifier is also accepted and forwarded unchanged, so a caller who needs
     a specific pinned model can still have one - deliberately, rather than by
     accident.
-status: in_progress
+status: completed
 prompt: |-
     ## TASK
 
