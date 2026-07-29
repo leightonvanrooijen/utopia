@@ -33,8 +33,12 @@ type Options struct {
 // Result represents the outcome of a harvest session.
 type Result struct {
 	// UnprocessedConversations is the number of unprocessed conversations found.
-	// Zero means no session was run; callers inspect this to frame the outcome.
 	UnprocessedConversations int
+	// UnprocessedRuns is the number of unprocessed execution runs found.
+	// A session runs when either source has something unprocessed; both being
+	// zero means no session was run, and callers inspect that to frame the
+	// outcome.
+	UnprocessedRuns int
 }
 
 // harvestSystemPrompt guides Claude through unified signal detection and doc creation
@@ -63,6 +67,9 @@ Harvest sources are classified by how close they sit to actual system state:
 - PRIORITIZE these for ADR candidates at least as highly as system-truth conversations
 - ADR candidates from execution runs should generally be HIGH confidence
 - A failed run is still system-truth: it records what was really attempted and why it did not hold
+- Each run below lists its CR, its work item, and its **Originating Conversation** -
+  the conversation whose CR put the work item there. Those are the cross-references
+  any candidate surfaced from the run must carry
 
 **System-Truth Conversations** (has CR + execution completed):
 - These represent ACTUAL system state - decisions were implemented and verified
@@ -131,6 +138,22 @@ Instead of looking for decision phrases, apply a QUALIFICATION TEST to determine
 - The decision fits at least one AWS category, AND
 - The decision is costly to reverse, AND
 - None of the disqualification criteria apply
+
+**Applying this test to implementation decisions in execution runs:**
+Runs are where implementation decisions get made - decisions taken at the code, with
+the real constraints visible. Apply the SAME test, unchanged. The Category Test and
+Reversal Cost Test decide; where the decision was made does not.
+- "Implementation detail" disqualifies HOW something was coded, not WHAT was chosen
+  while coding. A run that settles a storage layout, a directory structure, a
+  published signature, or a new dependency has made an architectural decision;
+  a run that picks a variable name or a loop shape has not
+- A decision the run tried and abandoned is a temporary experiment - disqualified,
+  unless the run abandoned it in favour of something it then settled on (in which
+  case the settled choice is the candidate and the abandoned one is its context)
+- A decision the run made that CONTRADICTS its CR or conversation is a strong
+  candidate: what was built beat what was planned, and only the run records it
+- Cross-reference every candidate surfaced from a run to BOTH its CR and its
+  originating conversation, and record both when creating the document
 
 **Concept Qualification** (educational explanations):
 Instead of looking for trade-off phrases, apply a QUALIFICATION TEST to determine if content is truly explanation-worthy:
@@ -232,6 +255,8 @@ For EACH qualified candidate, capture:
   - **Reversal Cost**: Brief explanation of why this is costly to reverse
 - **Source Type**: execution, system-truth, or exploratory (shown in source)
 - **Location**: Source conversation or run ID + message range (e.g., "lines 15-30", "early", "mid", "late")
+- **Origin** (candidates from execution runs only): the run's CR ID and its originating
+  conversation ID, taken from the run's **CR** and **Originating Conversation** lines
 - **Related Candidates**: IDs of related candidates (e.g., adr-1 may link to concept-1)
 - **Potential Duplicate / Update**: If similar to existing doc, note which one AND whether this should UPDATE that doc instead of creating new
 
@@ -246,11 +271,13 @@ Present a STRUCTURED SUMMARY of all qualified candidates, grouped by type.
 **Sources: R execution runs, N system-truth conversations, M exploratory conversations**
 
 ### ADR Candidates (Qualified)
-| ID | Confidence | Title | Category | Reversal Cost | Source | Source Type |
-|----|------------|-------|----------|---------------|--------|-------------|
-| adr-1 | HIGH | Group runs by CR on disk | structure | Path layout is baked into harvest and tooling | cr-003-phase-0-persist-runs | execution |
-| adr-2 | HIGH | Use YAML for storage | dependencies | Data migration, tooling changes | cr-session-20260217 | system-truth |
-| adr-3 | MEDIUM | Use Cobra for CLI | construction | All command handlers depend on it | cr-session-20260216 | exploratory |
+| ID | Confidence | Title | Category | Reversal Cost | Source | Source Type | Origin (CR / Conversation) |
+|----|------------|-------|----------|---------------|--------|-------------|----------------------------|
+| adr-1 | HIGH | Group runs by CR on disk | structure | Path layout is baked into harvest and tooling | cr-003-phase-0-persist-runs | execution | cr-003 / cr-session-20260217 |
+| adr-2 | HIGH | Use YAML for storage | dependencies | Data migration, tooling changes | cr-session-20260217 | system-truth | - |
+| adr-3 | MEDIUM | Use Cobra for CLI | construction | All command handlers depend on it | cr-session-20260216 | exploratory | - |
+
+**Origin** is required for every candidate whose source type is execution, and is "-" otherwise.
 
 **Note:** Only decisions that pass all qualification tests appear here. Disqualified items are not shown.
 
@@ -318,13 +345,13 @@ Items that failed qualification tests are not included in the tables above. Exam
 - Only suggest "CREATE new" when no related existing doc covers the topic
 - In "Potential Duplicates / Updates" section, explicitly show: "UPDATE existing {doc-id}" with the file path
 
-If no qualified candidates found: "No qualified documentation candidates found. All content either failed qualification tests or is already documented. Conversations can be marked as processed."
+If no qualified candidates found: "No qualified documentation candidates found. All content either failed qualification tests or is already documented. Sources can be marked as processed."
 
 ### PHASE 3: USER SELECTION
 Ask the user which documents they want to create or update:
 - "all" - Create/update all identified documents
 - "ADR 1, Concept 1" - Create/update specific numbered items
-- "skip" - Mark conversations as processed without creating docs
+- "skip" - Mark all reviewed sources as processed without creating docs
 - Individual selection one at a time
 
 **For updates**: Clearly state "This will UPDATE {existing-doc-id} at {file-path}"
@@ -350,8 +377,8 @@ For each document:
 
 ### PHASE 5: MARK PROCESSED
 After the user completes or exits the harvest:
-- Mark ALL reviewed conversations as processed
-- Skipped candidates remain discoverable in future harvests of new conversations
+- Mark ALL reviewed sources as processed - execution runs and conversations alike
+- Skipped candidates remain discoverable in future harvests of new sources
 
 ## Document Formats
 
@@ -381,7 +408,14 @@ principles:
   - "[Architectural principles that apply]"
 source_conversations:
   - "[conversation-id]"
+source_runs:
+  - "[cr-id]/[workitem-id]"   # required when the decision came from an execution run
 ` + "```" + `
+
+For a decision surfaced from an execution run, fill in BOTH: source_runs with the run
+that built it, and source_conversations with the run's originating conversation (omit
+source_conversations only when the run has none). The run records WHAT was built; the
+conversation records WHY it was asked for, and the ADR needs both to stay traceable.
 
 ### Concept Format
 Save to: %s/{kebab-case-id}.md
@@ -446,12 +480,20 @@ source_conversations:
   - "conversation-id"
 ` + "```" + `
 
-## Marking Conversations Processed
+## Marking Sources Processed
 
-After harvest completion (whether or not docs were created):
+After harvest completion (whether or not docs were created), every source reviewed in
+this session is marked processed, so the next harvest only sees new material.
+
+Conversations:
 1. Read each conversation file from .utopia/conversations/{id}.yaml
 2. Change status from "unprocessed" to "processed"
 3. Write the updated file back
+
+Execution runs - the same rule, at the run's own path:
+1. Read each run file from .utopia/runs/{cr-id}/{workitem-id}.yaml
+2. Set status to "processed" (a run with no status field yet is unprocessed - add it)
+3. Write the updated file back, leaving every other field untouched
 
 ## Critical Guidelines
 - Ask ONE question at a time
@@ -460,17 +502,19 @@ After harvest completion (whether or not docs were created):
 - When suggesting an update, show: "UPDATE existing {id}" with the file path
 - The next ADR ID is: %s
 - Cross-reference related candidates explicitly
+- A candidate from an execution run is cross-referenced to its CR AND its originating conversation
 - Created docs SHOULD reference each other when relevant
-- ONLY mark conversations processed after user completes or exits
-- It's okay if a conversation has no qualified candidates - mark it processed anyway
+- ONLY mark conversations and execution runs processed after user completes or exits
+- It's okay if a source has no qualified candidates - mark it processed anyway
 
 Start by presenting a summary of ALL qualified candidates found across ALL unprocessed sources, grouped by type with counts.`
 
 // Run executes the harvest session: it loads unprocessed conversations and
-// existing documentation, detects README signals, composes the system prompt,
-// prints the session summary, and runs the interactive Claude session.
-// It returns early (with a nil error) when there are no unprocessed
-// conversations; callers inspect the result to frame that outcome.
+// execution runs alongside existing documentation, detects README signals,
+// composes the system prompt, prints the session summary, and runs the
+// interactive Claude session.
+// It returns early (with a nil error) when neither source has anything
+// unprocessed; callers inspect the result to frame that outcome.
 func Run(ctx context.Context, store *internal.YAMLStore, opts Options) (*Result, error) {
 	// Load unprocessed conversations
 	unprocessedConvs, err := store.ListUnprocessedConversations()
@@ -478,18 +522,29 @@ func Run(ctx context.Context, store *internal.YAMLStore, opts Options) (*Result,
 		return nil, fmt.Errorf("failed to list unprocessed conversations: %w", err)
 	}
 
-	result := &Result{UnprocessedConversations: len(unprocessedConvs)}
-	if len(unprocessedConvs) == 0 {
-		return result, nil
-	}
-
 	// Execution runs are the other half of the harvest input: what was actually
 	// built, as opposed to what was discussed. A missing runs directory is not
 	// an error - projects that predate run persistence simply have none.
-	runs, err := store.ListExecutionRuns()
+	// Unprocessed runs are worth a session on their own: a work item can be
+	// executed long after its conversation was harvested.
+	runs, err := store.ListUnprocessedExecutionRuns()
 	if err != nil {
-		return nil, fmt.Errorf("failed to list execution runs: %w", err)
+		return nil, fmt.Errorf("failed to list unprocessed execution runs: %w", err)
 	}
+
+	result := &Result{UnprocessedConversations: len(unprocessedConvs), UnprocessedRuns: len(runs)}
+	if len(unprocessedConvs) == 0 && len(runs) == 0 {
+		return result, nil
+	}
+
+	// Every conversation is indexed, not only the unprocessed ones: the
+	// conversation a run originated from has usually been harvested already,
+	// and it is still the record of why the work was asked for.
+	allConvs, err := store.ListConversations()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list conversations: %w", err)
+	}
+	runOrigins := indexRunOrigins(allConvs)
 
 	// Ensure all directories exist
 	adrsDir := store.ADRsDir()
@@ -519,7 +574,7 @@ func Run(ctx context.Context, store *internal.YAMLStore, opts Options) (*Result,
 	}
 
 	// Build summaries for Claude
-	convsSummary := buildHarvestSourcesSummary(unprocessedConvs, runs)
+	convsSummary := buildHarvestSourcesSummary(unprocessedConvs, runs, runOrigins)
 	adrsSummary := buildHarvestADRsSummary(existingADRs)
 	conceptsSummary := buildHarvestConceptsSummary(existingConcepts)
 	domainDocsSummary := buildHarvestDomainDocsSummary(existingDomainDocs)
@@ -559,7 +614,7 @@ func Run(ctx context.Context, store *internal.YAMLStore, opts Options) (*Result,
 	fmt.Printf("Found %d unprocessed conversations:\n", len(unprocessedConvs))
 	fmt.Printf("  "+ui.Bullet+" %d system-truth (has CR + executed)\n", systemTruthCount)
 	fmt.Printf("  "+ui.Bullet+" %d exploratory (no CR)\n", exploratoryCount)
-	fmt.Printf("Found %d execution runs (system-truth - what was built)\n", len(runs))
+	fmt.Printf("Found %d unprocessed execution runs (system-truth - what was built)\n", len(runs))
 	fmt.Println()
 	fmt.Println("Existing documentation:")
 	fmt.Printf("  "+ui.Bullet+" %d ADRs\n", len(existingADRs))
@@ -604,7 +659,9 @@ func Run(ctx context.Context, store *internal.YAMLStore, opts Options) (*Result,
 // actual system state, because position in the prompt is itself a priority
 // signal. Execution runs lead: they record what was actually built. System-truth
 // conversations follow, then exploratory ones.
-func buildHarvestSourcesSummary(convs []*domain.Conversation, runs []*domain.ExecutionRun) string {
+// runOrigins is passed through so each run can be shown next to the
+// conversation it came from; see indexRunOrigins.
+func buildHarvestSourcesSummary(convs []*domain.Conversation, runs []*domain.ExecutionRun, runOrigins map[string][]string) string {
 	if len(convs) == 0 && len(runs) == 0 {
 		return "(No unprocessed sources found)"
 	}
@@ -642,7 +699,7 @@ func buildHarvestSourcesSummary(convs []*domain.Conversation, runs []*domain.Exe
 		sb.WriteString("## Execution Runs (system-truth - what was built)\n")
 		sb.WriteString("*These record decisions made while building - prioritize for ADR signals.*\n\n")
 		for _, run := range sortedRuns {
-			writeExecutionRunSummary(&sb, run)
+			writeExecutionRunSummary(&sb, run, runOrigins[run.CRID])
 		}
 	}
 
@@ -667,10 +724,26 @@ func buildHarvestSourcesSummary(convs []*domain.Conversation, runs []*domain.Exe
 	return sb.String()
 }
 
-// writeExecutionRunSummary writes a single execution run's details to the builder.
-// CR ID and work item ID are always written: they are the join keys back to the
-// conversation that originated the run.
-func writeExecutionRunSummary(sb *strings.Builder, run *domain.ExecutionRun) {
+// indexRunOrigins maps a CR ID to the IDs of the conversations that created it.
+// A run knows only its CR and work item, but the decision that put the work
+// there was made in a conversation; joining through CRsCreated is what lets a
+// decision found in a run be attributed to both. Conversations already
+// processed are indexed too - a run's origin is usually one of them.
+func indexRunOrigins(convs []*domain.Conversation) map[string][]string {
+	origins := make(map[string][]string)
+	for _, conv := range convs {
+		for _, cr := range conv.CRsCreated {
+			origins[cr.CRID] = append(origins[cr.CRID], conv.ID)
+		}
+	}
+	return origins
+}
+
+// writeExecutionRunSummary writes a single execution run's details to the
+// builder. CR ID, work item ID, and the originating conversations are always
+// written: they are what a decision surfaced from this run gets cross-
+// referenced to.
+func writeExecutionRunSummary(sb *strings.Builder, run *domain.ExecutionRun, originConvIDs []string) {
 	sb.WriteString(fmt.Sprintf("### %s\n", run.WorkItemID))
 	sb.WriteString(fmt.Sprintf("**Type:** %s\n", run.Type()))
 	sb.WriteString(fmt.Sprintf("**CR:** %s\n", run.CRID))
@@ -679,8 +752,21 @@ func writeExecutionRunSummary(sb *strings.Builder, run *domain.ExecutionRun) {
 	if !run.CompletedAt.IsZero() {
 		sb.WriteString(fmt.Sprintf("**Completed:** %s\n", run.CompletedAt.Format("2006-01-02 15:04")))
 	}
+	sb.WriteString(fmt.Sprintf("**Originating Conversation:** %s\n", formatRunOrigins(originConvIDs)))
+	sb.WriteString(fmt.Sprintf("**Run File:** %s/%s\n", run.CRID, run.WorkItemID))
 
 	writeTranscript(sb, run.Transcript)
+}
+
+// formatRunOrigins renders the conversations a run traces back to. Saying so
+// explicitly when there are none stops the model inventing a conversation ID
+// to fill the cross-reference: a run whose CR was created outside a captured
+// session genuinely has no originating conversation.
+func formatRunOrigins(convIDs []string) string {
+	if len(convIDs) == 0 {
+		return "(none found - this run's CR has no captured conversation)"
+	}
+	return strings.Join(convIDs, ", ")
 }
 
 // writeConversationSummary writes a single conversation's details to the builder

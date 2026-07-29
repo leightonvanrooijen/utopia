@@ -2074,6 +2074,37 @@ func TestSaveExecutionRun_ReExecutionOverwritesTheSameFile(t *testing.T) {
 	}
 }
 
+func TestListUnprocessedExecutionRuns(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	saved := []*domain.ExecutionRun{
+		{WorkItemID: "item-new", CRID: "cr-1", Status: domain.ConversationUnprocessed},
+		{WorkItemID: "item-harvested", CRID: "cr-1", Status: domain.ConversationProcessed},
+		// Written before harvest tracked run status: no status field at all,
+		// and never reviewed, so it is still owed a harvest.
+		{WorkItemID: "item-legacy", CRID: "cr-2"},
+	}
+	for _, run := range saved {
+		if err := store.SaveExecutionRun(run); err != nil {
+			t.Fatalf("SaveExecutionRun(%s): %v", run.WorkItemID, err)
+		}
+	}
+
+	runs, err := store.ListUnprocessedExecutionRuns()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := map[string]bool{}
+	for _, run := range runs {
+		got[run.WorkItemID] = true
+	}
+	if len(runs) != 2 || !got["item-new"] || !got["item-legacy"] {
+		t.Errorf("unprocessed runs = %v, want item-new and item-legacy", got)
+	}
+}
+
 func TestListExecutionRuns_ReturnsRunsAcrossChangeRequests(t *testing.T) {
 	store, cleanup := SetupTestStore(t)
 	defer cleanup()

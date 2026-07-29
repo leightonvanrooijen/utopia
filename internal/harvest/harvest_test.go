@@ -46,7 +46,7 @@ func TestGetNextADRID(t *testing.T) {
 }
 
 func TestBuildHarvestSourcesSummary_Empty(t *testing.T) {
-	got := buildHarvestSourcesSummary(nil, nil)
+	got := buildHarvestSourcesSummary(nil, nil, nil)
 	if got != "(No unprocessed sources found)" {
 		t.Errorf("unexpected summary: %q", got)
 	}
@@ -71,7 +71,7 @@ func TestBuildHarvestSourcesSummary_GroupsByType(t *testing.T) {
 		Transcript: "just exploring options",
 	}
 
-	got := buildHarvestSourcesSummary([]*domain.Conversation{exploratory, systemTruth}, nil)
+	got := buildHarvestSourcesSummary([]*domain.Conversation{exploratory, systemTruth}, nil, nil)
 
 	if !strings.Contains(got, "**Total: 2 sources (0 execution runs, 1 system-truth conversations, 1 exploratory conversations)**") {
 		t.Errorf("missing total line, got:\n%s", got)
@@ -99,7 +99,7 @@ func TestBuildHarvestSourcesSummary_SortsNewestFirst(t *testing.T) {
 	older := &domain.Conversation{ID: "conv-older", Timestamp: time.Date(2026, 2, 15, 0, 0, 0, 0, time.UTC)}
 	newer := &domain.Conversation{ID: "conv-newer", Timestamp: time.Date(2026, 2, 17, 0, 0, 0, 0, time.UTC)}
 
-	got := buildHarvestSourcesSummary([]*domain.Conversation{older, newer}, nil)
+	got := buildHarvestSourcesSummary([]*domain.Conversation{older, newer}, nil, nil)
 
 	newerIdx := strings.Index(got, "### conv-newer")
 	olderIdx := strings.Index(got, "### conv-older")
@@ -134,7 +134,7 @@ func TestBuildHarvestSourcesSummary_PrioritizesExecutionRuns(t *testing.T) {
 		Transcript:  "chose a per-CR directory layout",
 	}
 
-	got := buildHarvestSourcesSummary([]*domain.Conversation{exploratory, systemTruth}, []*domain.ExecutionRun{run})
+	got := buildHarvestSourcesSummary([]*domain.Conversation{exploratory, systemTruth}, []*domain.ExecutionRun{run}, nil)
 
 	if !strings.Contains(got, "**Total: 3 sources (1 execution runs, 1 system-truth conversations, 1 exploratory conversations)**") {
 		t.Errorf("missing total line, got:\n%s", got)
@@ -154,7 +154,7 @@ func TestBuildHarvestSourcesSummary_PrioritizesExecutionRuns(t *testing.T) {
 func TestBuildHarvestSourcesSummary_RunsOnly(t *testing.T) {
 	run := &domain.ExecutionRun{WorkItemID: "wi-1", CRID: "cr-001", Outcome: domain.RunFailed}
 
-	got := buildHarvestSourcesSummary(nil, []*domain.ExecutionRun{run})
+	got := buildHarvestSourcesSummary(nil, []*domain.ExecutionRun{run}, nil)
 
 	if !strings.Contains(got, "## Execution Runs") {
 		t.Errorf("runs alone should still produce a summary, got:\n%s", got)
@@ -173,7 +173,7 @@ func TestWriteExecutionRunSummary(t *testing.T) {
 		Transcript:  strings.Repeat("x", 3000),
 	}
 
-	writeExecutionRunSummary(&sb, run)
+	writeExecutionRunSummary(&sb, run, nil)
 
 	got := sb.String()
 	for _, want := range []string{
@@ -183,13 +183,86 @@ func TestWriteExecutionRunSummary(t *testing.T) {
 		"**Spec Ref:** spec.feature",
 		"**Outcome:** completed (1 iteration)",
 		"**Completed:** 2026-02-18 09:30",
+		"**Run File:** cr-001/cr-001-phase-0-add-thing",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q, got:\n%s", want, got)
 		}
 	}
+	// A run whose CR was never discussed in a captured conversation says so,
+	// rather than leaving the cross-reference to be invented.
+	if !strings.Contains(got, "**Originating Conversation:** (none found") {
+		t.Errorf("expected an explicit no-origin marker, got:\n%s", got)
+	}
 	if !strings.Contains(got, "... [transcript truncated for length]") {
 		t.Error("expected long run transcripts to be truncated like conversations")
+	}
+}
+
+// A decision found in a run has to be traceable to the CR it was built under
+// and the conversation that asked for the work.
+func TestWriteExecutionRunSummary_CrossReferencesOriginatingConversations(t *testing.T) {
+	var sb strings.Builder
+	run := &domain.ExecutionRun{WorkItemID: "wi-1", CRID: "cr-001", Outcome: domain.RunCompleted}
+
+	writeExecutionRunSummary(&sb, run, []string{"conv-a", "conv-b"})
+
+	got := sb.String()
+	if !strings.Contains(got, "**CR:** cr-001") {
+		t.Errorf("missing CR cross-reference, got:\n%s", got)
+	}
+	if !strings.Contains(got, "**Originating Conversation:** conv-a, conv-b") {
+		t.Errorf("missing conversation cross-reference, got:\n%s", got)
+	}
+}
+
+func TestIndexRunOrigins(t *testing.T) {
+	convs := []*domain.Conversation{
+		{
+			ID:         "conv-a",
+			Status:     domain.ConversationProcessed,
+			CRsCreated: []domain.CRCommit{{CRID: "cr-001"}, {CRID: "cr-002"}},
+		},
+		{
+			ID:         "conv-b",
+			Status:     domain.ConversationUnprocessed,
+			CRsCreated: []domain.CRCommit{{CRID: "cr-001"}},
+		},
+		{ID: "conv-exploratory"},
+	}
+
+	origins := indexRunOrigins(convs)
+
+	// conv-a is already processed and still has to appear: a run's origin is
+	// usually a conversation an earlier harvest consumed.
+	if got, want := strings.Join(origins["cr-001"], ","), "conv-a,conv-b"; got != want {
+		t.Errorf("origins[cr-001] = %q, want %q", got, want)
+	}
+	if got, want := strings.Join(origins["cr-002"], ","), "conv-a"; got != want {
+		t.Errorf("origins[cr-002] = %q, want %q", got, want)
+	}
+	if len(origins) != 2 {
+		t.Errorf("a conversation with no CRs should contribute no origins, got %v", origins)
+	}
+}
+
+func TestBuildHarvestSourcesSummary_JoinsRunsToTheirConversations(t *testing.T) {
+	conv := &domain.Conversation{
+		ID:           "conv-system",
+		Timestamp:    time.Date(2026, 2, 17, 10, 0, 0, 0, time.UTC),
+		CRsCreated:   []domain.CRCommit{{CRID: "cr-001"}},
+		ExecutionLog: []domain.ExecutionLogEntry{{WorkItemID: "wi-1"}},
+	}
+	run := &domain.ExecutionRun{WorkItemID: "wi-1", CRID: "cr-001", Outcome: domain.RunCompleted}
+
+	got := buildHarvestSourcesSummary(
+		[]*domain.Conversation{conv},
+		[]*domain.ExecutionRun{run},
+		indexRunOrigins([]*domain.Conversation{conv}),
+	)
+
+	if !strings.Contains(got, "**Originating Conversation:** conv-system") {
+		t.Errorf("run should be cross-referenced to the conversation that created its CR, got:\n%s", got)
 	}
 }
 
@@ -198,7 +271,7 @@ func TestBuildHarvestSourcesSummary_SortsRunsNewestFirst(t *testing.T) {
 	newer := &domain.ExecutionRun{WorkItemID: "wi-newer", CRID: "cr-001", CompletedAt: time.Date(2026, 2, 17, 0, 0, 0, 0, time.UTC)}
 	runs := []*domain.ExecutionRun{older, newer}
 
-	got := buildHarvestSourcesSummary(nil, runs)
+	got := buildHarvestSourcesSummary(nil, runs, nil)
 
 	newerIdx := strings.Index(got, "### wi-newer")
 	olderIdx := strings.Index(got, "### wi-older")
@@ -330,6 +403,28 @@ func TestHarvestSystemPromptComposes(t *testing.T) {
 	for _, want := range []string{"CONVS", "ADRS", "CONCEPTS", "DOMAINDOCS", "READMESIGNALS", "/adrs-dir", "/concepts-dir", "/domain-dir", "ADR-042"} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("composed prompt missing injected value %q", want)
+		}
+	}
+}
+
+// The ADR qualification test is one test, applied to runs as well as
+// conversations, and the prompt is where that instruction lives: it has to say
+// how the test reads against a decision made while building, what a run-sourced
+// candidate is cross-referenced to, and where a reviewed run gets marked
+// processed.
+func TestHarvestSystemPrompt_CoversRunSourcedADRs(t *testing.T) {
+	prompt := composeTestPrompt()
+
+	for _, want := range []string{
+		"Applying this test to implementation decisions in execution runs",
+		"The Category Test and\nReversal Cost Test decide",
+		"Cross-reference every candidate surfaced from a run to BOTH its CR and its\n  originating conversation",
+		"source_runs",
+		".utopia/runs/{cr-id}/{workitem-id}.yaml",
+		`Set status to "processed"`,
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("system prompt missing run-sourced ADR instruction %q", want)
 		}
 	}
 }

@@ -78,3 +78,27 @@ func TestExecutionRun_Type(t *testing.T) {
 		})
 	}
 }
+
+// A run carries the same processing state as a conversation, and a run written
+// before harvest tracked that state must still be harvested rather than
+// silently skipped.
+func TestExecutionRun_IsUnprocessed(t *testing.T) {
+	tests := []struct {
+		name   string
+		status ConversationStatus
+		want   bool
+	}{
+		{name: "no status field (written before runs were tracked)", status: "", want: true},
+		{name: "unprocessed", status: ConversationUnprocessed, want: true},
+		{name: "processed", status: ConversationProcessed, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			run := &ExecutionRun{WorkItemID: "wi-1", CRID: "cr-1", Status: tt.status}
+
+			if got := run.IsUnprocessed(); got != tt.want {
+				t.Errorf("IsUnprocessed() with status %q = %v, want %v", tt.status, got, tt.want)
+			}
+		})
+	}
+}

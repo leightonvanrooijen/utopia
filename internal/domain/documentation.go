@@ -138,6 +138,12 @@ type ExecutionRun struct {
 	CompletedAt time.Time  `yaml:"completed_at"`
 	Outcome     RunOutcome `yaml:"outcome"`
 
+	// Status is the harvest processing state. Runs share the conversation
+	// vocabulary (unprocessed/processed) rather than growing a parallel one,
+	// because harvest treats both the same way: reviewed once, then marked
+	// processed so the next harvest only sees new material.
+	Status ConversationStatus `yaml:"status,omitempty"`
+
 	// Transcript is the streamed Claude output accumulated across every
 	// iteration of the run.
 	Transcript string `yaml:"transcript"`
@@ -154,6 +160,14 @@ func (r *ExecutionRun) Type() SourceType {
 // actually built, so it is system-truth by construction.
 func (r *ExecutionRun) IsSystemTruth() bool {
 	return r.Type().IsSystemTruth()
+}
+
+// IsUnprocessed reports whether this run is still waiting to be harvested.
+// An empty status counts as unprocessed: runs persisted before harvest tracked
+// run status carry no status field, and those are exactly the runs whose
+// decisions have never been reviewed.
+func (r *ExecutionRun) IsUnprocessed() bool {
+	return r.Status == "" || r.Status == ConversationUnprocessed
 }
 
 // =============================================================================
@@ -309,6 +323,12 @@ type ADR struct {
 	Advice              []string        `yaml:"advice,omitempty"`
 	Principles          []string        `yaml:"principles,omitempty"`
 	SourceConversations []string        `yaml:"source_conversations,omitempty"`
+
+	// SourceRuns records the execution runs a decision was surfaced from, each
+	// as "<cr-id>/<workitem-id>" - the path the run is stored under. A decision
+	// found while building carries both: the run for what was actually built,
+	// and SourceConversations for the conversation that decided why.
+	SourceRuns []string `yaml:"source_runs,omitempty"`
 
 	// Status transition tracking
 	DeprecationReason string            `yaml:"deprecation_reason,omitempty"`

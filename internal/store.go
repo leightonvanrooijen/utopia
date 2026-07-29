@@ -740,6 +740,25 @@ func (s *YAMLStore) ListExecutionRuns() ([]*domain.ExecutionRun, error) {
 	return runs, nil
 }
 
+// ListUnprocessedExecutionRuns returns execution runs that have not yet been
+// harvested. Runs written before harvest tracked run status have no status at
+// all, and those count as unprocessed - see ExecutionRun.IsUnprocessed.
+func (s *YAMLStore) ListUnprocessedExecutionRuns() ([]*domain.ExecutionRun, error) {
+	all, err := s.ListExecutionRuns()
+	if err != nil {
+		return nil, err
+	}
+
+	var unprocessed []*domain.ExecutionRun
+	for _, run := range all {
+		if run.IsUnprocessed() {
+			unprocessed = append(unprocessed, run)
+		}
+	}
+
+	return unprocessed, nil
+}
+
 // ListConversations returns all conversations in the conversations directory
 func (s *YAMLStore) ListConversations() ([]*domain.Conversation, error) {
 	return List[domain.Conversation](s, "conversations")

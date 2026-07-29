@@ -20,8 +20,8 @@ var harvestCmd = &cobra.Command{
 	Long: `Scan unprocessed conversations and apply qualification tests to identify documentation candidates.
 
 The command will:
-  1. Find unprocessed conversations from .utopia/conversations/ and execution
-     runs (what was actually built) from .utopia/runs/
+  1. Find unprocessed conversations from .utopia/conversations/ and unprocessed
+     execution runs (what was actually built) from .utopia/runs/
   2. Apply qualification tests to identify documentation candidates:
      - ADR candidates (architectural decisions that pass category + reversal cost tests)
      - Concept candidates (educational content that passes orientation + independence tests)
@@ -31,7 +31,7 @@ The command will:
   5. Let you select which docs to create (individual, multiple, or all)
   6. Flow context between creations (ADR created first is known when creating Concept)
   7. Allow created docs to reference each other
-  8. Mark conversation as processed only after you complete or exit
+  8. Mark conversations and execution runs as processed only after you complete or exit
 
 Benefits over individual commands (/adr, /concept, /domain):
   - Single pass through conversations (efficiency)
@@ -78,9 +78,10 @@ func runHarvest(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("harvest failed: %w", err)
 	}
 
-	if result.UnprocessedConversations == 0 {
-		out.Printf("No unprocessed conversations found.\n")
+	if result.UnprocessedConversations == 0 && result.UnprocessedRuns == 0 {
+		out.Printf("No unprocessed conversations or execution runs found.\n")
 		out.Printf("Conversations are created when you use /cr or other interactive commands.\n")
+		out.Printf("Execution runs are created when work items execute.\n")
 	}
 	return nil
 }

@@ -541,7 +541,10 @@ func writeRunTranscript(store *internal.YAMLStore, crID string, item *domain.Wor
 		Iterations:  item.IterationCount,
 		CompletedAt: time.Now(),
 		Outcome:     outcome,
-		Transcript:  transcript,
+		// A fresh run has never been reviewed, so it enters the harvest queue
+		// unprocessed, exactly as a conversation does.
+		Status:     domain.ConversationUnprocessed,
+		Transcript: transcript,
 	}
 	if err := store.SaveExecutionRun(run); err != nil {
 		fmt.Printf("  warning: failed to write run transcript for %s: %v\n", item.ID, err)
