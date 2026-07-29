@@ -1,0 +1,26 @@
+workitem_id: 12_tiered-model-routing-validation-escalation-phase-1-scoping-escalation
+cr_id: 12_tiered-model-routing-validation-escalation
+spec_ref: 12_tiered-model-routing-validation-escalation-phase-1.scoping-escalation
+iterations: 1
+completed_at: 2026-07-30T09:36:47.072677+10:00
+outcome: completed
+status: unprocessed
+transcript: |
+    --- iteration 1 ---
+    Done. Build, vet, and all 1036 tests pass.
+
+    **What landed**
+
+    - `internal/ralph/scoping.go` - the scoper role: builds the prompt (change request source as written on disk, the work item prompt the executor actually read, validator diagnoses + corrected intent, spec excerpt, top-3 term-overlap-ranked ADR excerpts), runs it on `models.scoper` > `models.execute_escalated` > opus, reads the artefact back, validates, resumes.
+    - `internal/ralph/ralph.go` - both scoping-escalation exits (gate decision and resume path) now run the escalation instead of returning an error; the escalation is charged before it runs.
+    - `domain.ScopingRewrite` on `ChangeRequest` (`supersedes`, `work_item`, `diagnoses`) + validation; `models.scoper` config key.
+    - `store.ListRewrittenChangeRequests()`, `ChangeRequestsDir()`; harvest gained a rewritten-CR section with reading guidance and a count line.
+    - `chunk.SpecForFeature` so the scoper's spec excerpt uses the real target spec rather than re-deriving feature-id rules.
+
+    **Boundaries worth flagging**
+
+    - The rewritten CR is a new artefact (`<cr>-rewrite-N.yaml`) and the work item's prompt is re-derived from it, but **merge still merges the original CR file**. No acceptance criterion covers merge-time consumption of a rewrite, so I left it; `supersedes` is on the artefact for merge to be taught later.
+    - The specs-directory prohibition is enforced by prompt instruction and the tool whitelist (`Read, Glob, Grep, Write, Bash(utopia cr validate:*)`), not by a post-run check - `internal/git` has no status-by-path helper and adding one was out of scope.
+    - Only the failing work item's feature is re-derived; sibling items keep their original prompts.
+
+    <COMPLETE>
