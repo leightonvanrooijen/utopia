@@ -138,7 +138,7 @@ func (en *Engine) Emit(ctx context.Context, e Event) error {
 		}
 		fmt.Printf("  gating connector %s blocked %s: %v\n", res.Name, e.Name, res.Err)
 		if gateErr == nil {
-			gateErr = &GateError{Connector: res.Name, Event: e.Name, Stdout: res.Stdout}
+			gateErr = &GateError{Connector: res.Name, Event: e.Name, Stdout: res.Stdout, Aggregate: res.Aggregate}
 		}
 	}
 	return gateErr

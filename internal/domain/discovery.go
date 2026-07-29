@@ -128,10 +128,15 @@ type ModelConfig struct {
 	Default string `yaml:"default,omitempty"`
 
 	// Per-command model overrides
-	CR         string `yaml:"cr,omitempty"`
-	Harvest    string `yaml:"harvest,omitempty"`
-	Execute    string `yaml:"execute,omitempty"`
-	Validators string `yaml:"validators,omitempty"`
+	CR      string `yaml:"cr,omitempty"`
+	Harvest string `yaml:"harvest,omitempty"`
+	Execute string `yaml:"execute,omitempty"`
+	// ExecuteEscalated selects the model execution escalates to after a
+	// comprehension failure. It resolves independently of Execute and Default,
+	// defaulting to opus (see the ralph package), because escalating to the model
+	// that just misread the specification is not an escalation.
+	ExecuteEscalated string `yaml:"execute_escalated,omitempty"`
+	Validators       string `yaml:"validators,omitempty"`
 	// ValidatorRouter selects the model for the cheap relevance router that picks
 	// which validators run for a change. It defaults to a haiku-tier model
 	// independently of Validators and Default (see the validators package), so
@@ -160,6 +165,8 @@ func (c *ModelConfig) ModelForCommand(command string) string {
 		override = c.Harvest
 	case "execute":
 		override = c.Execute
+	case "execute_escalated":
+		override = c.ExecuteEscalated
 	case "validators":
 		override = c.Validators
 	case "validator_router":

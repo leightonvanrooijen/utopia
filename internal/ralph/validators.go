@@ -132,6 +132,9 @@ func validatorAction(runner *validators.Runner, list []*domain.Validator, trigge
 			if !o.agg.Passed {
 				res.Stdout = o.agg.Feedback
 				res.Err = errors.New("validators failed")
+				// The aggregate rides along so the loop can route on the failure
+				// class rather than only inject the prose.
+				res.Aggregate = o.agg
 			}
 			return res
 		}

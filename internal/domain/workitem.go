@@ -62,6 +62,18 @@ type WorkItem struct {
 	// ValidatorsRouted to distinguish "not yet routed" from "routed, selected none".
 	SelectedValidators []string `yaml:"selected_validators,omitempty"`
 
+	// MechanicalRetryCount tracks consecutive mechanical validation failures on
+	// the default executor. It is persisted alongside IterationCount so the
+	// mechanical retry cap holds across a resume, and it resets on any
+	// comprehension failure because it counts slips in a row.
+	MechanicalRetryCount int `yaml:"mechanical_retry_count,omitempty"`
+
+	// ComprehensionCount tracks comprehension validation failures - the ones the
+	// same executor cannot fix by trying harder. It is the escalation state: a
+	// non-zero count means execution runs on the escalated executor, so persisting
+	// it is what stops a resumed work item from resetting to the default executor.
+	ComprehensionCount int `yaml:"comprehension_count,omitempty"`
+
 	// ValidatorsRouted records whether the relevance router has already run for
 	// this work item. Once true, SelectedValidators is authoritative even when
 	// empty, so routing is not repeated on retries or after a resume.

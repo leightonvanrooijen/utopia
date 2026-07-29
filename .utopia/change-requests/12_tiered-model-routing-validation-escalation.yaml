@@ -4,7 +4,7 @@ title: Run the loop on a cheaper executor and escalate by validation failure cla
 status: in-progress
 phases:
     - type: enhancement
-      status: in-progress
+      status: complete
       changes:
         - operation: modify
           spec: agentic-validators
@@ -80,6 +80,7 @@ phases:
                 - The template explains the mechanical and comprehension distinction in terms of intent - mechanical means the intent was right and the execution slipped, comprehension means the intent was wrong
                 - The template instructs the validator to report confidence low rather than guess a class when the distinction is unclear
     - type: feature
+      status: in-progress
       changes:
         - operation: add
           spec: escalation-routing
@@ -323,3 +324,4 @@ phases:
                 - Reuse the yaml-formatting package so the record matches other Utopia YAML
                 - Capture an ADR recording that Utopia sits above the Anthropic API and therefore cannot observe tokens, cache hits or cost - the design this change request came from assumed the API layer, and the next reader will make the same assumption unless it is written down
                 - Capture the inverted-rule hypothesis as an ADR too, with the specific evidence that would overturn it - rewritten change requests failing to improve first-pass rates - so the open question is recorded rather than remembered
+current_phase: 1

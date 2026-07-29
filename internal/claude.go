@@ -79,6 +79,15 @@ func (c *CLI) WithModel(model string) *CLI {
 	return c
 }
 
+// Clone returns a copy of the CLI so a caller can vary one setting for a single
+// invocation without mutating the instance every other call site shares. The
+// escalation routing uses it to run one work item's attempt on a different model
+// while the loop's other work items keep the default executor.
+func (c *CLI) Clone() *CLI {
+	copied := *c
+	return &copied
+}
+
 // WithAuth selects the credential every claude subprocess this CLI spawns
 // authenticates with. utopiaDir is the project's .utopia directory, which
 // api-key mode searches for a .env holding the key.

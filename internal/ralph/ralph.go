@@ -68,10 +68,14 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 		Total: len(items),
 	}
 
-	// Create dependencies
+	// Create dependencies. The resolved override is also the default executor
+	// model the escalation routing retries on - empty means no --model flag, so
+	// the claude CLI default applies, which is the pre-escalation behaviour.
 	cli := internal.NewCLI().WithVerbose(true).WithAuth(auth, filepath.Join(projectDir, ".utopia"))
+	defaultExecutorModel := ""
 	if len(model) > 0 && model[0] != "" {
-		cli = cli.WithModel(model[0])
+		defaultExecutorModel = model[0]
+		cli = cli.WithModel(defaultExecutorModel)
 	}
 	verifier := verification.NewRunner(projectDir)
 	validatorRunner := validators.NewRunner(projectDir).WithModelConfig(config.Models).WithAuth(auth)
@@ -148,7 +152,7 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 		fmt.Printf("[%d/%d] %s - starting execution\n", i+1, len(items), item.ID)
 
 		// Execute this work item with the Ralph loop
-		timings, err := executeWorkItem(ctx, item, specID, store, cli, verifier, config, projectDir, auth, dispatcher, basePayload, validatorRunner, validatorList)
+		timings, err := executeWorkItem(ctx, item, specID, store, cli, defaultExecutorModel, verifier, config, projectDir, auth, dispatcher, basePayload, validatorRunner, validatorList)
 		if err != nil {
 			result.StoppedAt = item.ID
 			result.Reason = err.Error()
@@ -194,6 +198,7 @@ func executeWorkItem(
 	specID string,
 	store *internal.YAMLStore,
 	cli *internal.CLI,
+	defaultExecutorModel string,
 	verifier *verification.Runner,
 	config *domain.Config,
 	projectDir string,
@@ -205,6 +210,12 @@ func executeWorkItem(
 ) (*stepTimings, error) {
 	maxIterations := config.Verification.MaxIterations
 	verifyCommand := config.Verification.Command
+
+	// The escalation caps are the inner bounds on the retry paths; maxIterations
+	// above is the outer bound on the item as a whole. Both appear on the routing
+	// log line so an operator can tell which one stopped the item.
+	caps := DefaultEscalationCaps()
+	escalatedExecutorModel := resolveEscalatedExecutorModel(config.Models)
 
 	// Load CR title for commit message and operation type for execution log
 	crID := extractCRID(specID)
@@ -242,6 +253,16 @@ func executeWorkItem(
 		default:
 		}
 
+		// An item already at the comprehension cap routes to scoping escalation
+		// before another execution attempt is spent on it. This is the resume path:
+		// a decision made during this run returns from the gate below, so reaching
+		// here means the counter was carried in on the persisted work item.
+		if item.ComprehensionCount >= caps.ComprehensionEscalations {
+			_ = store.SaveWorkItemForSpec(specID, item)
+			writeRunTranscript(store, crID, item, transcript.String(), domain.RunFailed)
+			return nil, &ScopingEscalationError{WorkItemID: item.ID, ComprehensionCount: item.ComprehensionCount}
+		}
+
 		// Increment iteration count
 		item.IterationCount++
 		item.Status = domain.WorkItemInProgress
@@ -264,14 +285,26 @@ func executeWorkItem(
 		// Build the prompt (includes failure injection if applicable)
 		prompt := buildPrompt(item)
 
-		fmt.Printf("  Iteration %d: invoking Claude...\n", item.IterationCount)
+		// Which executor this attempt runs on is derived from the item's persisted
+		// escalation state rather than from an in-memory flag, so a resumed item
+		// that already escalated does not reset to the default executor. The CLI is
+		// cloned rather than mutated because it is shared with every other work
+		// item in this run, and escalation is per item.
+		attemptModel := executorModelFor(item, defaultExecutorModel, escalatedExecutorModel)
+		attemptCLI := cli
+		if attemptModel != defaultExecutorModel {
+			attemptCLI = cli.Clone().WithModel(attemptModel)
+			fmt.Printf("  Iteration %d: invoking Claude on the escalated executor (%s)...\n", item.IterationCount, attemptModel)
+		} else {
+			fmt.Printf("  Iteration %d: invoking Claude...\n", item.IterationCount)
+		}
 
 		// Invoke Claude. The call is timed from the outside, so the duration
 		// covers whatever the agent did without the agent reporting anything;
 		// it is charged to the claude category on every path out, including the
 		// usage-limit retry below, because the wall clock was spent either way.
 		claudeStart := time.Now()
-		claudeResult, err := cli.Prompt(ctx, prompt)
+		claudeResult, err := attemptCLI.Prompt(ctx, prompt)
 		claudeElapsed := time.Since(claudeStart)
 		timings.claude += claudeElapsed
 
@@ -402,9 +435,23 @@ func executeWorkItem(
 		joinElapsed := time.Since(joinStart)
 		timings.validators += joinElapsed
 		if gateErr != nil {
-			fmt.Printf("  Iteration %d: gate blocked workitem-verified, will retry with feedback (validators %s)\n", item.IterationCount, ui.Duration(joinElapsed))
+			// Route on the failure class the validators reported rather than on the
+			// iteration count. A mechanical failure retries on the same executor; a
+			// comprehension failure escalates it; repeated comprehension failure, or
+			// a suspected spec defect, escalates the change request instead.
+			aggregate := aggregateFromGate(gateErr)
+			decision := routeValidationFailure(item, aggregate, caps, defaultExecutorModel, escalatedExecutorModel)
+			fmt.Printf("  Iteration %d: gate blocked workitem-verified (validators %s)\n", item.IterationCount, ui.Duration(joinElapsed))
+			fmt.Printf("  %s\n", decision.logLine(item.IterationCount, maxIterations, caps))
 			item.LastFailureOutput = ""
 			item.LastValidatorFeedback = gateFeedback(gateErr)
+			if err := store.SaveWorkItemForSpec(specID, item); err != nil {
+				return nil, fmt.Errorf("failed to save work item state: %w", err)
+			}
+			if decision.Route == RouteScopingEscalation {
+				writeRunTranscript(store, crID, item, transcript.String(), domain.RunFailed)
+				return nil, scopingEscalationError(item, aggregate, decision)
+			}
 			continue
 		}
 		item.Status = domain.WorkItemCompleted

@@ -101,6 +101,7 @@ func ValidateModelConfig(mc *ModelConfig) error {
 	checkModel(mc.CR, "models.cr")
 	checkModel(mc.Harvest, "models.harvest")
 	checkModel(mc.Execute, "models.execute")
+	checkModel(mc.ExecuteEscalated, "models.execute_escalated")
 	checkModel(mc.Validators, "models.validators")
 	checkModel(mc.ValidatorRouter, "models.validator_router")
 	checkModel(mc.Discover, "models.discover")

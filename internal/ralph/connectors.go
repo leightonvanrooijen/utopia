@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/leightonvanrooijen/utopia/internal/domain"
+	"github.com/leightonvanrooijen/utopia/internal/validators"
 )
 
 // ConnectorResult holds the outcome of a single connector run.
@@ -31,6 +32,11 @@ type ConnectorResult struct {
 	TimedOut bool
 	// Err is non-nil if the command failed: non-zero exit, timeout, or failure to start
 	Err error
+	// Aggregate is the validators' aggregated outcome when this result came from
+	// the validators action, and nil for a connector command. It carries the
+	// failure classification the escalation routing reads, which Stdout - prose for
+	// the next iteration - cannot express.
+	Aggregate *validators.AggregateResult
 }
 
 // GateError reports a gating connector that blocked loop progression.
@@ -43,6 +49,11 @@ type GateError struct {
 	Event string
 	// Stdout is the connector's captured standard output
 	Stdout string
+	// Aggregate is the validators' aggregated outcome when a failing validator
+	// blocked, and nil when a gating connector did. Escalation routing reads the
+	// failure class from it; a nil aggregate is routed as mechanical, because a
+	// connector never claimed anything about intent.
+	Aggregate *validators.AggregateResult
 }
 
 func (e *GateError) Error() string {

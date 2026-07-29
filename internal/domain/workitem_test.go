@@ -1,7 +1,10 @@
 package domain
 
 import (
+	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestWorkItemStatus_Constants(t *testing.T) {
@@ -102,6 +105,39 @@ func TestWorkItem_IterationTracking(t *testing.T) {
 
 	if item.LastFailureOutput != "" {
 		t.Errorf("LastFailureOutput should be cleared on completion")
+	}
+}
+
+// The escalation counters are routing state, so they have to survive the same
+// round trip IterationCount does - a resumed work item that reset to the default
+// executor would silently undo an escalation.
+func TestWorkItem_EscalationCountersRoundTrip(t *testing.T) {
+	out, err := yaml.Marshal(&WorkItem{
+		ID:                   "item",
+		Status:               WorkItemInProgress,
+		IterationCount:       4,
+		MechanicalRetryCount: 2,
+		ComprehensionCount:   1,
+	})
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	if !strings.Contains(string(out), "mechanical_retry_count: 2") {
+		t.Errorf("marshalled work item missing mechanical_retry_count:\n%s", out)
+	}
+	if !strings.Contains(string(out), "comprehension_count: 1") {
+		t.Errorf("marshalled work item missing comprehension_count:\n%s", out)
+	}
+
+	var loaded WorkItem
+	if err := yaml.Unmarshal(out, &loaded); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	if loaded.MechanicalRetryCount != 2 {
+		t.Errorf("MechanicalRetryCount = %d, want 2", loaded.MechanicalRetryCount)
+	}
+	if loaded.ComprehensionCount != 1 {
+		t.Errorf("ComprehensionCount = %d, want 1", loaded.ComprehensionCount)
 	}
 }
 

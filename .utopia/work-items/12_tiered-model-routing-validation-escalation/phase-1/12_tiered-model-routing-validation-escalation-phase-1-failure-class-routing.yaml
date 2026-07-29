@@ -15,7 +15,7 @@ title: |
     slipping in the same place is usually solving the wrong problem
     - so the mechanical path reclassifies rather than retrying
     indefinitely.
-status: pending
+status: in_progress
 prompt: |-
     ## TASK
 
@@ -95,3 +95,4 @@ constraints:
     - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
 order: 0
 estimated_complexity: medium
+iteration_count: 1
