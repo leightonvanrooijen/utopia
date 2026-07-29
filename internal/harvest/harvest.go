@@ -250,7 +250,8 @@ does not.
   status value, a persisted artifact, or the directory it lives in has named a concept
 - A run that uses a DIFFERENT word for an already-documented term has introduced an
   alias, not a new term - suggest UPDATE of the existing bounded context to record the
-  alias, and name the term that drifted
+  alias, and name the term that drifted. The Domain Docs section above lists each term's
+  recorded aliases: a word already listed there is documented drift, not a candidate
 - A term the run coined and then abandoned is a working title - disqualified
 - Cross-reference every term surfaced from a run to its CR and its originating
   conversation, and record the run when creating or updating the document
@@ -272,6 +273,9 @@ For EACH qualified candidate, capture:
     - HIGH: Passes all qualification tests AND term already appears in code (strong code alignment)
     - MEDIUM: Passes qualification tests but term not yet in code (should be added) OR ambiguity test is borderline
     - LOW: Borderline qualification (may need user confirmation on domain specificity)
+    - For a term coined in an execution run, code presence is a given and carries no
+      confidence signal - rate it on how strongly the ambiguity test reads. A run-coined
+      term whose ambiguity test is borderline is MEDIUM, not HIGH
 - **For ADRs only**:
   - **Category**: Which AWS category (structure, nfr, dependencies, interfaces, construction)
   - **Reversal Cost**: Brief explanation of why this is costly to reverse
@@ -905,6 +909,13 @@ func buildHarvestDomainDocsSummary(docs []*domain.DomainDoc) string {
 			termNames := make([]string, len(doc.Terms))
 			for i, t := range doc.Terms {
 				termNames[i] = t.Term
+				// Recorded aliases are shown because a term coined in a run is
+				// often just a different word for something already documented.
+				// Without the aliases here, that drift reads as a new term and
+				// gets proposed all over again.
+				if len(t.Aliases) > 0 {
+					termNames[i] += fmt.Sprintf(" (aliases: %s)", strings.Join(t.Aliases, ", "))
+				}
 			}
 			sb.WriteString(fmt.Sprintf("  Terms: %s\n", strings.Join(termNames, ", ")))
 		}

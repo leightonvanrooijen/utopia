@@ -375,6 +375,30 @@ func TestBuildHarvestDomainDocsSummary(t *testing.T) {
 	}
 }
 
+// The run-sourced domain rule tells the harvest to treat a run's different word
+// for a documented term as an alias rather than a new term. It can only do that
+// if the aliases already recorded are in front of it.
+func TestBuildHarvestDomainDocsSummary_ShowsRecordedAliases(t *testing.T) {
+	docs := []*domain.DomainDoc{
+		{
+			ID:    "conversations",
+			Title: "Conversation Lifecycle",
+			Terms: []domain.DomainTerm{
+				{Term: "execution run", Aliases: []string{"run transcript", "ralph run"}},
+				{Term: "unprocessed"},
+			},
+		},
+	}
+
+	got := buildHarvestDomainDocsSummary(docs)
+	if !strings.Contains(got, "execution run (aliases: run transcript, ralph run)") {
+		t.Errorf("aliases not surfaced for the term that has them, got:\n%s", got)
+	}
+	if strings.Contains(got, "unprocessed (aliases") {
+		t.Errorf("term with no aliases should render bare, got:\n%s", got)
+	}
+}
+
 func TestPluralize(t *testing.T) {
 	if got := pluralize(1); got != "" {
 		t.Errorf("pluralize(1) = %q, want empty", got)
@@ -447,6 +471,22 @@ func TestHarvestSystemPrompt_CoversRunSourcedDomainTerms(t *testing.T) {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("system prompt missing run-sourced domain instruction %q", want)
 		}
+	}
+}
+
+// Code alignment is what the Domain rubric reads as HIGH confidence, and a
+// run-coined term satisfies it by construction - so the rubric would hand every
+// run term HIGH regardless of the ambiguity test. The prompt has to break that
+// tie in favour of the ambiguity test.
+func TestHarvestSystemPrompt_RunCoinedTermConfidenceFollowsAmbiguityTest(t *testing.T) {
+	prompt := composeTestPrompt()
+
+	if !strings.Contains(prompt, `code presence is a given and carries no
+      confidence signal`) {
+		t.Errorf("confidence rubric lets code presence stand in for a run term's ambiguity test:\n%s", snippetAround(prompt, "  - For Domain:"))
+	}
+	if !strings.Contains(prompt, "borderline is MEDIUM, not HIGH") {
+		t.Error("prompt does not cap a borderline run-coined term below HIGH")
 	}
 }
 
