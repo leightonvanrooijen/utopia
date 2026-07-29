@@ -1,7 +1,7 @@
 id: 03_harvest-execution-runs-phase-1-modify-harvest-command
 spec_ref: 03_harvest-execution-runs-phase-1.modify-harvest-command
 title: Modify the harvest-command feature
-status: in_progress
+status: completed
 prompt: |-
     ## TASK
 
