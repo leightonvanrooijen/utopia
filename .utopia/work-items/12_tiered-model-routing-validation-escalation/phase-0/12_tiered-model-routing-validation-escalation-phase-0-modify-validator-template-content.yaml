@@ -4,7 +4,7 @@ title: |
     Modify the validator-template-content feature: The scaffolded validator prompt teaches the verdict contract by
     example, so validators created from the template classify their
     failures without the author having to discover the schema.
-status: in_progress
+status: completed
 prompt: |-
     ## TASK
 
