@@ -1,0 +1,74 @@
+id: 08_sharpen-domain-knowledge-boundary
+type: enhancement
+title: Sharpen the boundary between spec domain_knowledge and domain artifacts
+status: draft
+changes:
+  # 1. New feature: explicit boundary definition between the two artifacts
+  - operation: add
+    spec: knowledge-artifacts
+    feature:
+      id: domain-knowledge-boundary
+      description: |
+        Explicit boundary criteria distinguishing spec domain_knowledge from
+        Domain documentation. Both capture domain understanding, but they own
+        different content:
+
+        - Spec domain_knowledge owns implementation invariants: constraints,
+          assumptions, and design rules an implementer of that spec must
+          respect, but which are not testable acceptance criteria
+          (e.g. "Output truncation preserves tail").
+        - Domain docs own ubiquitous language: terms, canonical definitions,
+          aliases, code usage, and entity relationships within a bounded
+          context (e.g. "WorkItem means X, also called Y").
+
+        These criteria are referenced by discovery agents (adoption) and
+        signal detection (harvest) to route content to the correct home.
+      acceptance_criteria:
+        - 'Boundary rule: content that is a noun/term used when talking about the system belongs in Domain docs'
+        - 'Boundary rule: content that defines relationships between entities belongs in Domain docs'
+        - 'Boundary rule: content that is a constraint or assumption an implementer of one spec must respect belongs in that spec''s domain_knowledge'
+        - 'Litmus test: ''Would this still be true and useful if the spec were deleted?'' YES = Domain doc, NO = spec domain_knowledge'
+        - 'Litmus test: ''Is this only meaningful in the context of one spec''s features?'' YES = spec domain_knowledge'
+        - Boundary criteria are documented alongside the domain qualification/disqualification criteria
+        - Boundary criteria are referenced by domain discovery agent prompts and harvest signal detection
+      hints:
+        - Existing spec domain_knowledge content (execution-ralph, verification) already fits the invariant definition - use it as calibration examples
+        - Follow the qualification/disqualification criteria pattern already established in knowledge-artifacts
+
+  # 2. Domain qualification criteria: require content to be vocabulary, not invariants
+  - operation: modify
+    spec: knowledge-artifacts
+    feature_id: domain-qualification-criteria
+    criteria:
+      add:
+        - 'Qualification: content is vocabulary or terminology (a term, definition, alias, or entity relationship), not a spec-local implementation invariant'
+        - 'Litmus test: ''Would this still be true and useful if the related spec were deleted?'' YES = Domain doc'
+
+  # 3. Domain disqualification criteria: reject spec-local invariants and route them
+  - operation: modify
+    spec: knowledge-artifacts
+    feature_id: domain-disqualification-criteria
+    criteria:
+      add:
+        - 'Disqualified: content is a spec-local implementation invariant, constraint, or assumption (belongs in that spec''s domain_knowledge instead)'
+        - Disqualified spec-local invariants are flagged with the spec they belong to, not silently dropped
+
+  # 4. Adoption: domain discovery routes invariants away from domain drafts
+  - operation: modify
+    spec: adoption
+    feature_id: discover-domain-command
+    criteria:
+      add:
+        - Domain discovery applies the domain-knowledge-boundary criteria from knowledge-artifacts when evaluating candidates
+        - Candidates that are spec-local implementation invariants are excluded from domain drafts
+        - Excluded invariant candidates are logged with the spec they likely belong to (for transparency)
+
+  # 5. Harvest: signal detection classifies domain signals by boundary
+  - operation: modify
+    spec: harvest
+    feature_id: signal-detection
+    criteria:
+      add:
+        - Domain signals are classified as vocabulary (terms, definitions, entity relationships) or implementation invariant (spec-local constraints and assumptions)
+        - Vocabulary signals suggest Domain doc creation or update
+        - Implementation invariant signals suggest adding to the relevant spec's domain_knowledge (via a change request), never direct spec edits
