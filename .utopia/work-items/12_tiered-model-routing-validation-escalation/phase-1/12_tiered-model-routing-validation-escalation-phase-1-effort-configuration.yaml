@@ -17,7 +17,7 @@ title: |
     The consequence is a rule worth stating as a rule: no code path
     raises effort in response to a validation failure. Failures
     change which model runs, never how hard the cheap one tries.
-status: in_progress
+status: completed
 prompt: |-
     ## TASK
 
