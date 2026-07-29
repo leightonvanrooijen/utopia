@@ -23,7 +23,7 @@ title: |
     in a delimited block in stdout and parsed, and every parse failure
     resolves toward the more expensive classification rather than the
     cheaper one.
-status: in_progress
+status: completed
 prompt: |-
     ## TASK
 

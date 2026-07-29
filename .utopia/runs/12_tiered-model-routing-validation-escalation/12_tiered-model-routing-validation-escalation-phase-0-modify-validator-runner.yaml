@@ -1,0 +1,25 @@
+workitem_id: 12_tiered-model-routing-validation-escalation-phase-0-modify-validator-runner
+cr_id: 12_tiered-model-routing-validation-escalation
+spec_ref: 12_tiered-model-routing-validation-escalation-phase-0.modify-validator-runner
+iterations: 1
+completed_at: 2026-07-29T22:09:13.279851+10:00
+outcome: completed
+status: unprocessed
+transcript: |
+    --- iteration 1 ---
+    Done. `internal/validators/verdict.go` (new) + runner wiring.
+
+    **Contract**
+    - `Verdict{Outcome, FailureClass, Diagnosis, CorrectedIntent, Confidence, SpecDefectSuspected}` maps to JSON `verdict/failure_class/diagnosis/corrected_intent/confidence/spec_defect_suspected`. `Result` gains `Verdict *Verdict`, never nil.
+    - `ParseVerdict` tri-states: parsed verdict / no block / rejected-with-reason. `InterpretOutput` applies precedence: parseable block decides, unusable block = comprehension fail, no block + `<PASSED>` = pass, neither marker = comprehension fail. Failing results still carry full stdout as feedback.
+
+    **Judgment calls worth flagging**
+    - Over-long `diagnosis`/`corrected_intent` truncate (rune-safe) to 400/1500 rather than invalidating the class - length is a formatting slip, not a comprehension signal. Cap is guaranteed post-parse either way.
+    - `spec_defect_suspected` absent = false; a validator saying nothing is not suspecting anything. Not treated as a missing required field.
+    - Required-on-fail set: `failure_class`, `diagnosis`, `confidence`, plus `corrected_intent` when comprehension. Validation runs against the *reported* class, then low-confidence promotion applies - so low-confidence mechanical is not held to a corrected_intent it was never asked for.
+    - A `<VERDICT>` fail outranks a stray `<PASSED>`; two blocks = no single verdict = comprehension fail.
+    - Prompts are untouched - the template teaching this contract is a separate work item in this phase, so nothing yet makes existing validators emit blocks (fallback path covers them).
+
+    `Run` now delegates to `runWithDiff` so both paths interpret through one contract. Full suite: 945 pass, staticcheck clean.
+
+    <COMPLETE>
