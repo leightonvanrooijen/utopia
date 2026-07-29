@@ -1,8 +1,19 @@
-# Orphaned CR files from the shadow-save bug - RESOLVED (data), code fix still open
+# Orphaned CR files from the shadow-save bug - FULLY RESOLVED
 
-Data cleanup is DONE. The code fix is CR `fix-prefixed-cr-shadow-file-on-save`
-and is still open - until it lands, this will recur in any repo using numeric
-CR filename prefixes.
+Both halves are done:
+
+- **Code fix** landed in utopia as `1ee0cdc fix(cr): save change requests to their
+  real on-disk file` (CR `fix-prefixed-cr-shadow-file-on-save`, cleaned up at
+  `f6474f5`). `SaveChangeRequest` now resolves via `ChangeRequestPath`.
+- **Data cleanup** landed in greenfield as `f41f88b`.
+
+Verified by mutation: reverting `SaveChangeRequest` to the old reconstructed-path
+version makes 5 tests fail with exactly the original symptoms - the shadow pair
+`[01_reusable-core.yaml reusable-core.yaml]`, a cleanup commit recording `A`
+instead of `D`, and `ListChangeRequests` returning the orphan. The tests are
+load-bearing, not decorative.
+
+The detection recipe below is kept for reuse on any repo not yet checked.
 
 ## What was cleaned (greenfield, ~/IdeaProjects/greenfield)
 
