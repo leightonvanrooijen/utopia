@@ -9,7 +9,7 @@ title: |
     case is materially cheaper. They are independently configurable
     because they are guesses, and the telemetry that would confirm
     them does not exist yet.
-status: in_progress
+status: completed
 prompt: |-
     ## TASK
 
