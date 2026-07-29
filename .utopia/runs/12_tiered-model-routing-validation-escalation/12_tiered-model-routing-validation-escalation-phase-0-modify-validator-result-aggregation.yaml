@@ -1,0 +1,19 @@
+workitem_id: 12_tiered-model-routing-validation-escalation-phase-0-modify-validator-result-aggregation
+cr_id: 12_tiered-model-routing-validation-escalation
+spec_ref: 12_tiered-model-routing-validation-escalation-phase-0.modify-validator-result-aggregation
+iterations: 1
+completed_at: 2026-07-29T22:12:56.291268+10:00
+outcome: completed
+status: unprocessed
+transcript: |
+    --- iteration 1 ---
+    Done. `AggregateResult` now carries routing input, not just prose:
+
+    - `FailureClass` folded via `strongerFailureClass` (verdict.go:42) - comprehension beats mechanical; mechanical only when every failure mechanical; empty on pass.
+    - `SpecDefectSuspected` - OR across failing validators.
+    - `Failures []ValidatorFailure{ID, *Verdict}` - keeps each failing validator's diagnosis + corrected_intent unflattened.
+    - Errored/timed-out validator, or failure with nil/empty class, resolves comprehension + low confidence via existing `unclassifiedFailure`.
+
+    `Feedback` string unchanged, so ralph's gate feedback path untouched. Full suite: 956 pass, vet + gofmt clean. Work-item yaml status left to the loop.
+
+    <COMPLETE>
