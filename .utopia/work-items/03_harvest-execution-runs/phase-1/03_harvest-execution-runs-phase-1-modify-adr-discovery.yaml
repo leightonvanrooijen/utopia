@@ -1,7 +1,7 @@
 id: 03_harvest-execution-runs-phase-1-modify-adr-discovery
 spec_ref: 03_harvest-execution-runs-phase-1.modify-adr-discovery
 title: Modify the adr-discovery feature
-status: in_progress
+status: completed
 prompt: |-
     ## TASK
 
