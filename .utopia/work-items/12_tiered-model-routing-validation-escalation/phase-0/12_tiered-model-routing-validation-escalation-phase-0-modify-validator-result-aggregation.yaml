@@ -1,0 +1,76 @@
+id: 12_tiered-model-routing-validation-escalation-phase-0-modify-validator-result-aggregation
+spec_ref: 12_tiered-model-routing-validation-escalation-phase-0.modify-validator-result-aggregation
+title: |
+    Modify the validator-result-aggregation feature: Aggregate results from parallel validators and determine overall
+    pass/fail.
+
+    Aggregation is boolean AND over pass flags plus string
+    concatenation of feedback. Once validators classify their failures,
+    flattening them into one string discards exactly the field the
+    routing logic needs, so the aggregate has to carry the
+    classification rather than only the prose.
+
+    Validators disagree, and the disagreement resolves toward
+    escalation: one validator reporting a misread specification is not
+    cancelled out by three reporting lint errors.
+status: pending
+prompt: |-
+    ## TASK
+
+    Modify the validator-result-aggregation feature: Aggregate results from parallel validators and determine overall
+    pass/fail.
+
+    Aggregation is boolean AND over pass flags plus string
+    concatenation of feedback. Once validators classify their failures,
+    flattening them into one string discards exactly the field the
+    routing logic needs, so the aggregate has to carry the
+    classification rather than only the prose.
+
+    Validators disagree, and the disagreement resolves toward
+    escalation: one validator reporting a misread specification is not
+    cancelled out by three reporting lint errors.
+
+
+    Acceptance criteria:
+    - The aggregate carries the strongest failure_class across failing validators, where comprehension is stronger than mechanical
+    - The aggregate is spec_defect_suspected when any failing validator reports spec_defect_suspected
+    - Each failing validator's diagnosis and corrected_intent are retained on the aggregate rather than flattened into the feedback string
+
+
+
+    ## STANDARDS
+
+    This project defines coding standards in .utopia/standards/. Before implementing, read the standards docs relevant to the files this task touches:
+
+    - id: cli-organization
+      description: How to structure cobra commands in internal/cli: thin handlers that own the CLI frame and delegate the algorithm to domain packages.
+      tags: go, cli, cobra, architecture
+      path: .utopia/standards/cli-organization.md
+    - id: error-handling
+      description: How errors are created, wrapped, matched, and surfaced: typed domain errors for branching, %w wrapping for infrastructure, one exit point in root.go.
+      tags: go, errors, cli
+      path: .utopia/standards/error-handling.md
+    - id: terminal-output
+      description: One shared output vocabulary (glyphs, banners, progress) routed through cobra's injectable writers so command output is consistent and testable.
+      tags: go, cli, ux, output
+      path: .utopia/standards/terminal-output.md
+
+
+    ## CONSTRAINTS
+
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+order: 1
+estimated_complexity: medium

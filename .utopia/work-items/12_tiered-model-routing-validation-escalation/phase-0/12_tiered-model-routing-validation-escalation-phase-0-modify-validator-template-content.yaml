@@ -1,0 +1,58 @@
+id: 12_tiered-model-routing-validation-escalation-phase-0-modify-validator-template-content
+spec_ref: 12_tiered-model-routing-validation-escalation-phase-0.modify-validator-template-content
+title: |
+    Modify the validator-template-content feature: The scaffolded validator prompt teaches the verdict contract by
+    example, so validators created from the template classify their
+    failures without the author having to discover the schema.
+status: pending
+prompt: |-
+    ## TASK
+
+    Modify the validator-template-content feature: The scaffolded validator prompt teaches the verdict contract by
+    example, so validators created from the template classify their
+    failures without the author having to discover the schema.
+
+
+    Acceptance criteria:
+    - The template instructs the validator to emit a <VERDICT> block on failure and documents every field
+    - The template explains the mechanical and comprehension distinction in terms of intent - mechanical means the intent was right and the execution slipped, comprehension means the intent was wrong
+    - The template instructs the validator to report confidence low rather than guess a class when the distinction is unclear
+
+
+
+    ## STANDARDS
+
+    This project defines coding standards in .utopia/standards/. Before implementing, read the standards docs relevant to the files this task touches:
+
+    - id: cli-organization
+      description: How to structure cobra commands in internal/cli: thin handlers that own the CLI frame and delegate the algorithm to domain packages.
+      tags: go, cli, cobra, architecture
+      path: .utopia/standards/cli-organization.md
+    - id: error-handling
+      description: How errors are created, wrapped, matched, and surfaced: typed domain errors for branching, %w wrapping for infrastructure, one exit point in root.go.
+      tags: go, errors, cli
+      path: .utopia/standards/error-handling.md
+    - id: terminal-output
+      description: One shared output vocabulary (glyphs, banners, progress) routed through cobra's injectable writers so command output is consistent and testable.
+      tags: go, cli, ux, output
+      path: .utopia/standards/terminal-output.md
+
+
+    ## CONSTRAINTS
+
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+order: 2
+estimated_complexity: medium

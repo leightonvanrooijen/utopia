@@ -1,0 +1,103 @@
+id: 12_tiered-model-routing-validation-escalation-phase-0-modify-validator-runner
+spec_ref: 12_tiered-model-routing-validation-escalation-phase-0.modify-validator-runner
+title: |
+    Modify the validator-runner feature: Execute a validator by invoking Claude with the prompt and changed
+    files.
+
+    A validator currently answers one question - did this pass - and on
+    failure hands back its entire output as prose. That is enough to
+    retry and not enough to decide anything: a missing import and a
+    misread specification are indistinguishable to the caller, so the
+    only available response is to try again identically.
+
+    The validator now also classifies the failure. A mechanical failure
+    means the intent was right and the execution slipped, so the same
+    executor can retry. A comprehension failure means the intent was
+    wrong, which the same executor cannot fix by trying harder. That
+    distinction is the input every later phase routes on, and it is
+    cheapest to produce here, where the validator has already read the
+    diff and the specification.
+
+    Because Utopia drives the claude CLI rather than the Anthropic API,
+    the verdict cannot be enforced by a response schema. It is carried
+    in a delimited block in stdout and parsed, and every parse failure
+    resolves toward the more expensive classification rather than the
+    cheaper one.
+status: pending
+prompt: |-
+    ## TASK
+
+    Modify the validator-runner feature: Execute a validator by invoking Claude with the prompt and changed
+    files.
+
+    A validator currently answers one question - did this pass - and on
+    failure hands back its entire output as prose. That is enough to
+    retry and not enough to decide anything: a missing import and a
+    misread specification are indistinguishable to the caller, so the
+    only available response is to try again identically.
+
+    The validator now also classifies the failure. A mechanical failure
+    means the intent was right and the execution slipped, so the same
+    executor can retry. A comprehension failure means the intent was
+    wrong, which the same executor cannot fix by trying harder. That
+    distinction is the input every later phase routes on, and it is
+    cheapest to produce here, where the validator has already read the
+    diff and the specification.
+
+    Because Utopia drives the claude CLI rather than the Anthropic API,
+    the verdict cannot be enforced by a response schema. It is carried
+    in a delimited block in stdout and parsed, and every parse failure
+    resolves toward the more expensive classification rather than the
+    cheaper one.
+
+
+    Acceptance criteria:
+    - A validator emits its verdict as a single <VERDICT> block containing a JSON object
+    - The verdict object carries verdict (pass or fail), failure_class (mechanical, comprehension, or null), diagnosis, corrected_intent, confidence (high or low), and spec_defect_suspected
+    - failure_class is null when verdict is pass and non-null when verdict is fail
+    - diagnosis is at most 400 characters
+    - corrected_intent is required when failure_class is comprehension, is null otherwise, and is at most 1500 characters
+    - A verdict of fail with confidence low is treated as failure_class comprehension regardless of the class it reported
+    - Output containing neither <PASSED> nor a parseable <VERDICT> block is treated as a failure with failure_class comprehension
+    - A <VERDICT> block whose JSON does not parse, or which omits a required field, is treated as a failure with failure_class comprehension
+    - A validator emitting <PASSED> with no <VERDICT> block still passes, so validator prompts written before this contract keep working
+    - Change from "Runner returns structured result (passed bool, feedback string)" to: Runner returns structured result carrying passed bool, feedback string, and the parsed verdict
+
+
+
+    ## STANDARDS
+
+    This project defines coding standards in .utopia/standards/. Before implementing, read the standards docs relevant to the files this task touches:
+
+    - id: cli-organization
+      description: How to structure cobra commands in internal/cli: thin handlers that own the CLI frame and delegate the algorithm to domain packages.
+      tags: go, cli, cobra, architecture
+      path: .utopia/standards/cli-organization.md
+    - id: error-handling
+      description: How errors are created, wrapped, matched, and surfaced: typed domain errors for branching, %w wrapping for infrastructure, one exit point in root.go.
+      tags: go, errors, cli
+      path: .utopia/standards/error-handling.md
+    - id: terminal-output
+      description: One shared output vocabulary (glyphs, banners, progress) routed through cobra's injectable writers so command output is consistent and testable.
+      tags: go, cli, ux, output
+      path: .utopia/standards/terminal-output.md
+
+
+    ## CONSTRAINTS
+
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+order: 0
+estimated_complexity: medium
