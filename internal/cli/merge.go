@@ -700,8 +700,9 @@ func AutoMergeCR(out *ui.Printer, cr *domain.ChangeRequest, crID string, store *
 	// Resolve the CR's real on-disk path before cleanup deletes it, so the
 	// cleanup commit stages the actual filename (which may carry a numeric
 	// ordering prefix, e.g. 01_reusable-core.yaml) rather than a reconstructed
-	// change-requests/<id>.yaml. Deletion resolves the same path, so a
-	// successful CleanupAfterMerge implies this resolved cleanly.
+	// change-requests/<id>.yaml. Cleanup's status save updates that same file in
+	// place (SaveChangeRequest resolves it the same way), so nothing shifts
+	// resolution between here and the delete.
 	crFile, crFileErr := store.ChangeRequestPath(crID)
 
 	// Step 3: Clean up CR and work items (now safe - commit exists for rollback)

@@ -297,9 +297,29 @@ func (s *YAMLStore) LoadConfig() (*domain.Config, error) {
 	return config, nil
 }
 
-// SaveChangeRequest writes a change request to .utopia/change-requests/{id}.yaml
+// SaveChangeRequest persists a change request, updating the CR's existing
+// on-disk file whatever its filename. It resolves that file with
+// ChangeRequestPath, so a CR stored as 01_reusable-core.yaml with internal id
+// reusable-core is rewritten in place rather than forked into a second,
+// un-prefixed change-requests/reusable-core.yaml. That fork was not merely
+// untidy: because ChangeRequestPath prefers a canonical filename, the shadow
+// immediately outranked the real file in resolution, so a status mutation
+// followed by a delete (post-merge cleanup) removed the shadow it had just
+// written and left the prefixed file behind with a stale status.
+// A CR with no file yet is genuinely new and gets the canonical
+// change-requests/<id>.yaml. An id that strip-matches more than one file is
+// reported as ambiguous, consistent with how ChangeRequestPath reports it on read.
 func (s *YAMLStore) SaveChangeRequest(cr *domain.ChangeRequest) error {
-	return Save(s, filepath.Join("change-requests", cr.ID+".yaml"), cr)
+	path, err := s.ChangeRequestPath(cr.ID)
+	if err != nil {
+		var nfe *domain.NotFoundError
+		if !errors.As(err, &nfe) {
+			return err
+		}
+		// Not found is the new-CR case, not a failure: write the canonical name.
+		path = filepath.Join("change-requests", cr.ID+".yaml")
+	}
+	return Save(s, path, cr)
 }
 
 // LoadChangeRequest reads a change request from .utopia/change-requests/{id}.yaml

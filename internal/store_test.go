@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -1790,5 +1791,138 @@ func TestDeleteChangeRequest_NumericPrefix(t *testing.T) {
 
 	if _, err := os.Stat(filepath.Join(store.baseDir, "change-requests", "01_reusable-core.yaml")); !os.IsNotExist(err) {
 		t.Errorf("prefixed CR file should be gone, stat err = %v", err)
+	}
+}
+
+// crFilenames returns the basenames of every file in the store's
+// change-requests directory (os.ReadDir already sorts them), so tests can
+// assert that a save updated an existing file rather than adding one.
+func crFilenames(t *testing.T, store *YAMLStore) []string {
+	t.Helper()
+	entries, err := os.ReadDir(filepath.Join(store.baseDir, "change-requests"))
+	if err != nil {
+		t.Fatalf("failed to read change-requests dir: %v", err)
+	}
+	names := []string{}
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+	return names
+}
+
+// Saving a CR that already exists under a numeric-prefixed filename must update
+// that file, not fork an un-prefixed shadow with the same id. The shadow would
+// then win resolution (ChangeRequestPath prefers a canonical filename), so every
+// later read and the post-merge delete would act on it instead of the real file.
+func TestSaveChangeRequest_UpdatesPrefixedFileInPlace(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+	writeRawCR(t, store, "01_reusable-core.yaml", "reusable-core")
+
+	cr, err := store.ResolveChangeRequest("reusable-core")
+	if err != nil {
+		t.Fatalf("failed to resolve CR: %v", err)
+	}
+	cr.Status = domain.ChangeRequestComplete
+	if err := store.SaveChangeRequest(cr); err != nil {
+		t.Fatalf("unexpected error saving CR: %v", err)
+	}
+
+	if got, want := crFilenames(t, store), []string{"01_reusable-core.yaml"}; !slices.Equal(got, want) {
+		t.Errorf("change-requests contents = %v, want only the prefixed file %v", got, want)
+	}
+
+	// The prefixed file itself carries the new status.
+	reloaded, err := store.LoadChangeRequest("01_reusable-core")
+	if err != nil {
+		t.Fatalf("failed to reload prefixed CR: %v", err)
+	}
+	if reloaded.Status != domain.ChangeRequestComplete {
+		t.Errorf("prefixed CR status = %q, want %q", reloaded.Status, domain.ChangeRequestComplete)
+	}
+}
+
+// A CR with no file on disk yet is genuinely new, so the canonical filename is
+// correct - ChangeRequestPath's NotFoundError must not propagate as a failure.
+func TestSaveChangeRequest_NewCRWritesCanonical(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	cr := &domain.ChangeRequest{
+		ID:     "brand-new",
+		Type:   domain.CRTypeRefactor,
+		Title:  "Brand New",
+		Status: domain.ChangeRequestDraft,
+	}
+	if err := store.SaveChangeRequest(cr); err != nil {
+		t.Fatalf("unexpected error saving new CR: %v", err)
+	}
+
+	if got, want := crFilenames(t, store), []string{"brand-new.yaml"}; !slices.Equal(got, want) {
+		t.Errorf("change-requests contents = %v, want %v", got, want)
+	}
+}
+
+// Save reports an ambiguous id rather than silently picking one of the
+// candidates, matching how ChangeRequestPath already reports it on read.
+func TestSaveChangeRequest_Ambiguous(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+	// Two prefixed files strip to the same id and no canonical file exists.
+	writeRawCR(t, store, "06_ai-chat.yaml", "ai-chat")
+	writeRawCR(t, store, "07_ai-chat.yaml", "ai-chat")
+
+	cr, err := store.LoadChangeRequest("06_ai-chat")
+	if err != nil {
+		t.Fatalf("failed to load CR: %v", err)
+	}
+	cr.Status = domain.ChangeRequestInProgress
+
+	err = store.SaveChangeRequest(cr)
+	if err == nil {
+		t.Fatal("expected ambiguity error, got nil")
+	}
+	var nfe *domain.NotFoundError
+	if errors.As(err, &nfe) {
+		t.Fatalf("ambiguous id should not surface as NotFoundError, got: %v", err)
+	}
+	for _, want := range []string{"06_ai-chat.yaml", "07_ai-chat.yaml"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("ambiguity error should list candidate %q, got: %v", want, err)
+		}
+	}
+	// Nothing new was written.
+	if got, want := crFilenames(t, store), []string{"06_ai-chat.yaml", "07_ai-chat.yaml"}; !slices.Equal(got, want) {
+		t.Errorf("change-requests contents = %v, want %v", got, want)
+	}
+}
+
+// Mirrors the chunk-time status transition (chunkCR in internal/cli/execute.go
+// sets in-progress and saves before chunking). On a prefix-named CR this must
+// update the prefixed file, not leak a shadow that later re-appears as an
+// executable orphan.
+func TestSaveChangeRequest_ChunkTimeStatusUpdateNoShadow(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+	writeRawCR(t, store, "01_reusable-core.yaml", "reusable-core")
+
+	cr, err := store.ResolveChangeRequest("reusable-core")
+	if err != nil {
+		t.Fatalf("failed to resolve CR: %v", err)
+	}
+	cr.Status = domain.ChangeRequestInProgress
+	if err := store.SaveChangeRequest(cr); err != nil {
+		t.Fatalf("unexpected error saving CR: %v", err)
+	}
+
+	if got, want := crFilenames(t, store), []string{"01_reusable-core.yaml"}; !slices.Equal(got, want) {
+		t.Errorf("change-requests contents = %v, want no shadow copy alongside %v", got, want)
+	}
+	reloaded, err := store.LoadChangeRequest("01_reusable-core")
+	if err != nil {
+		t.Fatalf("failed to reload prefixed CR: %v", err)
+	}
+	if reloaded.Status != domain.ChangeRequestInProgress {
+		t.Errorf("prefixed CR status = %q, want %q", reloaded.Status, domain.ChangeRequestInProgress)
 	}
 }

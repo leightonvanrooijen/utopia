@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/leightonvanrooijen/utopia/internal"
@@ -79,6 +80,33 @@ func TestGitCommitCR_NumericPrefix(t *testing.T) {
 	}
 }
 
+// mergeCleanupSequence reproduces AutoMergeCR's post-merge steps for a CR that
+// is already tracked in git: resolve the real on-disk path, run the real
+// CleanupAfterMerge (which sets status to complete and *saves* before deleting),
+// then commit the cleanup. The status save is the step that used to fork an
+// un-prefixed shadow file and steal resolution from the delete, so a test that
+// skips it cannot see the bug. It returns the resolved path.
+func mergeCleanupSequence(t *testing.T, projectDir string, store *internal.YAMLStore, crID string) string {
+	t.Helper()
+	utopiaDir := filepath.Join(projectDir, ".utopia")
+
+	cr, err := store.ResolveChangeRequest(crID)
+	if err != nil {
+		t.Fatalf("failed to resolve CR: %v", err)
+	}
+	crFile, err := store.ChangeRequestPath(crID)
+	if err != nil {
+		t.Fatalf("failed to resolve CR path: %v", err)
+	}
+	if err := CleanupAfterMerge(cr, crID, utopiaDir, store); err != nil {
+		t.Fatalf("CleanupAfterMerge failed: %v", err)
+	}
+	if err := gitCommitCleanup(projectDir, crFile, crID, utopiaDir); err != nil {
+		t.Fatalf("failed to commit cleanup: %v", err)
+	}
+	return crFile
+}
+
 // The post-merge cleanup commit must stage the removal of the CR's real
 // on-disk file, which may carry a numeric ordering prefix. The path is
 // resolved before deletion (as AutoMergeCR does) and threaded to the commit,
@@ -94,24 +122,26 @@ func TestGitCommitCleanup_NumericPrefix(t *testing.T) {
 		t.Fatalf("failed to commit CR: %v", err)
 	}
 
-	// Mirror AutoMergeCR: resolve the real path, then delete, then commit the
-	// cleanup. Resolution must find the prefixed file, not reusable-core.yaml.
-	crFile, err := store.ChangeRequestPath("reusable-core")
-	if err != nil {
-		t.Fatalf("failed to resolve CR path: %v", err)
-	}
+	crFile := mergeCleanupSequence(t, projectDir, store, "reusable-core")
 	if want := filepath.Join(utopiaDir, "change-requests", "01_reusable-core.yaml"); crFile != want {
 		t.Fatalf("resolved CR path = %q, want %q", crFile, want)
 	}
-	if err := store.DeleteChangeRequest("reusable-core"); err != nil {
-		t.Fatalf("failed to delete CR: %v", err)
-	}
 
-	if err := gitCommitCleanup(projectDir, crFile, "reusable-core", utopiaDir); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
 	if got, want := lastCommitSubject(t, projectDir), "cleanup: complete reusable-core"; got != want {
 		t.Errorf("commit subject = %q, want %q", got, want)
+	}
+
+	// The commit records the prefixed file's deletion rather than an empty
+	// change set (CommitIfChanged skips entirely when nothing is staged, so a
+	// stale subject here would mean the previous commit, not a cleanup commit).
+	status := exec.Command("git", "show", "--name-status", "--format=", "HEAD")
+	status.Dir = projectDir
+	statusOut, err := status.Output()
+	if err != nil {
+		t.Fatalf("git show failed: %v", err)
+	}
+	if want := "D\t.utopia/change-requests/01_reusable-core.yaml"; !strings.Contains(string(statusOut), want) {
+		t.Errorf("cleanup commit change set = %q, want it to record %q", string(statusOut), want)
 	}
 
 	// The prefixed CR file's removal was committed: it is no longer tracked.
@@ -123,6 +153,43 @@ func TestGitCommitCleanup_NumericPrefix(t *testing.T) {
 	}
 	if got := string(out); got != "" {
 		t.Errorf("tracked CR files = %q, want none (removal committed)", got)
+	}
+}
+
+// Regression: cleanup used to leave an orphan behind for a prefix-named CR.
+// Setting status to complete wrote change-requests/reusable-core.yaml, which
+// outranked 01_reusable-core.yaml in resolution, so the delete removed the
+// shadow it had just created and the real file survived with a stale
+// in-progress status. Because ListChangeRequests applies no status filter, that
+// orphan was then picked up by "utopia execute --all" and - its work items gone
+// - re-chunked, re-executed and re-merged, sorting first thanks to its prefix.
+func TestCleanupAfterMerge_PrefixedCRLeavesNoOrphan(t *testing.T) {
+	projectDir, store := setupCRRepo(t, "01_reusable-core.yaml", "reusable-core")
+	if _, err := GitCommitCR(projectDir, store, "reusable-core"); err != nil {
+		t.Fatalf("failed to commit CR: %v", err)
+	}
+
+	mergeCleanupSequence(t, projectDir, store, "reusable-core")
+
+	// Nothing with this id remains anywhere in change-requests/: neither the
+	// un-prefixed shadow nor the prefixed file itself.
+	crDir := filepath.Join(projectDir, ".utopia", "change-requests")
+	entries, err := os.ReadDir(crDir)
+	if err != nil {
+		t.Fatalf("failed to read change-requests dir: %v", err)
+	}
+	for _, entry := range entries {
+		t.Errorf("change-requests should be empty after cleanup, found %q", entry.Name())
+	}
+
+	// The work list "utopia execute --all" builds is empty, so the merged CR
+	// cannot be re-chunked or re-executed.
+	crs, err := store.ListChangeRequests()
+	if err != nil {
+		t.Fatalf("failed to list change requests: %v", err)
+	}
+	if len(crs) != 0 {
+		t.Errorf("ListChangeRequests returned %d CR(s) after cleanup, want 0 (an orphan would be re-executed)", len(crs))
 	}
 }
 
