@@ -1,7 +1,7 @@
 id: execution-ralph
 title: Ralph Execution Loop
 created: "0001-01-01T00:00:00+00:00"
-updated: "2026-07-28T20:27:07.716495+10:00"
+updated: "2026-07-29T11:27:06.225515+10:00"
 description: |
     The Ralph execution loop runs WorkItems produced by the chunker.
 
@@ -238,3 +238,24 @@ features:
         - Ctrl+C (SIGINT/SIGTERM) stops the daemon cleanly; an in-flight CR saves its state and is resumable with `utopia execute <cr-id>`
         - A transient queue-scan read error is logged and retried on the next tick rather than killing the daemon
         - The failure policy for a CR that fails to execute is isolated in one place and documented, with a default that keeps the daemon watching (logs and skips the failed CR rather than exiting)
+
+    - id: step-timing-logs
+      description: |
+        The execution loop measures and logs the wall-clock duration of each
+        expensive step it brackets - the Claude invocation, the verification
+        command, and each validator run - so operators can see where time goes
+        per iteration. On work-item completion the loop emits a summary that
+        breaks the total wall-clock time down by step category.
+
+        Durations augment the existing stdout status lines rather than replacing
+        them, keeping the human-readable log format. Timing is captured in the
+        loop itself (start marker before the step, elapsed after it), so the
+        Claude and validator agents are timed as black-box calls without
+        changing their APIs.
+      acceptance_criteria:
+        - Each Claude invocation logs its elapsed wall-clock time when it completes
+        - Each verification run logs its elapsed wall-clock time when it completes
+        - Each validator run logs its elapsed wall-clock time labelled with the validator name
+        - On work-item completion a summary line reports the total wall-clock time and a per-category breakdown across Claude invocation, verification, and validators
+        - Durations are rendered in a human-readable form such as 1.2s or 3m04s
+        - Existing status log lines are preserved - timing is appended to them, not substituted for them
