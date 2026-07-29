@@ -68,6 +68,26 @@ type Task struct {
 	Hints []string `yaml:"hints,omitempty"`
 }
 
+// ScopingRewrite is the provenance of a change request produced by a scoping
+// escalation: which change request it supersedes, and the validator diagnoses
+// that motivated rewriting it.
+//
+// It lives on the change request rather than in a side index so the provenance
+// survives a git clone with no database - the artefact carries its own history,
+// and a reader who has only the file can still tell what it replaced and why.
+type ScopingRewrite struct {
+	// Supersedes is the id of the change request this one was rewritten from.
+	Supersedes string `yaml:"supersedes"`
+	// WorkItem is the work item whose repeated comprehension failures triggered
+	// the rewrite. It is what ties the artefact back to the run that produced it.
+	WorkItem string `yaml:"work_item,omitempty"`
+	// Diagnoses are the failing validators' diagnoses, each as "<validator-id>:
+	// <diagnosis>". They are the evidence the rewrite was built from, and the
+	// reason it is worth harvesting: a diagnosis that a specification was misread
+	// is usually a missing domain term or an undocumented decision.
+	Diagnoses []string `yaml:"diagnoses"`
+}
+
 // ChangeRequest represents a set of changes to apply to specs
 type ChangeRequest struct {
 	ID           string              `yaml:"id"`
@@ -79,6 +99,17 @@ type ChangeRequest struct {
 	Tasks        []Task              `yaml:"tasks,omitempty"`         // For refactor type
 	Phases       []Phase             `yaml:"phases,omitempty"`        // For initiative type
 	CurrentPhase int                 `yaml:"current_phase,omitempty"` // For initiative: 0-indexed current phase (0 = first phase)
+
+	// Rewrite is set only on a change request produced by a scoping escalation,
+	// and records what it supersedes and why. A nil Rewrite means an ordinary
+	// change request written by a person or the cr command.
+	Rewrite *ScopingRewrite `yaml:"rewrite,omitempty"`
+}
+
+// IsRewrite reports whether this change request was produced by a scoping
+// escalation rather than authored directly.
+func (cr *ChangeRequest) IsRewrite() bool {
+	return cr.Rewrite != nil
 }
 
 // EditPair represents an old/new pair for edit operations
@@ -187,6 +218,21 @@ func ValidateChangeRequest(cr *ChangeRequest) error {
 	}
 	if cr.Status == "" {
 		errors = append(errors, "missing required field: status")
+	}
+
+	// A rewrite block is optional, but an incomplete one is worse than none: a
+	// rewritten change request whose provenance is missing cannot be traced back
+	// to the change request it replaced or to the diagnoses that justified it,
+	// which is the entire reason it is persisted.
+	if cr.Rewrite != nil {
+		if cr.Rewrite.Supersedes == "" {
+			errors = append(errors, "rewrite: missing required field: supersedes")
+		} else if cr.Rewrite.Supersedes == cr.ID {
+			errors = append(errors, fmt.Sprintf("rewrite.supersedes %q is this change request's own id", cr.Rewrite.Supersedes))
+		}
+		if len(cr.Rewrite.Diagnoses) == 0 {
+			errors = append(errors, "rewrite: missing required field: diagnoses")
+		}
 	}
 
 	// Type is required and must be valid

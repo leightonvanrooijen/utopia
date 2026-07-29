@@ -85,6 +85,13 @@ func (s *YAMLStore) DomainDir() string { return s.domainDir }
 // written by the tool itself and always live under the store's base directory.
 func (s *YAMLStore) ConversationsDir() string { return s.fullPath("conversations") }
 
+// ChangeRequestsDir returns the absolute directory where change requests are
+// stored. Like the conversations and runs directories it is not configurable:
+// change requests are the tool's own working artefacts. Scoping escalation needs
+// it resolved because it tells the scoper where to write, and the scoper's
+// working directory is not necessarily the project's.
+func (s *YAMLStore) ChangeRequestsDir() string { return s.fullPath("change-requests") }
+
 // RunsDir returns the absolute directory where execution runs are stored, one
 // subdirectory per CR. Harvest needs it resolved rather than assumed: the
 // session that marks runs processed does not necessarily run from the project
@@ -570,6 +577,29 @@ func (s *YAMLStore) ListChangeRequests() ([]*domain.ChangeRequest, error) {
 		crs = append(crs, f.CR)
 	}
 	return crs, nil
+}
+
+// ListRewrittenChangeRequests returns the change requests produced by a scoping
+// escalation - those carrying a rewrite block - in filename order.
+//
+// It exists so harvest can find them. A rewritten change request is the durable
+// output of a run that produced no working code: the executor kept misreading
+// the original, and the rewrite is what the specification should have said. That
+// gap is usually a missing domain term or an undocumented decision, which is
+// exactly what harvest is looking for.
+func (s *YAMLStore) ListRewrittenChangeRequests() ([]*domain.ChangeRequest, error) {
+	crs, err := s.ListChangeRequests()
+	if err != nil {
+		return nil, err
+	}
+
+	rewrites := make([]*domain.ChangeRequest, 0, len(crs))
+	for _, cr := range crs {
+		if cr.IsRewrite() {
+			rewrites = append(rewrites, cr)
+		}
+	}
+	return rewrites, nil
 }
 
 // writeYAML marshals and writes data to a file

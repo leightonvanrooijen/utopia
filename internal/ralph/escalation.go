@@ -314,13 +314,7 @@ func scopingEscalationError(item *domain.WorkItem, agg *validators.AggregateResu
 		ComprehensionCount:  d.ComprehensionCount,
 		SpecDefectSuspected: d.SpecDefect,
 	}
-	if agg != nil {
-		for _, f := range agg.Failures {
-			if f.Verdict != nil && f.Verdict.Diagnosis != "" {
-				err.Diagnoses = append(err.Diagnoses, f.ID+": "+f.Verdict.Diagnosis)
-			}
-		}
-	}
+	err.Diagnoses = scopingDiagnoses(agg)
 	return err
 }
 

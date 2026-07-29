@@ -40,12 +40,17 @@ type Result struct {
 	// zero means no session was run, and callers inspect that to frame the
 	// outcome.
 	UnprocessedRuns int
+	// RewrittenChangeRequests is the number of change requests produced by a
+	// scoping escalation that the session was shown. They are context for the
+	// session rather than a source it processes, so they do not on their own
+	// cause a session to run.
+	RewrittenChangeRequests int
 }
 
 // harvestSystemPrompt guides Claude through unified signal detection and doc creation
 // Use fmt.Sprintf to inject: conversationsSummary, existingADRsSummary, existingConceptsSummary,
-// existingDomainDocsSummary, readmeSignalsSummary, adrsDir, conceptsDir, domainDir,
-// conversationsDir, runsDir, nextADRID
+// existingDomainDocsSummary, readmeSignalsSummary, rewritesSummary, adrsDir, conceptsDir,
+// domainDir, conversationsDir, runsDir, nextADRID
 const harvestSystemPrompt = `You are a Harvest Claude - an AI assistant that applies qualification tests to identify documentation candidates from conversation history.
 
 ## Your Role
@@ -113,6 +118,29 @@ them via the run's CR ID and work item ID.
 %s
 
 ### README Documentation Signals
+%s
+
+### Rewritten Change Requests (scoping escalations)
+
+A rewritten change request is what a scoping escalation produced: an executor
+misread a specification repeatedly, and the scoper rewrote the specification
+rather than the code. Each one below records the change request it supersedes and
+the validator diagnoses that motivated the rewrite.
+
+Treat these as HIGH-priority signals, and read the diagnoses as the signal rather
+than the rewrite itself:
+
+- A diagnosis saying a term was read to mean something other than what was meant
+  is a **Domain candidate** - the term has no canonical definition, which is why
+  two readers took it two ways
+- A diagnosis saying an implied constraint was not honoured is usually an **ADR
+  candidate** - the constraint is a decision nobody wrote down
+- A rewrite that mostly adds explanation rather than changing what is being asked
+  for is a **Concept candidate** - the reasoning was load-bearing and undocumented
+
+Cross-reference any candidate surfaced here to the superseded change request id
+and the work item named in the rewrite.
+
 %s
 
 ## The Journey
@@ -631,6 +659,17 @@ func Run(ctx context.Context, store *internal.YAMLStore, opts Options) (*Result,
 	// Build README signals summary
 	readmeSignalsSummary := buildREADMESignalsSummary(opts.ProjectDir, store)
 
+	// Rewritten change requests are the durable output of runs that produced no
+	// working code. They are context rather than a source to be marked processed:
+	// a rewrite lives until its change request merges, and the run that produced
+	// it is already tracked as a harvest source.
+	rewrites, err := store.ListRewrittenChangeRequests()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list rewritten change requests: %w", err)
+	}
+	rewritesSummary := buildRewrittenCRsSummary(rewrites)
+	result.RewrittenChangeRequests = len(rewrites)
+
 	// Inject all summaries into the system prompt. The source directories are
 	// injected for the same reason the artifact directories are: the harvest
 	// session inherits whatever working directory utopia was invoked from, which
@@ -642,6 +681,7 @@ func Run(ctx context.Context, store *internal.YAMLStore, opts Options) (*Result,
 		conceptsSummary,
 		domainDocsSummary,
 		readmeSignalsSummary,
+		rewritesSummary,
 		adrsDir,
 		conceptsDir,
 		domainDir,
@@ -677,6 +717,7 @@ func Run(ctx context.Context, store *internal.YAMLStore, opts Options) (*Result,
 	fmt.Println()
 	fmt.Println("Documentation signals:")
 	fmt.Printf("  "+ui.Bullet+" %s README signal%s\n", formatSignalCount(readmeSignalCount), pluralize(readmeSignalCount))
+	fmt.Printf("  "+ui.Bullet+" %d rewritten change request%s (scoping escalations)\n", len(rewrites), pluralize(len(rewrites)))
 	fmt.Println()
 	fmt.Println("Documents will be saved to:")
 	fmt.Printf("  "+ui.Bullet+" ADRs: %s\n", adrsDir)
@@ -875,6 +916,32 @@ func writeTranscript(sb *strings.Builder, raw string) {
 		sb.WriteString("**Transcript:** (empty)\n")
 	}
 	sb.WriteString("\n")
+}
+
+// buildRewrittenCRsSummary lists the change requests produced by a scoping
+// escalation, each with what it supersedes and the diagnoses behind it.
+//
+// The diagnoses are quoted in full rather than truncated: they are the signal.
+// A diagnosis is capped at a couple of sentences where it is written, and it is
+// the sentence naming the misread term that a Domain or ADR candidate comes from.
+func buildRewrittenCRsSummary(rewrites []*domain.ChangeRequest) string {
+	if len(rewrites) == 0 {
+		return "(No rewritten change requests - no run has escalated its scoping)"
+	}
+
+	var sb strings.Builder
+	for _, cr := range rewrites {
+		sb.WriteString(fmt.Sprintf("- **%s**: %s\n", cr.ID, cr.Title))
+		sb.WriteString(fmt.Sprintf("  Supersedes: %s\n", cr.Rewrite.Supersedes))
+		if cr.Rewrite.WorkItem != "" {
+			sb.WriteString(fmt.Sprintf("  Work item: %s\n", cr.Rewrite.WorkItem))
+		}
+		for _, d := range cr.Rewrite.Diagnoses {
+			sb.WriteString(fmt.Sprintf("  Diagnosis: %s\n", strings.TrimSpace(d)))
+		}
+	}
+
+	return sb.String()
 }
 
 // buildHarvestADRsSummary creates a summary of existing ADRs for duplicate detection

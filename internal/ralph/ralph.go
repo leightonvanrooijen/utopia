@@ -249,6 +249,16 @@ func executeWorkItem(
 	caps := EscalationCapsFrom(config.Escalation)
 	escalatedExecutorModel := resolveEscalatedExecutorModel(config.Models)
 
+	// The scoper is the role that rewrites the change request when the executor
+	// keeps misreading it. It is built once per work item rather than per
+	// escalation because its dependencies do not change across one item's run.
+	sc := &scoper{
+		store:     store,
+		cli:       cli,
+		model:     resolveScoperModel(config.Models),
+		standards: store.LoadStandardsIndex(),
+	}
+
 	// Load CR title for commit message and operation type for execution log
 	crID := extractCRID(specID)
 	crTitle := ""
@@ -287,8 +297,8 @@ func executeWorkItem(
 
 		// An item already at the comprehension cap routes to scoping escalation
 		// before another execution attempt is spent on it. This is the resume path:
-		// a decision made during this run returns from the gate below, so reaching
-		// here means the counter was carried in on the persisted work item.
+		// a decision made during this run is escalated at the gate below, so
+		// reaching here means the counter was carried in on the persisted work item.
 		if item.ComprehensionCount >= caps.ComprehensionEscalations {
 			// Unless the scoping cap is already spent, in which case there is no path
 			// left: the change request was already rewritten as many times as it is
@@ -303,9 +313,15 @@ func executeWorkItem(
 						item.ScopingEscalationCount),
 				})
 			}
-			_ = store.SaveWorkItemForSpec(specID, item)
-			writeRunTranscript(store, crID, item, transcript.String(), domain.RunFailed)
-			return nil, &ScopingEscalationError{WorkItemID: item.ID, ComprehensionCount: item.ComprehensionCount}
+			// Charged before the rewrite runs, for the same reason an escalated
+			// execution attempt is: the cap bounds attempts, and an attempt that
+			// produces nothing has still been made.
+			item.ScopingEscalationCount++
+			esc := &ScopingEscalationError{WorkItemID: item.ID, ComprehensionCount: item.ComprehensionCount}
+			if err := escalateScoping(ctx, sc, item, specID, crID, esc, caps, &transcript); err != nil {
+				return nil, err
+			}
+			continue
 		}
 
 		// Increment iteration count
@@ -519,8 +535,12 @@ func executeWorkItem(
 				})
 			}
 			if decision.Route == RouteScopingEscalation {
-				writeRunTranscript(store, crID, item, transcript.String(), domain.RunFailed)
-				return nil, scopingEscalationError(item, aggregate, decision)
+				// The change request, not the code, is what gets rewritten here. A
+				// rewrite the loop can resume against returns nil and execution carries
+				// on against the new specification; anything else stops the item.
+				if err := escalateScoping(ctx, sc, item, specID, crID, scopingEscalationError(item, aggregate, decision), caps, &transcript); err != nil {
+					return nil, err
+				}
 			}
 			continue
 		}

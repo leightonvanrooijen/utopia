@@ -208,6 +208,28 @@ func extractFeaturesFromPhase(phase *domain.Phase) ([]domain.Feature, map[string
 	return features, bugfixRefs
 }
 
+// SpecForFeature returns the id of the spec the change or task behind featureID
+// targets, or "" when nothing in changes or tasks produced that feature.
+//
+// It exists because a work item's SpecRef is keyed to the change request, not to
+// a spec - the feature id a work item carries is derived here, and only the
+// change that produced it knows which spec it lands in. A caller that needs the
+// real spec (scoping escalation, which quotes it to the scoper) asks here rather
+// than re-deriving the feature-id rules and drifting from them.
+func SpecForFeature(changes []domain.Change, tasks []domain.Task, featureID string) string {
+	for _, task := range tasks {
+		if task.ID == featureID {
+			return task.Spec
+		}
+	}
+	for _, change := range changes {
+		if feature := convertChangeToFeature(change); feature != nil && feature.ID == featureID {
+			return change.Spec
+		}
+	}
+	return ""
+}
+
 // convertTaskToFeature converts a Task to a Feature and optionally tracks bugfix references.
 // If the task has Spec and FeatureID set, it returns a bugfixFeature for reference loading.
 // Task hints are preserved in the returned Feature for injection into work item prompts.

@@ -448,7 +448,7 @@ func TestHarvestSystemPromptComposes(t *testing.T) {
 		t.Errorf("system prompt formatting produced error markers:\n%s", snippetAround(prompt, "%!"))
 	}
 	for _, want := range []string{
-		"CONVS", "ADRS", "CONCEPTS", "DOMAINDOCS", "READMESIGNALS",
+		"CONVS", "ADRS", "CONCEPTS", "DOMAINDOCS", "READMESIGNALS", "REWRITES",
 		"/adrs-dir", "/concepts-dir", "/domain-dir",
 		"/conversations-dir", "/runs-dir", "ADR-042",
 	} {
@@ -573,7 +573,7 @@ func TestHarvestSystemPrompt_DefersMarkingRunsUntilTheSessionEnds(t *testing.T) 
 
 func composeTestPrompt() string {
 	return fmt.Sprintf(harvestSystemPrompt,
-		"CONVS", "ADRS", "CONCEPTS", "DOMAINDOCS", "READMESIGNALS",
+		"CONVS", "ADRS", "CONCEPTS", "DOMAINDOCS", "READMESIGNALS", "REWRITES",
 		"/adrs-dir", "/concepts-dir", "/domain-dir",
 		"/conversations-dir", "/runs-dir", "ADR-042")
 }
