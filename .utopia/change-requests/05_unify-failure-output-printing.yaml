@@ -1,0 +1,91 @@
+id: 05_unify-failure-output-printing
+type: initiative
+title: Show verification failures to the human, then unify all failure-output printing onto one mechanism
+status: draft
+phases:
+    - type: bugfix
+      tasks:
+          - id: print-verification-failure-output
+            spec: verification
+            feature_id: failure-stdout-logging
+            description: |
+              Fix verification failure reporting to match spec verification, feature failure-stdout-logging.
+
+              Current behavior: when a verification command fails, the captured output is
+              assigned to item.LastFailureOutput and surfaces only inside the AI retry prompt.
+              The human running the loop sees a single status line
+              ("Iteration N: verification failed, will retry with failure output")
+              and never sees the actual test failures.
+
+              Expected behavior: the same captured output that gets injected into the retry
+              prompt is also printed to stdout, before injection, so the human sees exactly
+              what the AI sees.
+
+              Root cause: verification runs as a direct verifier.Run call in the ralph loop
+              body rather than as a subscription action, so it bypasses the engine's
+              logResolution path that prints captured output for validators. The dedicated
+              print was never added for verification, and no work item was ever generated
+              for this feature.
+
+              This phase deliberately takes the narrow fix. Phase 2 removes the duplication
+              it introduces.
+            acceptance_criteria:
+                - When a verification command exits non-zero, its captured output is printed to stdout
+                - The printed output is byte-identical to the string assigned to item.LastFailureOutput
+                - The printed output is already truncated to 2000 chars with the tail preserved, matching what the AI receives
+                - Printing happens before the output is injected into the AI retry prompt
+                - The output is wrapped in delimiter lines so it is visually distinct from surrounding loop status lines
+                - When verification passes, no failure output block is printed
+                - When verification fails with empty output, no empty delimiter block is printed
+            hints:
+                - The fix belongs in internal/ralph/ralph.go in the verification failure branch around lines 332-343, immediately after the existing "verification failed, will retry" status line and before item.LastFailureOutput is assigned
+                - Mirror the existing after-phase validator block at internal/ralph/ralph.go:570-575, which already does exactly this for validator feedback using a "--- Validator Failure Feedback ---" delimiter pair
+                - Do not change internal/verification/runner.go - truncation already happens inside Run at line 48, so Result.Output is already the exact string the AI will see
+
+    - type: refactor
+      tasks:
+          - id: unify-failure-output-printing-mechanism
+            description: |
+              Collapse the three separate ways failure output reaches the terminal onto a
+              single mechanism, without changing what a user sees.
+
+              There are currently three paths:
+              1. Verification - explicit print added in phase 1, in the ralph loop body.
+              2. After-phase validators - explicit print at internal/ralph/ralph.go:570-575.
+              3. After-workitem validators - no explicit print. Output reaches the terminal
+                 only as a side effect of the engine's resolution ledger: validators.go
+                 sets ConnectorResult.Stdout to the aggregated feedback, engine.go join()
+                 calls logResolution on every joined handle, and logResolution dumps the
+                 captured output indented under the status line.
+
+              Path 3 previously had a dedicated print (commit 0063841) which was dropped
+              during the subscription/engine refactor. It still satisfies the
+              agentic-validators failure-stdout-logging criteria today, but only by
+              accident, and nothing tests it. Any future change to logResolution, to how
+              handles carry output, or to whether validators route through the engine will
+              silently break a specced behaviour again.
+
+              Introduce one shared helper responsible for rendering a failure-output block
+              and route all three call sites through it. Ensure exactly one block is emitted
+              per failure - if a path both routes through the engine and calls the helper,
+              suppress the ledger dump for that handle so output is not printed twice.
+
+              Behaviour must be preserved: the same content, in the same order relative to
+              prompt injection, for all three paths.
+            acceptance_criteria:
+                - A single shared helper renders failure-output blocks and is used by verification, after-phase validators, and after-workitem validators
+                - Each failing path prints exactly one failure-output block per failure, with no duplicate emission from the engine resolution ledger
+                - All three paths use the same delimiter formatting
+                - For every path, the printed content remains byte-identical to the content injected into the AI retry prompt
+                - For every path, printing still happens before prompt injection
+                - Validator output still includes the validator ID, satisfying the agentic-validators failure-stdout-logging criteria
+                - A regression test asserts the after-workitem validator path prints failure feedback, so it cannot be silently dropped again
+                - A regression test asserts the after-phase validator path prints failure feedback
+                - A regression test asserts the verification path prints failure output
+                - No change to which commands run, to exit codes, or to any content fed to the AI
+            hints:
+                - The three call sites are internal/ralph/ralph.go around lines 332-343 (verification, added in phase 1), lines 570-575 (after-phase validators), and lines 355-359 (after-workitem validators, currently status line only)
+                - The implicit path runs through internal/ralph/validators.go:132-135 setting res.Stdout, internal/ralph/engine.go:69-74 calling logResolution on join, and internal/ralph/engine.go:180-191 doing the indented dump
+                - Validator feedback text is built by AggregateResults in internal/validators/runner.go:364-381 using the format "Validator %s failed:\n%s\n\n" - the ID comes from there, so the shared helper should not prepend it again
+                - Consider whether verification should become a subscription action so it routes through the engine like validators do; if so the helper may live behind logResolution rather than at the call sites
+                - Capture the resulting decision as an ADR if the unification changes how failure output is expected to flow
