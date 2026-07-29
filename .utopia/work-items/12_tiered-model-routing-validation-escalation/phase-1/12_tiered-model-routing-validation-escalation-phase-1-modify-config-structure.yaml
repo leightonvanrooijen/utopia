@@ -9,7 +9,7 @@ title: |
     with different cost profiles and different failure consequences, so
     each resolves its own model with a fallback chain rather than
     sharing one key.
-status: in_progress
+status: completed
 prompt: |-
     ## TASK
 

@@ -1,0 +1,21 @@
+workitem_id: 12_tiered-model-routing-validation-escalation-phase-1-modify-config-structure
+cr_id: 12_tiered-model-routing-validation-escalation
+spec_ref: 12_tiered-model-routing-validation-escalation-phase-1.modify-config-structure
+iterations: 1
+completed_at: 2026-07-30T09:40:58.401164+10:00
+outcome: completed
+status: unprocessed
+transcript: |
+    --- iteration 1 ---
+    Done. What changed:
+
+    - `internal/domain/discovery.go` - `ExecutorModel`/`EscalatedExecutorModel`/`ScoperModel` on `ModelConfig`, plus `DefaultEscalatedModel = opus`. Fallback chains: escalated = `execute_escalated` > opus; scoper = `scoper` > `execute_escalated` > opus.
+    - `internal/domain/model.go` - `ValidateEscalationOrder` + typed `DownwardEscalationError`. Alias capability rank haiku<sonnet<opus<fable; pinned `claude-*` identifiers unrankable, skipped.
+    - `internal/store.go` - check runs in `LoadConfig`, wrapped `failed to load config: %w`.
+    - `internal/ralph/{escalation,scoping}.go` - resolvers delegate to domain, no duplicate chain.
+    - `.utopia/config.yaml` - added `execute_escalated: fable`, `scoper: fable`, `validator_router: haiku`.
+    - Tests: domain resolution + ordering table, load-time rejection in `store_test.go`. `./scripts/verify.sh` green.
+
+    Specs untouched per constraint - key-list wording lands when the CR merges.
+
+    <COMPLETE>
