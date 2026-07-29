@@ -34,7 +34,7 @@ The command will:
   8. Mark conversations and execution runs as processed only after you complete or exit
 
 Benefits over individual commands (/adr, /concept, /domain):
-  - Single pass through conversations (efficiency)
+  - Single pass through conversations and execution runs (efficiency)
   - Cross-type awareness (related candidates linked)
   - Context flows between doc creations
   - Documents can reference each other naturally`,

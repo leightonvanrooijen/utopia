@@ -67,6 +67,9 @@ Harvest sources are classified by how close they sit to actual system state:
 - PRIORITIZE these for ADR candidates at least as highly as system-truth conversations
 - ADR candidates from execution runs should generally be HIGH confidence
 - A failed run is still system-truth: it records what was really attempted and why it did not hold
+- Scan them for Domain candidates too - a run is where vocabulary gets coined. The name a
+  run picks for a new type, status, or stored artifact is the name in the codebase from
+  that commit on, whether or not anyone ever wrote down what it means
 - Each run below lists its CR, its work item, and its **Originating Conversation** -
   the conversation whose CR put the work item there. Those are the cross-references
   any candidate surfaced from the run must carry
@@ -233,6 +236,25 @@ Instead of looking for definition phrases, apply a QUALIFICATION TEST based on D
 - None of the disqualification criteria apply, AND
 - The litmus test passes (ambiguity would arise without definition)
 
+**Applying this test to terms introduced in execution runs:**
+Runs are where vocabulary gets coined - the name is chosen at the code, often with no
+conversation behind it, and it is load-bearing the moment it is committed. Apply the
+SAME test, unchanged. The ambiguity litmus test decides; where the term was coined
+does not.
+- A run-coined term passes the Code Alignment Test by construction - it is already in
+  the code. That is one test of five, not a free pass: the term must still be specific
+  to our domain and ambiguous without a definition. Do NOT promote every identifier a
+  run introduces
+- "Implementation detail" disqualifies internal naming that stands for no domain concept -
+  a helper function, a loop variable, a test fixture. A run that names a new type, a
+  status value, a persisted artifact, or the directory it lives in has named a concept
+- A run that uses a DIFFERENT word for an already-documented term has introduced an
+  alias, not a new term - suggest UPDATE of the existing bounded context to record the
+  alias, and name the term that drifted
+- A term the run coined and then abandoned is a working title - disqualified
+- Cross-reference every term surfaced from a run to its CR and its originating
+  conversation, and record the run when creating or updating the document
+
 For EACH qualified candidate, capture:
 - **ID**: Unique identifier (adr-1, concept-1, domain-1, etc.)
 - **Type**: adr, concept, or domain
@@ -289,14 +311,18 @@ Present a STRUCTURED SUMMARY of all qualified candidates, grouped by type.
 **Note:** Only content that passes all qualification tests (Orientation, Educational Value, Independence) and the litmus test appears here. Disqualified items are not shown.
 
 ### Domain Candidates (Qualified)
-| ID | Confidence | Term | Code Usage | Ambiguity Test | Source | Source Type | Related |
-|----|------------|------|------------|----------------|--------|-------------|---------|
-| domain-1 | HIGH | "WorkItem" | WorkItem struct, workitem.go | ✓ Would confuse without def | cr-session-20260217 | system-truth | - |
-| domain-2 | HIGH | "unprocessed" | ConversationUnprocessed const | ✓ Status vs adjective | cr-session-20260217 | system-truth | domain-1 |
-| domain-3 | HIGH | "execution run" | ExecutionRun struct, runs/ | ✓ Run vs conversation vs iteration | cr-003-phase-0-persist-runs | execution | domain-1 |
-| domain-4 | MEDIUM | "bounded context" | Not in code yet (should be) | ✓ DDD term with local meaning | cr-session-20260216 | exploratory | - |
+| ID | Confidence | Term | Code Usage | Ambiguity Test | Source | Source Type | Origin (CR / Conversation) | Related |
+|----|------------|------|------------|----------------|--------|-------------|----------------------------|---------|
+| domain-1 | HIGH | "WorkItem" | WorkItem struct, workitem.go | ✓ Would confuse without def | cr-session-20260217 | system-truth | - | - |
+| domain-2 | HIGH | "unprocessed" | ConversationUnprocessed const | ✓ Status vs adjective | cr-session-20260217 | system-truth | - | domain-1 |
+| domain-3 | HIGH | "execution run" | ExecutionRun struct, runs/ | ✓ Run vs conversation vs iteration | cr-003-phase-0-persist-runs | execution | cr-003 / cr-session-20260217 | domain-1 |
+| domain-4 | MEDIUM | "bounded context" | Not in code yet (should be) | ✓ DDD term with local meaning | cr-session-20260216 | exploratory | - | - |
 
 **Note:** Only terms that pass all qualification tests (Domain Specificity, Precision, Consistency, Code Alignment) and the ambiguity litmus test appear here. Disqualified items are not shown.
+
+**Origin** follows the same rule as the ADR table: required for every term whose source
+type is execution, "-" otherwise. A term coined at the code is traceable only through
+its run.
 
 ### README Documentation Signals
 These are spec features that qualify for README documentation but aren't yet documented.
@@ -478,7 +504,15 @@ entities:
 
 source_conversations:
   - "conversation-id"
+source_runs:
+  - "[cr-id]/[workitem-id]"   # required when the term was coined in an execution run
 ` + "```" + `
+
+For a term surfaced from an execution run, fill in source_runs with the run that coined
+it, and source_conversations with the run's originating conversation. Unlike an ADR, a
+term often has no conversation behind it at all - the name was chosen at the code and
+never discussed. In that case record source_runs alone rather than reaching for a
+conversation that does not define the term.
 
 ## Marking Sources Processed
 

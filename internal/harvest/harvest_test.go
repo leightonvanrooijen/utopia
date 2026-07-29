@@ -429,6 +429,42 @@ func TestHarvestSystemPrompt_CoversRunSourcedADRs(t *testing.T) {
 	}
 }
 
+// Runs are scanned for canonical terms, not only for decisions, and the same
+// ambiguity-without-definition test applies to a term coined at the code. The
+// prompt has to say so, guard the one test a run-coined term passes for free,
+// and give the term somewhere to record the run it came from.
+func TestHarvestSystemPrompt_CoversRunSourcedDomainTerms(t *testing.T) {
+	prompt := composeTestPrompt()
+
+	for _, want := range []string{
+		"Scan them for Domain candidates too",
+		"Applying this test to terms introduced in execution runs",
+		"The ambiguity litmus test decides; where the term was coined\ndoes not",
+		"passes the Code Alignment Test by construction",
+		"has introduced an\n  alias, not a new term",
+		"required when the term was coined in an execution run",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("system prompt missing run-sourced domain instruction %q", want)
+		}
+	}
+}
+
+// A term found in a run is traceable only through that run, so the candidate
+// table has to carry its origin - the same rule the ADR table states.
+func TestHarvestSystemPrompt_DomainCandidatesReportRunOrigin(t *testing.T) {
+	prompt := composeTestPrompt()
+
+	domainTable := prompt[strings.Index(prompt, "### Domain Candidates (Qualified)"):]
+	if !strings.Contains(domainTable, "| Origin (CR / Conversation) |") {
+		t.Errorf("domain candidate table missing origin column:\n%s", snippetAround(prompt, "### Domain Candidates (Qualified)"))
+	}
+	if !strings.Contains(prompt, `required for every term whose source
+type is execution`) {
+		t.Error("prompt does not require an origin for execution-sourced terms")
+	}
+}
+
 func composeTestPrompt() string {
 	return fmt.Sprintf(harvestSystemPrompt,
 		"CONVS", "ADRS", "CONCEPTS", "DOMAINDOCS", "READMESIGNALS",

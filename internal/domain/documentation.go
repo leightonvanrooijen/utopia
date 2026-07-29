@@ -460,6 +460,12 @@ type DomainDoc struct {
 	Terms               []DomainTerm   `yaml:"terms,omitempty"`
 	Entities            []DomainEntity `yaml:"entities,omitempty"`
 	SourceConversations []string       `yaml:"source_conversations,omitempty"`
+
+	// SourceRuns records the execution runs a term was surfaced from, each as
+	// "<cr-id>/<workitem-id>" - the path the run is stored under. A term coined
+	// while building often has no conversation behind it: the name was chosen at
+	// the code, and the run is the only record of where it came from.
+	SourceRuns []string `yaml:"source_runs,omitempty"`
 }
 
 // DraftDomainConfidence indicates how confident we are in a discovered domain document
