@@ -23,7 +23,7 @@ title: |
     in a delimited block in stdout and parsed, and every parse failure
     resolves toward the more expensive classification rather than the
     cheaper one.
-status: pending
+status: in_progress
 prompt: |-
     ## TASK
 
@@ -101,3 +101,4 @@ constraints:
     - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
 order: 0
 estimated_complexity: medium
+iteration_count: 1

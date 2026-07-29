@@ -26,10 +26,15 @@ const DefaultValidatorTimeout = 10 * time.Minute
 
 // Result holds the outcome of a validator run
 type Result struct {
-	// Passed is true if the validator output contained <PASSED>
+	// Passed is true if the validator passed - a <VERDICT> block reporting pass,
+	// or (for prompts predating the verdict contract) a bare <PASSED> token
 	Passed bool
 	// Feedback is the validator output (empty if passed, full output if failed)
 	Feedback string
+	// Verdict is the parsed classification of the run. It is never nil: output
+	// carrying no usable verdict is classified as a comprehension failure rather
+	// than left for callers to interpret. See InterpretOutput.
+	Verdict *Verdict
 }
 
 // ValidatorResult pairs a validator ID with its execution result
@@ -114,8 +119,8 @@ func (r *Runner) resolveModel(validator *domain.Validator) string {
 }
 
 // Run executes a validator against the current work item's uncommitted changes.
-// It loads the git diff, expands the validator prompt, invokes Claude,
-// and checks the output for the <PASSED> token.
+// It loads the git diff, expands the validator prompt, invokes Claude, and
+// interprets the output's verdict.
 // The model used is resolved via: validator override > models.validators > models.default.
 func (r *Runner) Run(ctx context.Context, validator *domain.Validator) (*Result, error) {
 	// Get the git diff of the current work item's uncommitted changes
@@ -124,33 +129,7 @@ func (r *Runner) Run(ctx context.Context, validator *domain.Validator) (*Result,
 		return nil, fmt.Errorf("failed to get git diff: %w", err)
 	}
 
-	// Expand the prompt with changed files
-	prompt := validator.ExpandPrompt(changedFiles)
-
-	// Configure CLI with validator's allowed tools and resolved model
-	cli := r.cli.WithAllowedTools(validator.GetAllowedTools())
-	model := r.resolveModel(validator)
-	cli = cli.WithModel(model)
-
-	// Invoke Claude with the constructed prompt
-	promptResult, err := cli.Prompt(ctx, prompt)
-	if err != nil {
-		return nil, fmt.Errorf("claude invocation failed: %w", err)
-	}
-
-	// Check for <PASSED> token in output
-	passed := strings.Contains(promptResult.Stdout, PassedToken)
-
-	result := &Result{
-		Passed: passed,
-	}
-
-	// If failed, include the full output as feedback
-	if !passed {
-		result.Feedback = promptResult.Stdout
-	}
-
-	return result, nil
+	return r.runWithDiff(ctx, validator, changedFiles)
 }
 
 // RunAll executes multiple validators concurrently for the given run trigger.
@@ -271,7 +250,8 @@ func (r *Runner) RunAllWithDiffLimited(ctx context.Context, validators []*domain
 }
 
 // runWithDiff executes a single validator with a pre-computed git diff.
-// This is the internal execution method used by RunAll.
+// This is the internal execution method used by Run and RunAll, so both paths
+// interpret a validator's output through the same contract.
 // The model used is resolved via: validator override > models.validators > models.default.
 func (r *Runner) runWithDiff(ctx context.Context, validator *domain.Validator, changedFiles string) (*Result, error) {
 	// Expand the prompt with changed files
@@ -288,19 +268,10 @@ func (r *Runner) runWithDiff(ctx context.Context, validator *domain.Validator, c
 		return nil, fmt.Errorf("claude invocation failed: %w", err)
 	}
 
-	// Check for <PASSED> token in output
-	passed := strings.Contains(promptResult.Stdout, PassedToken)
-
-	result := &Result{
-		Passed: passed,
-	}
-
-	// If failed, include the full output as feedback
-	if !passed {
-		result.Feedback = promptResult.Stdout
-	}
-
-	return result, nil
+	// Interpret the output: pass/fail plus the failure classification later
+	// phases route on. Unusable output is a comprehension failure, not an error -
+	// the run itself succeeded, the validator just could not state its verdict.
+	return InterpretOutput(promptResult.Stdout), nil
 }
 
 // GetGitDiff returns the uncommitted changes of the current work item.
