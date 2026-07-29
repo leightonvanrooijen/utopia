@@ -3,7 +3,9 @@ package ralph
 import (
 	"errors"
 	"fmt"
+	"strings"
 
+	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 	"github.com/leightonvanrooijen/utopia/internal/validators"
 )
@@ -33,16 +35,39 @@ const (
 	// One comprehension failure escalates the executor; the second says the
 	// change request, not the executor, is what needs rewriting.
 	DefaultComprehensionEscalationCap = 2
+	// DefaultOpusExecutionAttemptCap is how many execution attempts may run on the
+	// escalated executor before the work item halts. Two attempts on the expensive
+	// model is what keeps the worst case roughly cost-neutral against having run
+	// the expensive model throughout.
+	DefaultOpusExecutionAttemptCap = 2
+	// DefaultScopingEscalationCap is how many times one change request may be
+	// routed to scoping escalation. One rewrite is the bound: a change request that
+	// is still misread after being rewritten is not a change request a second
+	// rewrite fixes.
+	DefaultScopingEscalationCap = 1
 )
 
-// EscalationCaps bounds each escalation path. Both caps are independently
-// configurable because both are guesses.
+// EscalationCaps bounds each escalation path. Every cap is independently
+// configurable because every one of them is a guess.
+//
+// The caps compose as a chain of last resorts, and only the end of the chain
+// halts. Exceeding MechanicalRetries reclassifies the failure as comprehension,
+// because an escalation is the only move that can change a stuck retry's
+// outcome. Reaching ComprehensionEscalations routes to scoping escalation, for
+// the same reason one step further out. Exhausting OpusExecutionAttempts or
+// ScopingEscalations leaves nothing further to route to, so the work item halts
+// as needs_human. verification.max_iterations remains the outer bound on the
+// item as a whole.
 type EscalationCaps struct {
 	// MechanicalRetries caps consecutive mechanical retries on the same executor.
 	MechanicalRetries int
 	// ComprehensionEscalations caps comprehension failures before the work item
 	// routes to scoping escalation.
 	ComprehensionEscalations int
+	// OpusExecutionAttempts caps execution attempts on the escalated executor.
+	OpusExecutionAttempts int
+	// ScopingEscalations caps scoping escalations for one change request.
+	ScopingEscalations int
 }
 
 // DefaultEscalationCaps returns the caps the loop runs with absent configuration.
@@ -50,7 +75,25 @@ func DefaultEscalationCaps() EscalationCaps {
 	return EscalationCaps{
 		MechanicalRetries:        DefaultMechanicalRetryCap,
 		ComprehensionEscalations: DefaultComprehensionEscalationCap,
+		OpusExecutionAttempts:    DefaultOpusExecutionAttemptCap,
+		ScopingEscalations:       DefaultScopingEscalationCap,
 	}
+}
+
+// EscalationCapsFrom resolves the caps one run executes with: each configured cap
+// overrides its default independently, and an omitted section or key keeps the
+// default. The values are known-positive here because config load already
+// rejected a non-positive cap.
+func EscalationCapsFrom(ec *domain.EscalationConfig) EscalationCaps {
+	caps := DefaultEscalationCaps()
+	if ec == nil {
+		return caps
+	}
+	caps.MechanicalRetries = domain.CapOr(ec.MechanicalRetries, caps.MechanicalRetries)
+	caps.ComprehensionEscalations = domain.CapOr(ec.ComprehensionEscalations, caps.ComprehensionEscalations)
+	caps.OpusExecutionAttempts = domain.CapOr(ec.OpusExecutionAttempts, caps.OpusExecutionAttempts)
+	caps.ScopingEscalations = domain.CapOr(ec.ScopingEscalations, caps.ScopingEscalations)
+	return caps
 }
 
 // Route is what the loop does next with a work item whose validation gate failed.
@@ -67,6 +110,10 @@ const (
 	// Repeated comprehension failure is evidence about the specification rather
 	// than only about the executor.
 	RouteScopingEscalation Route = "scoping-escalation"
+	// RouteNeedsHuman halts the work item. Every path that could have changed the
+	// outcome is exhausted, so a further attempt would only spend money to fail
+	// the same way.
+	RouteNeedsHuman Route = "needs-human"
 )
 
 // RoutingDecision records how one failing validation gate was routed, including
@@ -87,10 +134,15 @@ type RoutingDecision struct {
 	// escalation path where no execution attempt follows. An empty model on a
 	// retry path means no override: the claude CLI default applies.
 	Model string
-	// MechanicalRetries and ComprehensionCount are the counters after this
-	// decision was applied to the work item.
+	// MechanicalRetries, ComprehensionCount and ScopingEscalations are the counters
+	// after this decision was applied to the work item.
 	MechanicalRetries  int
 	ComprehensionCount int
+	ScopingEscalations int
+	// CapExhausted names the config key whose cap left no path to route to, set
+	// only on RouteNeedsHuman. It is what the halt reports, so an operator can see
+	// which bound to raise rather than guessing.
+	CapExhausted string
 }
 
 // routeValidationFailure decides what to do with a work item whose validation
@@ -113,16 +165,16 @@ func routeValidationFailure(item *domain.WorkItem, agg *validators.AggregateResu
 	}
 
 	// A suspected spec defect is a claim about the specification, so it routes to
-	// scoping escalation without consulting or moving the counters - they measure
-	// the executor, which is not what is being doubted.
+	// scoping escalation without consulting or moving the executor counters - they
+	// measure the executor, which is not what is being doubted. The scoping counter
+	// still moves: it bounds rewrites, and a spec defect asks for one.
 	if specDefect {
-		return RoutingDecision{
-			Route:              RouteScopingEscalation,
+		return routeScoping(item, caps, RoutingDecision{
 			Class:              class,
 			SpecDefect:         true,
 			MechanicalRetries:  item.MechanicalRetryCount,
 			ComprehensionCount: item.ComprehensionCount,
-		}
+		})
 	}
 
 	reclassified := false
@@ -154,13 +206,29 @@ func routeValidationFailure(item *domain.WorkItem, agg *validators.AggregateResu
 		Reclassified:       reclassified,
 		MechanicalRetries:  item.MechanicalRetryCount,
 		ComprehensionCount: item.ComprehensionCount,
+		ScopingEscalations: item.ScopingEscalationCount,
 	}
 	if item.ComprehensionCount >= caps.ComprehensionEscalations {
-		decision.Route = RouteScopingEscalation
-		return decision
+		return routeScoping(item, caps, decision)
 	}
 	decision.Route = RouteEscalateExecutor
 	decision.Model = escalatedModel
+	return decision
+}
+
+// routeScoping completes a decision that has reached the scoping escalation path,
+// counting the escalation against the scoping cap. Exhausting that cap halts the
+// item: rewriting a change request is the last path available, so there is
+// nothing beyond it to route to.
+func routeScoping(item *domain.WorkItem, caps EscalationCaps, decision RoutingDecision) RoutingDecision {
+	item.ScopingEscalationCount++
+	decision.ScopingEscalations = item.ScopingEscalationCount
+	if item.ScopingEscalationCount > caps.ScopingEscalations {
+		decision.Route = RouteNeedsHuman
+		decision.CapExhausted = "escalation.scoping_escalations"
+		return decision
+	}
+	decision.Route = RouteScopingEscalation
 	return decision
 }
 
@@ -183,14 +251,17 @@ func (d RoutingDecision) logLine(iteration, maxIterations int, caps EscalationCa
 		outer = fmt.Sprintf("%d", maxIterations)
 	}
 
-	line := fmt.Sprintf("routing: class=%s mechanical=%d/%d comprehension=%d/%d iteration=%d/%s route=%s",
+	line := fmt.Sprintf("routing: class=%s mechanical=%d/%d comprehension=%d/%d scoping=%d/%d iteration=%d/%s route=%s",
 		class,
 		d.MechanicalRetries, caps.MechanicalRetries,
 		d.ComprehensionCount, caps.ComprehensionEscalations,
+		d.ScopingEscalations, caps.ScopingEscalations,
 		iteration, outer,
 		d.Route)
 
 	switch d.Route {
+	case RouteNeedsHuman:
+		return line + " model=none (" + d.CapExhausted + " exhausted, work item halted)"
 	case RouteScopingEscalation:
 		return line + " model=none (execution halted pending scoping escalation)"
 	default:
@@ -253,6 +324,61 @@ func scopingEscalationError(item *domain.WorkItem, agg *validators.AggregateResu
 	return err
 }
 
+// NeedsHumanError reports a work item halted because every bounded path
+// available to it is exhausted. It is a typed error so the caller can branch on
+// it rather than parsing a message: the run continues with the next work item,
+// while the halted item waits for a person to re-scope its change request.
+//
+// It is deliberately distinct from a verification failure. A work item that
+// failed verification can be retried as it stands; a work item that needs a human
+// would exhaust the same caps again, so retrying it unchanged only spends money.
+type NeedsHumanError struct {
+	// WorkItemID is the item that halted.
+	WorkItemID string
+	// Cap is the config key whose bound was exhausted.
+	Cap string
+	// Limit is that cap's configured value.
+	Limit int
+	// Detail says what was attempted up to the bound, in the terms the cap counts.
+	Detail string
+	// Cause is the decision that led here, when there was one - a scoping
+	// escalation with no rewrite left to try, for instance. It is unwrapped, so a
+	// caller matching on the underlying reason still matches.
+	Cause error
+}
+
+func (e *NeedsHumanError) Error() string {
+	msg := fmt.Sprintf("work item %s needs human attention: %s (%s = %d)", e.WorkItemID, e.Detail, e.Cap, e.Limit)
+	if e.Cause != nil {
+		return msg + ": " + e.Cause.Error()
+	}
+	return msg
+}
+
+// Unwrap exposes the cause so errors.As reaches it through the halt.
+func (e *NeedsHumanError) Unwrap() error { return e.Cause }
+
+// Is allows errors.Is to match any NeedsHumanError.
+func (e *NeedsHumanError) Is(target error) bool {
+	_, ok := target.(*NeedsHumanError)
+	return ok
+}
+
+// haltNeedsHuman terminates a work item at the exhausted cap: the item is
+// persisted as needs_human so a resume skips it rather than exhausting the same
+// cap again, and the transcript of what was tried is written because a run that
+// gave up is what a person re-scoping the change request has to read.
+//
+// The status is what makes the halt distinguishable from a verification failure
+// on disk; the returned typed error is what makes it distinguishable to the
+// caller, which continues with the next work item.
+func haltNeedsHuman(store *internal.YAMLStore, specID, crID string, item *domain.WorkItem, transcript *strings.Builder, halt *NeedsHumanError) error {
+	item.Status = domain.WorkItemNeedsHuman
+	_ = store.SaveWorkItemForSpec(specID, item)
+	writeRunTranscript(store, crID, item, transcript.String(), domain.RunFailed)
+	return halt
+}
+
 // resolveEscalatedExecutorModel determines which model an escalated execution
 // attempt runs on. Priority: models.execute_escalated > opus. It never falls
 // through to models.execute or models.default, because escalating to the model
@@ -273,6 +399,35 @@ func executorModelFor(item *domain.WorkItem, defaultModel, escalatedModel string
 		return escalatedModel
 	}
 	return defaultModel
+}
+
+// chargeEscalatedAttempt books the attempt the loop is about to make against the
+// escalated-execution cap, and reports the halt when that cap is already
+// exhausted - before the attempt is spent rather than after.
+//
+// Whether an attempt is escalated is read from the item's persisted comprehension
+// counter, the same source the model resolution uses, rather than by comparing
+// model strings: a project that configures models.execute and
+// models.execute_escalated to the same model still escalated, and its expensive
+// attempts still need bounding.
+//
+// It returns whether the attempt was charged, so an attempt that never ran can be
+// refunded. Only a real attempt costs money, which is what this cap bounds.
+func chargeEscalatedAttempt(item *domain.WorkItem, caps EscalationCaps) (bool, *NeedsHumanError) {
+	if item.ComprehensionCount == 0 {
+		return false, nil
+	}
+	if item.OpusExecutionAttempts >= caps.OpusExecutionAttempts {
+		return false, &NeedsHumanError{
+			WorkItemID: item.ID,
+			Cap:        "escalation.opus_execution_attempts",
+			Limit:      caps.OpusExecutionAttempts,
+			Detail: fmt.Sprintf("%d escalated execution attempt(s) failed to satisfy the validators",
+				item.OpusExecutionAttempts),
+		}
+	}
+	item.OpusExecutionAttempts++
+	return true, nil
 }
 
 // aggregateFromGate extracts the validators' aggregate from a blocking gate

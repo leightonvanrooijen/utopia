@@ -1097,6 +1097,68 @@ models:
 	}
 }
 
+// A cap that could never bound anything must fail before a run starts, in the
+// same place an invalid model name does.
+func TestConfigEscalation_NonPositiveCapRejectedAtLoad(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	configContent := `project_context: Test context
+verification:
+    command: ./test.sh
+escalation:
+    mechanical_retries: 0
+    scoping_escalations: -1
+`
+	if err := os.WriteFile(filepath.Join(store.baseDir, "config.yaml"), []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	_, err := store.LoadConfig()
+	if err == nil {
+		t.Fatal("expected error for non-positive escalation caps, got nil")
+	}
+	if !errors.Is(err, &domain.InvalidEscalationCapError{}) {
+		t.Errorf("error does not match InvalidEscalationCapError: %v", err)
+	}
+	for _, want := range []string{"escalation.mechanical_retries: 0", "escalation.scoping_escalations: -1", "at least 1"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("expected error to mention %q, got: %v", want, err)
+		}
+	}
+}
+
+// Each cap is configurable on its own: an omitted key is not the same as a zero,
+// and configuring one cap does not require configuring the rest.
+func TestConfigEscalation_CapsLoadIndependently(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	configContent := `project_context: Test context
+verification:
+    command: ./test.sh
+escalation:
+    opus_execution_attempts: 3
+`
+	if err := os.WriteFile(filepath.Join(store.baseDir, "config.yaml"), []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	config, err := store.LoadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error loading config: %v", err)
+	}
+	if config.Escalation == nil {
+		t.Fatal("Escalation = nil, want the configured section")
+	}
+	if got := domain.CapOr(config.Escalation.OpusExecutionAttempts, 0); got != 3 {
+		t.Errorf("opus_execution_attempts = %d, want 3", got)
+	}
+	if config.Escalation.MechanicalRetries != nil {
+		t.Error("mechanical_retries was set, want nil so it takes its default")
+	}
+}
+
 func TestConfigModels_MultipleInvalidModelNames(t *testing.T) {
 	store, cleanup := SetupTestStore(t)
 	defer cleanup()

@@ -44,6 +44,9 @@ type Config struct {
 	// Auth selects which Anthropic credential the claude subprocess uses.
 	// If omitted entirely, the subprocess inherits the ambient environment.
 	Auth *AuthConfig `yaml:"auth,omitempty"`
+	// Escalation bounds each escalation path the execution loop can take.
+	// If omitted entirely, the built-in caps apply. See EscalationConfig.
+	Escalation *EscalationConfig `yaml:"escalation,omitempty"`
 }
 
 // PathsConfig configures where the specs, adrs, concepts, and domain folders live.

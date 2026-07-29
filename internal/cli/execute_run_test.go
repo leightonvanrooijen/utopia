@@ -1,10 +1,38 @@
 package cli
 
 import (
+	"bytes"
+	"strings"
 	"testing"
 
+	"github.com/leightonvanrooijen/utopia/internal/cli/ui"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
+	"github.com/leightonvanrooijen/utopia/internal/ralph"
 )
+
+// A run with halted items did not fail, but the phase is incomplete: reporting
+// true is what stops the caller merging it as a success.
+func TestReportNeedsHuman(t *testing.T) {
+	var out, errOut bytes.Buffer
+	printer := ui.NewPrinter(&out, &errOut)
+
+	if reportNeedsHuman(printer, &ralph.Result{Completed: 2, Total: 2}) {
+		t.Error("reported halted items for a run that had none")
+	}
+	if errOut.Len() != 0 || out.Len() != 0 {
+		t.Errorf("printed %q / %q for a run with no halted items", out.String(), errOut.String())
+	}
+
+	if !reportNeedsHuman(printer, &ralph.Result{Completed: 1, Total: 3, NeedsHuman: []string{"item-b", "item-c"}}) {
+		t.Fatal("did not report the halted items")
+	}
+	report := errOut.String()
+	for _, want := range []string{"2 work item(s) halted", "item-b", "item-c", "Re-scope"} {
+		if !strings.Contains(report, want) {
+			t.Errorf("report %q missing %q", report, want)
+		}
+	}
+}
 
 func TestReadyChangeRequests(t *testing.T) {
 	crs := []*domain.ChangeRequest{

@@ -9,7 +9,7 @@ title: |
     case is materially cheaper. They are independently configurable
     because they are guesses, and the telemetry that would confirm
     them does not exist yet.
-status: pending
+status: in_progress
 prompt: |-
     ## TASK
 
@@ -79,3 +79,4 @@ constraints:
     - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
 order: 1
 estimated_complexity: medium
+iteration_count: 8

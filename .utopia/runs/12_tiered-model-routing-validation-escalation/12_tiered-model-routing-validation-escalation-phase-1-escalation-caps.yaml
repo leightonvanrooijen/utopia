@@ -1,0 +1,27 @@
+workitem_id: 12_tiered-model-routing-validation-escalation-phase-1-escalation-caps
+cr_id: 12_tiered-model-routing-validation-escalation
+spec_ref: 12_tiered-model-routing-validation-escalation-phase-1.escalation-caps
+iterations: 7
+completed_at: 2026-07-30T08:14:35.83753+10:00
+outcome: failed
+status: unprocessed
+transcript: |
+    --- iteration 1 ---
+    API Error: Unable to connect to API (ENOTFOUND)
+
+    --- iteration 2 ---
+    API Error: Unable to connect to API (ENOTFOUND)
+
+    --- iteration 3 ---
+    API Error: Unable to connect to API (ENOTFOUND)
+
+    --- iteration 4 ---
+    API Error: Unable to connect to API (ENOTFOUND)
+
+    --- iteration 5 ---
+    Reading current state.
+    API Error: Connection closed mid-response. The response above may be incomplete.
+
+    --- iteration 6 ---
+    Read work item spec + current state first.
+    API Error: Connection closed mid-response. The response above may be incomplete.

@@ -30,6 +30,11 @@ type Result struct {
 	StoppedAt string
 	// Reason explains why execution stopped (if not all completed)
 	Reason string
+	// NeedsHuman lists the work items halted as needs_human. They neither completed
+	// nor stopped the run: the loop moved on to the next item and left them for a
+	// person. A non-empty list means the phase is incomplete even though the run
+	// returned no error.
+	NeedsHuman []string
 }
 
 // Execute runs all work items for a spec sequentially.
@@ -149,11 +154,31 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 			continue
 		}
 
+		// An item halted as needs_human on an earlier run is not retried. Its caps
+		// are persisted, so re-entering the loop would exhaust them again and halt at
+		// the same place; the change request has to change first.
+		if item.Status == domain.WorkItemNeedsHuman {
+			result.NeedsHuman = append(result.NeedsHuman, item.ID)
+			fmt.Printf("[%d/%d] %s - halted, needs human attention (skipped)\n", i+1, len(items), item.ID)
+			continue
+		}
+
 		fmt.Printf("[%d/%d] %s - starting execution\n", i+1, len(items), item.ID)
 
 		// Execute this work item with the Ralph loop
 		timings, err := executeWorkItem(ctx, item, specID, store, cli, defaultExecutorModel, verifier, config, projectDir, auth, dispatcher, basePayload, validatorRunner, validatorList)
 		if err != nil {
+			// A halted item is skipped, not fatal. Batch execution runs every draft
+			// change request in order, so aborting the run on one ambiguous change
+			// request would strand every item behind it - and an item needing a human
+			// is precisely the case where the rest of the batch is still worth running.
+			var needsHuman *NeedsHumanError
+			if errors.As(err, &needsHuman) {
+				result.NeedsHuman = append(result.NeedsHuman, item.ID)
+				fmt.Printf("[%d/%d] %s - halted after %d iteration(s), needs human attention: %s\n",
+					i+1, len(items), item.ID, item.IterationCount, err)
+				continue
+			}
 			result.StoppedAt = item.ID
 			result.Reason = err.Error()
 			failPayload := basePayload
@@ -185,6 +210,13 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 		dispatcher.Dispatch(Event{Name: EventExecutionCompleted, Payload: basePayload})
 	}
 
+	// The run itself did not fail - every item that could be attempted was - so the
+	// halted items are reported on the result rather than as an error, and the
+	// caller decides what an incomplete phase means for merging.
+	if len(result.NeedsHuman) > 0 {
+		result.Reason = fmt.Sprintf("%d work item(s) halted needing human attention", len(result.NeedsHuman))
+	}
+
 	return result, nil
 }
 
@@ -214,7 +246,7 @@ func executeWorkItem(
 	// The escalation caps are the inner bounds on the retry paths; maxIterations
 	// above is the outer bound on the item as a whole. Both appear on the routing
 	// log line so an operator can tell which one stopped the item.
-	caps := DefaultEscalationCaps()
+	caps := EscalationCapsFrom(config.Escalation)
 	escalatedExecutorModel := resolveEscalatedExecutorModel(config.Models)
 
 	// Load CR title for commit message and operation type for execution log
@@ -258,6 +290,19 @@ func executeWorkItem(
 		// a decision made during this run returns from the gate below, so reaching
 		// here means the counter was carried in on the persisted work item.
 		if item.ComprehensionCount >= caps.ComprehensionEscalations {
+			// Unless the scoping cap is already spent, in which case there is no path
+			// left: the change request was already rewritten as many times as it is
+			// allowed to be and still does not execute. Halting here is what stops the
+			// rewrite-then-retry cycle from becoming the unbounded loop.
+			if item.ScopingEscalationCount >= caps.ScopingEscalations {
+				return nil, haltNeedsHuman(store, specID, crID, item, &transcript, &NeedsHumanError{
+					WorkItemID: item.ID,
+					Cap:        "escalation.scoping_escalations",
+					Limit:      caps.ScopingEscalations,
+					Detail: fmt.Sprintf("%d scoping escalation(s) did not produce a change request the executor could satisfy",
+						item.ScopingEscalationCount),
+				})
+			}
 			_ = store.SaveWorkItemForSpec(specID, item)
 			writeRunTranscript(store, crID, item, transcript.String(), domain.RunFailed)
 			return nil, &ScopingEscalationError{WorkItemID: item.ID, ComprehensionCount: item.ComprehensionCount}
@@ -291,6 +336,16 @@ func executeWorkItem(
 		// cloned rather than mutated because it is shared with every other work
 		// item in this run, and escalation is per item.
 		attemptModel := executorModelFor(item, defaultExecutorModel, escalatedExecutorModel)
+
+		// An escalated attempt is booked against its cap before it runs, so the
+		// halt costs nothing when the cap is already spent. It is refunded below
+		// if the attempt never actually happened.
+		charged, capErr := chargeEscalatedAttempt(item, caps)
+		if capErr != nil {
+			item.IterationCount--
+			return nil, haltNeedsHuman(store, specID, crID, item, &transcript, capErr)
+		}
+
 		attemptCLI := cli
 		if attemptModel != defaultExecutorModel {
 			attemptCLI = cli.Clone().WithModel(attemptModel)
@@ -320,6 +375,11 @@ func executeWorkItem(
 		} else if outcome == limitWaited {
 			fmt.Printf("  Iteration %d: usage limit handled, re-running this iteration (claude %s)\n", item.IterationCount, ui.Duration(claudeElapsed))
 			item.IterationCount--
+			// The attempt produced no work, so it is refunded: the cap bounds spend on
+			// the escalated executor, and nothing was spent here.
+			if charged {
+				item.OpusExecutionAttempts--
+			}
 			continue
 		}
 
@@ -447,6 +507,16 @@ func executeWorkItem(
 			item.LastValidatorFeedback = gateFeedback(gateErr)
 			if err := store.SaveWorkItemForSpec(specID, item); err != nil {
 				return nil, fmt.Errorf("failed to save work item state: %w", err)
+			}
+			if decision.Route == RouteNeedsHuman {
+				return nil, haltNeedsHuman(store, specID, crID, item, &transcript, &NeedsHumanError{
+					WorkItemID: item.ID,
+					Cap:        decision.CapExhausted,
+					Limit:      caps.ScopingEscalations,
+					Detail: fmt.Sprintf("%d scoping escalation(s) did not produce a change request the executor could satisfy",
+						caps.ScopingEscalations),
+					Cause: scopingEscalationError(item, aggregate, decision),
+				})
 			}
 			if decision.Route == RouteScopingEscalation {
 				writeRunTranscript(store, crID, item, transcript.String(), domain.RunFailed)

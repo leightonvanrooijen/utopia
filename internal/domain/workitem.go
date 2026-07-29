@@ -17,6 +17,13 @@ const (
 	WorkItemInProgress WorkItemStatus = "in_progress"
 	WorkItemCompleted  WorkItemStatus = "completed"
 	WorkItemFailed     WorkItemStatus = "failed"
+	// WorkItemNeedsHuman means every bounded escalation path available to the item
+	// is exhausted, so no further attempt can change the outcome. It is a distinct
+	// terminal state rather than a synonym for failed because the operator action
+	// differs: a failed item failed verification and can be retried as-is, while a
+	// needs_human item is waiting for a person to re-scope or rewrite its change
+	// request. Retrying it unchanged would exhaust the same caps again.
+	WorkItemNeedsHuman WorkItemStatus = "needs_human"
 )
 
 // WorkItem represents a discrete unit of work for Ralph execution.
@@ -73,6 +80,18 @@ type WorkItem struct {
 	// non-zero count means execution runs on the escalated executor, so persisting
 	// it is what stops a resumed work item from resetting to the default executor.
 	ComprehensionCount int `yaml:"comprehension_count,omitempty"`
+
+	// OpusExecutionAttempts tracks how many execution attempts have run on the
+	// escalated executor. It is persisted so the cap holds across a resume, and it
+	// is never reset - not by a scoping escalation either - because it bounds total
+	// spend on the expensive path rather than a streak.
+	OpusExecutionAttempts int `yaml:"opus_execution_attempts,omitempty"`
+
+	// ScopingEscalationCount tracks how many times this item has been routed to
+	// scoping escalation. It is persisted so the cap holds across a resume: a
+	// rewritten change request that fails the same way must not be rewritten
+	// forever.
+	ScopingEscalationCount int `yaml:"scoping_escalations,omitempty"`
 
 	// ValidatorsRouted records whether the relevance router has already run for
 	// this work item. Once true, SelectedValidators is authoritative even when

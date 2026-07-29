@@ -193,6 +193,10 @@ func runExecute(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("CR %q failed: %w", crID, err)
 	}
 
+	if reportNeedsHuman(out, result) {
+		return nil
+	}
+
 	out.Printf("\nAll work items completed successfully!\n")
 	out.Printf("Completed: %d/%d work items\n", result.Completed, result.Total)
 	out.Progressf("\nMerging CR into specs...\n")
@@ -367,6 +371,10 @@ func executeSingleCR(ctx context.Context, out *ui.Printer, cr *domain.ChangeRequ
 		return err
 	}
 
+	if reportNeedsHuman(out, result) {
+		return nil
+	}
+
 	out.Printf("\nAll work items completed successfully!\n")
 	out.Printf("Completed: %d/%d work items\n", result.Completed, result.Total)
 	out.Progressf("\nMerging CR into specs...\n")
@@ -506,6 +514,15 @@ func executeInitiativeCore(
 			return fmt.Errorf("phase %d of CR %q failed: %w", phaseIndex+1, cr.ID, err)
 		}
 
+		// A halted item leaves the phase incomplete, so the phase is not marked
+		// complete and the later phases - which build on it - do not run. The CR
+		// itself has not failed, so this returns nil: batch execution moves on to
+		// the next change request rather than stranding it behind this one.
+		if reportNeedsHuman(out, result) {
+			out.Progressf("Phase %d left incomplete (%d/%d work items).\n", phaseIndex+1, result.Completed, result.Total)
+			return nil
+		}
+
 		cr.Phases[phaseIndex].Status = domain.PhaseStatusComplete
 		cr.CurrentPhase = phaseIndex + 1
 		if err := store.SaveChangeRequest(cr); err != nil {
@@ -535,6 +552,23 @@ func executeInitiativeCore(
 		}
 	}
 	return nil
+}
+
+// reportNeedsHuman prints the work items a run halted for a person, and reports
+// whether there were any. A run with halted items did not fail - every other
+// item still ran - but the phase is incomplete, so the caller must not treat it
+// as a success and merge it.
+func reportNeedsHuman(out *ui.Printer, result *ralph.Result) bool {
+	if len(result.NeedsHuman) == 0 {
+		return false
+	}
+	out.Warnf("%d work item(s) halted needing human attention:", len(result.NeedsHuman))
+	for _, id := range result.NeedsHuman {
+		out.Progressf("  %s %s\n", ui.Bullet, id)
+	}
+	out.Progressf("Every bounded escalation path for these items is exhausted. Re-scope their\n")
+	out.Progressf("change request, then run execute again to retry them.\n")
+	return true
 }
 
 // ============================================================================
