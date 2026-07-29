@@ -1,7 +1,7 @@
 id: 03_harvest-execution-runs-phase-1-modify-domain-discovery
 spec_ref: 03_harvest-execution-runs-phase-1.modify-domain-discovery
 title: Modify the domain-discovery feature
-status: in_progress
+status: completed
 prompt: |-
     ## TASK
 
