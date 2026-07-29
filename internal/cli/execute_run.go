@@ -57,6 +57,7 @@ it later with 'utopia execute <cr-id>').`,
 	}
 	cmd.Flags().IntVar(&intervalSec, "interval", 10, "seconds to wait between queue scans")
 	cmd.Flags().StringVar(&executeModelFlag, "model", "", "model alias (haiku, sonnet, opus, fable) or a full model identifier")
+	cmd.Flags().StringVar(&executeEffortFlag, "effort", "", "reasoning effort per turn (low, medium, high, xhigh, max), overriding the configured effort for every role in this run")
 	cmd.Flags().StringVar(&executeAuthFlag, "auth", "", "credential to use (api-key, subscription), overriding config.auth.mode")
 	return cmd
 }
@@ -80,7 +81,7 @@ func readyChangeRequests(crs []*domain.ChangeRequest) []*domain.ChangeRequest {
 func runExecuteWatch(cmd *cobra.Command, intervalSec int) error {
 	out := ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr())
 
-	modelID, err := ResolveModelFlag(cmd)
+	over, err := resolveExecuteOverrides(cmd)
 	if err != nil {
 		return err
 	}
@@ -154,7 +155,7 @@ func runExecuteWatch(cmd *cobra.Command, intervalSec int) error {
 			out.Progressf("Executing ready CR: %s (%s)\n", cr.Title, cr.ID)
 			out.Progressf("================================================================\n\n")
 
-			if execErr := executeSingleCR(ctx, out, cr, store, config, absPath, utopiaDir, modelID, authMode); execErr != nil {
+			if execErr := executeSingleCR(ctx, out, cr, store, config, absPath, utopiaDir, over, authMode); execErr != nil {
 				// Ctrl+C / timeout during execution: stop the whole daemon cleanly.
 				if ctx.Err() != nil {
 					out.Progressf("\nWatch stopped.\n")

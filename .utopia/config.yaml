@@ -14,3 +14,10 @@ models:
   scoper: fable
   validators: opus
   validator_router: haiku
+# How much reasoning each role gets per turn. Keys mirror the models section.
+# A failure escalates the model, never the effort - see ADR-004.
+effort:
+  execute: medium
+  execute_escalated: high
+  scoper: high
+  validators: medium

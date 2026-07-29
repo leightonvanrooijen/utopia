@@ -207,6 +207,63 @@ func TestCLI_baseArgs_EmptyModel(t *testing.T) {
 	}
 }
 
+func TestCLI_baseArgs_WithEffort(t *testing.T) {
+	cli := NewCLI().WithEffort("medium")
+	args := cli.baseArgs()
+
+	found := false
+	for i, arg := range args {
+		if arg == "--effort" && i+1 < len(args) {
+			if args[i+1] == "medium" {
+				found = true
+			}
+			break
+		}
+	}
+
+	if !found {
+		t.Errorf("baseArgs should include --effort medium, got %v", args)
+	}
+}
+
+func TestCLI_baseArgs_EmptyEffort(t *testing.T) {
+	cli := NewCLI()
+	args := cli.baseArgs()
+
+	for _, arg := range args {
+		if arg == "--effort" {
+			t.Error("baseArgs should not include --effort for empty effort, which leaves the CLI on its own default")
+		}
+	}
+}
+
+// Model and effort are separate levers and travel together on one invocation.
+func TestCLI_baseArgs_ModelAndEffort(t *testing.T) {
+	args := NewCLI().WithModel("opus").WithEffort("high").baseArgs()
+
+	joined := strings.Join(args, " ")
+	if !strings.Contains(joined, "--model opus") {
+		t.Errorf("baseArgs = %v, want --model opus", args)
+	}
+	if !strings.Contains(joined, "--effort high") {
+		t.Errorf("baseArgs = %v, want --effort high", args)
+	}
+}
+
+// A cloned CLI carries the effort it was given, so an escalated attempt can vary
+// model and effort for one work item without touching the shared instance.
+func TestCLI_Clone_CarriesEffort(t *testing.T) {
+	base := NewCLI().WithEffort("medium")
+	escalated := base.Clone().WithEffort("high")
+
+	if base.effort != "medium" {
+		t.Errorf("base effort = %q, want medium - Clone must not mutate the shared instance", base.effort)
+	}
+	if escalated.effort != "high" {
+		t.Errorf("cloned effort = %q, want high", escalated.effort)
+	}
+}
+
 func TestPermissionMode_Constants(t *testing.T) {
 	tests := []struct {
 		mode     PermissionMode

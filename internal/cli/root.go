@@ -131,6 +131,26 @@ func ResolveModelFlag(cmd *cobra.Command) (string, error) {
 	return model, nil
 }
 
+// ResolveEffortFlag validates the --effort flag value and returns it for the
+// claude CLI to apply, mirroring ResolveModelFlag. Returns the empty string when
+// the flag was not provided, which leaves the configured effort in place, or an
+// error if the value is not a recognised level.
+//
+// The override is per invocation, like --model: it is not a way to raise a role's
+// effort mid-run, because nothing in the loop does that.
+func ResolveEffortFlag(cmd *cobra.Command) (string, error) {
+	effort, _ := cmd.Flags().GetString("effort")
+	if effort == "" {
+		return "", nil
+	}
+
+	if err := domain.ValidateEffort(effort); err != nil {
+		return "", err
+	}
+
+	return effort, nil
+}
+
 // ResolveAuth resolves the credential this invocation authenticates with - the
 // --auth flag winning over config.auth.mode - reports it, and returns the mode
 // for the spawn sites to run with.

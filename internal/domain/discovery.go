@@ -35,6 +35,10 @@ type Config struct {
 	// Models configures which Claude model to use for each command.
 	// If omitted entirely, sonnet is used as the implicit default.
 	Models *ModelConfig `yaml:"models,omitempty"`
+	// Effort configures how much reasoning each role gets per turn.
+	// If omitted entirely, every role runs on its built-in default.
+	// See EffortConfig - it mirrors the models section key for key.
+	Effort *EffortConfig `yaml:"effort,omitempty"`
 	// Paths configures where artifact folders live.
 	// If omitted entirely, all artifacts live in their default locations under .utopia/.
 	Paths *PathsConfig `yaml:"paths,omitempty"`

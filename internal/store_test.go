@@ -1071,6 +1071,102 @@ verification:
 	}
 }
 
+func TestConfigEffort_LoadsPerRoleLevels(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	configContent := `project_context: Test context
+verification:
+    command: ./test.sh
+effort:
+    default: medium
+    execute: medium
+    execute_escalated: high
+    scoper: xhigh
+    validators: low
+`
+	if err := os.WriteFile(filepath.Join(store.baseDir, "config.yaml"), []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	config, err := store.LoadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error loading config: %v", err)
+	}
+	if config.Effort == nil {
+		t.Fatal("expected effort section to be loaded, got nil")
+	}
+	if got := config.Effort.ExecutorEffort(); got != "medium" {
+		t.Errorf("ExecutorEffort() = %q, want medium", got)
+	}
+	if got := config.Effort.EscalatedExecutorEffort(); got != "high" {
+		t.Errorf("EscalatedExecutorEffort() = %q, want high", got)
+	}
+	if got := config.Effort.ScoperEffort(); got != "xhigh" {
+		t.Errorf("ScoperEffort() = %q, want xhigh", got)
+	}
+	if got := config.Effort.ValidatorEffort(); got != "low" {
+		t.Errorf("ValidatorEffort() = %q, want low", got)
+	}
+}
+
+func TestConfigEffort_OmittedWhenMissing(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	configContent := `project_context: Test context
+verification:
+    command: ./test.sh
+`
+	if err := os.WriteFile(filepath.Join(store.baseDir, "config.yaml"), []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	config, err := store.LoadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error loading config: %v", err)
+	}
+	if config.Effort != nil {
+		t.Errorf("expected nil Effort when not configured, got %+v", config.Effort)
+	}
+	// A nil section still resolves every role, to its built-in default.
+	if got := config.Effort.ExecutorEffort(); got != "medium" {
+		t.Errorf("ExecutorEffort() = %q, want medium", got)
+	}
+}
+
+// A mistyped level must fail at load time, not at the first claude invocation -
+// which for the escalated executor is only reached after the cheap path has
+// already been paid for.
+func TestConfigEffort_InvalidLevelProducesError(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	configContent := `project_context: Test context
+verification:
+    command: ./test.sh
+effort:
+    execute: extreme
+`
+	if err := os.WriteFile(filepath.Join(store.baseDir, "config.yaml"), []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	_, err := store.LoadConfig()
+	if err == nil {
+		t.Fatal("expected error for invalid effort level, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid effort configuration") {
+		t.Errorf("expected error to mention 'invalid effort configuration', got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "effort.execute") {
+		t.Errorf("expected error to name the offending key 'effort.execute', got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "low, medium, high, xhigh, max") {
+		t.Errorf("expected error to list the valid levels, got: %v", err)
+	}
+}
+
 func TestConfigModels_InvalidModelNameProducesError(t *testing.T) {
 	store, cleanup := SetupTestStore(t)
 	defer cleanup()

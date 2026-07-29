@@ -290,8 +290,8 @@ func (s *YAMLStore) SaveConfig(config *domain.Config) error {
 }
 
 // LoadConfig reads the project configuration.
-// Returns an error if any configured model names, connector entries, the auth
-// mode, or the escalation caps are invalid.
+// Returns an error if any configured model names, effort levels, connector
+// entries, the auth mode, or the escalation caps are invalid.
 func (s *YAMLStore) LoadConfig() (*domain.Config, error) {
 	config, err := Load[domain.Config](s, "config.yaml")
 	if err != nil {
@@ -300,6 +300,11 @@ func (s *YAMLStore) LoadConfig() (*domain.Config, error) {
 
 	// Validate model names at load time
 	if err := domain.ValidateModelConfig(config.Models); err != nil {
+		return nil, fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// Validate effort levels at load time
+	if err := domain.ValidateEffortConfig(config.Effort); err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 

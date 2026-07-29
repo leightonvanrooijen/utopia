@@ -52,6 +52,7 @@ type Runner struct {
 	workDir          string
 	cli              *internal.CLI
 	modelConfig      *domain.ModelConfig
+	effort           string
 	validatorTimeout time.Duration
 }
 
@@ -72,6 +73,7 @@ func (r *Runner) WithValidatorTimeout(timeout time.Duration) *Runner {
 		workDir:          r.workDir,
 		cli:              r.cli,
 		modelConfig:      r.modelConfig,
+		effort:           r.effort,
 		validatorTimeout: timeout,
 	}
 }
@@ -87,6 +89,7 @@ func (r *Runner) WithModelConfig(mc *domain.ModelConfig) *Runner {
 		workDir:          r.workDir,
 		cli:              r.cli,
 		modelConfig:      mc,
+		effort:           r.effort,
 		validatorTimeout: r.validatorTimeout,
 	}
 }
@@ -103,6 +106,24 @@ func (r *Runner) WithAuth(mode domain.AuthMode) *Runner {
 		workDir:          r.workDir,
 		cli:              r.cli.WithAuth(mode, filepath.Join(r.workDir, ".utopia")),
 		modelConfig:      r.modelConfig,
+		effort:           r.effort,
+		validatorTimeout: r.validatorTimeout,
+	}
+}
+
+// WithEffort sets the reasoning effort every validator invocation runs at,
+// resolved by the caller from effort.validators. The empty string leaves the
+// claude CLI on its own default.
+//
+// It is a single level rather than a per-validator resolution because effort is a
+// property of the validator role: a validator that fails is re-run against a
+// fixed change, not asked to think harder about the same one.
+func (r *Runner) WithEffort(effort string) *Runner {
+	return &Runner{
+		workDir:          r.workDir,
+		cli:              r.cli,
+		modelConfig:      r.modelConfig,
+		effort:           effort,
 		validatorTimeout: r.validatorTimeout,
 	}
 }
@@ -260,7 +281,7 @@ func (r *Runner) runWithDiff(ctx context.Context, validator *domain.Validator, c
 	// Configure CLI with validator's allowed tools and resolved model
 	cli := r.cli.WithAllowedTools(validator.GetAllowedTools())
 	model := r.resolveModel(validator)
-	cli = cli.WithModel(model)
+	cli = cli.WithModel(model).WithEffort(r.effort)
 
 	// Invoke Claude with the constructed prompt
 	promptResult, err := cli.Prompt(ctx, prompt)

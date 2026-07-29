@@ -1,0 +1,119 @@
+id: ADR-004
+title: "Answer a Validation Failure by Escalating the Model, Never by Raising Effort"
+status: accepted
+date: 2026-07-30
+context: |
+  Each role in the execution loop now resolves an effort level - the claude
+  CLI's --effort, which bounds how much reasoning a single turn may spend -
+  alongside its model. That creates two levers on the same invocation, and an
+  obvious-looking third option when something fails: leave the model alone and
+  turn the effort up.
+
+  The loop already has a failure policy. A mechanical failure retries on the
+  same executor; a comprehension failure escalates to a more capable model; a
+  second comprehension failure escalates to the scoper, which rewrites the
+  change request. Every one of those routes changes which model runs.
+
+  Raising effort instead is the intuitive response, and it is the wrong one on
+  cost. At the top of its effort range a cheaper model can cost more per
+  attempt than the expensive model would have, for comparable quality - the
+  cheap model spends many deep turns arriving where the capable model arrives
+  in few. So the intuitive move is not merely no cheaper than escalating: it
+  can be strictly more expensive, for a worse answer, while also being the
+  move that keeps the run on the model that has already demonstrated it
+  misreads this change request.
+
+  Effort is also easy to confuse with work_items.turn_budget (--max-turns).
+  Both bound the cost of one invocation, from different sides: effort bounds
+  reasoning depth per turn, turn budget bounds the number of turns. Neither
+  compensates for the other.
+
+decision: |
+  Effort is a fixed property of a role, not a dial the loop turns.
+
+  1. Every role resolves its effort once per run, before the first work item
+     starts: effort.<role> > effort.default > the role's built-in default
+     (medium for the default executor, high for the escalated executor,
+     medium for validators, high for the scoper).
+  2. No code path raises a role's effort in response to a validation failure,
+     a mechanical retry, or an escalation. The default executor's effort is
+     identical on its first attempt and on its last.
+  3. A failure changes which model runs. That is the whole response.
+  4. An escalated attempt runs at the escalated executor's own level, which is
+     higher by default. That is a different role's level, not the default
+     executor's raised - which is why it is derived from the item's persisted
+     comprehension counter, the same source the model resolution uses.
+  5. --effort overrides the resolved level for a single invocation, mirroring
+     --model. It fixes effort for the whole run rather than varying it within
+     one.
+  6. If a role at its default proves too shallow, change the default (xhigh is
+     what Claude Code itself uses for coding and agentic work). Do not add a
+     code path that escalates effort.
+
+options_considered:
+  - option: "Escalate the model on failure, effort fixed per role (chosen)"
+    pros:
+      - Cheaper than raising effort for comparable quality
+      - Failure policy stays one-dimensional: one lever, one meaning
+      - Effort is resolved once, so it cannot drift as a run progresses
+      - The escalated executor is a role with its own level, not a mode
+    cons:
+      - Reads as a missed optimisation to anyone who has not costed it
+      - A role whose default is too shallow needs a config change, not a retry
+
+  - option: "Raise the default executor's effort on failure, escalate later"
+    pros:
+      - Feels cheaper than switching models - stays on the small model
+      - No config change needed to try harder
+    cons:
+      - At the top of its range the cheap model can cost more than the
+        expensive one would have, for a worse answer
+      - Keeps the run on the model that has already misread the change request
+      - Two levers moving on failure makes the cost of a failed item hard to
+        predict or cap
+      - The escalation caps bound attempts, not depth, so a deeper attempt
+        escapes the bound that was supposed to keep the failure path
+        cost-neutral
+
+  - option: "Raise effort and escalate the model together on failure"
+    pros:
+      - Maximum capability applied to a stubborn work item
+    cons:
+      - Multiplies the cost of exactly the attempts already known to be
+        expensive
+      - Nothing distinguishes which lever recovered the item, so neither
+        default can be tuned from what a run reports
+
+consequences:
+  positive:
+    - The cost of a failure path is bounded by the escalation caps alone
+    - A mechanical retry is provably identical to the first attempt, which
+      makes it a test rather than a convention
+    - Effort levels are configuration, so a project can tune depth per role
+      without touching the loop
+    - Effort and model can be reasoned about separately when reading a run
+  negative:
+    - Someone will eventually try to "fix" a stubborn failure by adding an
+      effort bump; this ADR and the retry-immutability test are what stop it
+    - A role that is too shallow at its default is only discovered by
+      observing runs, since nothing adapts at runtime
+  neutral:
+    - Effort defaults are guesses, like the escalation caps, and will move as
+      telemetry arrives
+    - Effort composes with work_items.turn_budget rather than replacing it
+
+advice:
+  - Cost comparison of a cheap model at maximum effort against an expensive
+    model at moderate effort, for comparable output quality
+  - The escalation caps in ADR-adjacent config were sized to keep the failure
+    path roughly cost-neutral; a runtime effort bump would invalidate that
+    sizing
+
+principles:
+  - Escalate the model, never the effort
+  - Effort is a property of a role, not of how a run is going
+  - Cost knobs are configuration, resolved once, not runtime adaptations
+  - A rule worth stating as a rule is worth asserting as a test
+
+related_domain:
+  - execution  # Terms: effort level, default executor, escalated executor, scoper

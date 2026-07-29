@@ -46,6 +46,7 @@ type CLI struct {
 	allowedTools   []string
 	verbose        bool
 	model          string          // model override: alias (e.g. "opus") or full model identifier
+	effort         string          // reasoning effort per turn; empty leaves the CLI on its own default
 	authMode       domain.AuthMode // credential selection; empty inherits the ambient environment
 	utopiaDir      string          // project .utopia dir, where api-key mode looks for .env
 }
@@ -76,6 +77,18 @@ func (c *CLI) WithVerbose(verbose bool) *CLI {
 // pinning a specific one.
 func (c *CLI) WithModel(model string) *CLI {
 	c.model = model
+	return c
+}
+
+// WithEffort sets how much reasoning each turn of this invocation may spend. The
+// value is passed to the claude binary's --effort flag unchanged; the empty
+// string passes no flag, leaving the CLI on its own default.
+//
+// Effort is a property of the role being invoked, not of how the invocation is
+// going: nothing raises it in response to a failure, a retry or an escalation.
+// See domain.EffortConfig and ADR-004.
+func (c *CLI) WithEffort(effort string) *CLI {
+	c.effort = effort
 	return c
 }
 
@@ -131,6 +144,10 @@ func (c *CLI) baseArgs() []string {
 
 	if c.model != "" {
 		args = append(args, "--model", c.model)
+	}
+
+	if c.effort != "" {
+		args = append(args, "--effort", c.effort)
 	}
 
 	return args

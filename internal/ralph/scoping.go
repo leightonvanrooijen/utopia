@@ -88,6 +88,9 @@ type scoper struct {
 	// whitelist do not leak into the executor's next attempt.
 	cli   *internal.CLI
 	model string
+	// effort is the reasoning depth the rewrite runs at, resolved with the rest of
+	// the run's roles before any work item started.
+	effort string
 	// standards is the index injected into a rebuilt work item prompt, so a
 	// resumed item carries the same standards section a freshly chunked one does.
 	standards []domain.StandardsDocMeta
@@ -198,8 +201,8 @@ func (s *scoper) rewrite(
 		return nil, err
 	}
 
-	fmt.Printf("  Scoping escalation: rewriting the change request on %s...\n", s.model)
-	if _, err := s.cli.Clone().WithModel(s.model).WithAllowedTools(scoperTools).Prompt(ctx, prompt); err != nil {
+	fmt.Printf("  Scoping escalation: rewriting the change request on %s (effort %s)...\n", s.model, s.effort)
+	if _, err := s.cli.Clone().WithModel(s.model).WithEffort(s.effort).WithAllowedTools(scoperTools).Prompt(ctx, prompt); err != nil {
 		return nil, fmt.Errorf("scoper invocation failed for work item %s: %w", item.ID, err)
 	}
 

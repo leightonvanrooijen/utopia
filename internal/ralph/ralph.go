@@ -37,11 +37,26 @@ type Result struct {
 	NeedsHuman []string
 }
 
+// Overrides carries the per-invocation flag overrides for one execution run.
+// Each field is empty unless the corresponding flag was passed, in which case it
+// wins over what config resolves for every role in the run.
+//
+// Model and Effort are separate levers with different economics, so they are
+// separate fields rather than one setting: --model changes which model runs,
+// --effort changes how much reasoning a turn may spend. Neither is touched again
+// once the run starts.
+type Overrides struct {
+	// Model is a Claude model override: an alias the CLI resolves (e.g. "opus")
+	// or a full model identifier.
+	Model string
+	// Effort is a reasoning-effort override (low, medium, high, xhigh, max).
+	Effort string
+}
+
 // Execute runs all work items for a spec sequentially.
 // Work items are processed one at a time, in order, retrying until
 // verification passes or max iterations is reached.
-// The optional model parameter specifies a Claude model override: an alias the
-// CLI resolves (e.g. "opus") or a full model identifier.
+// The over parameter carries this invocation's --model and --effort overrides.
 //
 // auth selects the credential every claude subprocess this loop spawns
 // authenticates with - the work-item agents, the validators they gate on, and
@@ -49,7 +64,7 @@ type Result struct {
 // subprocesses, so a mode that reached only some of them would split a single
 // run's usage across two accounts. The empty mode inherits the ambient
 // environment, which is the pre-auth behaviour.
-func Execute(ctx context.Context, specID string, store *internal.YAMLStore, config *domain.Config, projectDir string, auth domain.AuthMode, model ...string) (*Result, error) {
+func Execute(ctx context.Context, specID string, store *internal.YAMLStore, config *domain.Config, projectDir string, auth domain.AuthMode, over Overrides) (*Result, error) {
 	// Load work items for this spec
 	items, err := store.ListWorkItemsForSpec(specID)
 	if err != nil {
@@ -76,14 +91,21 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 	// Create dependencies. The resolved override is also the default executor
 	// model the escalation routing retries on - empty means no --model flag, so
 	// the claude CLI default applies, which is the pre-escalation behaviour.
+	//
+	// Effort is resolved once here, for the whole run: every role's level is fixed
+	// before the first work item starts and nothing below recomputes it, which is
+	// what makes "no code path raises effort on failure" a property of the
+	// structure rather than a convention.
 	cli := internal.NewCLI().WithVerbose(true).WithAuth(auth, filepath.Join(projectDir, ".utopia"))
+	efforts := resolveRoleEfforts(config.Effort, over.Effort)
+	cli = cli.WithEffort(efforts.executor)
 	defaultExecutorModel := ""
-	if len(model) > 0 && model[0] != "" {
-		defaultExecutorModel = model[0]
+	if over.Model != "" {
+		defaultExecutorModel = over.Model
 		cli = cli.WithModel(defaultExecutorModel)
 	}
 	verifier := verification.NewRunner(projectDir)
-	validatorRunner := validators.NewRunner(projectDir).WithModelConfig(config.Models).WithAuth(auth)
+	validatorRunner := validators.NewRunner(projectDir).WithModelConfig(config.Models).WithEffort(efforts.validators).WithAuth(auth)
 
 	// Load validators from config
 	var validatorList []*domain.Validator
@@ -166,7 +188,7 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 		fmt.Printf("[%d/%d] %s - starting execution\n", i+1, len(items), item.ID)
 
 		// Execute this work item with the Ralph loop
-		timings, err := executeWorkItem(ctx, item, specID, store, cli, defaultExecutorModel, verifier, config, projectDir, auth, dispatcher, basePayload, validatorRunner, validatorList)
+		timings, err := executeWorkItem(ctx, item, specID, store, cli, defaultExecutorModel, efforts, verifier, config, projectDir, auth, dispatcher, basePayload, validatorRunner, validatorList)
 		if err != nil {
 			// A halted item is skipped, not fatal. Batch execution runs every draft
 			// change request in order, so aborting the run on one ambiguous change
@@ -231,6 +253,7 @@ func executeWorkItem(
 	store *internal.YAMLStore,
 	cli *internal.CLI,
 	defaultExecutorModel string,
+	efforts roleEfforts,
 	verifier *verification.Runner,
 	config *domain.Config,
 	projectDir string,
@@ -256,6 +279,7 @@ func executeWorkItem(
 		store:     store,
 		cli:       cli,
 		model:     resolveScoperModel(config.Models),
+		effort:    efforts.scoper,
 		standards: store.LoadStandardsIndex(),
 	}
 
@@ -352,6 +376,10 @@ func executeWorkItem(
 		// cloned rather than mutated because it is shared with every other work
 		// item in this run, and escalation is per item.
 		attemptModel := executorModelFor(item, defaultExecutorModel, escalatedExecutorModel)
+		// The escalated executor's effort is its own role's level, not the default
+		// executor's raised: a mechanical retry stays on the default executor and so
+		// keeps that role's effort unchanged.
+		attemptEffort := executorEffortFor(item, efforts)
 
 		// An escalated attempt is booked against its cap before it runs, so the
 		// halt costs nothing when the cap is already spent. It is refunded below
@@ -363,9 +391,9 @@ func executeWorkItem(
 		}
 
 		attemptCLI := cli
-		if attemptModel != defaultExecutorModel {
-			attemptCLI = cli.Clone().WithModel(attemptModel)
-			fmt.Printf("  Iteration %d: invoking Claude on the escalated executor (%s)...\n", item.IterationCount, attemptModel)
+		if attemptModel != defaultExecutorModel || attemptEffort != efforts.executor {
+			attemptCLI = cli.Clone().WithModel(attemptModel).WithEffort(attemptEffort)
+			fmt.Printf("  Iteration %d: invoking Claude on the escalated executor (%s, effort %s)...\n", item.IterationCount, attemptModel, attemptEffort)
 		} else {
 			fmt.Printf("  Iteration %d: invoking Claude...\n", item.IterationCount)
 		}

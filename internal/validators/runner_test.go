@@ -1116,3 +1116,30 @@ func TestRunner_resolveModel(t *testing.T) {
 		})
 	}
 }
+
+// The validator role's effort is carried on the runner and survives the other
+// builders, so a runner configured once runs every validator at the same level.
+func TestRunner_WithEffort(t *testing.T) {
+	base := NewRunner(t.TempDir()).WithModelConfig(&domain.ModelConfig{Validators: "opus"})
+
+	withEffort := base.WithEffort("medium")
+
+	if base.effort != "" {
+		t.Errorf("base effort = %q, want \"\" - WithEffort must not mutate the receiver", base.effort)
+	}
+	if withEffort.effort != "medium" {
+		t.Errorf("effort = %q, want medium", withEffort.effort)
+	}
+	if withEffort.modelConfig == nil || withEffort.modelConfig.Validators != "opus" {
+		t.Errorf("model config lost by WithEffort: %+v", withEffort.modelConfig)
+	}
+	if withEffort.validatorTimeout != base.validatorTimeout {
+		t.Errorf("validatorTimeout = %v, want %v", withEffort.validatorTimeout, base.validatorTimeout)
+	}
+
+	// The later builders keep it too, whatever order a caller chains them in.
+	chained := withEffort.WithAuth(domain.AuthModeSubscription).WithValidatorTimeout(time.Minute)
+	if chained.effort != "medium" {
+		t.Errorf("chained effort = %q, want medium", chained.effort)
+	}
+}
