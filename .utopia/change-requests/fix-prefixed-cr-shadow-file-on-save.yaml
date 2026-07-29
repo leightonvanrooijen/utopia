@@ -1,11 +1,9 @@
 id: fix-prefixed-cr-shadow-file-on-save
 type: bugfix
 title: Stop saving a shadow copy of prefix-named CRs, which defeats post-merge deletion and re-runs completed work
-status: draft
+status: in-progress
 tasks:
     - id: make-save-change-request-prefix-aware
-      spec: unified-change-request-system
-      feature_id: cr-lifecycle
       description: |
         Fix CR persistence to match spec unified-change-request-system, feature cr-lifecycle,
         specifically the criterion:
@@ -53,6 +51,8 @@ tasks:
         - A regression test reproduces the full merge sequence including the status save that precedes deletion, and asserts no orphan file remains
         - A regression test covers the chunk-time status update on a prefix-named CR
         - Running "utopia execute --all" after a prefix-named CR has been merged does not re-chunk or re-execute it
+      spec: unified-change-request-system
+      feature_id: cr-lifecycle
       hints:
         - Root cause is internal/store.go:301-303, where SaveChangeRequest joins change-requests/<id>.yaml directly instead of routing through ChangeRequestPath
         - ChangeRequestPath at internal/store.go:392-399 already implements the resolution and ambiguity reporting you need; note that it prefers a canonical filename, which is exactly what makes the shadow win
