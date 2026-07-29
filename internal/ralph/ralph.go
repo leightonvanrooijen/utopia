@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/leightonvanrooijen/utopia/internal"
+	"github.com/leightonvanrooijen/utopia/internal/cli/ui"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 	"github.com/leightonvanrooijen/utopia/internal/git"
 	"github.com/leightonvanrooijen/utopia/internal/validators"
@@ -146,7 +147,7 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 		fmt.Printf("[%d/%d] %s - starting execution\n", i+1, len(items), item.ID)
 
 		// Execute this work item with the Ralph loop
-		err := executeWorkItem(ctx, item, specID, store, cli, verifier, config, projectDir, auth, dispatcher, basePayload, validatorRunner, validatorList)
+		timings, err := executeWorkItem(ctx, item, specID, store, cli, verifier, config, projectDir, auth, dispatcher, basePayload, validatorRunner, validatorList)
 		if err != nil {
 			result.StoppedAt = item.ID
 			result.Reason = err.Error()
@@ -158,6 +159,11 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 
 		result.Completed++
 		fmt.Printf("[%d/%d] %s - completed in %d iteration(s)\n", i+1, len(items), item.ID, item.IterationCount)
+		// Where the item's wall clock went, under the line that announced it
+		// finished. Only a completed item carries timings.
+		if timings != nil {
+			fmt.Printf("  timing: %s\n", timings.summary())
+		}
 	}
 
 	// Run after-phase validators once all work items are complete. This also
@@ -178,6 +184,9 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 }
 
 // executeWorkItem runs the Ralph loop for a single work item until completion.
+// A completed item returns the wall-clock time it spent in each step it
+// bracketed, so the caller can report the breakdown alongside the item's
+// completion line; an item that stops early returns nil timings.
 func executeWorkItem(
 	ctx context.Context,
 	item *domain.WorkItem,
@@ -192,7 +201,7 @@ func executeWorkItem(
 	basePayload EventPayload,
 	validatorRunner *validators.Runner,
 	validatorList []*domain.Validator,
-) error {
+) (*stepTimings, error) {
 	maxIterations := config.Verification.MaxIterations
 	verifyCommand := config.Verification.Command
 
@@ -205,12 +214,16 @@ func executeWorkItem(
 		operationType = deriveOperationType(cr, item.SpecRef)
 	}
 
+	// Time every expensive step this loop brackets so the item can report where
+	// its wall clock went when it completes.
+	timings := newStepTimings()
+
 	itemPayload := basePayload
 	itemPayload.WorkItemID = item.ID
 	itemPayload.IterationCount = item.IterationCount
 	// A gate blocking workitem-started aborts the run before the item runs.
 	if gateErr := dispatcher.Dispatch(Event{Name: EventWorkItemStarted, Payload: itemPayload}); gateErr != nil {
-		return gateErr
+		return nil, gateErr
 	}
 
 	for {
@@ -219,7 +232,7 @@ func executeWorkItem(
 		case <-ctx.Done():
 			// Save current state before exiting
 			_ = store.SaveWorkItemForSpec(specID, item)
-			return ctx.Err()
+			return nil, ctx.Err()
 		default:
 		}
 
@@ -231,12 +244,12 @@ func executeWorkItem(
 		if maxIterations > 0 && item.IterationCount > maxIterations {
 			item.Status = domain.WorkItemFailed
 			_ = store.SaveWorkItemForSpec(specID, item)
-			return fmt.Errorf("max iterations (%d) reached for work item %s", maxIterations, item.ID)
+			return nil, fmt.Errorf("max iterations (%d) reached for work item %s", maxIterations, item.ID)
 		}
 
 		// Save current state
 		if err := store.SaveWorkItemForSpec(specID, item); err != nil {
-			return fmt.Errorf("failed to save work item state: %w", err)
+			return nil, fmt.Errorf("failed to save work item state: %w", err)
 		}
 
 		// Build the prompt (includes failure injection if applicable)
@@ -244,8 +257,14 @@ func executeWorkItem(
 
 		fmt.Printf("  Iteration %d: invoking Claude...\n", item.IterationCount)
 
-		// Invoke Claude
+		// Invoke Claude. The call is timed from the outside, so the duration
+		// covers whatever the agent did without the agent reporting anything;
+		// it is charged to the claude category on every path out, including the
+		// usage-limit retry below, because the wall clock was spent either way.
+		claudeStart := time.Now()
 		claudeResult, err := cli.Prompt(ctx, prompt)
+		claudeElapsed := time.Since(claudeStart)
+		timings.claude += claudeElapsed
 
 		// Detect and handle Claude usage limits (rolling rate limit or org
 		// monthly spend limit) before treating this as a failed iteration.
@@ -255,21 +274,22 @@ func executeWorkItem(
 		// waiting/probing (Ctrl+C or timeout) - take the graceful shutdown path.
 		if outcome, limitErr := handleClaudeLimits(ctx, claudeResult, auth, projectDir); limitErr != nil {
 			_ = store.SaveWorkItemForSpec(specID, item)
-			return limitErr
+			return nil, limitErr
 		} else if outcome == limitWaited {
+			fmt.Printf("  Iteration %d: usage limit handled, re-running this iteration (claude %s)\n", item.IterationCount, ui.Duration(claudeElapsed))
 			item.IterationCount--
 			continue
 		}
 
 		if err != nil {
-			fmt.Printf("  Iteration %d: Claude invocation failed: %v\n", item.IterationCount, err)
+			fmt.Printf("  Iteration %d: Claude invocation failed: %v (claude %s)\n", item.IterationCount, err, ui.Duration(claudeElapsed))
 			// Continue to next iteration - Claude may have hit an error
 			continue
 		}
 
 		// Check for completion token
 		if !strings.Contains(claudeResult.Stdout, CompletionToken) {
-			fmt.Printf("  Iteration %d: no %s token found, retrying...\n", item.IterationCount, CompletionToken)
+			fmt.Printf("  Iteration %d: no %s token found, retrying... (claude %s)\n", item.IterationCount, CompletionToken, ui.Duration(claudeElapsed))
 			// No completion token - Claude hit step limit or got stuck
 			// Clear any previous failure since this is a different failure mode
 			item.LastFailureOutput = ""
@@ -277,7 +297,7 @@ func executeWorkItem(
 			continue
 		}
 
-		fmt.Printf("  Iteration %d: %s token found, running verification...\n", item.IterationCount, CompletionToken)
+		fmt.Printf("  Iteration %d: %s token found, running verification... (claude %s)\n", item.IterationCount, CompletionToken, ui.Duration(claudeElapsed))
 
 		// Route validators once for this work item, the first time it reaches the
 		// gate. The cheap relevance router picks which validators apply to the
@@ -318,10 +338,14 @@ func executeWorkItem(
 		// command is treated as trivially verified.
 		verifyPassed := true
 		verifyOutput := ""
+		var verifyElapsed time.Duration
 		if verifyCommand != "" {
+			verifyStart := time.Now()
 			verifyResult, err := verifier.Run(ctx, verifyCommand)
+			verifyElapsed = time.Since(verifyStart)
+			timings.verification += verifyElapsed
 			if err != nil {
-				return fmt.Errorf("verification command failed to execute: %w", err)
+				return nil, fmt.Errorf("verification command failed to execute: %w", err)
 			}
 			verifyPassed = verifyResult.Passed
 			verifyOutput = verifyResult.Output
@@ -333,7 +357,7 @@ func executeWorkItem(
 			// Verification failed - inject failure and retry. Signal that the
 			// completion claim did not hold so the engine cancels the
 			// speculative validators; their feedback is discarded.
-			fmt.Printf("  Iteration %d: verification failed, will retry with failure output\n", item.IterationCount)
+			fmt.Printf("  Iteration %d: verification failed, will retry with failure output (verification %s)\n", item.IterationCount, ui.Duration(verifyElapsed))
 			failedPayload := itemPayload
 			failedPayload.IterationCount = item.IterationCount
 			dispatcher.Dispatch(Event{Name: EventWorkItemVerificationFailed, Payload: failedPayload})
@@ -343,17 +367,27 @@ func executeWorkItem(
 		}
 
 		if verifyCommand != "" {
-			fmt.Printf("  Iteration %d: verification passed!\n", item.IterationCount)
+			fmt.Printf("  Iteration %d: verification passed! (verification %s)\n", item.IterationCount, ui.Duration(verifyElapsed))
 		}
 
 		// Verification passed - join the speculative validators (and any gating
 		// connectors) at workitem-verified. A blocking gate - a failing
 		// validator or connector - injects its stdout as feedback into the next
 		// iteration and prevents the commit.
+		//
+		// The dispatch is the join point, so timing it measures what the loop
+		// still had to wait for the validators to finish - their run already
+		// overlapped verification. Charging the wait rather than the whole
+		// validator run keeps the categories a breakdown of real wall clock;
+		// the engine's resolution ledger reports each run's full duration.
 		p := itemPayload
 		p.IterationCount = item.IterationCount
-		if gateErr := dispatcher.Dispatch(Event{Name: EventWorkItemVerified, Payload: p}); gateErr != nil {
-			fmt.Printf("  Iteration %d: gate blocked workitem-verified, will retry with feedback\n", item.IterationCount)
+		joinStart := time.Now()
+		gateErr := dispatcher.Dispatch(Event{Name: EventWorkItemVerified, Payload: p})
+		joinElapsed := time.Since(joinStart)
+		timings.validators += joinElapsed
+		if gateErr != nil {
+			fmt.Printf("  Iteration %d: gate blocked workitem-verified, will retry with feedback (validators %s)\n", item.IterationCount, ui.Duration(joinElapsed))
 			item.LastFailureOutput = ""
 			item.LastValidatorFeedback = gateFeedback(gateErr)
 			continue
@@ -362,12 +396,12 @@ func executeWorkItem(
 		item.LastFailureOutput = ""
 		item.LastValidatorFeedback = ""
 		if err := store.SaveWorkItemForSpec(specID, item); err != nil {
-			return err
+			return nil, err
 		}
 		logExecutionEntry(store, crID, item, operationType)
 		p.CommitSHA = gitCommitWorkItem(projectDir, item, crTitle)
 		dispatcher.Dispatch(Event{Name: EventWorkItemCommitted, Payload: p})
-		return nil
+		return timings, nil
 	}
 }
 
@@ -555,7 +589,9 @@ func runAfterPhaseValidators(
 		// carrying their aggregated feedback if any fail. No after-phase
 		// validators configured means the phase is trivially verified; gating
 		// connectors on phase-verified still run.
+		joinStart := time.Now()
 		gateErr := dispatcher.Dispatch(Event{Name: EventPhaseVerified, Payload: basePayload})
+		joinElapsed := time.Since(joinStart)
 		if gateErr == nil {
 			p := basePayload
 			// Create commit for a successful fix if this wasn't the first iteration
@@ -567,8 +603,10 @@ func runAfterPhaseValidators(
 		}
 
 		// Validators or a gate failed - inject feedback and retry with Claude
+		// After-phase validators launch and join on the same event, so the join
+		// wait is their whole run rather than a residual overlap.
 		feedback := gateFeedback(gateErr)
-		fmt.Printf("  After-phase iteration %d: validators failed, will retry with feedback\n", iteration)
+		fmt.Printf("  After-phase iteration %d: validators failed, will retry with feedback (validators %s)\n", iteration, ui.Duration(joinElapsed))
 		fmt.Printf("\n--- Validator Failure Feedback ---\n%s\n--- End Validator Feedback ---\n\n", feedback)
 
 		// Build prompt for Claude to fix standards issues
@@ -576,8 +614,10 @@ func runAfterPhaseValidators(
 
 		fmt.Printf("  After-phase iteration %d: invoking Claude to fix standards issues...\n", iteration)
 
-		// Invoke Claude
+		// Invoke Claude, timed from the outside as in the work-item loop.
+		claudeStart := time.Now()
 		claudeResult, err := cli.Prompt(ctx, prompt)
+		claudeElapsed := time.Since(claudeStart)
 
 		// Detect and handle Claude usage limits without counting the attempt
 		// against max iterations. A limit error means ctx was cancelled while
@@ -585,23 +625,24 @@ func runAfterPhaseValidators(
 		if outcome, limitErr := handleClaudeLimits(ctx, claudeResult, auth, projectDir); limitErr != nil {
 			return limitErr
 		} else if outcome == limitWaited {
+			fmt.Printf("  After-phase iteration %d: usage limit handled, re-running this iteration (claude %s)\n", iteration, ui.Duration(claudeElapsed))
 			iteration--
 			continue
 		}
 
 		if err != nil {
-			fmt.Printf("  After-phase iteration %d: Claude invocation failed: %v\n", iteration, err)
+			fmt.Printf("  After-phase iteration %d: Claude invocation failed: %v (claude %s)\n", iteration, err, ui.Duration(claudeElapsed))
 			// Continue to next iteration - Claude may have hit an error
 			continue
 		}
 
 		// Check for completion token
 		if !strings.Contains(claudeResult.Stdout, CompletionToken) {
-			fmt.Printf("  After-phase iteration %d: no %s token found, retrying...\n", iteration, CompletionToken)
+			fmt.Printf("  After-phase iteration %d: no %s token found, retrying... (claude %s)\n", iteration, CompletionToken, ui.Duration(claudeElapsed))
 			continue
 		}
 
-		fmt.Printf("  After-phase iteration %d: %s token found, re-running validators...\n", iteration, CompletionToken)
+		fmt.Printf("  After-phase iteration %d: %s token found, re-running validators... (claude %s)\n", iteration, CompletionToken, ui.Duration(claudeElapsed))
 		// Loop continues to re-run validators
 	}
 }

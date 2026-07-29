@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/leightonvanrooijen/utopia/internal/cli/ui"
 )
 
 // Handle states. Every launched handle starts running and resolves as
@@ -62,6 +64,10 @@ type handle struct {
 	done   chan struct{}
 	result ConnectorResult
 	state  string
+	// launchedAt is when the action started, so a resolving handle can report
+	// how long its work ran - a validator batch or connector command timed as
+	// a black-box call from the outside
+	launchedAt time.Time
 }
 
 // join blocks until the work exits, collects its outcome, and marks the
@@ -173,12 +179,17 @@ func (en *Engine) reapCompleted() {
 
 // logResolution appends one line to the handle-resolution ledger: the
 // connector name, how the handle resolved (joined, cancelled, or drained),
-// its exit code, and the failure cause when present, with any captured output
-// indented beneath. Every door - join, cancel, drain - logs through here, so
-// a finished run leaves a record of every launched handle and no outcome is
-// silently dropped.
+// how long its work ran, its exit code, and the failure cause when present,
+// with any captured output indented beneath. Every door - join, cancel, drain
+// - logs through here, so a finished run leaves a record of every launched
+// handle, how long it took, and no outcome is silently dropped.
+//
+// The elapsed time is the handle's full run - launch to resolution - which for
+// a validators subscription is how long the validator agents actually took,
+// however much of it overlapped verification.
 func logResolution(h *handle) {
-	line := fmt.Sprintf("  connector %s %s (exit %d)", h.sub.Name, h.state, h.result.ExitCode)
+	line := fmt.Sprintf("  connector %s %s in %s (exit %d)",
+		h.sub.Name, h.state, ui.Duration(time.Since(h.launchedAt)), h.result.ExitCode)
 	if h.result.Err != nil {
 		line += ": " + h.result.Err.Error()
 	}
@@ -202,7 +213,7 @@ func launchHandle(ctx context.Context, sub *Subscription, e Event) *handle {
 		cancel = func() { timeoutCancel(); runCancel() }
 	}
 
-	h := &handle{sub: sub, cancel: cancel, done: make(chan struct{}), state: handleRunning}
+	h := &handle{sub: sub, cancel: cancel, done: make(chan struct{}), state: handleRunning, launchedAt: time.Now()}
 	wait := sub.Action(runCtx, e)
 	go func() {
 		h.result = wait()
