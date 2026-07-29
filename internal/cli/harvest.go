@@ -20,7 +20,8 @@ var harvestCmd = &cobra.Command{
 	Long: `Scan unprocessed conversations and apply qualification tests to identify documentation candidates.
 
 The command will:
-  1. Find unprocessed conversations from .utopia/conversations/
+  1. Find unprocessed conversations from .utopia/conversations/ and execution
+     runs (what was actually built) from .utopia/runs/
   2. Apply qualification tests to identify documentation candidates:
      - ADR candidates (architectural decisions that pass category + reversal cost tests)
      - Concept candidates (educational content that passes orientation + independence tests)

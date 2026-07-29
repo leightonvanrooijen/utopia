@@ -2073,3 +2073,52 @@ func TestSaveExecutionRun_ReExecutionOverwritesTheSameFile(t *testing.T) {
 		t.Errorf("latest run should win, got %+v", loaded)
 	}
 }
+
+func TestListExecutionRuns_ReturnsRunsAcrossChangeRequests(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	// No runs directory yet: a project that predates run persistence has no
+	// runs to harvest, which is not an error.
+	runs, err := store.ListExecutionRuns()
+	if err != nil {
+		t.Fatalf("missing runs directory should not error: %v", err)
+	}
+	if len(runs) != 0 {
+		t.Errorf("expected no runs, got %d", len(runs))
+	}
+
+	saved := []*domain.ExecutionRun{
+		{WorkItemID: "item-a", CRID: "cr-1", Outcome: domain.RunCompleted},
+		{WorkItemID: "item-b", CRID: "cr-1", Outcome: domain.RunFailed},
+		{WorkItemID: "item-c", CRID: "cr-2", Outcome: domain.RunCompleted},
+	}
+	for _, run := range saved {
+		if err := store.SaveExecutionRun(run); err != nil {
+			t.Fatalf("SaveExecutionRun(%s): %v", run.WorkItemID, err)
+		}
+	}
+
+	runs, err = store.ListExecutionRuns()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(runs) != len(saved) {
+		t.Fatalf("expected %d runs across both CRs, got %d", len(saved), len(runs))
+	}
+
+	byID := map[string]*domain.ExecutionRun{}
+	for _, run := range runs {
+		byID[run.WorkItemID] = run
+	}
+	for _, want := range saved {
+		got, ok := byID[want.WorkItemID]
+		if !ok {
+			t.Errorf("run %s missing from listing", want.WorkItemID)
+			continue
+		}
+		if got.CRID != want.CRID || got.Outcome != want.Outcome {
+			t.Errorf("run %s = %+v, want CR %s outcome %s", want.WorkItemID, got, want.CRID, want.Outcome)
+		}
+	}
+}

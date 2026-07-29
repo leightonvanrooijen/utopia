@@ -712,6 +712,34 @@ func (s *YAMLStore) SaveExecutionRun(run *domain.ExecutionRun) error {
 	return Save(s, filepath.Join("runs", run.CRID, run.WorkItemID+".yaml"), run)
 }
 
+// ListExecutionRuns returns every persisted execution run, across all CRs.
+// Runs are grouped one directory per CR, so this walks the per-CR directories
+// rather than calling List directly, which only reads a flat directory.
+func (s *YAMLStore) ListExecutionRuns() ([]*domain.ExecutionRun, error) {
+	entries, err := os.ReadDir(s.fullPath("runs"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []*domain.ExecutionRun{}, nil
+		}
+		return nil, fmt.Errorf("failed to read directory runs: %w", err)
+	}
+
+	var runs []*domain.ExecutionRun
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		crRuns, err := List[domain.ExecutionRun](s, filepath.Join("runs", entry.Name()))
+		if err != nil {
+			return nil, err
+		}
+		runs = append(runs, crRuns...)
+	}
+
+	return runs, nil
+}
+
 // ListConversations returns all conversations in the conversations directory
 func (s *YAMLStore) ListConversations() ([]*domain.Conversation, error) {
 	return List[domain.Conversation](s, "conversations")

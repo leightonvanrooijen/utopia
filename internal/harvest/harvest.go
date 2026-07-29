@@ -43,7 +43,7 @@ type Result struct {
 const harvestSystemPrompt = `You are a Harvest Claude - an AI assistant that applies qualification tests to identify documentation candidates from conversation history.
 
 ## Your Role
-Review persisted conversations and apply QUALIFICATION TESTS to identify candidates for ALL documentation types in a SINGLE PASS:
+Review persisted harvest sources - execution runs and conversations - and apply QUALIFICATION TESTS to identify candidates for ALL documentation types in a SINGLE PASS:
 - **ADR candidates**: Architectural decisions that pass category + reversal cost tests
 - **Concept candidates**: Educational content that passes orientation + independence tests
 - **Domain candidates**: Terms that pass domain specificity + precision + consistency tests
@@ -53,15 +53,22 @@ This unified approach is more efficient than running separate /adr, /concept, /d
 
 **Note on README signals:** Unlike other candidates which are detected from conversations, README signals are pre-computed by scanning specs against the current README. You simply include them in your results if they appear in the "README Documentation Signals" section below.
 
-## Conversation Types
+## Source Types
 
-Conversations are classified by type based on whether they produced executed Change Requests:
+Harvest sources are classified by how close they sit to actual system state:
+
+**Execution Runs** (source type: execution) - SYSTEM-TRUTH:
+- These are transcripts of a work item actually being built, captured while the loop ran
+- They record decisions made AT the code, which appear nowhere else once the loop moves on
+- PRIORITIZE these for ADR candidates at least as highly as system-truth conversations
+- ADR candidates from execution runs should generally be HIGH confidence
+- A failed run is still system-truth: it records what was really attempted and why it did not hold
 
 **System-Truth Conversations** (has CR + execution completed):
 - These represent ACTUAL system state - decisions were implemented and verified
 - PRIORITIZE these for ADR candidates (higher confidence - the decision was actually made)
 - ADR candidates from system-truth conversations should generally be HIGH confidence
-- These conversations show what was actually built, not just discussed
+- These conversations show what was decided before building; the matching run shows what was built
 
 **Exploratory Conversations** (no CR):
 - These are informational/research discussions without implementation
@@ -70,7 +77,11 @@ Conversations are classified by type based on whether they produced executed Cha
 - ADR candidates should be MEDIUM or LOW confidence (decision discussed but not implemented)
 - May represent rejected approaches or future considerations
 
-## Unprocessed Conversations
+When an execution run and a conversation cover the same decision, prefer the run's
+account of WHAT was built and the conversation's account of WHY, and cross-reference
+them via the run's CR ID and work item ID.
+
+## Unprocessed Sources
 %s
 
 ## Existing Documentation
@@ -92,7 +103,7 @@ Conversations are classified by type based on whether they produced executed Cha
 ## The Journey
 
 ### PHASE 1: QUALIFICATION-BASED DETECTION
-Analyze ALL unprocessed conversations and apply qualification tests. Be STRICT - only surface candidates that pass all tests.
+Analyze ALL unprocessed sources - execution runs and conversations alike - and apply qualification tests. Be STRICT - only surface candidates that pass all tests.
 
 **ADR Qualification** (architectural decisions):
 Instead of looking for decision phrases, apply a QUALIFICATION TEST to determine if something is truly architectural:
@@ -205,7 +216,7 @@ For EACH qualified candidate, capture:
 - **Title**: Brief description (1 line)
 - **Confidence**: high, medium, or low
   - For ADRs:
-    - HIGH: Passes all qualification tests AND from system-truth conversation (decision was implemented)
+    - HIGH: Passes all qualification tests AND from a system-truth source - an execution run or an executed conversation (the decision was actually implemented)
     - MEDIUM: Passes qualification tests but from exploratory conversation OR reversal cost is moderate
     - LOW: Borderline qualification (may need user confirmation)
   - For Concepts:
@@ -219,8 +230,8 @@ For EACH qualified candidate, capture:
 - **For ADRs only**:
   - **Category**: Which AWS category (structure, nfr, dependencies, interfaces, construction)
   - **Reversal Cost**: Brief explanation of why this is costly to reverse
-- **Conversation Type**: system-truth or exploratory (shown in source)
-- **Location**: Source conversation ID + message range (e.g., "lines 15-30", "early", "mid", "late")
+- **Source Type**: execution, system-truth, or exploratory (shown in source)
+- **Location**: Source conversation or run ID + message range (e.g., "lines 15-30", "early", "mid", "late")
 - **Related Candidates**: IDs of related candidates (e.g., adr-1 may link to concept-1)
 - **Potential Duplicate / Update**: If similar to existing doc, note which one AND whether this should UPDATE that doc instead of creating new
 
@@ -232,29 +243,31 @@ Present a STRUCTURED SUMMARY of all qualified candidates, grouped by type.
 ## Harvest Results
 
 **Summary: X ADR candidates, Y Concept candidates, Z Domain candidates, W README signals**
-**Conversations: N system-truth, M exploratory**
+**Sources: R execution runs, N system-truth conversations, M exploratory conversations**
 
 ### ADR Candidates (Qualified)
-| ID | Confidence | Title | Category | Reversal Cost | Source | Conv Type |
-|----|------------|-------|----------|---------------|--------|-----------|
-| adr-1 | HIGH | Use YAML for storage | dependencies | Data migration, tooling changes | cr-session-20260217 | system-truth |
-| adr-2 | MEDIUM | Use Cobra for CLI | construction | All command handlers depend on it | cr-session-20260216 | exploratory |
+| ID | Confidence | Title | Category | Reversal Cost | Source | Source Type |
+|----|------------|-------|----------|---------------|--------|-------------|
+| adr-1 | HIGH | Group runs by CR on disk | structure | Path layout is baked into harvest and tooling | cr-003-phase-0-persist-runs | execution |
+| adr-2 | HIGH | Use YAML for storage | dependencies | Data migration, tooling changes | cr-session-20260217 | system-truth |
+| adr-3 | MEDIUM | Use Cobra for CLI | construction | All command handlers depend on it | cr-session-20260216 | exploratory |
 
 **Note:** Only decisions that pass all qualification tests appear here. Disqualified items are not shown.
 
 ### Concept Candidates (Qualified)
-| ID | Confidence | Title | Litmus Test | Source | Conv Type | Related |
-|----|------------|-------|-------------|--------|-----------|---------|
-| concept-1 | HIGH | YAML vs JSON trade-offs | ✓ Useful to others | cr-session-20260217 | system-truth | adr-1 |
+| ID | Confidence | Title | Litmus Test | Source | Source Type | Related |
+|----|------------|-------|-------------|--------|-------------|---------|
+| concept-1 | HIGH | YAML vs JSON trade-offs | ✓ Useful to others | cr-session-20260217 | system-truth | adr-2 |
 
 **Note:** Only content that passes all qualification tests (Orientation, Educational Value, Independence) and the litmus test appears here. Disqualified items are not shown.
 
 ### Domain Candidates (Qualified)
-| ID | Confidence | Term | Code Usage | Ambiguity Test | Source | Conv Type | Related |
-|----|------------|------|------------|----------------|--------|-----------|---------|
+| ID | Confidence | Term | Code Usage | Ambiguity Test | Source | Source Type | Related |
+|----|------------|------|------------|----------------|--------|-------------|---------|
 | domain-1 | HIGH | "WorkItem" | WorkItem struct, workitem.go | ✓ Would confuse without def | cr-session-20260217 | system-truth | - |
 | domain-2 | HIGH | "unprocessed" | ConversationUnprocessed const | ✓ Status vs adjective | cr-session-20260217 | system-truth | domain-1 |
-| domain-3 | MEDIUM | "bounded context" | Not in code yet (should be) | ✓ DDD term with local meaning | cr-session-20260216 | exploratory | - |
+| domain-3 | HIGH | "execution run" | ExecutionRun struct, runs/ | ✓ Run vs conversation vs iteration | cr-003-phase-0-persist-runs | execution | domain-1 |
+| domain-4 | MEDIUM | "bounded context" | Not in code yet (should be) | ✓ DDD term with local meaning | cr-session-20260216 | exploratory | - |
 
 **Note:** Only terms that pass all qualification tests (Domain Specificity, Precision, Consistency, Code Alignment) and the ambiguity litmus test appear here. Disqualified items are not shown.
 
@@ -269,7 +282,8 @@ See the "README Documentation Signals" section in Existing Documentation above f
 **Note:** README signals are detected by scanning specs against the current README. Only features that qualify (new command, new artifact type, workflow change, new directory) AND are not already documented appear here.
 
 ### Cross-References
-- adr-1 ↔ concept-1: The ADR records the YAML decision; the Concept explains the trade-off reasoning
+- adr-2 ↔ concept-1: The ADR records the YAML decision; the Concept explains the trade-off reasoning
+- adr-1 ↔ cr-session-20260217: The run shows the layout that was built; the conversation that created its CR shows why
 - domain-1 ↔ domain-2: The Conversation entity has an "unprocessed" status
 
 ### Potential Duplicates / Updates to Existing Docs
@@ -450,7 +464,7 @@ After harvest completion (whether or not docs were created):
 - ONLY mark conversations processed after user completes or exits
 - It's okay if a conversation has no qualified candidates - mark it processed anyway
 
-Start by presenting a summary of ALL qualified candidates found across ALL unprocessed conversations, grouped by type with counts.`
+Start by presenting a summary of ALL qualified candidates found across ALL unprocessed sources, grouped by type with counts.`
 
 // Run executes the harvest session: it loads unprocessed conversations and
 // existing documentation, detects README signals, composes the system prompt,
@@ -467,6 +481,14 @@ func Run(ctx context.Context, store *internal.YAMLStore, opts Options) (*Result,
 	result := &Result{UnprocessedConversations: len(unprocessedConvs)}
 	if len(unprocessedConvs) == 0 {
 		return result, nil
+	}
+
+	// Execution runs are the other half of the harvest input: what was actually
+	// built, as opposed to what was discussed. A missing runs directory is not
+	// an error - projects that predate run persistence simply have none.
+	runs, err := store.ListExecutionRuns()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list execution runs: %w", err)
 	}
 
 	// Ensure all directories exist
@@ -497,7 +519,7 @@ func Run(ctx context.Context, store *internal.YAMLStore, opts Options) (*Result,
 	}
 
 	// Build summaries for Claude
-	convsSummary := buildHarvestConversationsSummary(unprocessedConvs)
+	convsSummary := buildHarvestSourcesSummary(unprocessedConvs, runs)
 	adrsSummary := buildHarvestADRsSummary(existingADRs)
 	conceptsSummary := buildHarvestConceptsSummary(existingConcepts)
 	domainDocsSummary := buildHarvestDomainDocsSummary(existingDomainDocs)
@@ -537,6 +559,7 @@ func Run(ctx context.Context, store *internal.YAMLStore, opts Options) (*Result,
 	fmt.Printf("Found %d unprocessed conversations:\n", len(unprocessedConvs))
 	fmt.Printf("  "+ui.Bullet+" %d system-truth (has CR + executed)\n", systemTruthCount)
 	fmt.Printf("  "+ui.Bullet+" %d exploratory (no CR)\n", exploratoryCount)
+	fmt.Printf("Found %d execution runs (system-truth - what was built)\n", len(runs))
 	fmt.Println()
 	fmt.Println("Existing documentation:")
 	fmt.Printf("  "+ui.Bullet+" %d ADRs\n", len(existingADRs))
@@ -573,12 +596,17 @@ func Run(ctx context.Context, store *internal.YAMLStore, opts Options) (*Result,
 	return result, nil
 }
 
-// buildHarvestConversationsSummary creates a detailed summary of unprocessed conversations
+// buildHarvestSourcesSummary creates a detailed summary of the unprocessed
+// harvest sources: execution runs and conversations.
 // Includes full transcript for comprehensive signal detection across all types.
-// System-truth conversations (with executed CRs) are listed first as they represent actual state.
-func buildHarvestConversationsSummary(convs []*domain.Conversation) string {
-	if len(convs) == 0 {
-		return "(No unprocessed conversations found)"
+//
+// Sources are grouped by source type and ordered by how close each type sits to
+// actual system state, because position in the prompt is itself a priority
+// signal. Execution runs lead: they record what was actually built. System-truth
+// conversations follow, then exploratory ones.
+func buildHarvestSourcesSummary(convs []*domain.Conversation, runs []*domain.ExecutionRun) string {
+	if len(convs) == 0 && len(runs) == 0 {
+		return "(No unprocessed sources found)"
 	}
 
 	// Separate by type: system-truth first, then exploratory
@@ -592,6 +620,10 @@ func buildHarvestConversationsSummary(convs []*domain.Conversation) string {
 	}
 
 	// Sort each group by timestamp (newest first)
+	sortedRuns := append([]*domain.ExecutionRun(nil), runs...)
+	sort.Slice(sortedRuns, func(i, j int) bool {
+		return sortedRuns[i].CompletedAt.After(sortedRuns[j].CompletedAt)
+	})
 	sort.Slice(systemTruth, func(i, j int) bool {
 		return systemTruth[i].Timestamp.After(systemTruth[j].Timestamp)
 	})
@@ -602,10 +634,19 @@ func buildHarvestConversationsSummary(convs []*domain.Conversation) string {
 	var sb strings.Builder
 
 	// Summary line showing counts by type
-	sb.WriteString(fmt.Sprintf("**Total: %d conversations (%d system-truth, %d exploratory)**\n\n",
-		len(convs), len(systemTruth), len(exploratory)))
+	sb.WriteString(fmt.Sprintf("**Total: %d sources (%d execution runs, %d system-truth conversations, %d exploratory conversations)**\n\n",
+		len(convs)+len(runs), len(sortedRuns), len(systemTruth), len(exploratory)))
 
-	// System-truth conversations first (prioritized for ADR signals)
+	// Execution runs first (system-truth - the record of what was built)
+	if len(sortedRuns) > 0 {
+		sb.WriteString("## Execution Runs (system-truth - what was built)\n")
+		sb.WriteString("*These record decisions made while building - prioritize for ADR signals.*\n\n")
+		for _, run := range sortedRuns {
+			writeExecutionRunSummary(&sb, run)
+		}
+	}
+
+	// System-truth conversations next (prioritized for ADR signals)
 	if len(systemTruth) > 0 {
 		sb.WriteString("## System-Truth Conversations (has CR + executed)\n")
 		sb.WriteString("*These represent actual system state - prioritize for ADR signals.*\n\n")
@@ -614,7 +655,7 @@ func buildHarvestConversationsSummary(convs []*domain.Conversation) string {
 		}
 	}
 
-	// Exploratory conversations second (still valuable for concepts/domain)
+	// Exploratory conversations last (still valuable for concepts/domain)
 	if len(exploratory) > 0 {
 		sb.WriteString("## Exploratory Conversations (no CR)\n")
 		sb.WriteString("*Informational only - still valuable for concept and domain signals.*\n\n")
@@ -624,6 +665,22 @@ func buildHarvestConversationsSummary(convs []*domain.Conversation) string {
 	}
 
 	return sb.String()
+}
+
+// writeExecutionRunSummary writes a single execution run's details to the builder.
+// CR ID and work item ID are always written: they are the join keys back to the
+// conversation that originated the run.
+func writeExecutionRunSummary(sb *strings.Builder, run *domain.ExecutionRun) {
+	sb.WriteString(fmt.Sprintf("### %s\n", run.WorkItemID))
+	sb.WriteString(fmt.Sprintf("**Type:** %s\n", run.Type()))
+	sb.WriteString(fmt.Sprintf("**CR:** %s\n", run.CRID))
+	sb.WriteString(fmt.Sprintf("**Spec Ref:** %s\n", run.SpecRef))
+	sb.WriteString(fmt.Sprintf("**Outcome:** %s (%d iteration%s)\n", run.Outcome, run.Iterations, pluralize(run.Iterations)))
+	if !run.CompletedAt.IsZero() {
+		sb.WriteString(fmt.Sprintf("**Completed:** %s\n", run.CompletedAt.Format("2006-01-02 15:04")))
+	}
+
+	writeTranscript(sb, run.Transcript)
 }
 
 // writeConversationSummary writes a single conversation's details to the builder
@@ -657,9 +714,14 @@ func writeConversationSummary(sb *strings.Builder, conv *domain.Conversation) {
 		sb.WriteString(fmt.Sprintf("**Commits:** %s\n", strings.Join(abbrevCommits, ", ")))
 	}
 
-	// For harvest, include more of the transcript for comprehensive analysis
-	// But cap at reasonable size to avoid context overflow
-	transcript := strings.TrimSpace(conv.Transcript)
+	writeTranscript(sb, conv.Transcript)
+}
+
+// writeTranscript appends a source's transcript block.
+// For harvest, include more of the transcript for comprehensive analysis
+// But cap at reasonable size to avoid context overflow
+func writeTranscript(sb *strings.Builder, raw string) {
+	transcript := strings.TrimSpace(raw)
 	if len(transcript) > 2000 {
 		transcript = transcript[:2000] + "\n... [transcript truncated for length]"
 	}

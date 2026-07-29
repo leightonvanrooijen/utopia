@@ -4,7 +4,7 @@ title: Persist Ralph execution runs and harvest them for ADRs and domain terms
 status: in-progress
 phases:
     - type: feature
-      status: in-progress
+      status: complete
       changes:
         - operation: add
           spec: execution-ralph
@@ -25,6 +25,7 @@ phases:
                 - Mirror the non-blocking, warn-on-failure behavior of the existing workitem-commit feature
                 - Write and commit the run transcript at the same point in the loop where the workitem commit is created
     - type: enhancement
+      status: in-progress
       changes:
         - operation: modify
           spec: conversations
@@ -56,3 +57,4 @@ phases:
             add:
                 - /harvest scans .utopia/runs/ for unprocessed execution runs alongside .utopia/conversations/
                 - Execution runs are marked processed only after the user completes or exits harvest, consistent with conversations
+current_phase: 1

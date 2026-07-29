@@ -33,17 +33,30 @@ type ExecutionLogEntry struct {
 	CompletedAt time.Time `yaml:"completed_at"`
 }
 
-// ConversationType distinguishes exploratory conversations from system-truth conversations.
-// Exploratory conversations have no CR and are informational only.
-// System-truth conversations have an executed CR and represent actual system state.
-type ConversationType string
+// SourceType classifies where a harvest signal came from, and therefore how
+// much weight it carries. Exploratory sources are informational only;
+// system-truth sources describe changes that were actually made to the system.
+type SourceType string
 
 const (
-	// ConversationExploratory indicates a conversation with no CR - informational only
-	ConversationExploratory ConversationType = "exploratory"
-	// ConversationSystemTruth indicates a conversation with an executed CR - represents actual state
-	ConversationSystemTruth ConversationType = "system-truth"
+	// SourceExploratory indicates a conversation with no CR - informational only
+	SourceExploratory SourceType = "exploratory"
+	// SourceSystemTruth indicates a conversation with an executed CR - represents actual state
+	SourceSystemTruth SourceType = "system-truth"
+	// SourceExecution indicates an execution run - the record of what was
+	// actually built while a work item ran. Distinct from SourceSystemTruth
+	// (an executed conversation records what was agreed before building), but
+	// system-truth all the same, and the closest source there is to the code.
+	SourceExecution SourceType = "execution"
 )
+
+// IsSystemTruth reports whether this source describes actual system state
+// rather than discussion. Both executed conversations and execution runs
+// qualify: one records the decision that was implemented, the other records
+// the implementing.
+func (t SourceType) IsSystemTruth() bool {
+	return t == SourceSystemTruth || t == SourceExecution
+}
 
 // Conversation represents a captured session transcript with metadata
 type Conversation struct {
@@ -75,20 +88,20 @@ func (c *Conversation) ExecutionCompleted() bool {
 	return len(c.ExecutionLog) > 0
 }
 
-// Type returns the ConversationType based on CR presence and execution status.
+// Type returns the SourceType based on CR presence and execution status.
 // System-truth: has CR AND execution completed (represents actual system state).
 // Exploratory: no CR (informational only, but still valuable for concepts/domain knowledge).
-func (c *Conversation) Type() ConversationType {
+func (c *Conversation) Type() SourceType {
 	if c.HasCR() && c.ExecutionCompleted() {
-		return ConversationSystemTruth
+		return SourceSystemTruth
 	}
-	return ConversationExploratory
+	return SourceExploratory
 }
 
 // IsSystemTruth returns true if this conversation represents actual system state
 // (has CR and execution completed).
 func (c *Conversation) IsSystemTruth() bool {
-	return c.Type() == ConversationSystemTruth
+	return c.Type().IsSystemTruth()
 }
 
 // =============================================================================
@@ -128,6 +141,19 @@ type ExecutionRun struct {
 	// Transcript is the streamed Claude output accumulated across every
 	// iteration of the run.
 	Transcript string `yaml:"transcript"`
+}
+
+// Type returns SourceExecution: a run is always its own source type, whatever
+// its outcome. A failed run still records real decisions taken against the
+// real codebase.
+func (r *ExecutionRun) Type() SourceType {
+	return SourceExecution
+}
+
+// IsSystemTruth returns true - an execution run is the record of what was
+// actually built, so it is system-truth by construction.
+func (r *ExecutionRun) IsSystemTruth() bool {
+	return r.Type().IsSystemTruth()
 }
 
 // =============================================================================

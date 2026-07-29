@@ -45,14 +45,14 @@ func TestGetNextADRID(t *testing.T) {
 	}
 }
 
-func TestBuildHarvestConversationsSummary_Empty(t *testing.T) {
-	got := buildHarvestConversationsSummary(nil)
-	if got != "(No unprocessed conversations found)" {
+func TestBuildHarvestSourcesSummary_Empty(t *testing.T) {
+	got := buildHarvestSourcesSummary(nil, nil)
+	if got != "(No unprocessed sources found)" {
 		t.Errorf("unexpected summary: %q", got)
 	}
 }
 
-func TestBuildHarvestConversationsSummary_GroupsByType(t *testing.T) {
+func TestBuildHarvestSourcesSummary_GroupsByType(t *testing.T) {
 	systemTruth := &domain.Conversation{
 		ID:         "conv-system",
 		Timestamp:  time.Date(2026, 2, 17, 10, 0, 0, 0, time.UTC),
@@ -71,9 +71,9 @@ func TestBuildHarvestConversationsSummary_GroupsByType(t *testing.T) {
 		Transcript: "just exploring options",
 	}
 
-	got := buildHarvestConversationsSummary([]*domain.Conversation{exploratory, systemTruth})
+	got := buildHarvestSourcesSummary([]*domain.Conversation{exploratory, systemTruth}, nil)
 
-	if !strings.Contains(got, "**Total: 2 conversations (1 system-truth, 1 exploratory)**") {
+	if !strings.Contains(got, "**Total: 2 sources (0 execution runs, 1 system-truth conversations, 1 exploratory conversations)**") {
 		t.Errorf("missing total line, got:\n%s", got)
 	}
 	systemIdx := strings.Index(got, "## System-Truth Conversations")
@@ -95,11 +95,11 @@ func TestBuildHarvestConversationsSummary_GroupsByType(t *testing.T) {
 	}
 }
 
-func TestBuildHarvestConversationsSummary_SortsNewestFirst(t *testing.T) {
+func TestBuildHarvestSourcesSummary_SortsNewestFirst(t *testing.T) {
 	older := &domain.Conversation{ID: "conv-older", Timestamp: time.Date(2026, 2, 15, 0, 0, 0, 0, time.UTC)}
 	newer := &domain.Conversation{ID: "conv-newer", Timestamp: time.Date(2026, 2, 17, 0, 0, 0, 0, time.UTC)}
 
-	got := buildHarvestConversationsSummary([]*domain.Conversation{older, newer})
+	got := buildHarvestSourcesSummary([]*domain.Conversation{older, newer}, nil)
 
 	newerIdx := strings.Index(got, "### conv-newer")
 	olderIdx := strings.Index(got, "### conv-older")
@@ -108,6 +108,108 @@ func TestBuildHarvestConversationsSummary_SortsNewestFirst(t *testing.T) {
 	}
 	if newerIdx > olderIdx {
 		t.Error("conversations should be sorted newest first")
+	}
+}
+
+func TestBuildHarvestSourcesSummary_PrioritizesExecutionRuns(t *testing.T) {
+	systemTruth := &domain.Conversation{
+		ID:           "conv-system",
+		Timestamp:    time.Date(2026, 2, 17, 10, 0, 0, 0, time.UTC),
+		CRsCreated:   []domain.CRCommit{{CRID: "cr-001"}},
+		ExecutionLog: []domain.ExecutionLogEntry{{WorkItemID: "wi-1"}},
+		Transcript:   "we decided to use YAML",
+	}
+	exploratory := &domain.Conversation{
+		ID:         "conv-explore",
+		Timestamp:  time.Date(2026, 2, 16, 10, 0, 0, 0, time.UTC),
+		Transcript: "just exploring options",
+	}
+	run := &domain.ExecutionRun{
+		WorkItemID:  "cr-001-phase-0-add-thing",
+		CRID:        "cr-001",
+		SpecRef:     "spec.feature",
+		Iterations:  2,
+		CompletedAt: time.Date(2026, 2, 18, 10, 0, 0, 0, time.UTC),
+		Outcome:     domain.RunCompleted,
+		Transcript:  "chose a per-CR directory layout",
+	}
+
+	got := buildHarvestSourcesSummary([]*domain.Conversation{exploratory, systemTruth}, []*domain.ExecutionRun{run})
+
+	if !strings.Contains(got, "**Total: 3 sources (1 execution runs, 1 system-truth conversations, 1 exploratory conversations)**") {
+		t.Errorf("missing total line, got:\n%s", got)
+	}
+	runIdx := strings.Index(got, "## Execution Runs")
+	systemIdx := strings.Index(got, "## System-Truth Conversations")
+	exploreIdx := strings.Index(got, "## Exploratory Conversations")
+	if runIdx == -1 || systemIdx == -1 || exploreIdx == -1 {
+		t.Fatalf("missing source type section headers, got:\n%s", got)
+	}
+	// Runs must rank at least as highly as executed conversations for ADR signals.
+	if runIdx > systemIdx || systemIdx > exploreIdx {
+		t.Errorf("sections should be ordered runs, system-truth, exploratory, got:\n%s", got)
+	}
+}
+
+func TestBuildHarvestSourcesSummary_RunsOnly(t *testing.T) {
+	run := &domain.ExecutionRun{WorkItemID: "wi-1", CRID: "cr-001", Outcome: domain.RunFailed}
+
+	got := buildHarvestSourcesSummary(nil, []*domain.ExecutionRun{run})
+
+	if !strings.Contains(got, "## Execution Runs") {
+		t.Errorf("runs alone should still produce a summary, got:\n%s", got)
+	}
+}
+
+func TestWriteExecutionRunSummary(t *testing.T) {
+	var sb strings.Builder
+	run := &domain.ExecutionRun{
+		WorkItemID:  "cr-001-phase-0-add-thing",
+		CRID:        "cr-001",
+		SpecRef:     "spec.feature",
+		Iterations:  1,
+		CompletedAt: time.Date(2026, 2, 18, 9, 30, 0, 0, time.UTC),
+		Outcome:     domain.RunCompleted,
+		Transcript:  strings.Repeat("x", 3000),
+	}
+
+	writeExecutionRunSummary(&sb, run)
+
+	got := sb.String()
+	for _, want := range []string{
+		"### cr-001-phase-0-add-thing",
+		"**Type:** execution",
+		"**CR:** cr-001",
+		"**Spec Ref:** spec.feature",
+		"**Outcome:** completed (1 iteration)",
+		"**Completed:** 2026-02-18 09:30",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q, got:\n%s", want, got)
+		}
+	}
+	if !strings.Contains(got, "... [transcript truncated for length]") {
+		t.Error("expected long run transcripts to be truncated like conversations")
+	}
+}
+
+func TestBuildHarvestSourcesSummary_SortsRunsNewestFirst(t *testing.T) {
+	older := &domain.ExecutionRun{WorkItemID: "wi-older", CRID: "cr-001", CompletedAt: time.Date(2026, 2, 15, 0, 0, 0, 0, time.UTC)}
+	newer := &domain.ExecutionRun{WorkItemID: "wi-newer", CRID: "cr-001", CompletedAt: time.Date(2026, 2, 17, 0, 0, 0, 0, time.UTC)}
+	runs := []*domain.ExecutionRun{older, newer}
+
+	got := buildHarvestSourcesSummary(nil, runs)
+
+	newerIdx := strings.Index(got, "### wi-newer")
+	olderIdx := strings.Index(got, "### wi-older")
+	if newerIdx == -1 || olderIdx == -1 {
+		t.Fatalf("missing run headers, got:\n%s", got)
+	}
+	if newerIdx > olderIdx {
+		t.Error("runs should be sorted newest first")
+	}
+	if runs[0] != older {
+		t.Error("caller's slice should not be reordered")
 	}
 }
 

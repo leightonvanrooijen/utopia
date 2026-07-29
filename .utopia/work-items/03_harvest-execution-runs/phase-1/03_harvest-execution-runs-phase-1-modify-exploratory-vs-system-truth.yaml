@@ -1,7 +1,7 @@
 id: 03_harvest-execution-runs-phase-1-modify-exploratory-vs-system-truth
 spec_ref: 03_harvest-execution-runs-phase-1.modify-exploratory-vs-system-truth
 title: Modify the exploratory-vs-system-truth feature
-status: pending
+status: in_progress
 prompt: |-
     ## TASK
 
@@ -49,3 +49,4 @@ constraints:
     - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
 order: 0
 estimated_complexity: medium
+iteration_count: 1
