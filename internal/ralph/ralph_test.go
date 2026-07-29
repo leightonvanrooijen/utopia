@@ -2,9 +2,12 @@ package ralph
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 )
 
@@ -548,4 +551,86 @@ func TestBuildPrompt_ValidatorFeedbackNotInCodeBlock(t *testing.T) {
 	if !strings.Contains(prompt, "standards issues:\n\nValidator feedback here") {
 		t.Error("validator feedback should be included without additional code block wrapping")
 	}
+}
+
+func TestAppendIterationOutput_AccumulatesEveryIteration(t *testing.T) {
+	var transcript strings.Builder
+
+	appendIterationOutput(&transcript, 1, &internal.PromptResult{Stdout: "tried the cache approach\n"})
+	appendIterationOutput(&transcript, 2, &internal.PromptResult{Stdout: "switched to a queue <COMPLETE>\n"})
+
+	got := transcript.String()
+	// The abandoned first attempt is the decision record harvest needs, so it
+	// must survive alongside the attempt that completed.
+	if !strings.Contains(got, "tried the cache approach") {
+		t.Errorf("transcript must keep the first iteration's output, got %q", got)
+	}
+	if !strings.Contains(got, "switched to a queue") {
+		t.Errorf("transcript must keep the completing iteration's output, got %q", got)
+	}
+	if !strings.Contains(got, "--- iteration 1 ---") || !strings.Contains(got, "--- iteration 2 ---") {
+		t.Errorf("transcript must label each iteration, got %q", got)
+	}
+	if strings.Index(got, "iteration 1") > strings.Index(got, "iteration 2") {
+		t.Errorf("iterations must be in order, got %q", got)
+	}
+}
+
+func TestAppendIterationOutput_SkipsEmptyAndMissingResults(t *testing.T) {
+	var transcript strings.Builder
+
+	// Claude can fail before producing any output; the loop still calls this.
+	appendIterationOutput(&transcript, 1, nil)
+	appendIterationOutput(&transcript, 2, &internal.PromptResult{Stdout: ""})
+
+	if transcript.Len() != 0 {
+		t.Errorf("empty iterations must contribute nothing, got %q", transcript.String())
+	}
+}
+
+func TestWriteRunTranscript_RecordsJoinKeysAndOutcome(t *testing.T) {
+	dir := t.TempDir()
+	store := internal.NewYAMLStore(dir)
+	item := &domain.WorkItem{
+		ID:             "cr-1-phase-0-add-thing",
+		SpecRef:        "my-spec.add-thing",
+		IterationCount: 3,
+	}
+
+	writeRunTranscript(store, "cr-1", item, "the streamed output", domain.RunCompleted)
+
+	run, err := internal.Load[domain.ExecutionRun](store, "runs/cr-1/cr-1-phase-0-add-thing.yaml")
+	if err != nil {
+		t.Fatalf("run transcript should be written to runs/<cr-id>/<workitem-id>.yaml: %v", err)
+	}
+	if run.WorkItemID != item.ID || run.CRID != "cr-1" {
+		t.Errorf("run must carry both join keys, got workitem %q cr %q", run.WorkItemID, run.CRID)
+	}
+	if run.SpecRef != "my-spec.add-thing" {
+		t.Errorf("SpecRef = %q, want %q", run.SpecRef, "my-spec.add-thing")
+	}
+	if run.Iterations != 3 {
+		t.Errorf("Iterations = %d, want 3", run.Iterations)
+	}
+	if run.Outcome != domain.RunCompleted {
+		t.Errorf("Outcome = %q, want %q", run.Outcome, domain.RunCompleted)
+	}
+	if run.Transcript != "the streamed output" {
+		t.Errorf("Transcript = %q, want the streamed output", run.Transcript)
+	}
+	if run.CompletedAt.IsZero() {
+		t.Error("CompletedAt must be stamped")
+	}
+}
+
+func TestWriteRunTranscript_UnwritableStoreDoesNotPanic(t *testing.T) {
+	// A store rooted at a file rather than a directory cannot create runs/.
+	// The loop must survive that - the transcript is a byproduct, not the work.
+	dir := t.TempDir()
+	notADir := filepath.Join(dir, "blocked")
+	if err := os.WriteFile(notADir, []byte("x"), 0644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	writeRunTranscript(internal.NewYAMLStore(notADir), "cr-1", &domain.WorkItem{ID: "item"}, "out", domain.RunFailed)
 }

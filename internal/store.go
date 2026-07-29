@@ -705,6 +705,13 @@ func (s *YAMLStore) SaveConversation(conv *domain.Conversation) error {
 	return Save(s, filepath.Join("conversations", conv.ID+".yaml"), conv)
 }
 
+// SaveExecutionRun writes a run transcript to .utopia/runs/{cr_id}/{workitem_id}.yaml.
+// Runs are grouped by CR so a change request's whole execution history is one
+// directory, and a work item's run overwrites its own file on re-execution.
+func (s *YAMLStore) SaveExecutionRun(run *domain.ExecutionRun) error {
+	return Save(s, filepath.Join("runs", run.CRID, run.WorkItemID+".yaml"), run)
+}
+
 // ListConversations returns all conversations in the conversations directory
 func (s *YAMLStore) ListConversations() ([]*domain.Conversation, error) {
 	return List[domain.Conversation](s, "conversations")

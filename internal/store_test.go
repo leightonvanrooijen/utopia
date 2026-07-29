@@ -2014,3 +2014,62 @@ func TestSaveChangeRequest_ChunkTimeStatusUpdateNoShadow(t *testing.T) {
 		t.Errorf("prefixed CR status = %q, want %q", reloaded.Status, domain.ChangeRequestInProgress)
 	}
 }
+
+func TestSaveExecutionRun_GroupsRunsByChangeRequest(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	runs := []*domain.ExecutionRun{
+		{WorkItemID: "item-a", CRID: "cr-1", SpecRef: "spec.a", Iterations: 1, Outcome: domain.RunCompleted, Transcript: "a"},
+		{WorkItemID: "item-b", CRID: "cr-1", SpecRef: "spec.b", Iterations: 2, Outcome: domain.RunFailed, Transcript: "b"},
+		{WorkItemID: "item-c", CRID: "cr-2", SpecRef: "spec.c", Iterations: 1, Outcome: domain.RunCompleted, Transcript: "c"},
+	}
+	for _, run := range runs {
+		if err := store.SaveExecutionRun(run); err != nil {
+			t.Fatalf("SaveExecutionRun(%s): %v", run.WorkItemID, err)
+		}
+	}
+
+	// A CR's whole execution history is one directory, so a harvest can walk
+	// runs/<cr-id>/ without consulting the work items.
+	for _, run := range runs {
+		path := filepath.Join("runs", run.CRID, run.WorkItemID+".yaml")
+		loaded, err := Load[domain.ExecutionRun](store, path)
+		if err != nil {
+			t.Fatalf("expected run at %s: %v", path, err)
+		}
+		if loaded.Transcript != run.Transcript || loaded.Outcome != run.Outcome {
+			t.Errorf("run %s round-tripped as %+v", run.WorkItemID, loaded)
+		}
+	}
+}
+
+func TestSaveExecutionRun_ReExecutionOverwritesTheSameFile(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	first := &domain.ExecutionRun{WorkItemID: "item-a", CRID: "cr-1", Iterations: 5, Outcome: domain.RunFailed, Transcript: "gave up"}
+	if err := store.SaveExecutionRun(first); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	second := &domain.ExecutionRun{WorkItemID: "item-a", CRID: "cr-1", Iterations: 2, Outcome: domain.RunCompleted, Transcript: "done"}
+	if err := store.SaveExecutionRun(second); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	entries, err := os.ReadDir(filepath.Join(store.baseDir, "runs", "cr-1"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Errorf("a re-executed work item must keep one run file, got %d", len(entries))
+	}
+
+	loaded, err := Load[domain.ExecutionRun](store, "runs/cr-1/item-a.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if loaded.Outcome != domain.RunCompleted || loaded.Transcript != "done" {
+		t.Errorf("latest run should win, got %+v", loaded)
+	}
+}

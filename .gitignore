@@ -1,3 +1,6 @@
+# Conversations are local session capture. Execution runs (.utopia/runs/) are
+# deliberately NOT ignored - they are committed with their work item so the
+# decisions made while building stay part of the project's history.
 .utopia/conversations/
 .utopia/.env
 .envrc

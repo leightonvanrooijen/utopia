@@ -92,6 +92,45 @@ func (c *Conversation) IsSystemTruth() bool {
 }
 
 // =============================================================================
+// Execution Run Types
+// =============================================================================
+
+// RunOutcome records how a work item's execution run ended.
+type RunOutcome string
+
+const (
+	// RunCompleted means the work item passed verification and its gates.
+	RunCompleted RunOutcome = "completed"
+	// RunFailed means the loop gave up on the work item without completing it.
+	RunFailed RunOutcome = "failed"
+)
+
+// ExecutionRun is the durable record of one work item's Ralph execution: the
+// streamed Claude output the loop already collected for completion-token
+// detection, plus the metadata needed to join the run back to where it came
+// from. A conversation captures what was decided before building; a run
+// captures what was decided while building, which would otherwise be lost the
+// moment the loop moved on to the next work item.
+//
+// CRID and WorkItemID are the join keys: CRID names the change request, and
+// that CR's conversations carry an ExecutionLogEntry for the same WorkItemID,
+// so a run can be traced to the conversation that originated it.
+type ExecutionRun struct {
+	WorkItemID string `yaml:"workitem_id"`
+	CRID       string `yaml:"cr_id"`
+	SpecRef    string `yaml:"spec_ref"` // e.g., "spec-id.feature-id"
+
+	// Iterations is how many Claude invocations the run took to reach Outcome.
+	Iterations  int        `yaml:"iterations"`
+	CompletedAt time.Time  `yaml:"completed_at"`
+	Outcome     RunOutcome `yaml:"outcome"`
+
+	// Transcript is the streamed Claude output accumulated across every
+	// iteration of the run.
+	Transcript string `yaml:"transcript"`
+}
+
+// =============================================================================
 // Harvest Signal Types
 // =============================================================================
 

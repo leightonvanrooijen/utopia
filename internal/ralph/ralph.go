@@ -218,6 +218,11 @@ func executeWorkItem(
 	// its wall clock went when it completes.
 	timings := newStepTimings()
 
+	// The run transcript, accumulated from the streamed Claude output each
+	// iteration already produces for completion-token detection. It is written
+	// to .utopia/runs/ when the item finishes, however it finishes.
+	var transcript strings.Builder
+
 	itemPayload := basePayload
 	itemPayload.WorkItemID = item.ID
 	itemPayload.IterationCount = item.IterationCount
@@ -244,6 +249,9 @@ func executeWorkItem(
 		if maxIterations > 0 && item.IterationCount > maxIterations {
 			item.Status = domain.WorkItemFailed
 			_ = store.SaveWorkItemForSpec(specID, item)
+			// A run that gave up is still worth harvesting - what was tried and
+			// why it never converged is a decision record too.
+			writeRunTranscript(store, crID, item, transcript.String(), domain.RunFailed)
 			return nil, fmt.Errorf("max iterations (%d) reached for work item %s", maxIterations, item.ID)
 		}
 
@@ -280,6 +288,12 @@ func executeWorkItem(
 			item.IterationCount--
 			continue
 		}
+
+		// Keep this iteration's output on the run transcript before any of the
+		// paths below take the loop elsewhere. A limit-handled attempt is
+		// deliberately excluded above: it produced no work and does not count
+		// as an iteration, so it would only misnumber the transcript.
+		appendIterationOutput(&transcript, item.IterationCount, claudeResult)
 
 		if err != nil {
 			fmt.Printf("  Iteration %d: Claude invocation failed: %v (claude %s)\n", item.IterationCount, err, ui.Duration(claudeElapsed))
@@ -399,6 +413,9 @@ func executeWorkItem(
 			return nil, err
 		}
 		logExecutionEntry(store, crID, item, operationType)
+		// Written before the commit so the transcript is picked up by the same
+		// `git add -A` and lands in the work item's own commit.
+		writeRunTranscript(store, crID, item, transcript.String(), domain.RunCompleted)
 		p.CommitSHA = gitCommitWorkItem(projectDir, item, crTitle)
 		dispatcher.Dispatch(Event{Name: EventWorkItemCommitted, Payload: p})
 		return timings, nil
@@ -493,6 +510,41 @@ func logExecutionEntry(store *internal.YAMLStore, crID string, item *domain.Work
 	}
 	if err := store.AppendExecutionLogEntry(crID, entry); err != nil {
 		fmt.Printf("  warning: failed to log execution entry: %v\n", err)
+	}
+}
+
+// appendIterationOutput accumulates one iteration's streamed Claude output onto
+// the run transcript. Every iteration is kept, not only the one that completed:
+// an abandoned attempt carries the reasoning for what was tried and dropped,
+// which is exactly the kind of implementation decision a harvest looks for.
+// An iteration that produced no output (Claude failed before writing anything)
+// contributes nothing.
+func appendIterationOutput(transcript *strings.Builder, iteration int, result *internal.PromptResult) {
+	if result == nil || result.Stdout == "" {
+		return
+	}
+	if transcript.Len() > 0 {
+		transcript.WriteString("\n")
+	}
+	fmt.Fprintf(transcript, "--- iteration %d ---\n%s", iteration, result.Stdout)
+}
+
+// writeRunTranscript persists the work item's execution run to
+// .utopia/runs/<cr-id>/<workitem-id>.yaml.
+// Logs a warning and returns on failure (non-blocking): a lost transcript
+// costs future harvests some signal, which is never worth stopping a run over.
+func writeRunTranscript(store *internal.YAMLStore, crID string, item *domain.WorkItem, transcript string, outcome domain.RunOutcome) {
+	run := &domain.ExecutionRun{
+		WorkItemID:  item.ID,
+		CRID:        crID,
+		SpecRef:     item.SpecRef,
+		Iterations:  item.IterationCount,
+		CompletedAt: time.Now(),
+		Outcome:     outcome,
+		Transcript:  transcript,
+	}
+	if err := store.SaveExecutionRun(run); err != nil {
+		fmt.Printf("  warning: failed to write run transcript for %s: %v\n", item.ID, err)
 	}
 }
 
