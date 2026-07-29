@@ -1,7 +1,7 @@
 id: 03_harvest-execution-runs-phase-1-modify-exploratory-vs-system-truth
 spec_ref: 03_harvest-execution-runs-phase-1.modify-exploratory-vs-system-truth
 title: Modify the exploratory-vs-system-truth feature
-status: in_progress
+status: completed
 prompt: |-
     ## TASK
 
