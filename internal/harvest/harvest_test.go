@@ -1,13 +1,36 @@
 package harvest
 
 import (
+	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 )
+
+// Runs and conversations are two halves of one harvest queue, and only an empty
+// queue skips the session. A project with neither directory yet must report zero
+// of both rather than failing - that is the outcome the command frames as
+// "nothing to harvest".
+func TestRun_NoSourcesSkipsTheSession(t *testing.T) {
+	utopiaDir := filepath.Join(t.TempDir(), ".utopia")
+	if err := os.MkdirAll(utopiaDir, 0755); err != nil {
+		t.Fatalf("failed to create .utopia dir: %v", err)
+	}
+
+	result, err := Run(context.Background(), internal.NewYAMLStore(utopiaDir), Options{UtopiaDir: utopiaDir})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if result.UnprocessedConversations != 0 || result.UnprocessedRuns != 0 {
+		t.Errorf("Run() = %+v, want zero counts for both source types", result)
+	}
+}
 
 func TestGetNextADRID(t *testing.T) {
 	tests := []struct {
@@ -183,7 +206,7 @@ func TestWriteExecutionRunSummary(t *testing.T) {
 		"**Spec Ref:** spec.feature",
 		"**Outcome:** completed (1 iteration)",
 		"**Completed:** 2026-02-18 09:30",
-		"**Run File:** cr-001/cr-001-phase-0-add-thing",
+		"**Run File:** cr-001/cr-001-phase-0-add-thing.yaml",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q, got:\n%s", want, got)
@@ -418,13 +441,17 @@ func TestFormatSignalCount(t *testing.T) {
 }
 
 func TestHarvestSystemPromptComposes(t *testing.T) {
-	// The prompt template has exactly nine %s verbs; a stray verb (or an
+	// The prompt template has exactly eleven %s verbs; a stray verb (or an
 	// unescaped % in the payload) would surface as a MISSING/EXTRA marker.
 	prompt := composeTestPrompt()
 	if strings.Contains(prompt, "%!") || strings.Contains(prompt, "(MISSING)") || strings.Contains(prompt, "(EXTRA") {
 		t.Errorf("system prompt formatting produced error markers:\n%s", snippetAround(prompt, "%!"))
 	}
-	for _, want := range []string{"CONVS", "ADRS", "CONCEPTS", "DOMAINDOCS", "READMESIGNALS", "/adrs-dir", "/concepts-dir", "/domain-dir", "ADR-042"} {
+	for _, want := range []string{
+		"CONVS", "ADRS", "CONCEPTS", "DOMAINDOCS", "READMESIGNALS",
+		"/adrs-dir", "/concepts-dir", "/domain-dir",
+		"/conversations-dir", "/runs-dir", "ADR-042",
+	} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("composed prompt missing injected value %q", want)
 		}
@@ -444,7 +471,7 @@ func TestHarvestSystemPrompt_CoversRunSourcedADRs(t *testing.T) {
 		"The Category Test and\nReversal Cost Test decide",
 		"Cross-reference every candidate surfaced from a run to BOTH its CR and its\n  originating conversation",
 		"source_runs",
-		".utopia/runs/{cr-id}/{workitem-id}.yaml",
+		"Read each run file from /runs-dir/{run-file}",
 		`Set status to "processed"`,
 	} {
 		if !strings.Contains(prompt, want) {
@@ -505,10 +532,50 @@ type is execution`) {
 	}
 }
 
+// Marking a source processed is a file write, and the harvest session inherits
+// whatever working directory utopia was invoked from - not necessarily the
+// project --project resolved to. Both source directories are therefore injected
+// rather than assumed, or the write lands outside the project the sources came
+// from and the run silently stays unprocessed forever.
+func TestHarvestSystemPrompt_MarksSourcesProcessedAtResolvedPaths(t *testing.T) {
+	prompt := composeTestPrompt()
+
+	for _, want := range []string{
+		"Read each conversation file from /conversations-dir/{id}.yaml",
+		"Read each run file from /runs-dir/{run-file}",
+		"do NOT rebuild a path from a working directory",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("system prompt missing resolved-path instruction %q", want)
+		}
+	}
+	if strings.Contains(prompt, ".utopia/conversations/") || strings.Contains(prompt, ".utopia/runs/") {
+		t.Errorf("source paths must come from the store, not hardcoded .utopia literals:\n%s", snippetAround(prompt, ".utopia/"))
+	}
+}
+
+// Runs are marked processed at the same point in the session as conversations -
+// after the user completes or exits, never as each run is reviewed - so a run
+// abandoned mid-harvest is still there next time.
+func TestHarvestSystemPrompt_DefersMarkingRunsUntilTheSessionEnds(t *testing.T) {
+	prompt := composeTestPrompt()
+
+	for _, want := range []string{
+		"### PHASE 5: MARK PROCESSED\nAfter the user completes or exits the harvest:",
+		"Mark ALL reviewed sources as processed - execution runs and conversations alike",
+		"ONLY mark conversations and execution runs processed after user completes or exits",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("system prompt missing deferred-marking instruction %q", want)
+		}
+	}
+}
+
 func composeTestPrompt() string {
 	return fmt.Sprintf(harvestSystemPrompt,
 		"CONVS", "ADRS", "CONCEPTS", "DOMAINDOCS", "READMESIGNALS",
-		"/adrs-dir", "/concepts-dir", "/domain-dir", "ADR-042")
+		"/adrs-dir", "/concepts-dir", "/domain-dir",
+		"/conversations-dir", "/runs-dir", "ADR-042")
 }
 
 func snippetAround(s, marker string) string {

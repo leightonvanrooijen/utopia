@@ -1254,6 +1254,34 @@ paths:
 	}
 }
 
+// Harvest sources are the tool's own artifacts, so their directories stay under
+// .utopia even when the documentation directories are relocated. They are still
+// resolved through the store rather than assumed relative to a working
+// directory: harvest hands these paths to a session that marks sources
+// processed, and that session may be running from anywhere.
+func TestSourceDirs_AlwaysUnderBaseDir(t *testing.T) {
+	projectRoot, utopiaDir := setupPathsTestProject(t, `paths:
+    specs: docs/specs
+    adrs: docs/adrs
+`)
+
+	store := NewYAMLStore(utopiaDir)
+
+	if got, want := store.ConversationsDir(), filepath.Join(utopiaDir, "conversations"); got != want {
+		t.Errorf("ConversationsDir() = %q, want %q", got, want)
+	}
+	if got, want := store.RunsDir(), filepath.Join(utopiaDir, "runs"); got != want {
+		t.Errorf("RunsDir() = %q, want %q", got, want)
+	}
+	if !filepath.IsAbs(store.RunsDir()) {
+		t.Errorf("RunsDir() must be absolute, got %q", store.RunsDir())
+	}
+	// A relocated adrs dir must not drag the source dirs out of .utopia.
+	if store.ADRsDir() != filepath.Join(projectRoot, "docs", "adrs") {
+		t.Fatalf("test setup did not relocate adrs, got %q", store.ADRsDir())
+	}
+}
+
 func TestConfigPaths_PartialSectionKeepsDefaults(t *testing.T) {
 	projectRoot, utopiaDir := setupPathsTestProject(t, `verification:
     command: ./test.sh

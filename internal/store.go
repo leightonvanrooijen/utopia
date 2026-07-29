@@ -80,6 +80,17 @@ func (s *YAMLStore) ConceptsDir() string { return s.conceptsDir }
 // DomainDir returns the absolute directory where domain docs are stored.
 func (s *YAMLStore) DomainDir() string { return s.domainDir }
 
+// ConversationsDir returns the absolute directory where conversations are stored.
+// Unlike the artifact directories it is not configurable: harvest sources are
+// written by the tool itself and always live under the store's base directory.
+func (s *YAMLStore) ConversationsDir() string { return s.fullPath("conversations") }
+
+// RunsDir returns the absolute directory where execution runs are stored, one
+// subdirectory per CR. Harvest needs it resolved rather than assumed: the
+// session that marks runs processed does not necessarily run from the project
+// directory, so a relative .utopia/runs would resolve somewhere else entirely.
+func (s *YAMLStore) RunsDir() string { return s.fullPath("runs") }
+
 // fullPath resolves a path against the store's base directory.
 // Absolute paths (already-resolved artifact locations) are used as-is.
 func (s *YAMLStore) fullPath(path string) string {

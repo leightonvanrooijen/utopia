@@ -1,7 +1,7 @@
 id: 03_harvest-execution-runs-phase-1-modify-harvest-command
 spec_ref: 03_harvest-execution-runs-phase-1.modify-harvest-command
 title: Modify the harvest-command feature
-status: pending
+status: in_progress
 prompt: |-
     ## TASK
 
@@ -49,3 +49,4 @@ constraints:
     - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
 order: 3
 estimated_complexity: medium
+iteration_count: 1

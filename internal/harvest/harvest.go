@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -43,7 +44,8 @@ type Result struct {
 
 // harvestSystemPrompt guides Claude through unified signal detection and doc creation
 // Use fmt.Sprintf to inject: conversationsSummary, existingADRsSummary, existingConceptsSummary,
-// existingDomainDocsSummary, adrsDir, conceptsDir, domainDir, nextADRID
+// existingDomainDocsSummary, readmeSignalsSummary, adrsDir, conceptsDir, domainDir,
+// conversationsDir, runsDir, nextADRID
 const harvestSystemPrompt = `You are a Harvest Claude - an AI assistant that applies qualification tests to identify documentation candidates from conversation history.
 
 ## Your Role
@@ -73,6 +75,9 @@ Harvest sources are classified by how close they sit to actual system state:
 - Each run below lists its CR, its work item, and its **Originating Conversation** -
   the conversation whose CR put the work item there. Those are the cross-references
   any candidate surfaced from the run must carry
+- Each run also lists its **Run File**: the path, relative to the runs directory named
+  under "Marking Sources Processed" below, of the file to mark processed once the
+  harvest is done
 
 **System-Truth Conversations** (has CR + execution completed):
 - These represent ACTUAL system state - decisions were implemented and verified
@@ -523,13 +528,18 @@ conversation that does not define the term.
 After harvest completion (whether or not docs were created), every source reviewed in
 this session is marked processed, so the next harvest only sees new material.
 
+The directories below are the ones this harvest actually read its sources from. Use
+them as given - do NOT rebuild a path from a working directory, which may not be the
+project the sources came from.
+
 Conversations:
-1. Read each conversation file from .utopia/conversations/{id}.yaml
+1. Read each conversation file from %s/{id}.yaml
 2. Change status from "unprocessed" to "processed"
 3. Write the updated file back
 
 Execution runs - the same rule, at the run's own path:
-1. Read each run file from .utopia/runs/{cr-id}/{workitem-id}.yaml
+1. Read each run file from %s/{run-file}, where {run-file} is the **Run File** line
+   shown with the run above (cr-id/workitem-id.yaml)
 2. Set status to "processed" (a run with no status field yet is unprocessed - add it)
 3. Write the updated file back, leaving every other field untouched
 
@@ -621,7 +631,11 @@ func Run(ctx context.Context, store *internal.YAMLStore, opts Options) (*Result,
 	// Build README signals summary
 	readmeSignalsSummary := buildREADMESignalsSummary(opts.ProjectDir, store)
 
-	// Inject all summaries into the system prompt
+	// Inject all summaries into the system prompt. The source directories are
+	// injected for the same reason the artifact directories are: the harvest
+	// session inherits whatever working directory utopia was invoked from, which
+	// is not necessarily the project --project resolved to, so the paths it marks
+	// processed have to be the resolved ones.
 	systemPrompt := fmt.Sprintf(harvestSystemPrompt,
 		convsSummary,
 		adrsSummary,
@@ -631,6 +645,8 @@ func Run(ctx context.Context, store *internal.YAMLStore, opts Options) (*Result,
 		adrsDir,
 		conceptsDir,
 		domainDir,
+		store.ConversationsDir(),
+		store.RunsDir(),
 		nextADRID,
 	)
 
@@ -791,7 +807,11 @@ func writeExecutionRunSummary(sb *strings.Builder, run *domain.ExecutionRun, ori
 		sb.WriteString(fmt.Sprintf("**Completed:** %s\n", run.CompletedAt.Format("2006-01-02 15:04")))
 	}
 	sb.WriteString(fmt.Sprintf("**Originating Conversation:** %s\n", formatRunOrigins(originConvIDs)))
-	sb.WriteString(fmt.Sprintf("**Run File:** %s/%s\n", run.CRID, run.WorkItemID))
+	// The run's own file, relative to the runs directory the prompt names. It is
+	// written for every run because this is the file the harvest marks processed
+	// when the session ends, and a run's file name is its work item ID nested
+	// under its CR - not something derivable from the heading alone.
+	sb.WriteString(fmt.Sprintf("**Run File:** %s\n", filepath.Join(run.CRID, run.WorkItemID+".yaml")))
 
 	writeTranscript(sb, run.Transcript)
 }
