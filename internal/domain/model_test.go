@@ -2,6 +2,7 @@ package domain
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -316,5 +317,152 @@ func TestInvalidModelConfigError_Message(t *testing.T) {
 	}
 	if !errors.Is(err, &InvalidModelConfigError{}) {
 		t.Error("errors.Is should match InvalidModelConfigError")
+	}
+}
+
+func TestValidateEscalationOrder(t *testing.T) {
+	tests := []struct {
+		name      string
+		config    *ModelConfig
+		wantError bool
+		wantCount int // escalation paths named in the error
+	}{
+		{
+			name:   "nil config is valid",
+			config: nil,
+		},
+		{
+			name:   "empty config defaults to sonnet executor and opus escalations",
+			config: &ModelConfig{},
+		},
+		{
+			name:   "explicit upward escalation is valid",
+			config: &ModelConfig{Execute: "sonnet", ExecuteEscalated: "opus", Scoper: "fable"},
+		},
+		{
+			name:   "escalating sideways is valid",
+			config: &ModelConfig{Execute: "opus", ExecuteEscalated: "opus"},
+		},
+		{
+			name:      "escalated executor below executor is invalid",
+			config:    &ModelConfig{Execute: "opus", ExecuteEscalated: "sonnet"},
+			wantError: true,
+			wantCount: 2, // scoper inherits execute_escalated
+		},
+		{
+			name:      "scoper below executor is invalid",
+			config:    &ModelConfig{Execute: "opus", ExecuteEscalated: "fable", Scoper: "haiku"},
+			wantError: true,
+			wantCount: 1,
+		},
+		{
+			name:      "inherited opus default below a fable executor is invalid",
+			config:    &ModelConfig{Execute: "fable"},
+			wantError: true,
+			wantCount: 2,
+		},
+		{
+			name:   "executor inherits models.default for the comparison",
+			config: &ModelConfig{Default: "fable", ExecuteEscalated: "fable"},
+		},
+		{
+			name:   "pinned executor identifier is unrankable so ordering is not checked",
+			config: &ModelConfig{Execute: "claude-model-1-20260101", ExecuteEscalated: "haiku"},
+		},
+		{
+			name:   "pinned escalation identifier is unrankable so ordering is not checked",
+			config: &ModelConfig{Execute: "opus", ExecuteEscalated: "claude-model-1-20260101"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateEscalationOrder(tc.config)
+
+			if !tc.wantError {
+				if err != nil {
+					t.Errorf("ValidateEscalationOrder() unexpected error: %v", err)
+				}
+				return
+			}
+
+			var downErr *DownwardEscalationError
+			if !errors.As(err, &downErr) {
+				t.Fatalf("error type = %T, want *DownwardEscalationError", err)
+			}
+			if len(downErr.Downward) != tc.wantCount {
+				t.Errorf("got %d downward paths, want %d: %v", len(downErr.Downward), tc.wantCount, downErr.Downward)
+			}
+		})
+	}
+}
+
+func TestDownwardEscalationError_Message(t *testing.T) {
+	err := &DownwardEscalationError{
+		Executor: "opus",
+		Downward: []DownwardEscalation{{Field: "models.scoper", Model: "haiku"}},
+	}
+	msg := err.Error()
+
+	for _, want := range []string{"models.scoper", `"haiku"`, "models.execute", `"opus"`} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("message %q missing %q", msg, want)
+		}
+	}
+	if !errors.Is(err, &DownwardEscalationError{}) {
+		t.Error("errors.Is should match DownwardEscalationError")
+	}
+}
+
+func TestModelConfig_EscalationResolution(t *testing.T) {
+	tests := []struct {
+		name          string
+		config        *ModelConfig
+		wantExecutor  string
+		wantEscalated string
+		wantScoper    string
+	}{
+		{
+			name:          "nil config",
+			config:        nil,
+			wantExecutor:  "sonnet",
+			wantEscalated: "opus",
+			wantScoper:    "opus",
+		},
+		{
+			name:          "escalations ignore default and execute",
+			config:        &ModelConfig{Default: "haiku", Execute: "sonnet"},
+			wantExecutor:  "sonnet",
+			wantEscalated: "opus",
+			wantScoper:    "opus",
+		},
+		{
+			name:          "scoper inherits execute_escalated",
+			config:        &ModelConfig{ExecuteEscalated: "fable"},
+			wantExecutor:  "sonnet",
+			wantEscalated: "fable",
+			wantScoper:    "fable",
+		},
+		{
+			name:          "explicit scoper wins",
+			config:        &ModelConfig{ExecuteEscalated: "opus", Scoper: "fable"},
+			wantExecutor:  "sonnet",
+			wantEscalated: "opus",
+			wantScoper:    "fable",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.config.ExecutorModel(); got != tc.wantExecutor {
+				t.Errorf("ExecutorModel() = %q, want %q", got, tc.wantExecutor)
+			}
+			if got := tc.config.EscalatedExecutorModel(); got != tc.wantEscalated {
+				t.Errorf("EscalatedExecutorModel() = %q, want %q", got, tc.wantEscalated)
+			}
+			if got := tc.config.ScoperModel(); got != tc.wantScoper {
+				t.Errorf("ScoperModel() = %q, want %q", got, tc.wantScoper)
+			}
+		})
 	}
 }

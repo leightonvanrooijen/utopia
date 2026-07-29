@@ -2244,3 +2244,35 @@ func TestListExecutionRuns_ReturnsRunsAcrossChangeRequests(t *testing.T) {
 		}
 	}
 }
+
+// A config whose escalation paths route to a weaker model than the executor must
+// fail at load, in the same place an invalid model name does - otherwise it
+// surfaces as a mysteriously worse retry deep into a run.
+func TestConfigModels_DownwardEscalationRejectedAtLoad(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	configContent := `project_context: Test context
+verification:
+    command: ./test.sh
+models:
+    execute: opus
+    execute_escalated: sonnet
+`
+	if err := os.WriteFile(filepath.Join(store.baseDir, "config.yaml"), []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	_, err := store.LoadConfig()
+	if err == nil {
+		t.Fatal("expected error for downward escalation, got nil")
+	}
+	if !errors.Is(err, &domain.DownwardEscalationError{}) {
+		t.Errorf("error does not match DownwardEscalationError: %v", err)
+	}
+	for _, want := range []string{"models.execute_escalated", "sonnet", "models.execute"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("expected error to mention %q, got: %v", want, err)
+		}
+	}
+}

@@ -77,10 +77,7 @@ func (e *ScopingRewriteError) Is(target error) bool {
 // failed to answer, so it cannot run on a weaker model than the escalated
 // executor.
 func resolveScoperModel(mc *domain.ModelConfig) string {
-	if mc != nil && mc.Scoper != "" {
-		return mc.Scoper
-	}
-	return resolveEscalatedExecutorModel(mc)
+	return mc.ScoperModel()
 }
 
 // scoper rewrites a change request that the executor keeps misreading. It is the

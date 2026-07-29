@@ -10,4 +10,7 @@ verification:
 models:
   default: opus
   execute: opus
+  execute_escalated: fable
+  scoper: fable
   validators: opus
+  validator_router: haiku

@@ -16,7 +16,7 @@ import (
 // following the precedent the validator relevance router set: a role with a
 // different cost profile and a different failure consequence resolves
 // independently.
-const DefaultEscalatedExecutorModel = string(domain.ModelOpus)
+const DefaultEscalatedExecutorModel = domain.DefaultEscalatedModel
 
 // Escalation caps. They are the inner bounds on the retry paths, sitting inside
 // verification.max_iterations, which still bounds total iterations for a work
@@ -378,10 +378,7 @@ func haltNeedsHuman(store *internal.YAMLStore, specID, crID string, item *domain
 // through to models.execute or models.default, because escalating to the model
 // that just failed is not an escalation.
 func resolveEscalatedExecutorModel(mc *domain.ModelConfig) string {
-	if mc != nil && mc.ExecuteEscalated != "" {
-		return mc.ExecuteEscalated
-	}
-	return DefaultEscalatedExecutorModel
+	return mc.EscalatedExecutorModel()
 }
 
 // executorModelFor resolves the model the next attempt on this work item runs on.

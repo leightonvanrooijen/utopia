@@ -205,6 +205,40 @@ func (c *ModelConfig) ModelForCommand(command string) string {
 	return string(ModelSonnet)
 }
 
+// DefaultEscalatedModel is the model every escalation path resolves to when it
+// has no override of its own. It is opus rather than the configured default
+// because escalating to the model that just failed is not an escalation.
+const DefaultEscalatedModel = string(ModelOpus)
+
+// ExecutorModel resolves the model a first-attempt execution runs on:
+// models.execute > models.default > sonnet.
+func (c *ModelConfig) ExecutorModel() string {
+	return c.ModelForCommand("execute")
+}
+
+// EscalatedExecutorModel resolves the model an escalated execution attempt runs
+// on. Priority: models.execute_escalated > opus. It never falls through to
+// models.execute or models.default, because escalating to the model that just
+// misread the specification is not an escalation.
+func (c *ModelConfig) EscalatedExecutorModel() string {
+	if c != nil && c.ExecuteEscalated != "" {
+		return c.ExecuteEscalated
+	}
+	return DefaultEscalatedModel
+}
+
+// ScoperModel resolves the model that rewrites a change request during a scoping
+// escalation. Priority: models.scoper > models.execute_escalated > opus. It never
+// falls through to models.execute or models.default: the scoper is asked what the
+// change request should have said, which is a harder question than the one the
+// executor already failed to answer.
+func (c *ModelConfig) ScoperModel() string {
+	if c != nil && c.Scoper != "" {
+		return c.Scoper
+	}
+	return c.EscalatedExecutorModel()
+}
+
 // VerificationConfig holds verification command settings
 type VerificationConfig struct {
 	// Command to run for verification (e.g., "npm test --onlyFailures")

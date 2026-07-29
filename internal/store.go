@@ -303,6 +303,11 @@ func (s *YAMLStore) LoadConfig() (*domain.Config, error) {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 
+	// Validate that escalation paths do not route downward at load time
+	if err := domain.ValidateEscalationOrder(config.Models); err != nil {
+		return nil, fmt.Errorf("failed to load config: %w", err)
+	}
+
 	// Validate per-validator model overrides at load time
 	if err := domain.ValidateValidatorModels(config.Validators); err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)

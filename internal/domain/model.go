@@ -119,6 +119,85 @@ func ValidateModelConfig(mc *ModelConfig) error {
 	return &InvalidModelConfigError{InvalidFields: invalid}
 }
 
+// modelCapabilityRank orders the recognised aliases from cheapest to most
+// capable. Only aliases are ranked: a full model identifier is a deliberate pin
+// whose tier Utopia cannot know without hard-coding the model lineup it
+// deliberately does not store, so escalation ordering is not checked for one.
+var modelCapabilityRank = map[ModelName]int{
+	ModelHaiku:  1,
+	ModelSonnet: 2,
+	ModelOpus:   3,
+	ModelFable:  4,
+}
+
+// ValidateEscalationOrder reports whether the escalation paths resolve to models
+// at least as capable as the default executor. A config that escalates downward
+// is always a mistake - the escalated executor and the scoper exist to answer a
+// question the default executor already failed on - and it is one that would
+// otherwise surface as a mysteriously worse retry deep into a loop, so it fails
+// at load time instead.
+func ValidateEscalationOrder(mc *ModelConfig) error {
+	if mc == nil {
+		return nil
+	}
+
+	executor := mc.ExecutorModel()
+	base, ranked := modelCapabilityRank[ModelName(executor)]
+	if !ranked {
+		return nil
+	}
+
+	var downward []DownwardEscalation
+	check := func(field, model string) {
+		rank, ok := modelCapabilityRank[ModelName(model)]
+		if !ok || rank >= base {
+			return
+		}
+		downward = append(downward, DownwardEscalation{Field: field, Model: model})
+	}
+
+	check("models.execute_escalated", mc.EscalatedExecutorModel())
+	check("models.scoper", mc.ScoperModel())
+
+	if len(downward) == 0 {
+		return nil
+	}
+
+	return &DownwardEscalationError{Executor: executor, Downward: downward}
+}
+
+// DownwardEscalation is one escalation path that resolves to a model weaker than
+// the default executor.
+type DownwardEscalation struct {
+	// Field is the config key, e.g. "models.scoper".
+	Field string
+	// Model is what the key resolved to, whether set explicitly or inherited.
+	Model string
+}
+
+// DownwardEscalationError indicates one or more escalation paths that route to a
+// less capable model than models.execute.
+type DownwardEscalationError struct {
+	// Executor is the model models.execute resolved to.
+	Executor string
+	Downward []DownwardEscalation
+}
+
+func (e *DownwardEscalationError) Error() string {
+	paths := make([]string, 0, len(e.Downward))
+	for _, d := range e.Downward {
+		paths = append(paths, fmt.Sprintf("%s resolves to %q", d.Field, d.Model))
+	}
+	return fmt.Sprintf("invalid model configuration: %s, which is less capable than models.execute (%q) - an escalation path cannot route to a weaker model than the executor it escalates from",
+		joinWithComma(paths), e.Executor)
+}
+
+// Is allows errors.Is to match any DownwardEscalationError.
+func (e *DownwardEscalationError) Is(target error) bool {
+	_, ok := target.(*DownwardEscalationError)
+	return ok
+}
+
 // ValidateValidatorModels validates the per-validator model overrides in the
 // config's validators list. It exists so a typo in a validator's model fails at
 // load time like one in the models section, rather than at the first Claude
