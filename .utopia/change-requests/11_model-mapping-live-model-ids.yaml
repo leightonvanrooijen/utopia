@@ -1,0 +1,43 @@
+id: 11_model-mapping-live-model-ids
+type: enhancement
+title: Stop pinning model aliases to dated identifiers and pass them through to the CLI
+status: draft
+changes:
+    - operation: modify
+      spec: model-configuration
+      feature_id: model-mapping
+      description: |
+        Validate model aliases and pass them through to the claude CLI unchanged.
+
+        Utopia used to expand each alias into a dated model identifier before
+        handing it to the CLI. That expansion is the reason the aliases broke: the
+        CLI already resolves 'sonnet' and 'opus' to the current generation, so
+        translating them into claude-sonnet-4-20250514 replaced a self-updating
+        alias with a pin that silently expired when those models retired.
+
+        Utopia stores no model identifiers. It validates that an alias is one it
+        recognises, so a typo in config fails at load time rather than at the
+        first Claude invocation, and then forwards the string. A full model
+        identifier is also accepted and forwarded unchanged, so a caller who needs
+        a specific pinned model can still have one - deliberately, rather than by
+        accident.
+      criteria:
+          remove:
+              - haiku maps to claude-3-5-haiku-20241022
+              - sonnet maps to claude-sonnet-4-20250514
+              - opus maps to claude-opus-4-20250514
+          add:
+              - A recognised alias is passed to the claude CLI unchanged rather than expanded to a model identifier
+              - The recognised aliases are haiku, sonnet, opus and fable
+              - A full model identifier is accepted and passed through unchanged, so a specific model can be pinned when that is wanted
+              - No dated model identifier is stored anywhere in Utopia
+              - An unrecognised value that is neither a known alias nor a plausible model identifier produces a clear error at load time rather than at first invocation
+      hints:
+          - Delete the modelMappings map at internal/domain/model.go:19-23 rather than updating its three entries - the entries are the defect, not their values
+          - ResolveModel becomes a validator that returns its input rather than a translator, so its signature can stay and every call site is unaffected
+          - Verify against the installed CLI before assuming the alias set - `claude --help` documents --model as "Provide an alias for the latest model (e.g. 'fable', 'opus', or 'sonnet') or a model's full name", which is the authority here rather than any table in a spec
+          - fable is a new addition to the alias set and is the top capability tier - it is worth accepting now because the cost of a wider alias set is one line, while the cost of not having it is a config that cannot express the tier at all
+          - Keep ValidModelNames as the source of truth for the flag help text and the load-time error, so the accepted set is stated in exactly one place
+          - The pass-through for full identifiers should not try to validate the identifier's shape too strictly - the CLI is the authority on what resolves, and a Utopia-side allowlist of model names would reintroduce the staleness this change request removes
+          - validator-relevance-router resolves its cheap router model through the haiku alias via DefaultRouterModel in internal/validators/router.go, so it inherits the fix with no change of its own
+          - Capture an ADR on the aliasing policy - that Utopia forwards model selection rather than resolving it, and that the general rule is to not restate downstream tool knowledge in Utopia's own tables
