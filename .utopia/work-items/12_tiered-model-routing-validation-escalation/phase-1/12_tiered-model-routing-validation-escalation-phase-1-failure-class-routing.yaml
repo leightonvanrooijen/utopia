@@ -1,0 +1,97 @@
+id: 12_tiered-model-routing-validation-escalation-phase-1-failure-class-routing
+spec_ref: 12_tiered-model-routing-validation-escalation-phase-1.failure-class-routing
+title: |
+    A failing validation gate routes on failure_class rather than on
+    iteration count.
+
+    A mechanical failure retries on the same executor and does not
+    count toward escalation, because the executor was not the
+    problem. A comprehension failure escalates the executor to the
+    higher tier, because the same executor re-reading the same
+    specification will re-derive the same wrong intent.
+
+    Mechanical retries are bounded separately. Enough of them in a
+    row is itself evidence of misunderstanding - a model that keeps
+    slipping in the same place is usually solving the wrong problem
+    - so the mechanical path reclassifies rather than retrying
+    indefinitely.
+status: pending
+prompt: |-
+    ## TASK
+
+    A failing validation gate routes on failure_class rather than on
+    iteration count.
+
+    A mechanical failure retries on the same executor and does not
+    count toward escalation, because the executor was not the
+    problem. A comprehension failure escalates the executor to the
+    higher tier, because the same executor re-reading the same
+    specification will re-derive the same wrong intent.
+
+    Mechanical retries are bounded separately. Enough of them in a
+    row is itself evidence of misunderstanding - a model that keeps
+    slipping in the same place is usually solving the wrong problem
+    - so the mechanical path reclassifies rather than retrying
+    indefinitely.
+
+
+    Acceptance criteria:
+    - A validation failure with failure_class mechanical retries on the default executor model
+    - A mechanical retry does not increment comprehension_count
+    - Exceeding the mechanical retry cap reclassifies the failure as comprehension and routes it accordingly
+    - A validation failure with failure_class comprehension increments comprehension_count
+    - When comprehension_count reaches 1, execution escalates to the escalated executor model
+    - When comprehension_count reaches 2, the work item routes to scoping escalation before execution is attempted again
+    - A verdict with spec_defect_suspected routes to scoping escalation regardless of comprehension_count
+    - Escalation state is persisted on the work item so it survives a resume rather than resetting to the default executor
+    - The routing decision for each iteration is logged with the failure class, the counter values, and the model selected
+
+
+
+    ## HINTS
+
+    - rate-limit-handling in execution-ralph already specifies exactly this shape of exemption - "Rate-limited attempts do not count against max iterations limit" - so reuse that mechanism for the mechanical exemption rather than inventing a parallel one, and see internal/ralph/ralph.go:277-287 for how a non-counting attempt is already handled
+    - The counters belong on WorkItem next to IterationCount, which is already persisted and already survives resume - see work-item-status in execution-ralph
+    - validator-relevance-router already establishes the precedent that a role may resolve a model independently of models.validators, so per-role model resolution is an existing pattern rather than a new one
+    - max_iterations in verification (6 in this repo) still bounds total iterations and is deliberately left alone - it is the outer bound, and these caps are inner ones. Make the composition explicit in the log line so an operator can tell which bound stopped a work item
+    - Reclassifying on mechanical-cap-exceeded rather than failing outright is the load-bearing choice - it converts a stuck retry loop into an escalation, which is the only move that can actually change the outcome
+    - Phase 3 replaces the prompt this phase hands to an escalated executor. Until it lands, escalation changes the model but reuses the existing prompt builder, so expect the escalated attempt to still see prior-attempt context
+
+
+
+    ## STANDARDS
+
+    This project defines coding standards in .utopia/standards/. Before implementing, read the standards docs relevant to the files this task touches:
+
+    - id: cli-organization
+      description: How to structure cobra commands in internal/cli: thin handlers that own the CLI frame and delegate the algorithm to domain packages.
+      tags: go, cli, cobra, architecture
+      path: .utopia/standards/cli-organization.md
+    - id: error-handling
+      description: How errors are created, wrapped, matched, and surfaced: typed domain errors for branching, %w wrapping for infrastructure, one exit point in root.go.
+      tags: go, errors, cli
+      path: .utopia/standards/error-handling.md
+    - id: terminal-output
+      description: One shared output vocabulary (glyphs, banners, progress) routed through cobra's injectable writers so command output is consistent and testable.
+      tags: go, cli, ux, output
+      path: .utopia/standards/terminal-output.md
+
+
+    ## CONSTRAINTS
+
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+order: 0
+estimated_complexity: medium

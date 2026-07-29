@@ -1,0 +1,81 @@
+id: 12_tiered-model-routing-validation-escalation-phase-1-escalation-caps
+spec_ref: 12_tiered-model-routing-validation-escalation-phase-1.escalation-caps
+title: |
+    Every escalation path is bounded, and exhausting a bound halts
+    the work item rather than looping.
+
+    The caps are set so that the worst case is roughly cost-neutral
+    against running the expensive model throughout, and the common
+    case is materially cheaper. They are independently configurable
+    because they are guesses, and the telemetry that would confirm
+    them does not exist yet.
+status: pending
+prompt: |-
+    ## TASK
+
+    Every escalation path is bounded, and exhausting a bound halts
+    the work item rather than looping.
+
+    The caps are set so that the worst case is roughly cost-neutral
+    against running the expensive model throughout, and the common
+    case is materially cheaper. They are independently configurable
+    because they are guesses, and the telemetry that would confirm
+    them does not exist yet.
+
+
+    Acceptance criteria:
+    - The mechanical retry cap, comprehension escalation cap, opus_execution_attempts cap and scoping_escalations cap are each independently configurable
+    - Default caps are 4 mechanical retries, 2 escalated execution attempts and 1 scoping escalation per change request
+    - Exceeding any cap marks the work item needs_human and halts it without further attempts
+    - A work item halted as needs_human is distinguishable from one that failed verification
+    - Halting one work item as needs_human does not abort the run - execution continues with the next change request
+    - A work item that fails on every available path terminates as needs_human rather than looping indefinitely
+    - Cap configuration is validated at load time, and a non-positive cap produces a clear error before execution starts
+
+
+
+    ## HINTS
+
+    - work-item-status in execution-ralph currently specifies pending, in_progress and completed, and the code also has WorkItemFailed - needs_human is a distinct terminal state, not a synonym for failed, because the operator action differs
+    - sequential-executor already specifies "Stops if max iterations reached on any item" - decide deliberately whether needs_human stops the run or skips the item, and the criterion above says skip, so that one ambiguous change request cannot strand a batch
+    - batch-execution in execution-ralph runs all draft change requests in filename order, which is exactly the case where halting the whole run on one bad change request is most costly
+    - Validate caps alongside the existing config validation that already rejects an invalid model name at load time
+
+
+
+    ## STANDARDS
+
+    This project defines coding standards in .utopia/standards/. Before implementing, read the standards docs relevant to the files this task touches:
+
+    - id: cli-organization
+      description: How to structure cobra commands in internal/cli: thin handlers that own the CLI frame and delegate the algorithm to domain packages.
+      tags: go, cli, cobra, architecture
+      path: .utopia/standards/cli-organization.md
+    - id: error-handling
+      description: How errors are created, wrapped, matched, and surfaced: typed domain errors for branching, %w wrapping for infrastructure, one exit point in root.go.
+      tags: go, errors, cli
+      path: .utopia/standards/error-handling.md
+    - id: terminal-output
+      description: One shared output vocabulary (glyphs, banners, progress) routed through cobra's injectable writers so command output is consistent and testable.
+      tags: go, cli, ux, output
+      path: .utopia/standards/terminal-output.md
+
+
+    ## CONSTRAINTS
+
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+order: 1
+estimated_complexity: medium

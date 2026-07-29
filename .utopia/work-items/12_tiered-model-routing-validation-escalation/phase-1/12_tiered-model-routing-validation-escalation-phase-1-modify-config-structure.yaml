@@ -1,0 +1,71 @@
+id: 12_tiered-model-routing-validation-escalation-phase-1-modify-config-structure
+spec_ref: 12_tiered-model-routing-validation-escalation-phase-1.modify-config-structure
+title: |
+    Modify the config-structure feature: Define the models section in .utopia/config.yaml with default and
+    per-command overrides.
+
+    Execution is no longer one role. The default executor, the
+    escalated executor, the validators and the scoper are four roles
+    with different cost profiles and different failure consequences, so
+    each resolves its own model with a fallback chain rather than
+    sharing one key.
+status: pending
+prompt: |-
+    ## TASK
+
+    Modify the config-structure feature: Define the models section in .utopia/config.yaml with default and
+    per-command overrides.
+
+    Execution is no longer one role. The default executor, the
+    escalated executor, the validators and the scoper are four roles
+    with different cost profiles and different failure consequences, so
+    each resolves its own model with a fallback chain rather than
+    sharing one key.
+
+
+    Acceptance criteria:
+    - models.execute_escalated specifies the model used once execution escalates after a comprehension failure
+    - models.scoper specifies the model used to rewrite a change request during scoping escalation
+    - If models.execute_escalated is missing, opus is used
+    - If models.scoper is missing, models.execute_escalated is used
+    - models.execute_escalated and models.scoper resolve to a model at least as capable as models.execute, and a configuration that escalates downward produces a clear error at load time
+    - Change from "Per-command keys override the default (cr, harvest, execute, validators, discover, standards, refactor, shape, validator_create, validator_edit)" to: Per-command keys override the default (cr, harvest, execute, execute_escalated, scoper, validators, validator_router, discover, standards, refactor, shape, validator_create, validator_edit)
+
+
+
+    ## STANDARDS
+
+    This project defines coding standards in .utopia/standards/. Before implementing, read the standards docs relevant to the files this task touches:
+
+    - id: cli-organization
+      description: How to structure cobra commands in internal/cli: thin handlers that own the CLI frame and delegate the algorithm to domain packages.
+      tags: go, cli, cobra, architecture
+      path: .utopia/standards/cli-organization.md
+    - id: error-handling
+      description: How errors are created, wrapped, matched, and surfaced: typed domain errors for branching, %w wrapping for infrastructure, one exit point in root.go.
+      tags: go, errors, cli
+      path: .utopia/standards/error-handling.md
+    - id: terminal-output
+      description: One shared output vocabulary (glyphs, banners, progress) routed through cobra's injectable writers so command output is consistent and testable.
+      tags: go, cli, ux, output
+      path: .utopia/standards/terminal-output.md
+
+
+    ## CONSTRAINTS
+
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+order: 3
+estimated_complexity: medium
