@@ -1,0 +1,14 @@
+id: 02_chunking-ralph-sequential-autonomous-decide-and-document
+type: enhancement
+title: Add a decide-and-document constraint so autonomous executors never block on human input
+status: in-progress
+changes:
+    - operation: modify
+      spec: chunking-ralph-sequential
+      feature_id: default-constraints
+      criteria:
+        add:
+            - Default constraints include "You are running autonomously and non-interactively; never ask for, or wait on, human input"
+            - Default constraints include "When a genuine design choice arises, choose the best-justified option and implement it rather than deferring the decision to a human"
+            - Default constraints include "Record any non-obvious decision - rationale and the alternatives considered - in the commit or PR body, so PR review is the human checkpoint"
+            - The autonomous decide-and-document constraints are emitted for every non-refactor work item prompt, alongside the existing default constraints
