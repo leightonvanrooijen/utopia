@@ -1,7 +1,7 @@
 id: conversations
 title: conversations
-created: 2026-02-25T21:51:25.164326+11:00
-updated: 2026-02-25T21:51:25.164328+11:00
+created: "2026-02-25T21:51:25.164326+11:00"
+updated: "2026-07-29T16:47:03.908756+10:00"
 description: ""
 features:
     - id: conversation-persistence
@@ -62,3 +62,5 @@ features:
         - System-truth conversations (has_cr AND execution_completed) are prioritized for ADR signals
         - Exploratory conversations are still harvestable for concepts and domain knowledge
         - Harvest output indicates conversation type in signal display
+        - Execution runs are recognized as a distinct source type (execution), representing what was actually built
+        - Execution runs are treated as system-truth and are prioritized at least as highly as executed conversations for ADR signals

@@ -1,7 +1,7 @@
 id: execution-ralph
 title: Ralph Execution Loop
 created: "0001-01-01T00:00:00+00:00"
-updated: "2026-07-29T11:27:06.225515+10:00"
+updated: "2026-07-29T16:47:03.908757+10:00"
 description: |
     The Ralph execution loop runs WorkItems produced by the chunker.
 
@@ -259,3 +259,15 @@ features:
         - On work-item completion a summary line reports the total wall-clock time and a per-category breakdown across Claude invocation, verification, and validators
         - Durations are rendered in a human-readable form such as 1.2s or 3m04s
         - Existing status log lines are preserved - timing is appended to them, not substituted for them
+
+    - id: run-transcript-persistence
+      description: |
+        Persist each WorkItem's Ralph execution run as a durable, harvestable artifact so the implementation decisions made during execution are no longer lost when the loop moves on. The run transcript reuses the streamed Claude output already captured for completion-token detection.
+      acceptance_criteria:
+        - Each WorkItem execution writes a run transcript to .utopia/runs/<cr-id>/<workitem-id>.yaml
+        - The run transcript captures the streamed Claude output already collected for <COMPLETE> token detection
+        - The run record includes workitem_id, cr_id, spec_ref, iteration count, completed_at, and outcome (completed or failed)
+        - The run transcript is committed as part of the same commit as its WorkItem (workitem-commit)
+        - The project .gitignore does not exclude .utopia/runs/
+        - Failure to write a run transcript logs a warning but does not block the execution loop
+        - Each run record can be joined back to its originating CR and conversation via cr_id and workitem_id

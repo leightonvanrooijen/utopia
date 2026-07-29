@@ -1,7 +1,7 @@
 id: harvest
 title: harvest
 created: "2026-02-22T15:04:31.861654+10:00"
-updated: "2026-03-05T08:51:04.863784+11:00"
+updated: "2026-07-29T16:47:03.908757+10:00"
 description: ""
 features:
     - id: harvest-command
@@ -23,6 +23,8 @@ features:
         - README signals included in harvest output alongside ADR/Concept/Domain signals
         - Shows count of README signals found (e.g., "1 README signal")
         - README signals grouped separately in results display
+        - /harvest scans .utopia/runs/ for unprocessed execution runs alongside .utopia/conversations/
+        - Execution runs are marked processed only after the user completes or exits harvest, consistent with conversations
 
     - id: signal-detection
       description: |

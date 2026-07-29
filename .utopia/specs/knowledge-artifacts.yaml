@@ -1,7 +1,7 @@
 id: knowledge-artifacts
 title: knowledge-artifacts
-created: 2026-03-02T16:01:45.410811+11:00
-updated: 2026-03-02T22:10:23.219686+11:00
+created: "2026-03-02T16:01:45.410811+11:00"
+updated: "2026-07-29T16:47:03.908759+10:00"
 description: ""
 features:
     - id: adr-template
@@ -58,6 +58,10 @@ features:
         - 'Qualification requires answering: is this costly to reverse?'
         - Disqualifies temporary workarounds, implementation details, and already-documented decisions
         - Only suggests ADR creation when qualification test passes
+        - Scans .utopia/runs/ for unprocessed execution runs in addition to .utopia/conversations/
+        - Applies the existing ADR qualification test (AWS category and reversal cost) to implementation decisions found in runs
+        - Implementation decisions surfaced from a run are cross-referenced to their originating CR and conversation
+        - Marks execution runs as processed after review, consistent with conversation handling
 
     - id: adr-categories
       description: |
@@ -167,6 +171,8 @@ features:
         - 'Qualification requires answering: should this term appear consistently in code?'
         - Checks disqualification criteria before suggesting Domain doc creation
         - Only suggests Domain doc creation when qualification test passes
+        - Scans .utopia/runs/ for canonical terms introduced while building, in addition to .utopia/conversations/
+        - Applies the existing domain qualification test (ambiguity-without-definition) to terms found in runs
 
     - id: concept-qualification-criteria
       description: |
