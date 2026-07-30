@@ -12,7 +12,7 @@ title: |
     Runs are therefore included only when the operator asks for them via
     --runs, and harvest prints a cheap filesystem-derived count hint so
     accumulated runs stay discoverable without being paid for.
-status: pending
+status: in_progress
 prompt: |-
     ## TASK
 
@@ -80,3 +80,4 @@ constraints:
     - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
 order: 0
 estimated_complexity: medium
+iteration_count: 1

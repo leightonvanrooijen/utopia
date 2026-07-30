@@ -1,49 +1,36 @@
 id: 09_harvest-runs-opt-in
 type: enhancement
 title: Make execution-run harvesting opt-in behind a --runs flag, defaulted off
-status: draft
+status: in-progress
 changes:
-  # 1. harvest-command: runs become an opt-in source rather than an always-on one
-  - operation: modify
-    spec: harvest
-    feature_id: harvest-command
-    description: |
-      /harvest command that performs single-pass analysis of unprocessed
-      conversations, detecting signals for all documentation types and
-      guiding creation with context flowing between doc types.
+    - operation: modify
+      spec: harvest
+      feature_id: harvest-command
+      description: |
+        /harvest command that performs single-pass analysis of unprocessed
+        conversations, detecting signals for all documentation types and
+        guiding creation with context flowing between doc types.
 
-      Conversations are always scanned. Execution runs are a second,
-      opt-in source: each unprocessed run adds another source block (with
-      an embedded transcript) to the harvest prompt, so a project with many
-      executed work items inflates prompt size and token cost substantially.
-      Runs are therefore included only when the operator asks for them via
-      --runs, and harvest prints a cheap filesystem-derived count hint so
-      accumulated runs stay discoverable without being paid for.
-    criteria:
-      edit:
-        - old: "/harvest scans .utopia/runs/ for unprocessed execution runs alongside .utopia/conversations/"
-          new: "/harvest scans .utopia/conversations/ always, and scans .utopia/runs/ for unprocessed execution runs only when the --runs flag is passed"
-        - old: "Execution runs are marked processed only after the user completes or exits harvest, consistent with conversations"
-          new: "When --runs is passed, execution runs are marked processed only after the user completes or exits harvest, consistent with conversations"
-      add:
-        # Flag surface and default
-        - "harvest accepts a --runs boolean flag that defaults to false"
-        - "A harvest invocation without --runs embeds no execution run transcripts in the prompt"
-        - "A harvest invocation with --runs includes unprocessed execution runs as a source, prioritized ahead of conversations as before"
-        # Session-start decision when runs are excluded
-        - "Without --runs, harvest starts a session when unprocessed conversations exist, regardless of how many unprocessed execution runs exist"
-        - "Without --runs, harvest exits without starting a session when there are no unprocessed conversations, even if unprocessed execution runs exist"
-        # Count hint for discoverability
-        - "Without --runs, when one or more unprocessed execution runs exist, harvest prints a single-line hint stating the count and naming the --runs flag"
-        - "The count hint is derived from the filesystem only and embeds no run transcripts in the prompt"
-        - "Without --runs, when zero unprocessed execution runs exist, no hint is printed"
-        # Runs excluded are preserved, not consumed
-        - "Execution runs not scanned because --runs was omitted remain unprocessed and are eligible for a later --runs harvest"
-    hints:
-      - "The complete current flag surface is internal/cli/harvest.go:44-48 (only --model and --auth); add --runs alongside them"
-      - "internal/harvest/harvest.go:578 calls store.ListUnprocessedExecutionRuns() unconditionally - this becomes conditional on the flag, threaded through the harvest options struct"
-      - "The both-sources-empty early return is internal/harvest/harvest.go:583-586, and the user-facing message is internal/cli/harvest.go:81-85 - both need the new asymmetry between conversations and runs"
-      - "Keep ListUnprocessedExecutionRuns() available for the count hint even when the flag is off - it walks the filesystem and costs no tokens; only buildHarvestSourcesSummary embeds transcripts"
-      - "buildHarvestSourcesSummary is internal/harvest/harvest.go:718-779 - when runs are excluded it should emit no Execution Runs section at all, not an empty one"
-      - "Existing tests assume runs are always included and will need updating: TestBuildHarvestSourcesSummary_PrioritizesExecutionRuns (harvest_test.go:137), _RunsOnly (:177), _JoinsRunsToTheirConversations (:272), _SortsRunsNewestFirst (:292)"
-      - "The prompt's run-marking instructions (internal/harvest/harvest.go:526-544 and phase 5 at :413-417) should only be emitted when runs are actually included, or the session will be told to mark files it never read"
+        Conversations are always scanned. Execution runs are a second,
+        opt-in source: each unprocessed run adds another source block (with
+        an embedded transcript) to the harvest prompt, so a project with many
+        executed work items inflates prompt size and token cost substantially.
+        Runs are therefore included only when the operator asks for them via
+        --runs, and harvest prints a cheap filesystem-derived count hint so
+        accumulated runs stay discoverable without being paid for.
+      criteria:
+        add:
+            - harvest accepts a --runs boolean flag that defaults to false
+            - A harvest invocation without --runs embeds no execution run transcripts in the prompt
+            - A harvest invocation with --runs includes unprocessed execution runs as a source, prioritized ahead of conversations as before
+            - Without --runs, harvest starts a session when unprocessed conversations exist, regardless of how many unprocessed execution runs exist
+            - Without --runs, harvest exits without starting a session when there are no unprocessed conversations, even if unprocessed execution runs exist
+            - Without --runs, when one or more unprocessed execution runs exist, harvest prints a single-line hint stating the count and naming the --runs flag
+            - The count hint is derived from the filesystem only and embeds no run transcripts in the prompt
+            - Without --runs, when zero unprocessed execution runs exist, no hint is printed
+            - Execution runs not scanned because --runs was omitted remain unprocessed and are eligible for a later --runs harvest
+        edit:
+            - old: /harvest scans .utopia/runs/ for unprocessed execution runs alongside .utopia/conversations/
+              new: /harvest scans .utopia/conversations/ always, and scans .utopia/runs/ for unprocessed execution runs only when the --runs flag is passed
+            - old: Execution runs are marked processed only after the user completes or exits harvest, consistent with conversations
+              new: When --runs is passed, execution runs are marked processed only after the user completes or exits harvest, consistent with conversations

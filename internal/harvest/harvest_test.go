@@ -32,6 +32,122 @@ func TestRun_NoSourcesSkipsTheSession(t *testing.T) {
 	}
 }
 
+// Runs are an opt-in source: without them, unprocessed runs on disk are counted
+// but do not on their own justify the cost of a session. The runs stay
+// unprocessed, so a later --runs harvest still sees them.
+func TestRun_WithoutIncludeRunsSkipsTheSessionWhenOnlyRunsAreUnprocessed(t *testing.T) {
+	utopiaDir := filepath.Join(t.TempDir(), ".utopia")
+	if err := os.MkdirAll(utopiaDir, 0755); err != nil {
+		t.Fatalf("failed to create .utopia dir: %v", err)
+	}
+	store := internal.NewYAMLStore(utopiaDir)
+	run := &domain.ExecutionRun{
+		WorkItemID: "wi-1",
+		CRID:       "cr-001",
+		Outcome:    domain.RunCompleted,
+		Transcript: "chose a per-CR directory layout",
+	}
+	if err := store.SaveExecutionRun(run); err != nil {
+		t.Fatalf("failed to save execution run: %v", err)
+	}
+
+	// A session here would need a live Claude CLI; returning before starting one
+	// is exactly the behaviour under test.
+	result, err := Run(context.Background(), store, Options{UtopiaDir: utopiaDir})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if result.UnprocessedRuns != 1 {
+		t.Errorf("UnprocessedRuns = %d, want 1 - the run should still be counted from disk", result.UnprocessedRuns)
+	}
+
+	// The run must be left alone so a later --runs harvest can still read it.
+	stillUnprocessed, err := store.ListUnprocessedExecutionRuns()
+	if err != nil {
+		t.Fatalf("ListUnprocessedExecutionRuns() error = %v", err)
+	}
+	if len(stillUnprocessed) != 1 {
+		t.Errorf("got %d unprocessed runs after harvest, want 1", len(stillUnprocessed))
+	}
+}
+
+func TestFormatRunsExcludedHint(t *testing.T) {
+	tests := []struct {
+		name        string
+		includeRuns bool
+		runCount    int
+		want        string
+	}{
+		{
+			name:     "names the count and the flag",
+			runCount: 3,
+			want:     "3 unprocessed execution runs not scanned - pass --runs to include them.",
+		},
+		{
+			name:     "singular",
+			runCount: 1,
+			want:     "1 unprocessed execution run not scanned - pass --runs to include them.",
+		},
+		{
+			name:     "no runs, no hint",
+			runCount: 0,
+			want:     "",
+		},
+		{
+			name:        "runs opted in, no hint",
+			includeRuns: true,
+			runCount:    3,
+			want:        "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := formatRunsExcludedHint(tt.includeRuns, tt.runCount); got != tt.want {
+				t.Errorf("formatRunsExcludedHint(%v, %d) = %q, want %q", tt.includeRuns, tt.runCount, got, tt.want)
+			}
+		})
+	}
+}
+
+// The session must never be told to mark files it was not shown.
+func TestBuildMarkProcessedInstructions(t *testing.T) {
+	withRuns := buildMarkProcessedInstructions("/p/.utopia/conversations", "/p/.utopia/runs", true)
+	if !strings.Contains(withRuns, "/p/.utopia/runs/{run-file}") {
+		t.Errorf("runs included should name the runs directory, got:\n%s", withRuns)
+	}
+
+	withoutRuns := buildMarkProcessedInstructions("/p/.utopia/conversations", "/p/.utopia/runs", false)
+	if !strings.Contains(withoutRuns, "/p/.utopia/conversations/{id}.yaml") {
+		t.Errorf("conversations are always marked, got:\n%s", withoutRuns)
+	}
+	if strings.Contains(withoutRuns, "{run-file}") {
+		t.Errorf("runs excluded should carry no run-marking procedure, got:\n%s", withoutRuns)
+	}
+	if !strings.Contains(withoutRuns, "were NOT scanned") {
+		t.Errorf("runs excluded should say so explicitly, got:\n%s", withoutRuns)
+	}
+}
+
+// A prompt built without runs must embed no run transcript - that embedding is
+// the whole cost the flag exists to avoid.
+func TestBuildHarvestSourcesSummary_ExcludedRunsEmbedNoTranscript(t *testing.T) {
+	conv := &domain.Conversation{
+		ID:         "conv-explore",
+		Timestamp:  time.Date(2026, 2, 16, 10, 0, 0, 0, time.UTC),
+		Transcript: "just exploring options",
+	}
+
+	got := buildHarvestSourcesSummary([]*domain.Conversation{conv}, nil, nil)
+
+	if strings.Contains(got, "## Execution Runs") {
+		t.Errorf("no runs passed should emit no Execution Runs section, got:\n%s", got)
+	}
+	if strings.Contains(got, "chose a per-CR directory layout") {
+		t.Errorf("no run transcript should appear, got:\n%s", got)
+	}
+}
+
 func TestGetNextADRID(t *testing.T) {
 	tests := []struct {
 		name string
@@ -562,7 +678,7 @@ func TestHarvestSystemPrompt_DefersMarkingRunsUntilTheSessionEnds(t *testing.T) 
 
 	for _, want := range []string{
 		"### PHASE 5: MARK PROCESSED\nAfter the user completes or exits the harvest:",
-		"Mark ALL reviewed sources as processed - execution runs and conversations alike",
+		"Mark ALL reviewed sources as processed - conversations and execution runs",
 		"ONLY mark conversations and execution runs processed after user completes or exits",
 	} {
 		if !strings.Contains(prompt, want) {
@@ -571,11 +687,41 @@ func TestHarvestSystemPrompt_DefersMarkingRunsUntilTheSessionEnds(t *testing.T) 
 	}
 }
 
-func composeTestPrompt() string {
+// Without --runs the session never sees a run, so every instruction that would
+// send it into the runs directory has to be gone from the prompt too.
+func TestHarvestSystemPrompt_OmitsRunMarkingWhenRunsExcluded(t *testing.T) {
+	prompt := composeTestPromptWithoutRuns()
+
+	if strings.Contains(prompt, "/runs-dir") {
+		t.Errorf("runs excluded should not name the runs directory:\n%s", snippetAround(prompt, "/runs-dir"))
+	}
+	for _, unwanted := range []string{
+		"Mark ALL reviewed sources as processed - conversations and execution runs",
+		"ONLY mark conversations and execution runs processed",
+	} {
+		if strings.Contains(prompt, unwanted) {
+			t.Errorf("runs excluded but prompt still instructs marking them: %q", unwanted)
+		}
+	}
+	if !strings.Contains(prompt, "ONLY mark conversations processed after user completes or exits") {
+		t.Errorf("conversations must still be marked processed:\n%s", snippetAround(prompt, "ONLY mark"))
+	}
+}
+
+// composeTestPrompt builds the prompt the way Run does for a harvest that opted
+// execution runs in; composeTestPromptWithoutRuns is the conversations-only
+// counterpart.
+func composeTestPrompt() string { return composeTestPromptIncludingRuns(true) }
+
+func composeTestPromptWithoutRuns() string { return composeTestPromptIncludingRuns(false) }
+
+func composeTestPromptIncludingRuns(includeRuns bool) string {
 	return fmt.Sprintf(harvestSystemPrompt,
 		"CONVS", "ADRS", "CONCEPTS", "DOMAINDOCS", "READMESIGNALS", "REWRITES",
+		markedSourcesPhrase(includeRuns),
 		"/adrs-dir", "/concepts-dir", "/domain-dir",
-		"/conversations-dir", "/runs-dir", "ADR-042")
+		buildMarkProcessedInstructions("/conversations-dir", "/runs-dir", includeRuns),
+		"ADR-042", markedSourcesPhrase(includeRuns))
 }
 
 func snippetAround(s, marker string) string {

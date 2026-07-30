@@ -32,16 +32,23 @@ type Options struct {
 	// Auth selects the credential the harvest session authenticates with.
 	// The empty mode inherits the ambient environment.
 	Auth domain.AuthMode
+	// IncludeRuns opts execution runs in as a harvest source. Each unprocessed
+	// run embeds a full transcript in the prompt, so a project with many
+	// executed work items pays substantially for scanning them; conversations
+	// are always scanned, runs only on request. Runs left out stay unprocessed
+	// and remain eligible for a later run-including harvest.
+	IncludeRuns bool
 }
 
 // Result represents the outcome of a harvest session.
 type Result struct {
 	// UnprocessedConversations is the number of unprocessed conversations found.
 	UnprocessedConversations int
-	// UnprocessedRuns is the number of unprocessed execution runs found.
-	// A session runs when either source has something unprocessed; both being
-	// zero means no session was run, and callers inspect that to frame the
-	// outcome.
+	// UnprocessedRuns is the number of unprocessed execution runs found on disk.
+	// It is counted from the filesystem whether or not runs were opted in, so
+	// accumulated runs stay discoverable; only Options.IncludeRuns decides
+	// whether they became a source. With runs opted in, either source having
+	// something unprocessed runs a session; without, only conversations do.
 	UnprocessedRuns int
 	// RewrittenChangeRequests is the number of change requests produced by a
 	// scoping escalation that the session was shown. They are context for the
@@ -52,8 +59,12 @@ type Result struct {
 
 // harvestSystemPrompt guides Claude through unified signal detection and doc creation
 // Use fmt.Sprintf to inject: conversationsSummary, existingADRsSummary, existingConceptsSummary,
-// existingDomainDocsSummary, readmeSignalsSummary, rewritesSummary, adrsDir, conceptsDir,
-// domainDir, conversationsDir, runsDir, nextADRID
+// existingDomainDocsSummary, readmeSignalsSummary, rewritesSummary, markedSourcesPhrase, adrsDir,
+// conceptsDir, domainDir, markProcessedInstructions, nextADRID, markedSourcesPhrase
+//
+// The marked-sources phrases and instructions differ by whether execution runs
+// were opted into this harvest: a session told to mark run files it was never
+// shown would go looking for them.
 const harvestSystemPrompt = `You are a Harvest Claude - an AI assistant that applies qualification tests to identify documentation candidates from conversation history.
 
 ## Your Role
@@ -443,7 +454,7 @@ For each document:
 
 ### PHASE 5: MARK PROCESSED
 After the user completes or exits the harvest:
-- Mark ALL reviewed sources as processed - execution runs and conversations alike
+- Mark ALL reviewed sources as processed - %s
 - Skipped candidates remain discoverable in future harvests of new sources
 
 ## Document Formats
@@ -563,16 +574,7 @@ The directories below are the ones this harvest actually read its sources from. 
 them as given - do NOT rebuild a path from a working directory, which may not be the
 project the sources came from.
 
-Conversations:
-1. Read each conversation file from %s/{id}.yaml
-2. Change status from "unprocessed" to "processed"
-3. Write the updated file back
-
-Execution runs - the same rule, at the run's own path:
-1. Read each run file from %s/{run-file}, where {run-file} is the **Run File** line
-   shown with the run above (cr-id/workitem-id.yaml)
-2. Set status to "processed" (a run with no status field yet is unprocessed - add it)
-3. Write the updated file back, leaving every other field untouched
+%s
 
 ## Critical Guidelines
 - Ask ONE question at a time
@@ -583,16 +585,16 @@ Execution runs - the same rule, at the run's own path:
 - Cross-reference related candidates explicitly
 - A candidate from an execution run is cross-referenced to its CR AND its originating conversation
 - Created docs SHOULD reference each other when relevant
-- ONLY mark conversations and execution runs processed after user completes or exits
+- ONLY mark %s processed after user completes or exits
 - It's okay if a source has no qualified candidates - mark it processed anyway
 
 Start by presenting a summary of ALL qualified candidates found across ALL unprocessed sources, grouped by type with counts.`
 
-// Run executes the harvest session: it loads unprocessed conversations and
-// execution runs alongside existing documentation, detects README signals,
-// composes the system prompt, prints the session summary, and runs the
-// interactive Claude session.
-// It returns early (with a nil error) when neither source has anything
+// Run executes the harvest session: it loads unprocessed conversations (and,
+// when opted in, execution runs) alongside existing documentation, detects
+// README signals, composes the system prompt, prints the session summary, and
+// runs the interactive Claude session.
+// It returns early (with a nil error) when no source it scans has anything
 // unprocessed; callers inspect the result to frame that outcome.
 func Run(ctx context.Context, store *internal.YAMLStore, opts Options) (*Result, error) {
 	// Load unprocessed conversations
@@ -604,15 +606,32 @@ func Run(ctx context.Context, store *internal.YAMLStore, opts Options) (*Result,
 	// Execution runs are the other half of the harvest input: what was actually
 	// built, as opposed to what was discussed. A missing runs directory is not
 	// an error - projects that predate run persistence simply have none.
-	// Unprocessed runs are worth a session on their own: a work item can be
-	// executed long after its conversation was harvested.
+	// The listing itself only walks the filesystem, so it is cheap and always
+	// done: it is what the count hint below is derived from. Only the summary
+	// embeds transcripts, which is what makes runs an opt-in source.
 	runs, err := store.ListUnprocessedExecutionRuns()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list unprocessed execution runs: %w", err)
 	}
 
 	result := &Result{UnprocessedConversations: len(unprocessedConvs), UnprocessedRuns: len(runs)}
-	if len(unprocessedConvs) == 0 && len(runs) == 0 {
+
+	// Runs left out are not consumed - they stay unprocessed and a later
+	// --runs harvest still sees them. Say so once, before the early return, so
+	// accumulated runs are discoverable whether or not a session starts.
+	if hint := formatRunsExcludedHint(opts.IncludeRuns, len(runs)); hint != "" {
+		fmt.Println(hint)
+	}
+
+	// Unprocessed runs are worth a session on their own - a work item can be
+	// executed long after its conversation was harvested - but only when the
+	// operator asked for them. Without --runs the session hinges on
+	// conversations alone, however many runs have piled up.
+	sourceRuns := runs
+	if !opts.IncludeRuns {
+		sourceRuns = nil
+	}
+	if len(unprocessedConvs) == 0 && len(sourceRuns) == 0 {
 		return result, nil
 	}
 
@@ -653,7 +672,7 @@ func Run(ctx context.Context, store *internal.YAMLStore, opts Options) (*Result,
 	}
 
 	// Build summaries for Claude
-	convsSummary := buildHarvestSourcesSummary(unprocessedConvs, runs, runOrigins)
+	convsSummary := buildHarvestSourcesSummary(unprocessedConvs, sourceRuns, runOrigins)
 	adrsSummary := buildHarvestADRsSummary(existingADRs)
 	conceptsSummary := buildHarvestConceptsSummary(existingConcepts)
 	domainDocsSummary := buildHarvestDomainDocsSummary(existingDomainDocs)
@@ -685,12 +704,13 @@ func Run(ctx context.Context, store *internal.YAMLStore, opts Options) (*Result,
 		domainDocsSummary,
 		readmeSignalsSummary,
 		rewritesSummary,
+		markedSourcesPhrase(opts.IncludeRuns),
 		adrsDir,
 		conceptsDir,
 		domainDir,
-		store.ConversationsDir(),
-		store.RunsDir(),
+		buildMarkProcessedInstructions(store.ConversationsDir(), store.RunsDir(), opts.IncludeRuns),
 		nextADRID,
+		markedSourcesPhrase(opts.IncludeRuns),
 	)
 
 	// Count conversations by type
@@ -711,7 +731,9 @@ func Run(ctx context.Context, store *internal.YAMLStore, opts Options) (*Result,
 	fmt.Printf("Found %d unprocessed conversations:\n", len(unprocessedConvs))
 	fmt.Printf("  "+ui.Bullet+" %d system-truth (has CR + executed)\n", systemTruthCount)
 	fmt.Printf("  "+ui.Bullet+" %d exploratory (no CR)\n", exploratoryCount)
-	fmt.Printf("Found %d unprocessed execution runs (system-truth - what was built)\n", len(runs))
+	if opts.IncludeRuns {
+		fmt.Printf("Found %d unprocessed execution runs (system-truth - what was built)\n", len(runs))
+	}
 	fmt.Println()
 	fmt.Println("Existing documentation:")
 	fmt.Printf("  "+ui.Bullet+" %d ADRs\n", len(existingADRs))
@@ -750,6 +772,55 @@ func Run(ctx context.Context, store *internal.YAMLStore, opts Options) (*Result,
 	}
 
 	return result, nil
+}
+
+// markedSourcesPhrase names the sources this harvest is allowed to mark
+// processed. Naming execution runs to a session that was never shown one sends
+// it hunting through .utopia/runs/ for files it has no business touching.
+func markedSourcesPhrase(includeRuns bool) string {
+	if includeRuns {
+		return "conversations and execution runs"
+	}
+	return "conversations"
+}
+
+// buildMarkProcessedInstructions renders the per-source marking procedure. The
+// runs half is emitted only when runs were a source, so a conversations-only
+// harvest leaves every unprocessed run untouched and eligible for a later
+// run-including harvest.
+func buildMarkProcessedInstructions(conversationsDir, runsDir string, includeRuns bool) string {
+	instructions := fmt.Sprintf(`Conversations:
+1. Read each conversation file from %s/{id}.yaml
+2. Change status from "unprocessed" to "processed"
+3. Write the updated file back
+`, conversationsDir)
+
+	if !includeRuns {
+		return instructions + `
+Execution runs were NOT scanned in this harvest. Leave every file under the runs
+directory exactly as it is - do not read them, and do not change any status.
+`
+	}
+
+	return instructions + fmt.Sprintf(`
+Execution runs - the same rule, at the run's own path:
+1. Read each run file from %s/{run-file}, where {run-file} is the **Run File** line
+   shown with the run above (cr-id/workitem-id.yaml)
+2. Set status to "processed" (a run with no status field yet is unprocessed - add it)
+3. Write the updated file back, leaving every other field untouched
+`, runsDir)
+}
+
+// formatRunsExcludedHint renders the single-line notice that unprocessed
+// execution runs exist but were not scanned. It is derived from the run count
+// alone - no transcript is read or embedded - which is what keeps accumulated
+// runs discoverable without paying the prompt cost of including them. Empty
+// when runs were opted in, or when there are none to mention.
+func formatRunsExcludedHint(includeRuns bool, runCount int) string {
+	if includeRuns || runCount == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d unprocessed execution run%s not scanned - pass --runs to include them.", runCount, pluralize(runCount))
 }
 
 // buildHarvestSourcesSummary creates a detailed summary of the unprocessed
