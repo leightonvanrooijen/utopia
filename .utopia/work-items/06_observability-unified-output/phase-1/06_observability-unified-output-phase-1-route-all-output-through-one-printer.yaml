@@ -94,4 +94,9 @@ constraints:
     - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
 order: 0
 estimated_complexity: medium
-iteration_count: 1
+iteration_count: 2
+executor_attempts:
+    - iteration: 1
+      role: default-executor
+      model: ""
+      effort: medium
