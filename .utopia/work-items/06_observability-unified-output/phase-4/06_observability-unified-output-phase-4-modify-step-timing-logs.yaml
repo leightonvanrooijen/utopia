@@ -73,3 +73,8 @@ constraints:
 order: 0
 estimated_complexity: medium
 iteration_count: 1
+executor_attempts:
+    - iteration: 1
+      role: default-executor
+      model: ""
+      effort: medium

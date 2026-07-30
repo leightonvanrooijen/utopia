@@ -385,6 +385,18 @@ func haltNeedsHuman(store *internal.YAMLStore, specID, crID string, item *domain
 	return halt
 }
 
+// resolveDefaultExecutorModel determines which model a first-attempt execution
+// runs on. Priority: the run's --model override > models.execute >
+// models.default > sonnet. The override is per invocation and so wins over
+// config, but it is not the only way to set the model: without it the default
+// executor resolves its own role's key like every other role does.
+func resolveDefaultExecutorModel(mc *domain.ModelConfig, override string) string {
+	if override != "" {
+		return override
+	}
+	return mc.ExecutorModel()
+}
+
 // resolveEscalatedExecutorModel determines which model an escalated execution
 // attempt runs on. Priority: models.execute_escalated > opus. It never falls
 // through to models.execute or models.default, because escalating to the model

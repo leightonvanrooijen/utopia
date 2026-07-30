@@ -104,9 +104,12 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 		Total: len(items),
 	}
 
-	// Create dependencies. The resolved override is also the default executor
-	// model the escalation routing retries on - empty means no --model flag, so
-	// the claude CLI default applies, which is the pre-escalation behaviour.
+	// Create dependencies. The default executor's model is the one the escalation
+	// routing retries mechanical failures on, so it is resolved once here from the
+	// same fallback chain every other role uses - models.execute > models.default >
+	// sonnet - with --model winning for this invocation only. It is always set on
+	// the shared CLI, so every default-executor attempt carries --model explicitly
+	// rather than inheriting whatever the claude binary defaults to.
 	//
 	// Effort is resolved once here, for the whole run: every role's level is fixed
 	// before the first work item starts and nothing below recomputes it, which is
@@ -118,11 +121,8 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 	cli := internal.NewCLI().WithStreamLevel(slog.LevelInfo).WithAuth(auth, filepath.Join(projectDir, ".utopia")).WithPrinter(out)
 	efforts := resolveRoleEfforts(config.Effort, over.Effort)
 	cli = cli.WithEffort(efforts.executor)
-	defaultExecutorModel := ""
-	if over.Model != "" {
-		defaultExecutorModel = over.Model
-		cli = cli.WithModel(defaultExecutorModel)
-	}
+	defaultExecutorModel := resolveDefaultExecutorModel(config.Models, over.Model)
+	cli = cli.WithModel(defaultExecutorModel)
 	verifier := verification.NewRunner(projectDir)
 	validatorRunner := validators.NewRunner(projectDir).WithModelConfig(config.Models).WithEffort(efforts.validators).WithAuth(auth)
 

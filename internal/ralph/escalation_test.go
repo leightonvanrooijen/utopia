@@ -204,6 +204,54 @@ func TestExecutorModelFor_EscalationSurvivesResume(t *testing.T) {
 	}
 }
 
+// The default executor is a role like any other: it reads its own key off config
+// and falls back through models.default. The --model flag overrides the resolved
+// value for one invocation rather than being the only way to set it.
+func TestResolveDefaultExecutorModel(t *testing.T) {
+	tests := []struct {
+		name     string
+		mc       *domain.ModelConfig
+		override string
+		want     string
+	}{
+		{"no config, no flag", nil, "", "sonnet"},
+		{"models.execute wins over models.default", &domain.ModelConfig{Default: "haiku", Execute: "opus"}, "", "opus"},
+		{"missing execute falls back to models.default", &domain.ModelConfig{Default: "haiku"}, "", "haiku"},
+		{"flag overrides config", &domain.ModelConfig{Default: "haiku", Execute: "opus"}, "fable", "fable"},
+		{"flag with no config", nil, "opus", "opus"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := resolveDefaultExecutorModel(tt.mc, tt.override); got != tt.want {
+				t.Errorf("resolveDefaultExecutorModel = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// A project that configures models.execute and models.execute_escalated to the
+// same model still escalates: routing reads the persisted comprehension counter,
+// never a comparison of model strings.
+func TestEscalationDoesNotDependOnModelDifference(t *testing.T) {
+	mc := &domain.ModelConfig{Execute: "opus", ExecuteEscalated: "opus"}
+	def := resolveDefaultExecutorModel(mc, "")
+	esc := resolveEscalatedExecutorModel(mc)
+	if def != esc {
+		t.Fatalf("test setup: expected identical models, got %q and %q", def, esc)
+	}
+
+	item := &domain.WorkItem{}
+	decision := routeValidationFailure(item, comprehensionAggregate(), testCaps(), def, esc)
+
+	if decision.Route != RouteEscalateExecutor {
+		t.Errorf("Route = %v, want %v", decision.Route, RouteEscalateExecutor)
+	}
+	if item.ComprehensionCount != 1 {
+		t.Errorf("ComprehensionCount = %d, want 1", item.ComprehensionCount)
+	}
+}
+
 func TestResolveEscalatedExecutorModel(t *testing.T) {
 	tests := []struct {
 		name string
