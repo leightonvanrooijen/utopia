@@ -115,6 +115,12 @@ func TestModelConfig_ModelForCommand(t *testing.T) {
 			expected: "opus",
 		},
 		{
+			name:     "chunk_sizer command",
+			config:   &ModelConfig{ChunkSizer: "opus"},
+			command:  "chunk_sizer",
+			expected: "opus",
+		},
+		{
 			name:     "execute command",
 			config:   &ModelConfig{Execute: "haiku"},
 			command:  "execute",
@@ -411,6 +417,29 @@ func TestDownwardEscalationError_Message(t *testing.T) {
 	}
 	if !errors.Is(err, &DownwardEscalationError{}) {
 		t.Error("errors.Is should match DownwardEscalationError")
+	}
+}
+
+func TestModelConfig_ChunkSizerModel(t *testing.T) {
+	tests := []struct {
+		name   string
+		config *ModelConfig
+		want   string
+	}{
+		{name: "nil config", config: nil, want: "sonnet"},
+		{name: "empty config", config: &ModelConfig{}, want: "sonnet"},
+		// The sizer has no cheap tier of its own: absent an override it follows
+		// models.default wherever that goes, unlike validator_router.
+		{name: "inherits default", config: &ModelConfig{Default: "opus"}, want: "opus"},
+		{name: "explicit override wins", config: &ModelConfig{Default: "sonnet", ChunkSizer: "opus"}, want: "opus"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.config.ChunkSizerModel(); got != tc.want {
+				t.Errorf("ChunkSizerModel() = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 

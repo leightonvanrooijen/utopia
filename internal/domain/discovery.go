@@ -142,7 +142,16 @@ type ModelConfig struct {
 	// Per-command model overrides
 	CR      string `yaml:"cr,omitempty"`
 	Harvest string `yaml:"harvest,omitempty"`
-	Execute string `yaml:"execute,omitempty"`
+	// ChunkSizer selects the model for the sizer that assesses each feature
+	// against the turn budget while chunking. It falls back to Default rather
+	// than to a cheap tier of its own: the validator_router precedent does not
+	// apply here, because the router classifies a diff that already exists with
+	// the evidence in front of it, whereas the sizer must estimate work that
+	// does not exist yet from a feature description. Whether "migrate all call
+	// sites" means three files or forty is unknowable without reasoning about
+	// the codebase, so the sizer needs real capability.
+	ChunkSizer string `yaml:"chunk_sizer,omitempty"`
+	Execute    string `yaml:"execute,omitempty"`
 	// ExecuteEscalated selects the model execution escalates to after a
 	// comprehension failure. It resolves independently of Execute and Default,
 	// defaulting to opus (see the ralph package), because escalating to the model
@@ -181,6 +190,8 @@ func (c *ModelConfig) ModelForCommand(command string) string {
 		override = c.CR
 	case "harvest":
 		override = c.Harvest
+	case "chunk_sizer":
+		override = c.ChunkSizer
 	case "execute":
 		override = c.Execute
 	case "execute_escalated":
@@ -246,6 +257,14 @@ func (c *ModelConfig) ScoperModel() string {
 		return c.Scoper
 	}
 	return c.EscalatedExecutorModel()
+}
+
+// ChunkSizerModel resolves the model the work-item sizer runs on:
+// models.chunk_sizer > models.default > sonnet. Unlike the validator router it
+// has no cheap default of its own - sizing estimates work that does not exist
+// yet, so it needs whatever capability the project runs on by default.
+func (c *ModelConfig) ChunkSizerModel() string {
+	return c.ModelForCommand("chunk_sizer")
 }
 
 // VerificationConfig holds verification command settings

@@ -100,6 +100,7 @@ func ValidateModelConfig(mc *ModelConfig) error {
 	checkModel(mc.Default, "models.default")
 	checkModel(mc.CR, "models.cr")
 	checkModel(mc.Harvest, "models.harvest")
+	checkModel(mc.ChunkSizer, "models.chunk_sizer")
 	checkModel(mc.Execute, "models.execute")
 	checkModel(mc.ExecuteEscalated, "models.execute_escalated")
 	checkModel(mc.Scoper, "models.scoper")

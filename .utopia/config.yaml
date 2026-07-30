@@ -7,17 +7,82 @@ project_context:
 verification:
   command: ./scripts/verify.sh
   max_iterations: 8
+# Which model each ROLE runs on. Fallback chain per key: the role key, then
+# models.default, then sonnet. execute_escalated falls back to opus; scoper falls
+# back to execute_escalated. Aliases are forwarded to the claude CLI UNEXPANDED -
+# never pin a dated identifier here, that is exactly what silently expired before.
+#
+# Utopia dogfoods the cheap-first shape it implements: sonnet writes, and the
+# expensive tier only sees work sonnet demonstrably could not understand. Load-time
+# validation rejects an escalated model less capable than models.execute, so this
+# cannot invert by accident.
+#
+# models.validators is deliberately the STRONGER tier, not the same one as
+# models.execute. A reviewer stronger than the author is a cheaper lever than
+# escalation, because review reads a diff while execution writes one.
 models:
-  default: opus
-  execute: opus
+  default: sonnet
+  execute: sonnet
   execute_escalated: fable
   scoper: fable
   validators: opus
+  # Decides which validators are relevant to a diff. High-volume, and a wrong
+  # answer costs one unnecessary validator run - haiku is the right tier.
   validator_router: haiku
 # How much reasoning each role gets per turn. Keys mirror the models section.
-# A failure escalates the model, never the effort - see ADR-004.
+# A failure escalates the model, never the effort - see ADR-004. Raising effort on
+# a retry makes the cheap tier think harder about the same misreading, which is the
+# one thing escalation exists to escape.
 effort:
   execute: medium
   execute_escalated: high
   scoper: high
   validators: medium
+# The validator gate, which runs after verification.command passes and machine-checks
+# each work item's DIFF.
+#
+# This is not optional decoration. Utopia routes a failing gate on `failure_class`,
+# and a failure class can ONLY come from a validator verdict - a verification.command
+# failure is a plain retry that never escalates. With no validator registered here,
+# models.execute_escalated and models.scoper above are unreachable configuration and
+# nothing can detect a work item that compiles, passes its tests, and implements the
+# wrong thing.
+#
+# always: true opts spec-intent out of the relevance router. The router exists to skip
+# validators a diff cannot possibly violate; intent applies to every diff by
+# definition, and it is the validator the routing depends on, so it must never be
+# skipped.
+validators:
+  - path: validators/spec-intent.md
+    always: true
+# Bounds on every escalation path. Commented because these ARE the built-in defaults
+# - uncomment only to override. A zero is rejected at load time: it would disable the
+# path it bounds rather than bound it, unlike verification.max_iterations where zero
+# legitimately means unlimited.
+#
+# How routing works, since it is not iteration-count based:
+#
+#   mechanical    - intent was right, execution slipped. Retries on models.execute
+#                   and does NOT count toward escalation. After mechanical_retries
+#                   consecutive slips it is reclassified as comprehension, because a
+#                   model that keeps slipping in the same place is usually solving
+#                   the wrong problem.
+#   comprehension - intent was WRONG. The first one switches to
+#                   models.execute_escalated; the second routes to SCOPING
+#                   escalation, where models.scoper rewrites the change request and
+#                   persists it as a new CR artefact that harvesting can see.
+#   spec_defect_suspected: true - straight to scoping, skipping the executor
+#                   counters entirely, because the doubt is about the spec rather
+#                   than the executor.
+#
+# An escalated attempt gets a FRESH context - the CR, spec/ADR excerpts, prior
+# diagnoses and corrected_intent, the final diff, verbatim tool output - and
+# explicitly NOT the failed attempts' reasoning, which would anchor the escalated
+# model to the mental model that just failed. Counters persist on the work item, so a
+# resume does not reset to the cheap tier. Exhausting any cap marks the item
+# needs_human and moves on to the next change request rather than looping.
+#escalation:
+#  mechanical_retries: 4
+#  comprehension_escalations: 2
+#  opus_execution_attempts: 2
+#  scoping_escalations: 1
