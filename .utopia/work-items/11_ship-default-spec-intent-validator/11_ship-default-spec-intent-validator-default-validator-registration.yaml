@@ -1,0 +1,92 @@
+id: 11_ship-default-spec-intent-validator-default-validator-registration
+spec_ref: 11_ship-default-spec-intent-validator.default-validator-registration
+title: |
+    `utopia init` registers the shipped `spec-intent` validator in the
+    project config so the gate is live out of the box, and defaults
+    `models.validators` to the stronger review tier.
+
+    Writing the file without registering it would leave escalation dead in
+    practice, since nothing runs an unregistered validator. Registration is
+    additive and follows init's existing merge behaviour: init only fills in
+    what is missing and reports what it added versus skipped, so it never
+    clobbers a project that has already made its own choices.
+
+    `always: true` on the entry is deliberate. The relevance router exists
+    to skip validators a diff cannot possibly violate; intent applies to
+    every diff by definition, and routing itself depends on this
+    validator's verdict, so it must never be routed away.
+status: pending
+prompt: |-
+    ## TASK
+
+    `utopia init` registers the shipped `spec-intent` validator in the
+    project config so the gate is live out of the box, and defaults
+    `models.validators` to the stronger review tier.
+
+    Writing the file without registering it would leave escalation dead in
+    practice, since nothing runs an unregistered validator. Registration is
+    additive and follows init's existing merge behaviour: init only fills in
+    what is missing and reports what it added versus skipped, so it never
+    clobbers a project that has already made its own choices.
+
+    `always: true` on the entry is deliberate. The relevance router exists
+    to skip validators a diff cannot possibly violate; intent applies to
+    every diff by definition, and routing itself depends on this
+    validator's verdict, so it must never be routed away.
+
+
+    Acceptance criteria:
+    - After `utopia init` on a fresh project, the config contains a validators entry with path `validators/spec-intent.md` and `always: true`
+    - After `utopia init` on a fresh project, `models.validators` is set to a stronger tier than `models.execute` rather than left unset
+    - Init reports the registration in its added/skipped output the same way it reports other config fields it filled in
+    - Re-running `utopia init` on a project whose config already lists a `validators/spec-intent.md` entry does not add a duplicate entry and does not change the existing entry's `always` value
+    - Re-running `utopia init` on a project that has other validators registered but not `spec-intent` adds the `spec-intent` entry while leaving the existing entries untouched
+    - Re-running `utopia init` on a project that already sets `models.validators` leaves that value unchanged
+    - A project initialized by `utopia init` and given a work item whose diff satisfies its tests but contradicts its acceptance criteria produces a validator verdict with a `failure_class`, i.e. escalation routing is reachable without any hand-editing of config
+
+
+
+    ## HINTS
+
+    - Registration belongs in the same additive merge block in `internal/cli/init.go:runInit` that handles `verification.command`, using the `added` / `skipped` slices.
+    - Match on the validator path when checking for an existing entry, not on list length - a project may already have unrelated validators registered.
+    - Load-time validation already rejects an escalated model weaker than `models.execute`; check whether an equivalent rule covers `models.validators` before assuming the default is enforced.
+
+
+
+    ## STANDARDS
+
+    This project defines coding standards in .utopia/standards/. Before implementing, read the standards docs relevant to the files this task touches:
+
+    - id: cli-organization
+      description: How to structure cobra commands in internal/cli: thin handlers that own the CLI frame and delegate the algorithm to domain packages.
+      tags: go, cli, cobra, architecture
+      path: .utopia/standards/cli-organization.md
+    - id: error-handling
+      description: How errors are created, wrapped, matched, and surfaced: typed domain errors for branching, %w wrapping for infrastructure, one exit point in root.go.
+      tags: go, errors, cli
+      path: .utopia/standards/error-handling.md
+    - id: terminal-output
+      description: One shared output vocabulary (glyphs, banners, progress) routed through cobra's injectable writers so command output is consistent and testable.
+      tags: go, cli, ux, output
+      path: .utopia/standards/terminal-output.md
+
+
+    ## CONSTRAINTS
+
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+order: 1
+estimated_complexity: medium
