@@ -10,8 +10,9 @@ import (
 )
 
 var (
-	harvestModelFlag string
-	harvestAuthFlag  string
+	harvestModelFlag  string
+	harvestEffortFlag string
+	harvestAuthFlag   string
 )
 
 var harvestCmd = &cobra.Command{
@@ -44,14 +45,20 @@ Benefits over individual commands (/adr, /concept, /domain):
 func init() {
 	rootCmd.AddCommand(harvestCmd)
 	harvestCmd.Flags().StringVar(&harvestModelFlag, "model", "", "model alias (haiku, sonnet, opus, fable) or a full model identifier")
+	harvestCmd.Flags().StringVar(&harvestEffortFlag, "effort", "", effortFlagUsage)
 	harvestCmd.Flags().StringVar(&harvestAuthFlag, "auth", "", "credential to use (api-key, subscription), overriding config.auth.mode")
 }
 
 func runHarvest(cmd *cobra.Command, args []string) error {
 	out := ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr())
 
-	// Validate model flag early before any work
+	// Validate model and effort flags early before any work
 	modelID, err := ResolveModelFlag(cmd)
+	if err != nil {
+		return err
+	}
+
+	effort, err := ResolveEffortFlag(cmd)
 	if err != nil {
 		return err
 	}
@@ -72,6 +79,7 @@ func runHarvest(cmd *cobra.Command, args []string) error {
 		ProjectDir: absPath,
 		UtopiaDir:  utopiaDir,
 		Model:      modelID,
+		Effort:     effort,
 		Auth:       authMode,
 	})
 	if err != nil {

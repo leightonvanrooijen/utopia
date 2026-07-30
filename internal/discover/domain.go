@@ -80,6 +80,9 @@ type DomainOptions struct {
 	Verbose bool
 	// Model is an optional Claude model override
 	Model string
+	// Effort is an optional reasoning effort override for the analysis. The empty
+	// string leaves the claude CLI on its own default.
+	Effort string
 	// Auth selects the credential the analysis authenticates with. The empty
 	// mode inherits the ambient environment.
 	Auth domain.AuthMode
@@ -126,6 +129,9 @@ func Domain(ctx context.Context, store *internal.YAMLStore, opts DomainOptions) 
 	cli := internal.NewCLI().WithVerbose(true).WithAuth(opts.Auth, utopiaDirOf(opts.ProjectDir))
 	if opts.Model != "" {
 		cli = cli.WithModel(opts.Model)
+	}
+	if opts.Effort != "" {
+		cli = cli.WithEffort(opts.Effort)
 	}
 	promptResult, err := cli.Prompt(ctx, systemPrompt)
 	if err != nil {

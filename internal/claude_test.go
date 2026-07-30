@@ -264,6 +264,81 @@ func TestCLI_Clone_CarriesEffort(t *testing.T) {
 	}
 }
 
+// argRecordingClaude installs a stand-in claude binary that records the
+// arguments it was spawned with, and returns a CLI pointed at it plus a reader
+// for that recording. Spawning a real process is what makes the assertion
+// meaningful: only the child can report the flags it actually received.
+func argRecordingClaude(t *testing.T) (*CLI, func() string) {
+	t.Helper()
+
+	dir := t.TempDir()
+	binaryPath := filepath.Join(dir, "claude")
+	argsPath := filepath.Join(dir, "args")
+
+	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + argsPath + "\n"
+	if err := os.WriteFile(binaryPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("failed to write fake claude: %v", err)
+	}
+
+	cli := NewCLI()
+	cli.binaryPath = binaryPath
+
+	return cli, func() string {
+		t.Helper()
+
+		data, err := os.ReadFile(argsPath)
+		if err != nil {
+			t.Fatalf("fake claude did not record its arguments: %v", err)
+		}
+		return strings.Join(strings.Fields(string(data)), " ")
+	}
+}
+
+// Both entry points spawn the binary through baseArgs, so both hand it the
+// model and the effort the caller resolved.
+func TestCLI_ModelAndEffortReachTheBinary(t *testing.T) {
+	t.Run("Prompt", func(t *testing.T) {
+		cli, recorded := argRecordingClaude(t)
+
+		if _, err := cli.WithModel("opus").WithEffort("high").Prompt(context.Background(), "hello"); err != nil {
+			t.Fatalf("Prompt() error = %v", err)
+		}
+
+		args := recorded()
+		if !strings.Contains(args, "--model opus") || !strings.Contains(args, "--effort high") {
+			t.Errorf("claude args = %q, want --model opus and --effort high", args)
+		}
+	})
+
+	t.Run("SessionWithCapture", func(t *testing.T) {
+		cli, recorded := argRecordingClaude(t)
+
+		// The transcript is empty because the fake writes no session file; the
+		// arguments it was given are what this test is about.
+		if _, err := cli.WithModel("opus").WithEffort("high").SessionWithCapture(context.Background(), "be brief"); err != nil {
+			t.Fatalf("SessionWithCapture() error = %v", err)
+		}
+
+		args := recorded()
+		if !strings.Contains(args, "--model opus") || !strings.Contains(args, "--effort high") {
+			t.Errorf("claude args = %q, want --model opus and --effort high", args)
+		}
+	})
+
+	// No effort resolved means no flag, leaving the claude CLI on its own default.
+	t.Run("no effort omits the flag", func(t *testing.T) {
+		cli, recorded := argRecordingClaude(t)
+
+		if _, err := cli.WithModel("opus").Prompt(context.Background(), "hello"); err != nil {
+			t.Fatalf("Prompt() error = %v", err)
+		}
+
+		if args := recorded(); strings.Contains(args, "--effort") {
+			t.Errorf("claude args = %q, want no --effort flag", args)
+		}
+	})
+}
+
 func TestPermissionMode_Constants(t *testing.T) {
 	tests := []struct {
 		mode     PermissionMode

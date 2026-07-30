@@ -35,8 +35,9 @@ func init() {
 // ============================================================================
 
 var (
-	standardsGenerateModelFlag string
-	standardsGenerateAuthFlag  string
+	standardsGenerateModelFlag  string
+	standardsGenerateEffortFlag string
+	standardsGenerateAuthFlag   string
 )
 
 var standardsGenerateCmd = &cobra.Command{
@@ -64,6 +65,7 @@ Standards are saved to .utopia/standards/`,
 func init() {
 	standardsCmd.AddCommand(standardsGenerateCmd)
 	standardsGenerateCmd.Flags().StringVar(&standardsGenerateModelFlag, "model", "", "model alias (haiku, sonnet, opus, fable) or a full model identifier")
+	standardsGenerateCmd.Flags().StringVar(&standardsGenerateEffortFlag, "effort", "", effortFlagUsage)
 	standardsGenerateCmd.Flags().StringVar(&standardsGenerateAuthFlag, "auth", "", "credential to use (api-key, subscription), overriding config.auth.mode")
 }
 
@@ -203,8 +205,13 @@ tags:
 func runStandardsGenerate(cmd *cobra.Command, args []string) error {
 	out := ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr())
 
-	// Validate model flag early before any work
+	// Validate model and effort flags early before any work
 	modelID, err := ResolveModelFlag(cmd)
+	if err != nil {
+		return err
+	}
+
+	effort, err := ResolveEffortFlag(cmd)
 	if err != nil {
 		return err
 	}
@@ -238,6 +245,9 @@ func runStandardsGenerate(cmd *cobra.Command, args []string) error {
 	cli := internal.NewCLI().WithAuth(authMode, utopiaDir)
 	if modelID != "" {
 		cli = cli.WithModel(modelID)
+	}
+	if effort != "" {
+		cli = cli.WithEffort(effort)
 	}
 
 	_, sessionErr := cli.SessionWithCapture(ctx, systemPrompt)

@@ -45,6 +45,7 @@ var (
 	discoverExcludeFlags []string
 	discoverVerboseFlag  bool
 	discoverModelFlag    string
+	discoverEffortFlag   string
 	discoverAuthFlag     string
 )
 
@@ -54,14 +55,20 @@ func init() {
 	discoverCmd.Flags().StringSliceVar(&discoverExcludeFlags, "exclude", nil, "Exclude files matching glob pattern (can be specified multiple times)")
 	discoverCmd.Flags().BoolVarP(&discoverVerboseFlag, "verbose", "v", false, "Enable detailed file-by-file progress output")
 	discoverCmd.Flags().StringVar(&discoverModelFlag, "model", "", "model alias (haiku, sonnet, opus, fable) or a full model identifier")
+	discoverCmd.Flags().StringVar(&discoverEffortFlag, "effort", "", effortFlagUsage)
 	discoverCmd.Flags().StringVar(&discoverAuthFlag, "auth", "", "credential to use (api-key, subscription), overriding config.auth.mode")
 }
 
 func runDiscover(cmd *cobra.Command, args []string) error {
 	out := ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr())
 
-	// Validate model flag early before any work
+	// Validate model and effort flags early before any work
 	modelID, err := ResolveModelFlag(cmd)
+	if err != nil {
+		return err
+	}
+
+	effort, err := ResolveEffortFlag(cmd)
 	if err != nil {
 		return err
 	}
@@ -104,6 +111,7 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 		Scope:         scope,
 		Verbose:       discoverVerboseFlag,
 		Model:         modelID,
+		Effort:        effort,
 		Auth:          authMode,
 		ExistingSpecs: existingSpecs,
 	})
@@ -188,6 +196,7 @@ var (
 	discoverDomainExcludeFlags []string
 	discoverDomainVerboseFlag  bool
 	discoverDomainModelFlag    string
+	discoverDomainEffortFlag   string
 	discoverDomainAuthFlag     string
 )
 
@@ -198,14 +207,20 @@ func init() {
 	discoverDomainCmd.Flags().StringSliceVar(&discoverDomainExcludeFlags, "exclude", nil, "Exclude files matching glob pattern (can be specified multiple times)")
 	discoverDomainCmd.Flags().BoolVarP(&discoverDomainVerboseFlag, "verbose", "v", false, "Enable detailed file-by-file progress output")
 	discoverDomainCmd.Flags().StringVar(&discoverDomainModelFlag, "model", "", "model alias (haiku, sonnet, opus, fable) or a full model identifier")
+	discoverDomainCmd.Flags().StringVar(&discoverDomainEffortFlag, "effort", "", effortFlagUsage)
 	discoverDomainCmd.Flags().StringVar(&discoverDomainAuthFlag, "auth", "", "credential to use (api-key, subscription), overriding config.auth.mode")
 }
 
 func runDiscoverDomain(cmd *cobra.Command, args []string) error {
 	out := ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr())
 
-	// Validate model flag early before any work
+	// Validate model and effort flags early before any work
 	modelID, err := ResolveModelFlag(cmd)
+	if err != nil {
+		return err
+	}
+
+	effort, err := ResolveEffortFlag(cmd)
 	if err != nil {
 		return err
 	}
@@ -264,6 +279,7 @@ func runDiscoverDomain(cmd *cobra.Command, args []string) error {
 		Scope:        scope,
 		Verbose:      discoverDomainVerboseFlag,
 		Model:        modelID,
+		Effort:       effort,
 		Auth:         authMode,
 		Incremental:  isIncremental,
 		LastRun:      lastRunTime,

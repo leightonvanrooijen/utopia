@@ -50,6 +50,9 @@ type SpecsOptions struct {
 	Verbose bool
 	// Model is an optional Claude model override
 	Model string
+	// Effort is an optional reasoning effort override for every stage of the
+	// pipeline. The empty string leaves the claude CLI on its own default.
+	Effort string
 	// Auth selects the credential every stage of the pipeline authenticates
 	// with, including the parallel refinement agents. The empty mode inherits
 	// the ambient environment.
@@ -94,6 +97,9 @@ func Specs(ctx context.Context, store *internal.YAMLStore, opts SpecsOptions) (*
 	if opts.Model != "" {
 		cli = cli.WithModel(opts.Model)
 	}
+	if opts.Effort != "" {
+		cli = cli.WithEffort(opts.Effort)
+	}
 
 	prog.StartPhase(2, "Stage 1: Identifying and qualifying candidates")
 	stage1Prompt := buildIdentifyQualifyPrompt(codebaseContext, specsSummary)
@@ -115,7 +121,7 @@ func Specs(ctx context.Context, store *internal.YAMLStore, opts SpecsOptions) (*
 	}
 
 	prog.StartPhase(3, fmt.Sprintf("Stage 2: Refining %d candidates in parallel", len(qualified)))
-	drafts, refinementErrors := runParallelRefinement(ctx, qualified, defaultRefinementIterations, opts.Verbose, opts.Model, opts.Auth, opts.ProjectDir)
+	drafts, refinementErrors := runParallelRefinement(ctx, qualified, defaultRefinementIterations, opts.Verbose, opts.Model, opts.Effort, opts.Auth, opts.ProjectDir)
 	prog.EndPhase(fmt.Sprintf("%d drafts refined", len(drafts)))
 
 	if len(refinementErrors) > 0 && opts.Verbose {
@@ -225,7 +231,7 @@ THEN: Output ONLY the YAML block with your refined specification.`,
 		iteration, maxIterations, candidate.ID, candidate.Title, candidate.Description, sourceFilesStr, candidate.QualificationReason, candidate.ID)
 }
 
-func runParallelRefinement(ctx context.Context, candidates []qualifiedCandidate, iterations int, verbose bool, modelID string, auth domain.AuthMode, projectDir string) ([]*domain.DraftSpec, []error) {
+func runParallelRefinement(ctx context.Context, candidates []qualifiedCandidate, iterations int, verbose bool, modelID, effort string, auth domain.AuthMode, projectDir string) ([]*domain.DraftSpec, []error) {
 	var (
 		drafts []*domain.DraftSpec
 		errors []error
@@ -237,6 +243,9 @@ func runParallelRefinement(ctx context.Context, candidates []qualifiedCandidate,
 		WithAuth(auth, utopiaDirOf(projectDir))
 	if modelID != "" {
 		refinementCLI = refinementCLI.WithModel(modelID)
+	}
+	if effort != "" {
+		refinementCLI = refinementCLI.WithEffort(effort)
 	}
 
 	for _, candidate := range candidates {

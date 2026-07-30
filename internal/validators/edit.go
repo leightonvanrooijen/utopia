@@ -124,6 +124,14 @@ func (e *Editor) WithModel(model string) *Editor {
 	return e
 }
 
+// WithEffort sets the reasoning effort the editing session runs at, resolved by
+// the caller the same way the model is. The empty string leaves the claude CLI on
+// its own default.
+func (e *Editor) WithEffort(effort string) *Editor {
+	e.cli = e.cli.WithEffort(effort)
+	return e
+}
+
 // WithAuth selects the credential the editing session authenticates with.
 // The empty mode inherits the ambient environment, so a caller that never
 // resolved a mode keeps the pre-auth behaviour.

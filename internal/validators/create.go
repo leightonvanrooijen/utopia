@@ -79,6 +79,14 @@ func (c *Creator) WithModel(model string) *Creator {
 	return c
 }
 
+// WithEffort sets the reasoning effort the creation session runs at, resolved by
+// the caller the same way the model is. The empty string leaves the claude CLI on
+// its own default.
+func (c *Creator) WithEffort(effort string) *Creator {
+	c.cli = c.cli.WithEffort(effort)
+	return c
+}
+
 // WithAuth selects the credential the creation session authenticates with.
 // The empty mode inherits the ambient environment, so a caller that never
 // resolved a mode keeps the pre-auth behaviour.

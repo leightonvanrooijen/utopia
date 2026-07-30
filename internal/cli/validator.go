@@ -46,8 +46,9 @@ func init() {
 // ============================================================================
 
 var (
-	validatorCreateModelFlag string
-	validatorCreateAuthFlag  string
+	validatorCreateModelFlag  string
+	validatorCreateEffortFlag string
+	validatorCreateAuthFlag   string
 )
 
 var validatorCreateCmd = &cobra.Command{
@@ -70,12 +71,18 @@ Examples:
 func init() {
 	validatorCmd.AddCommand(validatorCreateCmd)
 	validatorCreateCmd.Flags().StringVar(&validatorCreateModelFlag, "model", "", "model alias (haiku, sonnet, opus, fable) or a full model identifier")
+	validatorCreateCmd.Flags().StringVar(&validatorCreateEffortFlag, "effort", "", effortFlagUsage)
 	validatorCreateCmd.Flags().StringVar(&validatorCreateAuthFlag, "auth", "", "credential to use (api-key, subscription), overriding config.auth.mode")
 }
 
 func runValidatorCreate(cmd *cobra.Command, args []string) error {
-	// Validate model flag early before any work
+	// Validate model and effort flags early before any work
 	modelID, err := ResolveModelFlag(cmd)
+	if err != nil {
+		return err
+	}
+
+	effort, err := ResolveEffortFlag(cmd)
 	if err != nil {
 		return err
 	}
@@ -110,6 +117,9 @@ func runValidatorCreate(cmd *cobra.Command, args []string) error {
 	if modelID != "" {
 		creator = creator.WithModel(modelID)
 	}
+	if effort != "" {
+		creator = creator.WithEffort(effort)
+	}
 	return creator.Run(ctx)
 }
 
@@ -118,8 +128,9 @@ func runValidatorCreate(cmd *cobra.Command, args []string) error {
 // ============================================================================
 
 var (
-	validatorEditModelFlag string
-	validatorEditAuthFlag  string
+	validatorEditModelFlag  string
+	validatorEditEffortFlag string
+	validatorEditAuthFlag   string
 )
 
 var validatorEditCmd = &cobra.Command{
@@ -144,14 +155,20 @@ Examples:
 func init() {
 	validatorCmd.AddCommand(validatorEditCmd)
 	validatorEditCmd.Flags().StringVar(&validatorEditModelFlag, "model", "", "model alias (haiku, sonnet, opus, fable) or a full model identifier")
+	validatorEditCmd.Flags().StringVar(&validatorEditEffortFlag, "effort", "", effortFlagUsage)
 	validatorEditCmd.Flags().StringVar(&validatorEditAuthFlag, "auth", "", "credential to use (api-key, subscription), overriding config.auth.mode")
 }
 
 func runValidatorEdit(cmd *cobra.Command, args []string) error {
 	out := ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr())
 
-	// Validate model flag early before any work
+	// Validate model and effort flags early before any work
 	modelID, err := ResolveModelFlag(cmd)
+	if err != nil {
+		return err
+	}
+
+	effort, err := ResolveEffortFlag(cmd)
 	if err != nil {
 		return err
 	}
@@ -173,6 +190,9 @@ func runValidatorEdit(cmd *cobra.Command, args []string) error {
 	editor := validators.NewEditor(projectDir).WithAuth(authMode)
 	if modelID != "" {
 		editor = editor.WithModel(modelID)
+	}
+	if effort != "" {
+		editor = editor.WithEffort(effort)
 	}
 
 	// List available validators

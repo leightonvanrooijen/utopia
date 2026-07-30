@@ -131,6 +131,12 @@ func ResolveModelFlag(cmd *cobra.Command) (string, error) {
 	return model, nil
 }
 
+// effortFlagUsage is the help text for --effort on the single-session commands.
+// They resolve effort the same way they resolve a model - from the flag, with no
+// configured value behind it - so the flag's absence means the claude CLI's own
+// default rather than a level from config.
+const effortFlagUsage = "reasoning effort per turn (low, medium, high, xhigh, max); omit to use the claude CLI default"
+
 // ResolveEffortFlag validates the --effort flag value and returns it for the
 // claude CLI to apply, mirroring ResolveModelFlag. Returns the empty string when
 // the flag was not provided, which leaves the configured effort in place, or an

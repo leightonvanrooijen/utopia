@@ -16,8 +16,9 @@ import (
 )
 
 var (
-	shapeModelFlag string
-	shapeAuthFlag  string
+	shapeModelFlag  string
+	shapeEffortFlag string
+	shapeAuthFlag   string
 )
 
 var shapeCmd = &cobra.Command{
@@ -46,6 +47,7 @@ the automatically discovered draft specifications.`,
 func init() {
 	rootCmd.AddCommand(shapeCmd)
 	shapeCmd.Flags().StringVar(&shapeModelFlag, "model", "", "model alias (haiku, sonnet, opus, fable) or a full model identifier")
+	shapeCmd.Flags().StringVar(&shapeEffortFlag, "effort", "", effortFlagUsage)
 	shapeCmd.Flags().StringVar(&shapeAuthFlag, "auth", "", "credential to use (api-key, subscription), overriding config.auth.mode")
 }
 
@@ -135,8 +137,13 @@ Begin by presenting the draft and addressing any uncertainty notes first.`
 func runShape(cmd *cobra.Command, args []string) error {
 	out := ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr())
 
-	// Validate model flag early before any work
+	// Validate model and effort flags early before any work
 	modelID, err := ResolveModelFlag(cmd)
+	if err != nil {
+		return err
+	}
+
+	effort, err := ResolveEffortFlag(cmd)
 	if err != nil {
 		return err
 	}
@@ -180,6 +187,9 @@ func runShape(cmd *cobra.Command, args []string) error {
 	cli := internal.NewCLI().WithAuth(authMode, utopiaDir)
 	if modelID != "" {
 		cli = cli.WithModel(modelID)
+	}
+	if effort != "" {
+		cli = cli.WithEffort(effort)
 	}
 
 	for i, draft := range drafts {
@@ -384,13 +394,15 @@ After shaping, validated drafts can be promoted to official domain documents.`,
 }
 
 var (
-	shapeDomainModelFlag string
-	shapeDomainAuthFlag  string
+	shapeDomainModelFlag  string
+	shapeDomainEffortFlag string
+	shapeDomainAuthFlag   string
 )
 
 func init() {
 	shapeCmd.AddCommand(shapeDomainCmd)
 	shapeDomainCmd.Flags().StringVar(&shapeDomainModelFlag, "model", "", "model alias (haiku, sonnet, opus, fable) or a full model identifier")
+	shapeDomainCmd.Flags().StringVar(&shapeDomainEffortFlag, "effort", "", effortFlagUsage)
 	shapeDomainCmd.Flags().StringVar(&shapeDomainAuthFlag, "auth", "", "credential to use (api-key, subscription), overriding config.auth.mode")
 }
 
@@ -503,8 +515,13 @@ Begin by presenting the bounded context and addressing any uncertainty notes fir
 func runShapeDomain(cmd *cobra.Command, args []string) error {
 	out := ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr())
 
-	// Validate model flag early before any work
+	// Validate model and effort flags early before any work
 	modelID, err := ResolveModelFlag(cmd)
+	if err != nil {
+		return err
+	}
+
+	effort, err := ResolveEffortFlag(cmd)
 	if err != nil {
 		return err
 	}
@@ -549,6 +566,9 @@ func runShapeDomain(cmd *cobra.Command, args []string) error {
 	cli := internal.NewCLI().WithAuth(authMode, utopiaDir)
 	if modelID != "" {
 		cli = cli.WithModel(modelID)
+	}
+	if effort != "" {
+		cli = cli.WithEffort(effort)
 	}
 
 	for i, draft := range drafts {

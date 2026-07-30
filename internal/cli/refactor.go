@@ -15,8 +15,9 @@ import (
 )
 
 var (
-	refactorModelFlag string
-	refactorAuthFlag  string
+	refactorModelFlag  string
+	refactorEffortFlag string
+	refactorAuthFlag   string
 )
 
 var refactorCmd = &cobra.Command{
@@ -48,6 +49,7 @@ Tip: Run a file watcher to see updates in real-time:
 func init() {
 	rootCmd.AddCommand(refactorCmd)
 	refactorCmd.Flags().StringVar(&refactorModelFlag, "model", "", "model alias (haiku, sonnet, opus, fable) or a full model identifier")
+	refactorCmd.Flags().StringVar(&refactorEffortFlag, "effort", "", effortFlagUsage)
 	refactorCmd.Flags().StringVar(&refactorAuthFlag, "auth", "", "credential to use (api-key, subscription), overriding config.auth.mode")
 }
 
@@ -188,8 +190,13 @@ Start by warmly greeting the user and asking what code they'd like to refactor.`
 func runRefactor(cmd *cobra.Command, args []string) error {
 	out := ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr())
 
-	// Validate model flag early before any work
+	// Validate model and effort flags early before any work
 	modelID, err := ResolveModelFlag(cmd)
+	if err != nil {
+		return err
+	}
+
+	effort, err := ResolveEffortFlag(cmd)
 	if err != nil {
 		return err
 	}
@@ -223,6 +230,9 @@ func runRefactor(cmd *cobra.Command, args []string) error {
 	cli := internal.NewCLI().WithAuth(authMode, utopiaDir)
 	if modelID != "" {
 		cli = cli.WithModel(modelID)
+	}
+	if effort != "" {
+		cli = cli.WithEffort(effort)
 	}
 
 	// Get git branch for metadata before session

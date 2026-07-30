@@ -106,6 +106,33 @@ func TestEffortFlagMirrorsModelFlagOnExecuteCommands(t *testing.T) {
 	}
 }
 
+// Every command that spawns claude carries --effort next to --model: effort is
+// injected on the same route as the model, so a command that can pick one can
+// pick the other.
+func TestEffortFlagRegisteredOnClaudeInvokingCommands(t *testing.T) {
+	for _, path := range claudeCommandPaths {
+		name := strings.Join(path, " ")
+		cmd := findCommand(t, rootCmd, path)
+
+		if cmd.Flags().Lookup("model") == nil {
+			t.Errorf("%q has no --model flag", name)
+		}
+		flag := cmd.Flags().Lookup("effort")
+		if flag == nil {
+			t.Errorf("%q has no --effort flag", name)
+			continue
+		}
+		if flag.DefValue != "" {
+			t.Errorf("%q --effort default = %q, want \"\"", name, flag.DefValue)
+		}
+		for _, level := range domain.ValidEffortLevels() {
+			if !strings.Contains(flag.Usage, string(level)) {
+				t.Errorf("%q --effort usage %q does not mention %q", name, flag.Usage, level)
+			}
+		}
+	}
+}
+
 func TestResolveExecuteOverrides(t *testing.T) {
 	newCmd := func() *cobra.Command {
 		cmd := &cobra.Command{Use: "fake"}

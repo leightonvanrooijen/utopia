@@ -26,6 +26,9 @@ type Options struct {
 	UtopiaDir string
 	// Model is an optional Claude model override
 	Model string
+	// Effort is an optional reasoning effort override for the session. The empty
+	// string leaves the claude CLI on its own default.
+	Effort string
 	// Auth selects the credential the harvest session authenticates with.
 	// The empty mode inherits the ambient environment.
 	Auth domain.AuthMode
@@ -729,6 +732,9 @@ func Run(ctx context.Context, store *internal.YAMLStore, opts Options) (*Result,
 	cli := internal.NewCLI().WithAuth(opts.Auth, opts.UtopiaDir)
 	if opts.Model != "" {
 		cli = cli.WithModel(opts.Model)
+	}
+	if opts.Effort != "" {
+		cli = cli.WithEffort(opts.Effort)
 	}
 
 	_, sessionErr := cli.SessionWithCapture(ctx, systemPrompt)

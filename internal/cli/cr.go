@@ -17,8 +17,9 @@ import (
 )
 
 var (
-	crModelFlag string
-	crAuthFlag  string
+	crModelFlag  string
+	crEffortFlag string
+	crAuthFlag   string
 )
 
 var crCmd = &cobra.Command{
@@ -49,6 +50,7 @@ Tip: Run a file watcher to see updates in real-time:
 func init() {
 	rootCmd.AddCommand(crCmd)
 	crCmd.Flags().StringVar(&crModelFlag, "model", "", "model alias (haiku, sonnet, opus, fable) or a full model identifier")
+	crCmd.Flags().StringVar(&crEffortFlag, "effort", "", effortFlagUsage)
 	crCmd.Flags().StringVar(&crAuthFlag, "auth", "", "credential to use (api-key, subscription), overriding config.auth.mode")
 }
 
@@ -366,8 +368,13 @@ Start by warmly greeting the user and asking what change they'd like to make.`
 func runCR(cmd *cobra.Command, args []string) error {
 	out := ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr())
 
-	// Validate model flag early before any work
+	// Validate model and effort flags early before any work
 	modelID, err := ResolveModelFlag(cmd)
+	if err != nil {
+		return err
+	}
+
+	effort, err := ResolveEffortFlag(cmd)
 	if err != nil {
 		return err
 	}
@@ -439,6 +446,9 @@ func runCR(cmd *cobra.Command, args []string) error {
 	cli := internal.NewCLI().WithAuth(authMode, utopiaDir)
 	if modelID != "" {
 		cli = cli.WithModel(modelID)
+	}
+	if effort != "" {
+		cli = cli.WithEffort(effort)
 	}
 
 	// Get git branch for metadata before session
