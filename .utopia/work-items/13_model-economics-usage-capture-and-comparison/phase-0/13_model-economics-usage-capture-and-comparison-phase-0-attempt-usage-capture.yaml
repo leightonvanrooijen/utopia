@@ -92,4 +92,47 @@ constraints:
     - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
 order: 0
 estimated_complexity: medium
-iteration_count: 1
+iteration_count: 3
+last_validator_feedback: |
+    Gating connector validators:after-workitem blocked workitem-verified:
+    Validator spec-intent failed:
+    Two `in_progress` work items exist (`13_...attempt-usage-capture.yaml:17` and `02_...modify-default-constraints.yaml:4`), but the item under review is unambiguous: the reviewed diff is that item's own routing record, and the implementation landed in `01df144`. Reviewed against `13_model-economics-usage-capture-and-comparison` phase-0 `attempt-usage-capture`.
+
+    internal/claude.go:227 - [A] Verbose capture path sends `--output-format stream-json --include-partial-messages` but never `--verbose` to the claude binary, and `baseArgs` does not add it (`--verbose` appears only at claude.go:283, the interactive session path). The real CLI rejects this: `Error: When using --print, --output-format=stream-json requires --verbose`. Every verbose execution attempt now exits non-zero before producing any output, so no assistant text streams and no usage is read. Breaks "Verbose mode still streams assistant text to the operator in real time while usage is captured" and, for verbose runs, "Every Claude invocation the execution loop makes requests structured output from the claude CLI and parses the terminal result object for usage". Add `--verbose` whenever the stream-json format is requested.
+
+    internal/claude_usage_test.go:224 - [A] `TestCLI_Prompt_VerboseStreamsTextAndCapturesUsage` passes against a `scriptedClaude` stand-in whose body is `cat <<'EOF'`, which ignores argv entirely, so the test asserts the streaming behaviour the criterion names while the flag combination it sends is one the real binary refuses. The verbose criterion is satisfied literally, not in substance. Have the stand-in reject the flag combination the real CLI rejects (exit non-zero unless `--verbose` accompanies `--output-format stream-json`), so the test fails until the flag is present.
+
+    internal/ralph/scoping.go:208 - [A] The scoper invocation runs without `WithUsageCapture(true)`, so a Claude call the execution loop makes still discards its accounting. Breaks "Every Claude invocation the execution loop makes requests structured output from the claude CLI and parses the terminal result object for usage"; the exemption in "Attempts made by validators and by discovery are out of scope" does not cover the scoper, and the same reasoning was already applied to the after-phase fix invocation at internal/ralph/ralph.go:900.
+
+    Not flagged: the resolved-model, cost-basis, three-state and ADR-007 work all match the criteria and the feature description; `fmt.Print` in `internal/claude.go` is pre-existing and outside `internal/cli`, where `terminal-output.md` scopes its writer rule.
+
+    <VERDICT>
+    {
+      "verdict": "fail",
+      "failure_class": "comprehension",
+      "diagnosis": "The verbose criterion is met against a test double that ignores argv rather than against the CLI contract: the flag combination the code emits is one the real claude binary refuses, so the criterion passes in the suite and fails in the loop. That is an intent failure, not a formatting slip - the evidence the executor accepted as proof does not exercise the behaviour the criterion describes.",
+      "corrected_intent": "Usage capture is a contract with the real claude binary, so the flags the code emits must be flags that binary accepts: a stream-json run under --print carries --verbose alongside --output-format stream-json --include-partial-messages, and the test double stands in for the binary faithfully enough to reject what the binary rejects. Every Claude invocation the execution loop itself makes - the executor attempt, the after-phase fix and the scoper - asks for structured output; only validators and discovery report no usage.",
+      "confidence": "high"
+    }
+    </VERDICT>
+failure_conclusions:
+    - iteration: 1
+      validator_id: spec-intent
+      failure_class: comprehension
+      diagnosis: 'The verbose criterion is met against a test double that ignores argv rather than against the CLI contract: the flag combination the code emits is one the real claude binary refuses, so the criterion passes in the suite and fails in the loop. That is an intent failure, not a formatting slip - the evidence the executor accepted as proof does not exercise the behaviour the criterion describes.'
+      corrected_intent: 'Usage capture is a contract with the real claude binary, so the flags the code emits must be flags that binary accepts: a stream-json run under --print carries --verbose alongside --output-format stream-json --include-partial-messages, and the test double stands in for the binary faithfully enough to reject what the binary rejects. Every Claude invocation the execution loop itself makes - the executor attempt, the after-phase fix and the scoper - asks for structured output; only validators and discovery report no usage.'
+selected_validators:
+    - spec-intent
+comprehension_count: 1
+opus_execution_attempts: 1
+comprehension_failures_total: 1
+executor_attempts:
+    - iteration: 1
+      role: default-executor
+      model: ""
+      effort: medium
+    - iteration: 2
+      role: escalated-executor
+      model: fable
+      effort: high
+validators_routed: true

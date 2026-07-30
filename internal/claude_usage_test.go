@@ -19,16 +19,33 @@ const jsonResultPayload = `{"is_error":false,"num_turns":7,"duration_ms":91234,"
 	`"modelUsage":{"claude-opus-5-20260101":{"outputTokens":222,"costUSD":1.25}},` +
 	`"subtype":"success","result":"done here <COMPLETE>","type":"result"}`
 
+// claudeFlagContract is the flag validation the real claude binary applies before
+// doing any work, reproduced so a stand-in refuses what the binary refuses: a
+// stream-json run must carry --verbose, or the invocation exits non-zero having
+// produced no output. Every stand-in runs it first, so a test can only pass with
+// a flag set the binary would accept.
+const claudeFlagContract = `stream=false; verbose=false; prev=
+for arg in "$@"; do
+  [ "$arg" = "--verbose" ] && verbose=true
+  [ "$prev" = "--output-format" ] && [ "$arg" = "stream-json" ] && stream=true
+  prev=$arg
+done
+if [ "$stream" = true ] && [ "$verbose" = false ]; then
+  echo 'Error: When using --print, --output-format=stream-json requires --verbose' >&2
+  exit 1
+fi`
+
 // scriptedClaude installs a stand-in claude binary running the given shell body,
 // and returns a CLI pointed at it. Spawning a real process is what makes the
 // assertions meaningful: the parsing runs over bytes that actually came off a
-// pipe.
+// pipe, and the stand-in enforces claudeFlagContract before running the body.
 func scriptedClaude(t *testing.T, body string) *CLI {
 	t.Helper()
 
 	dir := t.TempDir()
 	binaryPath := filepath.Join(dir, "claude")
-	if err := os.WriteFile(binaryPath, []byte("#!/bin/sh\n"+body+"\n"), 0o755); err != nil {
+	script := "#!/bin/sh\n" + claudeFlagContract + "\n" + body + "\n"
+	if err := os.WriteFile(binaryPath, []byte(script), 0o755); err != nil {
 		t.Fatalf("failed to write fake claude: %v", err)
 	}
 
@@ -102,10 +119,12 @@ func TestCLI_UsageCapture_RequestsStructuredOutput(t *testing.T) {
 			notWant: []string{"stream-json"},
 		},
 		{
-			name:    "capture on and verbose asks for the stream",
+			// --verbose is part of the contract, not a nicety: the real binary
+			// refuses --print with stream-json without it.
+			name:    "capture on and verbose asks for the stream with --verbose",
 			capture: true,
 			verbose: true,
-			want:    []string{"--output-format stream-json", "--include-partial-messages"},
+			want:    []string{"--output-format stream-json", "--include-partial-messages", "--verbose"},
 		},
 	}
 

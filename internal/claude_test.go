@@ -275,7 +275,9 @@ func argRecordingClaude(t *testing.T) (*CLI, func() string) {
 	binaryPath := filepath.Join(dir, "claude")
 	argsPath := filepath.Join(dir, "args")
 
-	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + argsPath + "\n"
+	// Arguments are recorded before the contract check, so a refused invocation
+	// still reports the flags that got it refused.
+	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + argsPath + "\n" + claudeFlagContract + "\n"
 	if err := os.WriteFile(binaryPath, []byte(script), 0o755); err != nil {
 		t.Fatalf("failed to write fake claude: %v", err)
 	}

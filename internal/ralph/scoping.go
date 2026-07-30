@@ -205,7 +205,10 @@ func (s *scoper) rewrite(
 	}
 
 	fmt.Printf("  Scoping escalation: rewriting the change request on %s (effort %s)...\n", s.model, s.effort)
-	if _, err := s.cli.Clone().WithModel(s.model).WithEffort(s.effort).WithAllowedTools(scoperTools).Prompt(ctx, prompt); err != nil {
+	// The scoper is an invocation the execution loop makes, like the executor
+	// attempt and the after-phase fix, so its accounting is captured too; only
+	// validators and discovery stay on prose output.
+	if _, err := s.cli.Clone().WithModel(s.model).WithEffort(s.effort).WithAllowedTools(scoperTools).WithUsageCapture(true).Prompt(ctx, prompt); err != nil {
 		return nil, fmt.Errorf("scoper invocation failed for work item %s: %w", item.ID, err)
 	}
 

@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -219,12 +220,17 @@ func (c *CLI) baseArgs() []string {
 // A verbose run asks for stream-json rather than dropping to the non-streaming
 // object, because the operator watching the run is the point of verbose mode: the
 // accounting arrives on the last line of the stream rather than in place of the text.
+//
+// The claude binary refuses stream-json under --print without --verbose
+// ("When using --print, --output-format=stream-json requires --verbose"), so the
+// flag travels with the format that makes it mandatory rather than relying on a
+// downstream path to add it.
 func (c *CLI) outputFormatArgs() []string {
 	if !c.captureUsage {
 		return nil
 	}
 	if c.verbose {
-		return []string{"--output-format", "stream-json", "--include-partial-messages"}
+		return []string{"--output-format", "stream-json", "--include-partial-messages", "--verbose"}
 	}
 	return []string{"--output-format", "json"}
 }
@@ -279,8 +285,11 @@ func (c *CLI) Prompt(ctx context.Context, prompt string) (*PromptResult, error) 
 // streamingPrompt runs Claude with --verbose and streams output while capturing it.
 // Returns PromptResult with both stdout and stderr captured.
 func (c *CLI) streamingPrompt(ctx context.Context, args []string) (*PromptResult, error) {
-	// Add verbose flag for real-time output
-	args = append(args, "--verbose")
+	// Add verbose flag for real-time output, unless the format selection already
+	// carried it - the flag must not repeat.
+	if !slices.Contains(args, "--verbose") {
+		args = append(args, "--verbose")
+	}
 
 	env, err := c.subprocessEnv()
 	if err != nil {
