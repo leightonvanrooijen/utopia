@@ -1,0 +1,132 @@
+id: ADR-006
+title: "Rewrite the Change Request Before Escalating Execution Further - A Hypothesis, With the Evidence That Would Invert It"
+status: accepted
+date: 2026-07-30
+context: |
+  The escalation ladder answers a repeated comprehension failure by rewriting
+  the change request. One comprehension failure escalates execution to the more
+  capable model; a second stops execution and sends the change request to the
+  scoper, which rewrites the specification rather than the code.
+
+  That ordering encodes a claim: when a capable model reads a change request and
+  derives the wrong intent twice, the change request is more likely defective
+  than the executor is limited. The claim is plausible - a specification that two
+  different tiers misread is usually ambiguous - and it is unmeasured. It was
+  chosen from reasoning, not from data, and the caps that implement it (4
+  mechanical retries, 2 escalated execution attempts, 1 scoping escalation) were
+  sized to be roughly cost-neutral against running the expensive model
+  throughout, which is a cost argument rather than an evidence one.
+
+  The opposite ordering is coherent. If rewritten change requests do not
+  actually execute better, then the second comprehension failure is evidence
+  about the executor after all, and the cheaper correct move is to spend another
+  escalated execution attempt before paying a scoper to rewrite a specification
+  that was fine.
+
+  Nothing about the loop tells you which is true, so the loop was made to record
+  it. Every work item outcome now writes a routing record carrying its failure
+  classes, the tier each attempt ran on, whether the change request was
+  rewritten and how the item ended. The records are committed, so git history is
+  the time series and the question is a query over the repository.
+
+decision: |
+  Rewriting the change request stays ahead of further execution escalation, as a
+  hypothesis under test rather than as a settled design.
+
+  1. The ladder is unchanged: mechanical retry, escalated execution, then
+     scoping escalation. The rule stands until evidence contradicts it.
+  2. The specific evidence that would invert it: change requests that were
+     rewritten do not reach a better first-pass rate on the attempt following
+     the rewrite than comparable change requests that were not. Read as
+     SpecRewritten against RoutingOutcome, grouped by spec, over enough records
+     to mean something.
+  3. Two supporting signals are recorded because they refine the same question.
+     A high mechanical-to-comprehension ratio says validators mostly see slips,
+     so the comprehension path is rare and the ordering barely matters. A high
+     escalation rate concentrated in one spec says that spec has a boundary
+     problem, which is a finding about the codebase rather than about routing -
+     and it would explain away an apparent failure of the rewrite rule.
+  4. If the evidence arrives and inverts the rule, the change is to the routing
+     order and the caps, not to the record. The record was designed to be able
+     to say the design was wrong.
+  5. Until then nobody should defend the current order as measured. It is a
+     reasoned guess with a test attached.
+
+options_considered:
+  - option: "Rewrite the change request first, record the evidence that would invert it (chosen)"
+    pros:
+      - A rewritten change request is durable output - a run that produced a
+        sharper specification produced something even with no working code
+      - Bounds spend on the expensive model, since a rewrite is one scoper call
+        rather than repeated escalated attempts
+      - Treats repeated misreading as a signal about the text, which is where
+        ambiguity actually lives
+      - The premise is falsifiable from records the loop already writes
+    cons:
+      - Unmeasured, and the ordering is the more expensive mistake if it is wrong
+      - A rewrite discards the failure conclusions and resets the comprehension
+        counter, so a wrong rewrite costs the progress made against the original
+      - Requires a scoper role, its model and its prompt, all of which exist
+        only because of this ordering
+
+  - option: "Escalate execution repeatedly, rewrite only as a last resort"
+    pros:
+      - Cheaper to build - no scoper role at all
+      - Correct if comprehension failures are mostly executor limits
+    cons:
+      - Spends the expensive model repeatedly on a specification that may be the
+        actual defect
+      - Produces nothing durable when it fails - no sharper specification, only
+        a longer transcript
+      - Equally unmeasured, so it trades one guess for another
+
+  - option: "Wait for data before choosing an order"
+    pros:
+      - Avoids encoding an unmeasured premise in the loop
+    cons:
+      - No data exists until the loop routes, so this never terminates
+      - Some order has to ship; refusing to choose is choosing whichever order
+        falls out of the code
+
+consequences:
+  positive:
+    - The premise behind the caps is written down as a premise, so a later reader
+      argues with it instead of inheriting it as fact
+    - The evidence that would overturn it is stated specifically enough to query,
+      rather than as "we should look at this someday"
+    - Escalation clustering by spec surfaces codebase boundary problems as a
+      by-product
+    - Inverting the rule is a routing change, not a telemetry change
+  negative:
+    - If the hypothesis is wrong, every comprehension-failing change request
+      until the data arrives paid for a rewrite it did not need
+    - The records only become conclusive at volume, and this repository will
+      take a while to produce that volume
+    - Comparing rewritten against non-rewritten change requests is confounded by
+      the fact that only the harder ones get rewritten
+  neutral:
+    - The caps are guesses on the same footing as the ordering and will move with
+      the same evidence
+    - Nothing in the loop adapts at runtime; changing the rule is a config or
+      code change made by a person reading the records
+
+advice:
+  - internal/domain/documentation.go carries SummariseRoutingBySpec and
+    SummariseRoutingByCRType, which are how the rates above are read off the
+    records without touching a transcript
+  - ADR-005 is why there is no cost figure to weigh against the rewrite - the
+    comparison has to be made in attempts at a tier
+  - ADR-004 is the neighbouring rule about the other lever - a failure changes
+    which model runs, never how hard the cheap one tries
+
+principles:
+  - An unmeasured premise is recorded as a hypothesis, with the evidence that
+    would overturn it
+  - Design for being wrong - the record has to be able to contradict the design
+    that produced it
+  - Repeated misreading is evidence about the text before it is evidence about
+    the reader - until the records say otherwise
+  - Aggregate by spec; a boundary problem masquerades as a routing problem
+
+related_domain:
+  - execution  # Terms: comprehension failure, scoping escalation, escalated executor, routing record

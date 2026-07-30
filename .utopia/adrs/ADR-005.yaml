@@ -1,0 +1,134 @@
+id: ADR-005
+title: "Utopia Sits Above the Anthropic API, So Tokens, Cache Hits and Cost Are Not Observable"
+status: accepted
+date: 2026-07-30
+context: |
+  Utopia executes work by shelling out to the claude CLI with a single --print
+  prompt. It is a caller of a terminal program, not a client of the Anthropic
+  API. Everything Utopia knows about an attempt it learned from stdout, an exit
+  code and a wall clock it measured itself.
+
+  The API layer reports input tokens, output tokens, cache reads, cache writes
+  and - given a price list - a dollar figure per request. The CLI reports none
+  of that on the --print path Utopia uses. There is no usage block to read and
+  no header to parse, so no amount of care in the calling code recovers those
+  numbers.
+
+  This matters because the design that introduced escalation telemetry assumed
+  the API layer. It asked for cost per change request, which reads as an
+  obviously reasonable thing to record until you look for where the number would
+  come from. The same assumption will be made again - "surely we can log tokens"
+  is the natural first thought of anyone who has used the SDK - and each time it
+  will cost someone an afternoon to rediscover that the boundary is the CLI.
+
+  Two escapes exist and neither is chosen here. Utopia could move to the API,
+  which would mean reimplementing the agent loop, the tool harness and the
+  permission model that the CLI provides. Or it could parse a per-session cost
+  figure out of Claude Code's own telemetry, which would couple Utopia to the
+  internals of a tool it deliberately treats as a black box.
+
+decision: |
+  Utopia does not observe tokens, cache hits or monetary cost, and does not
+  estimate them.
+
+  1. Cost is approximated structurally: attempt counts per executor role, and
+     the model and effort each attempt ran on. A run record says "three attempts
+     on the default executor and one on the escalated executor", which is enough
+     to compare routing policies against each other.
+  2. No record carries a dollar figure, a token count or a derived
+     cost-per-attempt estimate. A fabricated number would be indistinguishable
+     from a measured one once it is in a YAML file and committed.
+  3. Every routing record carries CostNotCapturedNote verbatim, so a reader who
+     finds no token counts learns they are unobservable rather than zero. The
+     note is in the record, not only in documentation, because the reader who
+     needs it is reading the record.
+  4. Wall clock is measured, because that one Utopia genuinely observes: it
+     brackets the call itself.
+  5. If token-level cost becomes necessary, the change is to the boundary - move
+     to the API - not to the telemetry. Do not add an estimator.
+
+options_considered:
+  - option: "Approximate cost from attempts and tiers, and say so in the record (chosen)"
+    pros:
+      - Every figure recorded is counted or measured, so no record mixes
+        measurement with estimation
+      - Enough to compare routing policies, which is what the caps need
+      - Honest about its own resolution, so nobody builds a budget on it
+      - Costs nothing to collect - the loop already knows the model, the effort
+        and the attempt count
+    cons:
+      - Cannot answer "what did this change request cost in dollars"
+      - Comparing across models needs an external price list and a per-attempt
+        token assumption the record deliberately does not make
+
+  - option: "Estimate tokens from prompt and output length, price them"
+    pros:
+      - Produces the dollar figure the original design asked for
+      - Prompt length is known, so part of the estimate is real
+    cons:
+      - Output tokens, thinking tokens and cache behaviour are all invisible,
+        so most of the figure is invented
+      - Once committed as YAML an estimate is indistinguishable from a
+        measurement, and someone will eventually budget against it
+      - Wrong in a biased direction - it would systematically understate the
+        escalated executor, which is exactly the comparison the record exists
+        to support
+
+  - option: "Move execution to the Anthropic API to get real usage data"
+    pros:
+      - Real token counts, cache-hit rates and cost per request
+      - Response schemas would also replace the delimited-block verdict parsing
+    cons:
+      - Requires reimplementing the agent loop, tool harness and permission
+        model that the CLI already provides
+      - Enormous change to buy observability, when the routing decisions in
+        question can be made from attempt counts
+      - Loses the CLI's own evolution - Utopia benefits from Claude Code
+        improvements for free today
+
+  - option: "Parse cost out of Claude Code's session telemetry"
+    pros:
+      - Real numbers without leaving the CLI
+    cons:
+      - Couples Utopia to the internals of a tool it treats as a black box
+      - Silently breaks on any upstream format change, and breaks as wrong
+        numbers rather than as an error
+
+consequences:
+  positive:
+    - Routing records contain only counted or measured values
+    - The next reader who assumes the API layer finds this ADR instead of
+      spending an afternoon looking for a usage block
+    - Cost reasoning stays in the vocabulary the caps are configured in -
+      attempts at a tier - so the record and the config agree
+    - No estimator to maintain, and no estimate to be quietly trusted
+  negative:
+    - Questions about absolute spend cannot be answered from Utopia's records
+      at all; they have to come from Anthropic's own billing
+    - Comparing the cost of two models requires an external price list
+    - A change request that burns its budget on one enormous attempt looks the
+      same as one that used the same number of small attempts
+  neutral:
+    - Wall clock is a weak proxy for cost and is recorded for its own sake
+    - The boundary is a choice that can be revisited; the telemetry design does
+      not have to change if it is
+
+advice:
+  - claude --print reports no usage information; confirm against the installed
+    version before assuming this has changed
+  - Utopia shells out at internal/claude.go with a single --print prompt, which
+    is the whole reason there is no conversation, no usage block and no cost
+  - CostNotCapturedNote in internal/domain/documentation.go is the note every
+    routing record carries
+
+principles:
+  - Record what is counted or measured; never record what would have to be
+    estimated
+  - An approximation that is honest about being one beats a fabricated exact
+    figure
+  - State the absence in the artefact, not only in the documentation
+  - Fix the boundary if the boundary is wrong; do not paper over it with an
+    estimator
+
+related_domain:
+  - execution  # Terms: default executor, escalated executor, attempt, routing record

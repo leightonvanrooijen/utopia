@@ -3,7 +3,6 @@ package ralph
 import (
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
@@ -164,6 +163,11 @@ func routeValidationFailure(item *domain.WorkItem, agg *validators.AggregateResu
 		}
 	}
 
+	// Tally the reported class before any of the routing below reclassifies it, so
+	// the persisted ratio of mechanical to comprehension failures measures what the
+	// validators concluded rather than what the caps did with it.
+	recordReportedFailureClass(item, class)
+
 	// A suspected spec defect is a claim about the specification, so it routes to
 	// scoping escalation without consulting or moving the executor counters - they
 	// measure the executor, which is not what is being doubted. The scoping counter
@@ -193,6 +197,7 @@ func routeValidationFailure(item *domain.WorkItem, agg *validators.AggregateResu
 		// load-bearing choice: it converts a stuck retry loop into an escalation,
 		// which is the only move that can change the outcome.
 		reclassified = true
+		recordReclassifiedFailure(item)
 		class = validators.FailureComprehension
 	}
 
@@ -360,16 +365,18 @@ func (e *NeedsHumanError) Is(target error) bool {
 
 // haltNeedsHuman terminates a work item at the exhausted cap: the item is
 // persisted as needs_human so a resume skips it rather than exhausting the same
-// cap again, and the transcript of what was tried is written because a run that
+// cap again, and the run record of what was tried is written because a run that
 // gave up is what a person re-scoping the change request has to read.
 //
 // The status is what makes the halt distinguishable from a verification failure
 // on disk; the returned typed error is what makes it distinguishable to the
-// caller, which continues with the next work item.
-func haltNeedsHuman(store *internal.YAMLStore, specID, crID string, item *domain.WorkItem, transcript *strings.Builder, halt *NeedsHumanError) error {
+// caller, which continues with the next work item. The status is set before the
+// record is written so the routing record reports the halt as needs_human rather
+// than as an abandonment.
+func haltNeedsHuman(store *internal.YAMLStore, specID, crID string, item *domain.WorkItem, rec *runRecorder, halt *NeedsHumanError) error {
 	item.Status = domain.WorkItemNeedsHuman
 	_ = store.SaveWorkItemForSpec(specID, item)
-	writeRunTranscript(store, crID, item, transcript.String(), domain.RunFailed)
+	writeRunTranscript(store, crID, item, rec, domain.RunFailed)
 	return halt
 }
 

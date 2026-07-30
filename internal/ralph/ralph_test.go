@@ -597,7 +597,7 @@ func TestWriteRunTranscript_RecordsJoinKeysAndOutcome(t *testing.T) {
 		IterationCount: 3,
 	}
 
-	writeRunTranscript(store, "cr-1", item, "the streamed output", domain.RunCompleted)
+	writeRunTranscript(store, "cr-1", item, recorderWith("", "the streamed output"), domain.RunCompleted)
 
 	run, err := internal.Load[domain.ExecutionRun](store, "runs/cr-1/cr-1-phase-0-add-thing.yaml")
 	if err != nil {
@@ -632,5 +632,5 @@ func TestWriteRunTranscript_UnwritableStoreDoesNotPanic(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	writeRunTranscript(internal.NewYAMLStore(notADir), "cr-1", &domain.WorkItem{ID: "item"}, "out", domain.RunFailed)
+	writeRunTranscript(internal.NewYAMLStore(notADir), "cr-1", &domain.WorkItem{ID: "item"}, recorderWith("", "out"), domain.RunFailed)
 }

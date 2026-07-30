@@ -103,10 +103,64 @@ type WorkItem struct {
 	// forever.
 	ScopingEscalationCount int `yaml:"scoping_escalations,omitempty"`
 
+	// MechanicalFailureTotal, ComprehensionFailureTotal and
+	// ReclassifiedFailureTotal are the lifetime failure tallies by the class the
+	// validators reported, as opposed to the counters above, which are routing
+	// state and reset. They exist because the routing record needs the ratio of
+	// mechanical to comprehension failures over the whole item, and every counter
+	// that routing uses is reset by something: the mechanical one by a
+	// comprehension failure, the comprehension one by a change-request rewrite.
+	//
+	// They are persisted with the item and never reset, so an item that resumes
+	// mid-run does not report a truncated history.
+	MechanicalFailureTotal    int `yaml:"mechanical_failures_total,omitempty"`
+	ComprehensionFailureTotal int `yaml:"comprehension_failures_total,omitempty"`
+	ReclassifiedFailureTotal  int `yaml:"reclassified_failures_total,omitempty"`
+
+	// ExecutorAttempts is every execution attempt made on this item, with the model
+	// and effort it ran on. It is persisted for the same reason the counters are -
+	// so a resumed item reports its whole history - and it is what makes "no path
+	// raised the default executor's effort" a claim a reader can check against the
+	// record rather than only a test the loop passed once.
+	//
+	// Only attempts that actually ran are kept: one refunded for a usage limit is
+	// dropped, exactly as its iteration and its escalation charge are.
+	ExecutorAttempts []ExecutorAttempt `yaml:"executor_attempts,omitempty"`
+
+	// SpecRewritten records that a scoping escalation produced a change request
+	// execution actually resumed against. It is distinct from a non-zero
+	// ScopingEscalationCount, which counts rewrites attempted including the ones
+	// that produced nothing usable.
+	SpecRewritten bool `yaml:"spec_rewritten,omitempty"`
+
 	// ValidatorsRouted records whether the relevance router has already run for
 	// this work item. Once true, SelectedValidators is authoritative even when
 	// empty, so routing is not repeated on retries or after a resume.
 	ValidatorsRouted bool `yaml:"validators_routed,omitempty"`
+}
+
+// Executor roles an attempt can run under. The role is recorded rather than
+// inferred from the model string because a project may configure models.execute
+// and models.execute_escalated to the same model and still have escalated - the
+// role is what the caps bound and what the cost approximation counts.
+const (
+	ExecutorRoleDefault   = "default-executor"
+	ExecutorRoleEscalated = "escalated-executor"
+)
+
+// ExecutorAttempt is one execution attempt's routing: which role ran it, on which
+// model, at which effort. It carries no output - the transcript already holds
+// that - only what the attempt cost by way of tier.
+type ExecutorAttempt struct {
+	// Iteration is the item's iteration number this attempt was.
+	Iteration int `yaml:"iteration"`
+	// Role is ExecutorRoleDefault or ExecutorRoleEscalated.
+	Role string `yaml:"role"`
+	// Model is the model the attempt ran on.
+	Model string `yaml:"model"`
+	// Effort is the resolved effort level, empty when none was configured and the
+	// claude CLI default applied.
+	Effort string `yaml:"effort,omitempty"`
 }
 
 // FailureConclusion is one failing validator's conclusion about one attempt. It

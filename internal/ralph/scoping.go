@@ -117,10 +117,10 @@ func escalateScoping(
 	specID, crID string,
 	esc *ScopingEscalationError,
 	caps EscalationCaps,
-	transcript *strings.Builder,
+	rec *runRecorder,
 	finalDiff string,
 ) error {
-	appendScopingEscalation(transcript, esc)
+	appendScopingEscalation(&rec.transcript, esc)
 
 	rewritten, err := s.rewrite(ctx, item, crID, esc, finalDiff)
 	if err == nil {
@@ -128,12 +128,12 @@ func escalateScoping(
 	}
 	if err != nil {
 		fmt.Printf("  Scoping escalation produced no change request to resume against: %v\n", err)
-		fmt.Fprintf(transcript, "\nScoping escalation failed: %v\n", err)
+		fmt.Fprintf(&rec.transcript, "\nScoping escalation failed: %v\n", err)
 		if halt := exhaustedScoping(item, caps, err); halt != nil {
-			return haltNeedsHuman(s.store, specID, crID, item, transcript, halt)
+			return haltNeedsHuman(s.store, specID, crID, item, rec, halt)
 		}
 		_ = s.store.SaveWorkItemForSpec(specID, item)
-		writeRunTranscript(s.store, crID, item, transcript.String(), domain.RunFailed)
+		writeRunTranscript(s.store, crID, item, rec, domain.RunFailed)
 		return err
 	}
 
@@ -143,7 +143,7 @@ func escalateScoping(
 	// loop through a different door.
 	fmt.Printf("  Scoping escalation: resuming against %s (comprehension_count reset to 0, opus_execution_attempts still %d/%d)\n",
 		rewritten.ID, item.OpusExecutionAttempts, caps.OpusExecutionAttempts)
-	fmt.Fprintf(transcript, "\nChange request rewritten as %s; execution resumes against it.\n", rewritten.ID)
+	fmt.Fprintf(&rec.transcript, "\nChange request rewritten as %s; execution resumes against it.\n", rewritten.ID)
 	return nil
 }
 
@@ -310,6 +310,12 @@ func resumeAgainst(item *domain.WorkItem, rewritten *domain.ChangeRequest, specI
 		// are dropped with the counters that measured it. They survive on the
 		// rewrite's provenance, which is where a reader looks for why it was written.
 		item.FailureConclusions = nil
+		// The rewrite took effect, which is the fact the routing record reports as
+		// spec_rewritten. It is set here rather than from ScopingEscalationCount
+		// because that counter includes rewrites that produced nothing usable, and the
+		// hypothesis under test - that rewriting the change request helps - can only be
+		// argued from rewrites execution actually ran against.
+		item.SpecRewritten = true
 		item.Status = domain.WorkItemPending
 		return store.SaveWorkItemForSpec(specID, item)
 	}

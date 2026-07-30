@@ -262,7 +262,7 @@ func executeWorkItem(
 	basePayload EventPayload,
 	validatorRunner *validators.Runner,
 	validatorList []*domain.Validator,
-) (*stepTimings, error) {
+) (timings *stepTimings, err error) {
 	maxIterations := config.Verification.MaxIterations
 	verifyCommand := config.Verification.Command
 
@@ -287,19 +287,31 @@ func executeWorkItem(
 	crID := extractCRID(specID)
 	crTitle := ""
 	operationType := "refactor" // default for refactor CRs
+	// The type the item's routing is recorded against, so escalation rate per
+	// cr_type is a query over the run records. Left empty when the CR cannot be
+	// loaded rather than defaulted to a type the item may not have.
+	var crType domain.CRType
 	if cr, err := store.LoadChangeRequest(crID); err == nil {
 		crTitle = cr.Title
 		operationType = deriveOperationType(cr, item.SpecRef)
+		crType = deriveCRType(cr, specID)
 	}
 
 	// Time every expensive step this loop brackets so the item can report where
 	// its wall clock went when it completes.
-	timings := newStepTimings()
+	timings = newStepTimings()
 
-	// The run transcript, accumulated from the streamed Claude output each
-	// iteration already produces for completion-token detection. It is written
-	// to .utopia/runs/ when the item finishes, however it finishes.
-	var transcript strings.Builder
+	// The run record: the transcript accumulated from the streamed Claude output
+	// each iteration already produces for completion-token detection, plus the wall
+	// clock and change request type its routing record needs. It is written to
+	// .utopia/runs/ when the item finishes, however it finishes.
+	rec := newRunRecorder(crType)
+
+	// Every way out of this loop leaves a record, not only the outcomes the loop
+	// routed to. An item that aborted on an error nobody anticipated is exactly the
+	// item worth having a record of, and no record at all reads like a change
+	// request that was never attempted.
+	defer func() { recordAbort(ctx, store, crID, item, rec, err) }()
 
 	itemPayload := basePayload
 	itemPayload.WorkItemID = item.ID
@@ -329,7 +341,7 @@ func executeWorkItem(
 			// allowed to be and still does not execute. Halting here is what stops the
 			// rewrite-then-retry cycle from becoming the unbounded loop.
 			if item.ScopingEscalationCount >= caps.ScopingEscalations {
-				return nil, haltNeedsHuman(store, specID, crID, item, &transcript, &NeedsHumanError{
+				return nil, haltNeedsHuman(store, specID, crID, item, rec, &NeedsHumanError{
 					WorkItemID: item.ID,
 					Cap:        "escalation.scoping_escalations",
 					Limit:      caps.ScopingEscalations,
@@ -342,7 +354,7 @@ func executeWorkItem(
 			// produces nothing has still been made.
 			item.ScopingEscalationCount++
 			esc := &ScopingEscalationError{WorkItemID: item.ID, ComprehensionCount: item.ComprehensionCount}
-			if err := escalateScoping(ctx, sc, item, specID, crID, esc, caps, &transcript, escalationDiff(ctx, validatorRunner)); err != nil {
+			if err := escalateScoping(ctx, sc, item, specID, crID, esc, caps, rec, escalationDiff(ctx, validatorRunner)); err != nil {
 				return nil, err
 			}
 			continue
@@ -358,7 +370,7 @@ func executeWorkItem(
 			_ = store.SaveWorkItemForSpec(specID, item)
 			// A run that gave up is still worth harvesting - what was tried and
 			// why it never converged is a decision record too.
-			writeRunTranscript(store, crID, item, transcript.String(), domain.RunFailed)
+			writeRunTranscript(store, crID, item, rec, domain.RunFailed)
 			return nil, fmt.Errorf("max iterations (%d) reached for work item %s", maxIterations, item.ID)
 		}
 
@@ -404,8 +416,15 @@ func executeWorkItem(
 		charged, capErr := chargeEscalatedAttempt(item, caps)
 		if capErr != nil {
 			item.IterationCount--
-			return nil, haltNeedsHuman(store, specID, crID, item, &transcript, capErr)
+			return nil, haltNeedsHuman(store, specID, crID, item, rec, capErr)
 		}
+
+		// Book the attempt onto the item's routing record alongside the cap charge
+		// above, and for the same reason: both are refunded together if the attempt
+		// never actually runs. Recording the model and effort here rather than
+		// reconstructing them later is what makes the record evidence - in particular
+		// the evidence that the default executor's effort was never raised.
+		recordExecutorAttempt(item, attemptModel, attemptEffort)
 
 		attemptCLI := cli
 		if attemptModel != defaultExecutorModel || attemptEffort != efforts.executor {
@@ -437,10 +456,12 @@ func executeWorkItem(
 			fmt.Printf("  Iteration %d: usage limit handled, re-running this iteration (claude %s)\n", item.IterationCount, ui.Duration(claudeElapsed))
 			item.IterationCount--
 			// The attempt produced no work, so it is refunded: the cap bounds spend on
-			// the escalated executor, and nothing was spent here.
+			// the escalated executor, and nothing was spent here. The routing record is
+			// refunded with it, so the attempt list stays a list of attempts that ran.
 			if charged {
 				item.OpusExecutionAttempts--
 			}
+			refundExecutorAttempt(item)
 			continue
 		}
 
@@ -448,7 +469,7 @@ func executeWorkItem(
 		// paths below take the loop elsewhere. A limit-handled attempt is
 		// deliberately excluded above: it produced no work and does not count
 		// as an iteration, so it would only misnumber the transcript.
-		appendIterationOutput(&transcript, item.IterationCount, claudeResult)
+		appendIterationOutput(&rec.transcript, item.IterationCount, claudeResult)
 
 		if err != nil {
 			fmt.Printf("  Iteration %d: Claude invocation failed: %v (claude %s)\n", item.IterationCount, err, ui.Duration(claudeElapsed))
@@ -575,7 +596,7 @@ func executeWorkItem(
 				return nil, fmt.Errorf("failed to save work item state: %w", err)
 			}
 			if decision.Route == RouteNeedsHuman {
-				return nil, haltNeedsHuman(store, specID, crID, item, &transcript, &NeedsHumanError{
+				return nil, haltNeedsHuman(store, specID, crID, item, rec, &NeedsHumanError{
 					WorkItemID: item.ID,
 					Cap:        decision.CapExhausted,
 					Limit:      caps.ScopingEscalations,
@@ -588,7 +609,7 @@ func executeWorkItem(
 				// The change request, not the code, is what gets rewritten here. A
 				// rewrite the loop can resume against returns nil and execution carries
 				// on against the new specification; anything else stops the item.
-				if err := escalateScoping(ctx, sc, item, specID, crID, scopingEscalationError(item, aggregate, decision), caps, &transcript, escalationDiff(ctx, validatorRunner)); err != nil {
+				if err := escalateScoping(ctx, sc, item, specID, crID, scopingEscalationError(item, aggregate, decision), caps, rec, escalationDiff(ctx, validatorRunner)); err != nil {
 					return nil, err
 				}
 			}
@@ -603,7 +624,7 @@ func executeWorkItem(
 		logExecutionEntry(store, crID, item, operationType)
 		// Written before the commit so the transcript is picked up by the same
 		// `git add -A` and lands in the work item's own commit.
-		writeRunTranscript(store, crID, item, transcript.String(), domain.RunCompleted)
+		writeRunTranscript(store, crID, item, rec, domain.RunCompleted)
 		p.CommitSHA = gitCommitWorkItem(projectDir, item, crTitle)
 		dispatcher.Dispatch(Event{Name: EventWorkItemCommitted, Payload: p})
 		return timings, nil
@@ -715,28 +736,6 @@ func appendIterationOutput(transcript *strings.Builder, iteration int, result *i
 		transcript.WriteString("\n")
 	}
 	fmt.Fprintf(transcript, "--- iteration %d ---\n%s", iteration, result.Stdout)
-}
-
-// writeRunTranscript persists the work item's execution run to
-// .utopia/runs/<cr-id>/<workitem-id>.yaml.
-// Logs a warning and returns on failure (non-blocking): a lost transcript
-// costs future harvests some signal, which is never worth stopping a run over.
-func writeRunTranscript(store *internal.YAMLStore, crID string, item *domain.WorkItem, transcript string, outcome domain.RunOutcome) {
-	run := &domain.ExecutionRun{
-		WorkItemID:  item.ID,
-		CRID:        crID,
-		SpecRef:     item.SpecRef,
-		Iterations:  item.IterationCount,
-		CompletedAt: time.Now(),
-		Outcome:     outcome,
-		// A fresh run has never been reviewed, so it enters the harvest queue
-		// unprocessed, exactly as a conversation does.
-		Status:     domain.ConversationUnprocessed,
-		Transcript: transcript,
-	}
-	if err := store.SaveExecutionRun(run); err != nil {
-		fmt.Printf("  warning: failed to write run transcript for %s: %v\n", item.ID, err)
-	}
 }
 
 // gitCommitWorkItem creates a git commit after a work item passes verification.

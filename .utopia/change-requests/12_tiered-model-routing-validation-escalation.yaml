@@ -251,7 +251,7 @@ phases:
                 - old: Model flows through Prompt and SessionWithCapture methods
                   new: Model and effort flow through Prompt and SessionWithCapture methods
     - type: feature
-      status: in-progress
+      status: complete
       changes:
         - operation: add
           spec: escalation-routing
@@ -283,6 +283,7 @@ phases:
                 - Keep the diff and the verbatim tooling output - they are evidence rather than reasoning, and dropping them makes the escalated attempt guess at what actually broke
                 - Utopia shells out to the claude CLI with a single --print prompt at internal/claude.go:129-134, so there is no conversation to prune - the fresh context is simply a different prompt string, which makes this phase considerably cheaper than it would be against a message-history API
     - type: feature
+      status: in-progress
       changes:
         - operation: add
           spec: escalation-routing
@@ -325,4 +326,4 @@ phases:
                 - Reuse the yaml-formatting package so the record matches other Utopia YAML
                 - Capture an ADR recording that Utopia sits above the Anthropic API and therefore cannot observe tokens, cache hits or cost - the design this change request came from assumed the API layer, and the next reader will make the same assumption unless it is written down
                 - Capture the inverted-rule hypothesis as an ADR too, with the specific evidence that would overturn it - rewritten change requests failing to improve first-pass rates - so the open question is recorded rather than remembered
-current_phase: 2
+current_phase: 3

@@ -58,7 +58,7 @@ func plantPriorAttemptTranscript(store *internal.YAMLStore, crID string, item *d
 		escalationToolCallLog,
 		escalationPartialDiff,
 	}, "\n")
-	writeRunTranscript(store, crID, item, transcript, domain.RunFailed)
+	writeRunTranscript(store, crID, item, recorderWith("", transcript), domain.RunFailed)
 }
 
 func TestEscalatedPrompt_CarriesTheSpecificationAndTheEvidence(t *testing.T) {

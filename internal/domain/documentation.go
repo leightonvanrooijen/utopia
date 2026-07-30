@@ -2,6 +2,7 @@ package domain
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -147,6 +148,234 @@ type ExecutionRun struct {
 	// Transcript is the streamed Claude output accumulated across every
 	// iteration of the run.
 	Transcript string `yaml:"transcript"`
+
+	// Routing records how the run was routed between executors: which model and
+	// effort each attempt used, how many failures of each class it took, and which
+	// escalation paths were spent. It rides on the run record rather than in a
+	// parallel file so a change request's routing history is the same directory
+	// read as its transcripts, and the same git history is the time series.
+	//
+	// It is omitted only on runs written before routing was recorded.
+	Routing *RoutingRecord `yaml:"routing,omitempty"`
+}
+
+// RoutingOutcome records how a work item's routing ended. It is a separate
+// vocabulary from RunOutcome because it answers a different question: RunOutcome
+// says whether the transcript is worth harvesting, RoutingOutcome says whether
+// the routing worked, and "needs_human" is a distinct answer to the second that
+// the first flattens into "failed".
+type RoutingOutcome string
+
+const (
+	// RoutingPassed means the work item completed verification and its gates.
+	RoutingPassed RoutingOutcome = "passed"
+	// RoutingNeedsHuman means every bounded escalation path was exhausted, so no
+	// further attempt could have changed the outcome.
+	RoutingNeedsHuman RoutingOutcome = "needs_human"
+	// RoutingAbandoned means the loop stopped for a reason other than an exhausted
+	// escalation cap - max iterations, or an error that ended the item.
+	RoutingAbandoned RoutingOutcome = "abandoned"
+)
+
+// CostNotCapturedNote is recorded verbatim on every routing record so a reader
+// does not mistake the absence of token counts and dollar figures for zero. See
+// ADR-005: Utopia drives the claude CLI, which reports neither, so cost is
+// approximated from attempt counts and the model each attempt ran on.
+const CostNotCapturedNote = "Token counts, cache hits and monetary cost are not captured - not zero, not observable. " +
+	"Utopia drives the claude CLI, which reports none of them (ADR-005). " +
+	"Cost is approximated from attempts, sonnet_attempts and opus_execution_attempts together with the model each attempt ran on."
+
+// RoutingRecord is the persisted evidence for how one work item was routed. It
+// exists so the escalation caps, and the premise behind them, can be argued from
+// records rather than intuition - specifically the premise that repeated
+// comprehension failure indicts the change request rather than the executor (see
+// ADR-006 for what would overturn it).
+//
+// Every field here is either counted or measured by the loop. Nothing is
+// estimated, and nothing that would have to be estimated is present.
+type RoutingRecord struct {
+	// CRType is the change request's type - for an initiative, the type of the
+	// phase this work item came from. It is on the record because escalation rate
+	// per cr_type is one of the two aggregations the record exists to support.
+	CRType CRType `yaml:"cr_type"`
+
+	// Attempts is every execution attempt the item made, in order, with the model
+	// and effort it ran on. It is the per-attempt evidence behind the counts below,
+	// and the evidence that no path raised the default executor's effort.
+	Attempts []ExecutorAttempt `yaml:"attempts,omitempty"`
+
+	// SonnetAttempts and OpusExecutionAttempts count attempts on the default and
+	// escalated executors. They are named for the roles' usual models because that
+	// is the vocabulary the caps are configured in, and they are the cost
+	// approximation: attempts at a tier, not tokens.
+	SonnetAttempts        int `yaml:"sonnet_attempts"`
+	OpusExecutionAttempts int `yaml:"opus_execution_attempts"`
+
+	// MechanicalFailures and ComprehensionFailures count failures by the class the
+	// validators reported, before any routing reclassification, so their ratio
+	// measures what the validators saw rather than what the caps did with it.
+	// ReclassifiedFailures is how many of the mechanical ones the mechanical cap
+	// then routed as comprehension, which is what reconciles these counts with the
+	// routing counters on the work item.
+	MechanicalFailures    int `yaml:"mechanical_failures"`
+	ComprehensionFailures int `yaml:"comprehension_failures"`
+	ReclassifiedFailures  int `yaml:"reclassified_failures"`
+
+	// ScopingEscalations is how many times the change request was sent for rewrite;
+	// SpecRewritten is whether a rewrite ever produced a change request execution
+	// actually resumed against. They differ when a rewrite produced nothing usable.
+	ScopingEscalations int  `yaml:"scoping_escalations"`
+	SpecRewritten      bool `yaml:"spec_rewritten"`
+
+	Outcome RoutingOutcome `yaml:"outcome"`
+
+	// DurationSeconds is the item's wall clock, measured from the first attempt to
+	// the write of this record. Duration is the same figure rendered for a reader;
+	// queries use the seconds.
+	DurationSeconds float64 `yaml:"duration_seconds"`
+	Duration        string  `yaml:"duration"`
+
+	// CostNote is CostNotCapturedNote, written into every record rather than left
+	// to documentation, because the reader who needs it is reading the record.
+	CostNote string `yaml:"cost_note"`
+}
+
+// Escalated reports whether this item left the default executor at all - either
+// onto the escalated executor or into a change-request rewrite. It is the
+// numerator of the escalation rate.
+func (r *RoutingRecord) Escalated() bool {
+	return r.OpusExecutionAttempts > 0 || r.ScopingEscalations > 0
+}
+
+// DefaultExecutorEffort returns the effort every attempt on the default executor
+// ran at, and whether that effort was the same on all of them. A false second
+// return is a bug in the loop, not a configuration choice: no path may raise the
+// default executor's effort in response to a failure (ADR-004), and these
+// records are where that rule is checked after the fact rather than only in a
+// test.
+func (r *RoutingRecord) DefaultExecutorEffort() (string, bool) {
+	effort := ""
+	seen := false
+	for _, a := range r.Attempts {
+		if a.Role != ExecutorRoleDefault {
+			continue
+		}
+		if !seen {
+			effort, seen = a.Effort, true
+			continue
+		}
+		if a.Effort != effort {
+			return effort, false
+		}
+	}
+	return effort, true
+}
+
+// RoutingSummary aggregates routing records over some grouping - a spec, a CR
+// type - so escalation rate and the mechanical-to-comprehension ratio are read
+// off the persisted records without re-reading a single transcript.
+type RoutingSummary struct {
+	// Records is how many routing records the group contains, the denominator of
+	// every rate below.
+	Records int
+	// Escalated is how many of them left the default executor.
+	Escalated int
+	// Passed, NeedsHuman and Abandoned partition Records by outcome.
+	Passed     int
+	NeedsHuman int
+	Abandoned  int
+	// MechanicalFailures and ComprehensionFailures are the group's totals by
+	// reported class.
+	MechanicalFailures    int
+	ComprehensionFailures int
+	// SpecRewrites is how many records ended up executing against a rewritten
+	// change request.
+	SpecRewrites int
+}
+
+// EscalationRate is the share of records in the group that left the default
+// executor, or 0 for an empty group.
+func (s RoutingSummary) EscalationRate() float64 {
+	if s.Records == 0 {
+		return 0
+	}
+	return float64(s.Escalated) / float64(s.Records)
+}
+
+// MechanicalToComprehensionRatio is mechanical failures per comprehension
+// failure. It returns 0 when there were no failures of either class, and -1 when
+// there were mechanical failures and no comprehension failures at all - a ratio
+// with no finite value, reported as one rather than as a division by zero.
+func (s RoutingSummary) MechanicalToComprehensionRatio() float64 {
+	if s.ComprehensionFailures == 0 {
+		if s.MechanicalFailures == 0 {
+			return 0
+		}
+		return -1
+	}
+	return float64(s.MechanicalFailures) / float64(s.ComprehensionFailures)
+}
+
+// SummariseRoutingBySpec groups routing records by the spec their work item
+// implemented - the spec-id half of spec_ref, not the feature.
+//
+// This is the aggregation the record exists for. A spec whose change requests
+// escalate repeatedly has a boundary problem rather than a model problem, and
+// that is a finding about the codebase, not about routing.
+func SummariseRoutingBySpec(runs []*ExecutionRun) map[string]RoutingSummary {
+	return summariseRouting(runs, func(run *ExecutionRun) string {
+		return specIDOf(run.SpecRef)
+	})
+}
+
+// SummariseRoutingByCRType groups routing records by change request type, so
+// "features escalate more than enhancements" is a query rather than a hunch.
+func SummariseRoutingByCRType(runs []*ExecutionRun) map[string]RoutingSummary {
+	return summariseRouting(runs, func(run *ExecutionRun) string {
+		return string(run.Routing.CRType)
+	})
+}
+
+// summariseRouting folds every run that carries a routing record into a summary
+// per key. Runs written before routing was recorded carry none and are skipped
+// rather than counted as non-escalating, which would understate every rate.
+func summariseRouting(runs []*ExecutionRun, key func(*ExecutionRun) string) map[string]RoutingSummary {
+	summaries := map[string]RoutingSummary{}
+	for _, run := range runs {
+		if run == nil || run.Routing == nil {
+			continue
+		}
+		k := key(run)
+		s := summaries[k]
+		s.Records++
+		if run.Routing.Escalated() {
+			s.Escalated++
+		}
+		switch run.Routing.Outcome {
+		case RoutingPassed:
+			s.Passed++
+		case RoutingNeedsHuman:
+			s.NeedsHuman++
+		case RoutingAbandoned:
+			s.Abandoned++
+		}
+		s.MechanicalFailures += run.Routing.MechanicalFailures
+		s.ComprehensionFailures += run.Routing.ComprehensionFailures
+		if run.Routing.SpecRewritten {
+			s.SpecRewrites++
+		}
+		summaries[k] = s
+	}
+	return summaries
+}
+
+// specIDOf takes the spec half of a "spec-id.feature-id" reference. A reference
+// with no feature suffix is already a spec id.
+func specIDOf(specRef string) string {
+	if spec, _, found := strings.Cut(specRef, "."); found {
+		return spec
+	}
+	return specRef
 }
 
 // Type returns SourceExecution: a run is always its own source type, whatever
