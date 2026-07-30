@@ -26,11 +26,13 @@ type Scope struct {
 }
 
 // newProgress builds the shared phase-progress renderer over the caller's
-// results writer, which is the same stream the rest of this pipeline prints to.
-// A nil printer means the process's own streams. How much it writes is the
-// process-wide diagnostic level's business, not this pipeline's.
+// diagnostic writer, which is the same stream the rest of this pipeline's
+// progress and status chatter goes to - phase progress is a diagnostic, so it
+// must not land in the stdout a caller pipes. A nil printer means the process's
+// own streams. How much it writes is the process-wide diagnostic level's
+// business, not this pipeline's.
 func newProgress(out *ui.Printer, totalPhases int) *ui.Progress {
-	return ui.NewProgress(ui.OrDefault(out).Out(), totalPhases)
+	return ui.NewProgress(ui.OrDefault(out).Err(), totalPhases)
 }
 
 // utopiaDirOf returns the .utopia directory of a project, which is where

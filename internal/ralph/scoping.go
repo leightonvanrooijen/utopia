@@ -131,7 +131,7 @@ func escalateScoping(
 		err = resumeAgainst(item, rewritten, specID, s.store, s.standards)
 	}
 	if err != nil {
-		ui.OrDefault(s.out).Printf("  Scoping escalation produced no change request to resume against: %v\n", err)
+		ui.OrDefault(s.out).Progressf("  Scoping escalation produced no change request to resume against: %v\n", err)
 		fmt.Fprintf(&rec.transcript, "\nScoping escalation failed: %v\n", err)
 		if halt := exhaustedScoping(item, caps, err); halt != nil {
 			return haltNeedsHuman(s.store, specID, crID, item, rec, halt)
@@ -145,7 +145,7 @@ func escalateScoping(
 	// operator can see it carrying across: it bounds total spend on the expensive
 	// path, and resetting it here would turn rewrite-then-retry into an unbounded
 	// loop through a different door.
-	ui.OrDefault(s.out).Printf("  Scoping escalation: resuming against %s (comprehension_count reset to 0, opus_execution_attempts still %d/%d)\n",
+	ui.OrDefault(s.out).Progressf("  Scoping escalation: resuming against %s (comprehension_count reset to 0, opus_execution_attempts still %d/%d)\n",
 		rewritten.ID, item.OpusExecutionAttempts, caps.OpusExecutionAttempts)
 	fmt.Fprintf(&rec.transcript, "\nChange request rewritten as %s; execution resumes against it.\n", rewritten.ID)
 	return nil
@@ -208,7 +208,7 @@ func (s *scoper) rewrite(
 		return nil, err
 	}
 
-	ui.OrDefault(s.out).Printf("  Scoping escalation: rewriting the change request on %s (effort %s)...\n", s.model, s.effort)
+	ui.OrDefault(s.out).Progressf("  Scoping escalation: rewriting the change request on %s (effort %s)...\n", s.model, s.effort)
 	// The scoper is an invocation the execution loop makes, like the executor
 	// attempt and the after-phase fix, so its accounting is captured too; only
 	// validators and discovery stay on prose output.

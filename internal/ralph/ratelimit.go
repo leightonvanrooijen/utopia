@@ -301,10 +301,10 @@ func handleClaudeLimits(ctx context.Context, out *ui.Printer, result *internal.P
 	if DetectRateLimit(result.Stdout, result.Stderr) {
 		waitDuration, parseErr := ParseRateLimitWait(result.Stdout, result.Stderr)
 		if parseErr != nil {
-			out.Printf("  Rate limit detected but failed to parse reset time: %v\n", parseErr)
-			out.Printf("  Falling back to %v wait...\n", DefaultRateLimitWait)
+			out.Progressf("  Rate limit detected but failed to parse reset time: %v\n", parseErr)
+			out.Progressf("  Falling back to %v wait...\n", DefaultRateLimitWait)
 		}
-		out.Printf("  %s\n", FormatWaitMessage(result.Stdout, result.Stderr))
+		out.Progressf("  %s\n", FormatWaitMessage(result.Stdout, result.Stderr))
 
 		select {
 		case <-ctx.Done():
@@ -337,7 +337,7 @@ func handleClaudeLimits(ctx context.Context, out *ui.Printer, result *internal.P
 // shutdown path. Probe attempts never count against the max iterations limit.
 func probeUntilRecovered(ctx context.Context, out *ui.Printer, probe func(context.Context) (*internal.PromptResult, error), interval time.Duration) error {
 	out = ui.OrDefault(out)
-	out.Printf("  %s\n", SpendLimitNoticeMessage())
+	out.Progressf("  %s\n", SpendLimitNoticeMessage())
 
 	for {
 		// Wait out the probe interval. Ctrl+C or the elapsing session timeout
@@ -360,14 +360,14 @@ func probeUntilRecovered(ctx context.Context, out *ui.Printer, probe func(contex
 		stillLimited := result != nil && DetectSpendLimit(result.Stdout, result.Stderr)
 		switch {
 		case !stillLimited && err == nil:
-			out.Printf("  [%s] probe succeeded: org monthly spend limit lifted, resuming...\n", ts)
+			out.Progressf("  [%s] probe succeeded: org monthly spend limit lifted, resuming...\n", ts)
 			return nil
 		case stillLimited:
-			out.Printf("  [%s] probe: still limited\n", ts)
+			out.Progressf("  [%s] probe: still limited\n", ts)
 		default:
 			// Probe failed for a reason other than the spend limit (e.g. a
 			// transient error). Treat as still limited and keep probing.
-			out.Printf("  [%s] probe: still limited (probe error: %v)\n", ts, err)
+			out.Progressf("  [%s] probe: still limited (probe error: %v)\n", ts, err)
 		}
 	}
 }

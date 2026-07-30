@@ -273,6 +273,6 @@ func writeRunTranscript(store *internal.YAMLStore, crID string, item *domain.Wor
 		Usage:      domain.UsageEntriesFor(item.ExecutorAttempts),
 	}
 	if err := store.SaveExecutionRun(run); err != nil {
-		ui.OrDefault(rec.out).Printf("  warning: failed to write run record for %s: %v\n", item.ID, err)
+		ui.OrDefault(rec.out).Progressf("  warning: failed to write run record for %s: %v\n", item.ID, err)
 	}
 }

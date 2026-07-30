@@ -15,26 +15,51 @@ import (
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 )
 
-// captureStdout redirects os.Stdout while fn runs and returns everything it
-// printed, so tests can assert on the resolution ledger.
+// captureStd redirects both process streams while fn runs and returns what each
+// received. Tests assert on them separately because which stream a line lands on
+// is itself the behaviour: the resolution ledger is a diagnostic and belongs on
+// stderr, while a failure-output block is result output on stdout.
+func captureStd(t *testing.T, fn func()) (stdout, stderr string) {
+	t.Helper()
+	origOut, origErr := os.Stdout, os.Stderr
+	outR, outW := pipe(t)
+	errR, errW := pipe(t)
+	os.Stdout, os.Stderr = outW, errW
+	fn()
+	if err := outW.Close(); err != nil {
+		t.Fatalf("close stdout pipe: %v", err)
+	}
+	if err := errW.Close(); err != nil {
+		t.Fatalf("close stderr pipe: %v", err)
+	}
+	os.Stdout, os.Stderr = origOut, origErr
+	return readAll(t, outR), readAll(t, errR)
+}
+
+// captureStdout is captureStd for a test that only cares what reached stdout -
+// commonly the assertion that nothing did.
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
-	orig := os.Stdout
+	out, _ := captureStd(t, fn)
+	return out
+}
+
+func pipe(t *testing.T) (*os.File, *os.File) {
+	t.Helper()
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("pipe: %v", err)
 	}
-	os.Stdout = w
-	fn()
-	if err := w.Close(); err != nil {
-		t.Fatalf("close pipe: %v", err)
-	}
-	os.Stdout = orig
-	out, err := io.ReadAll(r)
+	return r, w
+}
+
+func readAll(t *testing.T, r *os.File) string {
+	t.Helper()
+	b, err := io.ReadAll(r)
 	if err != nil {
 		t.Fatalf("read pipe: %v", err)
 	}
-	return string(out)
+	return string(b)
 }
 
 func TestCompileConnectors_NotifyCompilesToLaunchOnly(t *testing.T) {
@@ -407,18 +432,18 @@ func TestEngine_CancelDoesNotReportTheKillAsFailure(t *testing.T) {
 	}
 	time.Sleep(50 * time.Millisecond)
 
-	out := captureStdout(t, func() {
+	stdout, ledger := captureStd(t, func() {
 		if err := en.Emit(context.Background(), Event{Name: EventWorkItemVerificationFailed}); err != nil {
 			t.Fatalf("cancel emit failed: %v", err)
 		}
 	})
 
-	if !strings.Contains(out, handleCancelled) {
-		t.Fatalf("cancel ledger must record the resolution, got:\n%s", out)
+	if !strings.Contains(ledger, handleCancelled) {
+		t.Fatalf("cancel ledger must record the resolution, got:\n%s", ledger)
 	}
 	for _, unwanted := range []string{"signal:", "killed", "terminated"} {
-		if strings.Contains(out, unwanted) {
-			t.Errorf("cancellation ledger line must not read like a failure, contains %q:\n%s", unwanted, out)
+		if strings.Contains(ledger+stdout, unwanted) {
+			t.Errorf("cancellation ledger line must not read like a failure, contains %q:\n%s", unwanted, ledger+stdout)
 		}
 	}
 }
@@ -426,15 +451,22 @@ func TestEngine_CancelDoesNotReportTheKillAsFailure(t *testing.T) {
 func TestResolutionLedger_JoinRecordsNameTypeExitCodeAndOutput(t *testing.T) {
 	runner := gatingRunner(t, t.TempDir(), "flaky", EventWorkItemVerified, "echo posting failed; echo hook 500 >&2; exit 3")
 
-	out := captureStdout(t, func() {
+	stdout, ledger := captureStd(t, func() {
 		if err := runner.Handle(context.Background(), Event{Name: EventWorkItemVerified}); err == nil {
 			t.Fatal("expected failure")
 		}
 	})
 
-	for _, want := range []string{"flaky", handleJoined, "exit 3", "posting failed", "hook 500"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("join ledger must include %q, got:\n%s", want, out)
+	// The ledger line itself is a diagnostic; the failing handle's captured
+	// output is rendered as a failure-output block, which stays on stdout.
+	for _, want := range []string{"flaky", handleJoined, "exit 3"} {
+		if !strings.Contains(ledger, want) {
+			t.Errorf("join ledger must include %q, got:\n%s", want, ledger)
+		}
+	}
+	for _, want := range []string{"posting failed", "hook 500"} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("failure output must include %q, got:\n%s", want, stdout)
 		}
 	}
 }
@@ -444,15 +476,15 @@ func TestResolutionLedger_DrainRecordsTimeoutResolution(t *testing.T) {
 		{Name: "slow-notify", On: []string{EventExecutionCompleted}, Command: "sleep 5", Timeout: "100ms"},
 	}, t.TempDir())
 
-	out := captureStdout(t, func() {
+	_, ledger := captureStd(t, func() {
 		if err := runner.Handle(context.Background(), Event{Name: EventExecutionCompleted}); err != nil {
 			t.Fatalf("notify must not block, got %v", err)
 		}
 	})
 
 	for _, want := range []string{"slow-notify", handleDrained, "timed out"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("drain ledger must include %q, got:\n%s", want, out)
+		if !strings.Contains(ledger, want) {
+			t.Errorf("drain ledger must include %q, got:\n%s", want, ledger)
 		}
 	}
 }
@@ -470,13 +502,13 @@ func TestResolutionLedger_CancelRecordsCancelledResolution(t *testing.T) {
 		t.Fatalf("launch emit failed: %v", err)
 	}
 
-	out := captureStdout(t, func() {
+	_, ledger := captureStd(t, func() {
 		if err := en.Emit(context.Background(), Event{Name: EventWorkItemVerified}); err != nil {
 			t.Fatalf("cancel emit failed: %v", err)
 		}
 	})
 
-	if !strings.Contains(out, "speculative") || !strings.Contains(out, handleCancelled) {
-		t.Errorf("cancel ledger must name the connector and its resolution, got:\n%s", out)
+	if !strings.Contains(ledger, "speculative") || !strings.Contains(ledger, handleCancelled) {
+		t.Errorf("cancel ledger must name the connector and its resolution, got:\n%s", ledger)
 	}
 }

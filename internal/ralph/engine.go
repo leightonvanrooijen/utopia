@@ -175,7 +175,7 @@ func (en *Engine) Emit(ctx context.Context, e Event) error {
 		if res.Err == nil {
 			continue
 		}
-		ui.OrDefault(en.out).Printf("  gating connector %s blocked %s: %v\n", res.Name, e.Name, res.Err)
+		ui.OrDefault(en.out).Progressf("  gating connector %s blocked %s: %v\n", res.Name, e.Name, res.Err)
 		if gateErr == nil {
 			gateErr = &GateError{Connector: res.Name, Event: e.Name, Stdout: res.Stdout, Aggregate: res.Aggregate}
 		}
@@ -241,7 +241,7 @@ func logResolution(h *handle) {
 	if h.result.Err != nil {
 		line += ": " + h.result.Err.Error()
 	}
-	p.Println(line)
+	p.Progressf("%s\n", line)
 	out := strings.TrimSpace(h.result.Stdout + h.result.Stderr)
 	if out == "" {
 		return
@@ -251,7 +251,7 @@ func logResolution(h *handle) {
 		return
 	}
 	for _, l := range strings.Split(out, "\n") {
-		p.Println("    " + l)
+		p.Progressf("    %s\n", l)
 	}
 }
 

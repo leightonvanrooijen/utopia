@@ -625,7 +625,7 @@ func Run(ctx context.Context, store *internal.YAMLStore, opts Options) (*Result,
 	// accumulated runs are discoverable whether or not a session starts.
 	out := ui.OrDefault(opts.Out)
 	if hint := formatRunsExcludedHint(opts.IncludeRuns, len(runs)); hint != "" {
-		out.Printf("%s\n", hint)
+		out.Progressf("%s\n", hint)
 	}
 
 	// Unprocessed runs are worth a session on their own - a work item can be
@@ -732,28 +732,28 @@ func Run(ctx context.Context, store *internal.YAMLStore, opts Options) (*Result,
 	readmeSignalCount := countREADMESignals(opts.ProjectDir, store)
 
 	// Display harvest summary
-	out.Println("Starting unified harvest session...")
-	out.Printf("Found %d unprocessed conversations:\n", len(unprocessedConvs))
-	out.Printf("  "+ui.Bullet+" %d system-truth (has CR + executed)\n", systemTruthCount)
-	out.Printf("  "+ui.Bullet+" %d exploratory (no CR)\n", exploratoryCount)
+	out.Progressf("Starting unified harvest session...\n")
+	out.Progressf("Found %d unprocessed conversations:\n", len(unprocessedConvs))
+	out.Progressf("  "+ui.Bullet+" %d system-truth (has CR + executed)\n", systemTruthCount)
+	out.Progressf("  "+ui.Bullet+" %d exploratory (no CR)\n", exploratoryCount)
 	if opts.IncludeRuns {
-		out.Printf("Found %d unprocessed execution runs (system-truth - what was built)\n", len(runs))
+		out.Progressf("Found %d unprocessed execution runs (system-truth - what was built)\n", len(runs))
 	}
-	out.Println()
-	out.Println("Existing documentation:")
-	out.Printf("  "+ui.Bullet+" %d ADRs\n", len(existingADRs))
-	out.Printf("  "+ui.Bullet+" %d Concepts\n", len(existingConcepts))
-	out.Printf("  "+ui.Bullet+" %d Domain Docs\n", len(existingDomainDocs))
-	out.Println()
-	out.Println("Documentation signals:")
-	out.Printf("  "+ui.Bullet+" %s README signal%s\n", formatSignalCount(readmeSignalCount), pluralize(readmeSignalCount))
-	out.Printf("  "+ui.Bullet+" %d rewritten change request%s (scoping escalations)\n", len(rewrites), pluralize(len(rewrites)))
-	out.Println()
-	out.Println("Documents will be saved to:")
-	out.Printf("  "+ui.Bullet+" ADRs: %s\n", adrsDir)
-	out.Printf("  "+ui.Bullet+" Concepts: %s\n", conceptsDir)
-	out.Printf("  "+ui.Bullet+" Domain: %s\n", domainDir)
-	out.Println()
+	out.Progressf("\n")
+	out.Progressf("Existing documentation:\n")
+	out.Progressf("  "+ui.Bullet+" %d ADRs\n", len(existingADRs))
+	out.Progressf("  "+ui.Bullet+" %d Concepts\n", len(existingConcepts))
+	out.Progressf("  "+ui.Bullet+" %d Domain Docs\n", len(existingDomainDocs))
+	out.Progressf("\n")
+	out.Progressf("Documentation signals:\n")
+	out.Progressf("  "+ui.Bullet+" %s README signal%s\n", formatSignalCount(readmeSignalCount), pluralize(readmeSignalCount))
+	out.Progressf("  "+ui.Bullet+" %d rewritten change request%s (scoping escalations)\n", len(rewrites), pluralize(len(rewrites)))
+	out.Progressf("\n")
+	out.Progressf("Documents will be saved to:\n")
+	out.Progressf("  "+ui.Bullet+" ADRs: %s\n", adrsDir)
+	out.Progressf("  "+ui.Bullet+" Concepts: %s\n", conceptsDir)
+	out.Progressf("  "+ui.Bullet+" Domain: %s\n", domainDir)
+	out.Progressf("\n")
 
 	// Run interactive Claude session
 	cli := internal.NewCLI().WithAuth(opts.Auth, opts.UtopiaDir).WithPrinter(out)
@@ -766,8 +766,8 @@ func Run(ctx context.Context, store *internal.YAMLStore, opts Options) (*Result,
 
 	_, sessionErr := cli.SessionWithCapture(ctx, systemPrompt)
 
-	out.Println()
-	out.Println("Harvest session ended.")
+	out.Progressf("\n")
+	out.Progressf("Harvest session ended.\n")
 
 	// Note: We don't save this conversation to avoid infinite loops
 	// (harvest sessions reviewing harvest sessions)

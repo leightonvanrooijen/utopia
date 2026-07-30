@@ -63,7 +63,12 @@ func TestExecute_DiagnosticsCarryRunAttributes(t *testing.T) {
 		if !ok {
 			t.Fatalf("diagnostic %v carries no work_item_id", rec["msg"])
 		}
-		byWorkItem[id] = rec
+		// Every record above is checked for the run's attributes; the assertions
+		// below are about the structured "work item reached" record, which is the
+		// one carrying typed attributes rather than a rendered progress line.
+		if rec["total"] != nil {
+			byWorkItem[id] = rec
+		}
 	}
 
 	for _, want := range []string{"wi-1", "wi-2"} {

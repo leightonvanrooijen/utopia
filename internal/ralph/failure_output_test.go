@@ -152,16 +152,16 @@ func TestResolutionLedger_PassingHandleOutputStaysIndented(t *testing.T) {
 	}
 	en := NewEngine([]Subscription{sub})
 
-	out := captureStdout(t, func() {
+	stdout, ledger := captureStd(t, func() {
 		if err := en.Emit(context.Background(), Event{Name: EventWorkItemVerified}); err != nil {
 			t.Fatalf("passing connector must not block: %v", err)
 		}
 	})
 
-	if strings.Contains(out, "--- Failure Output:") {
-		t.Errorf("a passing handle must not print a failure-output block, got:\n%s", out)
+	if strings.Contains(stdout+ledger, "--- Failure Output:") {
+		t.Errorf("a passing handle must not print a failure-output block, got:\n%s", stdout+ledger)
 	}
-	if !strings.Contains(out, "    posted to #builds") {
-		t.Errorf("passing handle output must stay indented under the ledger line, got:\n%s", out)
+	if !strings.Contains(ledger, "    posted to #builds") {
+		t.Errorf("passing handle output must stay indented under the ledger line, got:\n%s", ledger)
 	}
 }

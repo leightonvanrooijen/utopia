@@ -227,7 +227,7 @@ func escalationDiff(ctx context.Context, out *ui.Printer, runner *validators.Run
 	}
 	diff, err := runner.GetGitDiff(ctx)
 	if err != nil {
-		ui.OrDefault(out).Printf("  warning: could not compute the diff for the escalated context: %v\n", err)
+		ui.OrDefault(out).Progressf("  warning: could not compute the diff for the escalated context: %v\n", err)
 		return ""
 	}
 	return diff

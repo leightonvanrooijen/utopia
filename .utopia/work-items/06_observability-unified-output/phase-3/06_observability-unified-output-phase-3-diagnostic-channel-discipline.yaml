@@ -7,7 +7,7 @@ title: |
     diagnostic "must not land in the stdout a caller pipes". The execution
     loop, harvest and discover do not: roughly 70 semantically diagnostic
     lines land on stdout.
-status: pending
+status: in_progress
 prompt: |-
     ## TASK
 
@@ -74,3 +74,4 @@ constraints:
     - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
 order: 0
 estimated_complexity: medium
+iteration_count: 1

@@ -52,7 +52,7 @@ func TestResolutionLedger_RecordsRunDurationLabelledWithName(t *testing.T) {
 	}
 	en := NewEngine([]Subscription{sub})
 
-	out := captureStdout(t, func() {
+	_, ledger := captureStd(t, func() {
 		if err := en.Emit(context.Background(), Event{Name: EventWorkItemVerified}); err != nil {
 			t.Fatalf("emit failed: %v", err)
 		}
@@ -62,7 +62,7 @@ func TestResolutionLedger_RecordsRunDurationLabelledWithName(t *testing.T) {
 	// time is reported next to the name, and that it is plausibly the 200ms
 	// the action slept for rather than a zeroed clock.
 	want := regexp.MustCompile(`validators:after-workitem ` + handleJoined + ` in 0\.[2-9]s`)
-	if !want.MatchString(out) {
-		t.Errorf("ledger must report the run duration beside the name, got:\n%s", out)
+	if !want.MatchString(ledger) {
+		t.Errorf("ledger must report the run duration beside the name, got:\n%s", ledger)
 	}
 }
