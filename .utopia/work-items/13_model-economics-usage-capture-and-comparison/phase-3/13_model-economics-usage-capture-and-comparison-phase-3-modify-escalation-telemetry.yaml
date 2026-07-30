@@ -50,4 +50,41 @@ constraints:
     - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
 order: 0
 estimated_complexity: medium
-iteration_count: 1
+iteration_count: 2
+last_validator_feedback: |
+    Gating connector validators:after-workitem blocked workitem-verified:
+    Validator spec-intent failed:
+    Work item: `13_...phase-3-modify-escalation-telemetry` (only `in_progress`). Spec: `escalation-routing.yaml` feature `escalation-telemetry`. ADR-007 read. Implementation lives in commit `2331bb7` (the injected diff carried only the work item's routing metadata).
+
+    Criteria check:
+    - Usage/cost read from persisted record: `RoutingRecord.UsageTotals()` = `TotalUsage(UsageEntriesFor(r.Attempts))`; counters demoted to routing-only. Satisfied.
+    - Cost per outcome under both auth modes: `analysis.OutcomeCosts` + `utopia report outcomes` with `CHARGED` / `LIST-EST` columns, never summed, `unknown` basis on its own line (ADR-007 point 2). Satisfied.
+    - Cost note names unavailable attempts: `domain.CostNoteFor`, wired at `telemetry.go:198`, asserted in test. Satisfied.
+
+    One standards violation:
+
+    `internal/cli/report.go:96 - [B] report.go grew from 380 to 480 lines, past the documented ceiling; split the report command family into per-command files (or move the printers out) - cli-organization anti-pattern "Let a command file grow past ~400 lines | Split: extract the algorithm package and/or per-command files"`
+
+    <VERDICT>
+    {
+      "verdict": "fail",
+      "failure_class": "mechanical",
+      "diagnosis": "Every acceptance criterion is satisfied and ADR-007's basis separation is respected; the only defect is a documented file-size rule in cli-organization that the new subcommand pushed the command file past. The author understood the task and missed a written rule, so the same executor can fix it from the list.",
+      "confidence": "high"
+    }
+    </VERDICT>
+failure_conclusions:
+    - iteration: 1
+      validator_id: spec-intent
+      failure_class: mechanical
+      diagnosis: Every acceptance criterion is satisfied and ADR-007's basis separation is respected; the only defect is a documented file-size rule in cli-organization that the new subcommand pushed the command file past. The author understood the task and missed a written rule, so the same executor can fix it from the list.
+selected_validators:
+    - spec-intent
+mechanical_retry_count: 1
+mechanical_failures_total: 1
+executor_attempts:
+    - iteration: 1
+      role: default-executor
+      model: ""
+      effort: medium
+validators_routed: true
