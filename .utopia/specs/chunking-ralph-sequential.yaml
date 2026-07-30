@@ -1,7 +1,7 @@
 id: chunking-ralph-sequential
 title: Ralph Sequential Chunking Strategy
 created: "0001-01-01T00:00:00+00:00"
-updated: "2026-07-30T11:13:45.640451+10:00"
+updated: "2026-07-30T20:02:29.01324+10:00"
 description: |
     The "ralph-sequential" chunking strategy transforms a structured specification into
     discrete WorkItems optimized for Ralph Wiggum loop execution.
@@ -95,6 +95,10 @@ features:
         - Default constraints include "Architecture is already correct"
         - Constraints can be extended per-spec via spec.constraints field
         - Constraints are deduplicated if spec repeats a default
+        - Default constraints include "You are running autonomously and non-interactively; never ask for, or wait on, human input"
+        - Default constraints include "When a genuine design choice arises, choose the best-justified option and implement it rather than deferring the decision to a human"
+        - Default constraints include "Record any non-obvious decision - rationale and the alternatives considered - in the commit or PR body, so PR review is the human checkpoint"
+        - The autonomous decide-and-document constraints are emitted for every non-refactor work item prompt, alongside the existing default constraints
 
     - id: validation-verifiable-criteria
       description: |
