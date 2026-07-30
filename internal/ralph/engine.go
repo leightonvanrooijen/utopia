@@ -211,9 +211,17 @@ func (en *Engine) reapCompleted() {
 // logResolution appends one line to the handle-resolution ledger: the
 // connector name, how the handle resolved (joined, cancelled, or drained),
 // how long its work ran, its exit code, and the failure cause when present,
-// with any captured output indented beneath. Every door - join, cancel, drain
+// with any captured output beneath. Every door - join, cancel, drain
 // - logs through here, so a finished run leaves a record of every launched
 // handle, how long it took, and no outcome is silently dropped.
+//
+// A failing handle's captured output is the feedback the loop injects into the
+// next iteration, so it is rendered as a failure-output block - the same block
+// the verification command's output gets - rather than as indented ledger
+// chatter. This is the only place the validator subscriptions' feedback is
+// printed; the loop's own call sites deliberately do not print it again, because
+// one failure shown twice reads as two. Output from a handle that did not fail
+// is incidental connector chatter and stays indented under its line.
 //
 // The elapsed time is the handle's full run - launch to resolution - which for
 // a validators subscription is how long the validator agents actually took,
@@ -225,10 +233,16 @@ func logResolution(h *handle) {
 		line += ": " + h.result.Err.Error()
 	}
 	fmt.Println(line)
-	if out := strings.TrimSpace(h.result.Stdout + h.result.Stderr); out != "" {
-		for _, l := range strings.Split(out, "\n") {
-			fmt.Println("    " + l)
-		}
+	out := strings.TrimSpace(h.result.Stdout + h.result.Stderr)
+	if out == "" {
+		return
+	}
+	if h.result.Err != nil {
+		printFailureBlock(h.sub.Name, out)
+		return
+	}
+	for _, l := range strings.Split(out, "\n") {
+		fmt.Println("    " + l)
 	}
 }
 

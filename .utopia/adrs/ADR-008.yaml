@@ -1,0 +1,146 @@
+id: ADR-008
+title: "The Resolution Ledger Owns Failure Output - One Block, One Printer"
+status: accepted
+date: 2026-07-30
+context: |
+  Failure output reached the terminal three different ways, one per failing thing,
+  and only two of them were deliberate.
+
+  Verification printed its own delimited block in the loop body, immediately
+  before the output was assigned to `item.LastFailureOutput`. After-phase
+  validators printed their own delimited block, with different delimiter text, in
+  `runAfterPhaseValidators`. After-workitem validators printed nothing of their
+  own: their feedback reached the terminal only because `validatorAction` sets
+  `ConnectorResult.Stdout` to the aggregated feedback, the engine calls
+  `logResolution` on every joined handle, and `logResolution` dumped any captured
+  output indented under its ledger line.
+
+  That third path is specced behaviour - agentic-validators,
+  failure-stdout-logging - satisfied by accident. It had a dedicated print once
+  and lost it during the subscription/engine migration without any test noticing,
+  and it would be lost again by any change to `logResolution`, to how handles
+  carry output, or to whether validators route through the engine at all.
+
+  The after-phase path had the opposite problem: it routed through the engine
+  *and* printed its own block, so one validator failure was printed twice - once
+  indented by the ledger, once framed by the call site. Nobody had noticed
+  because nothing asserted on either.
+
+  Three printers also meant three formats. A human reading a failing run saw a
+  delimited block for verification, a differently-delimited block for after-phase,
+  and an indented dump for after-workitem, for three failures that all mean the
+  same thing: this is the text the next prompt is about to carry.
+
+decision: |
+  There is one renderer for a failure-output block, and for anything that
+  resolves through the engine the resolution ledger is its only caller.
+
+  1. `printFailureBlock(source, content)` in `internal/ralph/failure_output.go` is
+     the single renderer. It frames content in `--- Failure Output: <source> ---`
+     / `--- End Failure Output: <source> ---`, prints the content verbatim, and
+     prints nothing at all for empty content.
+  2. `logResolution` renders a *failing* handle's captured output through that
+     helper. Output from a handle that did not fail stays indented under its
+     ledger line: it is incidental connector chatter, not the feedback being
+     injected, and the block is reserved as the signal that something failed.
+  3. A path that resolves through the engine does not print its own block. The
+     after-phase call site's print is gone; the after-workitem call site never had
+     one and must not grow one. This is what makes "exactly one block per failure"
+     structural rather than a convention - the printer is the ledger, and the
+     ledger runs once per resolution.
+  4. Verification is the one source that renders its own block, because it does
+     not resolve through the engine. It calls the same helper with the same
+     content it then assigns to `item.LastFailureOutput`, so the block and the
+     injection cannot disagree.
+  5. The block is always printed before the feedback is injected: for verification
+     because the call precedes the assignment, and for validators because the
+     ledger prints during the dispatch that joins them, which returns the
+     `*GateError` the injection is built from.
+  6. The validator ID stays in the content, not in the frame. `AggregateResults`
+     already writes `Validator %s failed:` into the feedback, so the helper
+     prepends nothing.
+
+options_considered:
+  - option: "One renderer, called by the resolution ledger for engine-resolved failures and by verification for its own (chosen)"
+    pros:
+      - The path with no print of its own is now printed by the mechanism it
+        already resolves through, so it cannot be dropped without breaking the
+        ledger every connector depends on
+      - Kills the existing after-phase double print rather than adding a second
+        suppression mechanism to hide it
+      - Printing is reachable in a test through `Engine.Emit`, so both validator
+        paths have regression tests without running the loop
+      - Every failure a human sees is framed identically regardless of source
+    cons:
+      - The block's content for a validator failure is the aggregated feedback
+        rather than the whole `gateFeedback` string; the "which gate blocked which
+        event" sentence the prompt also carries lives on the ledger line above the
+        block rather than inside it
+      - Verification remains a second caller, so "one printer" holds for
+        engine-resolved failures only
+
+  - option: "Print at all three call sites and suppress the ledger's output dump for validator handles"
+    pros:
+      - Each block would be byte-identical to the whole injected string, wrapper
+        sentence included
+      - Call sites read explicitly - the print is visible where the failure is handled
+    cons:
+      - Needs a new suppression flag on `Subscription` whose only job is to stop a
+        double print the design created
+      - The after-workitem path stays printed by a line in the loop body, which is
+        exactly the arrangement that was silently deleted once already
+      - Leaves the print unreachable in tests without running `runWorkItem`, so the
+        regression tests the change exists to add could not be written
+
+  - option: "Make verification a subscription action so all three route through the engine"
+    pros:
+      - Truly one printer, with no exception for verification
+      - Verification failure output would be testable at the engine seam too
+    cons:
+      - Verification decides whether `workitem-verified` is emitted at all, so it
+        cannot subscribe to it - the event it would launch and join on is the one
+        its own result gates
+      - Restructures the loop's control flow to unify its output, which is a much
+        larger change than the duplication it removes
+
+consequences:
+  positive:
+    - After-workitem validator feedback is printed by a mechanism with tests on it,
+      so the specced behaviour cannot be silently dropped a second time
+    - One validator failure prints one block; the after-phase double print is gone
+    - Failure output is framed the same way whatever failed, and the frame names
+      the source
+    - A new failing subscription gets the block for free - no per-call-site print
+      to remember
+  negative:
+    - Delimiter text changed for both paths that already had a block, so anything
+      grepping run logs for `--- Verification Failure Output ---` or
+      `--- Validator Failure Feedback ---` needs updating
+    - After-phase's block now prints before its "validators failed, will retry"
+      status line rather than after it, because the ledger prints during the join
+  neutral:
+    - Gating connectors that fail with output now get the block too, which is the
+      point: a blocking connector's stdout is injected into the next prompt exactly
+      as a validator's is
+    - Nothing changed about which commands run, what the AI is handed, or any exit code
+
+advice:
+  - internal/ralph/failure_output.go is the renderer and the reason verification is
+    its only direct caller
+  - internal/ralph/engine.go - logResolution is where a failing handle's output
+    becomes a block and a passing handle's stays indented chatter
+  - internal/ralph/failure_output_test.go asserts one block per failure for both
+    validator triggers by emitting through the engine; the passing-handle test pins
+    the other half so the block stays a failure signal
+  - internal/validators/runner.go - AggregateResults is where the validator ID
+    enters the content, so no caller prepends it
+
+principles:
+  - One thing shown to a human has one printer
+  - What the human sees and what the model is handed come from the same string
+  - A specced behaviour that works by side effect is untested by definition
+  - Reserve a loud format for the signal, not for chatter
+
+related_domain:
+  - execution  # Terms: execution loop, gate, resolution ledger
+  - adrs

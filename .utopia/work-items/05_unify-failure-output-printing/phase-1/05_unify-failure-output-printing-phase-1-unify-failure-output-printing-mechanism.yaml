@@ -27,7 +27,7 @@ title: |
 
     Behaviour must be preserved: the same content, in the same order relative to
     prompt injection, for all three paths.
-status: pending
+status: in_progress
 prompt: |-
     ## TASK
 
@@ -125,3 +125,4 @@ constraints:
     - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
 order: 0
 estimated_complexity: medium
+iteration_count: 1

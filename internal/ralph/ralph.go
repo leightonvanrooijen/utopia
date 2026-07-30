@@ -592,10 +592,10 @@ func executeWorkItem(
 			// The human running the loop sees exactly what the runner is about to be
 			// handed. verifyOutput is already truncated by verifier.Run, so this block
 			// is byte-identical to what lands in item.LastFailureOutput below and in
-			// the retry prompt. Empty output prints nothing rather than an empty frame.
-			if verifyOutput != "" {
-				fmt.Printf("\n--- Verification Failure Output ---\n%s\n--- End Verification Output ---\n\n", verifyOutput)
-			}
+			// the retry prompt. Verification does not resolve through the engine, so
+			// this is the one failure source that renders its own block; everything
+			// else reaches the same helper through the resolution ledger.
+			printFailureBlock(failureSourceVerification, verifyOutput)
 			failedPayload := itemPayload
 			failedPayload.IterationCount = item.IterationCount
 			dispatcher.Dispatch(Event{Name: EventWorkItemVerificationFailed, Payload: failedPayload})
@@ -634,6 +634,11 @@ func executeWorkItem(
 			// iteration count. A mechanical failure retries on the same executor; a
 			// comprehension failure escalates it; repeated comprehension failure, or
 			// a suspected spec defect, escalates the change request instead.
+			//
+			// The failing validators' feedback was already shown as a failure-output
+			// block by the engine's resolution ledger when this dispatch joined them,
+			// so the human sees it before the injection below and it is not printed
+			// again here.
 			aggregate := aggregateFromGate(gateErr)
 			decision := routeValidationFailure(item, aggregate, caps, defaultExecutorModel, escalatedExecutorModel)
 			fmt.Printf("  Iteration %d: gate blocked workitem-verified (validators %s)\n", item.IterationCount, ui.Duration(joinElapsed))
@@ -906,9 +911,11 @@ func runAfterPhaseValidators(
 		// Validators or a gate failed - inject feedback and retry with Claude
 		// After-phase validators launch and join on the same event, so the join
 		// wait is their whole run rather than a residual overlap.
+		// The feedback block was already printed by the engine's resolution ledger
+		// when the gate joined, above - printing it again here would show one
+		// validator failure twice.
 		feedback := gateFeedback(gateErr)
 		fmt.Printf("  After-phase iteration %d: validators failed, will retry with feedback (validators %s)\n", iteration, ui.Duration(joinElapsed))
-		fmt.Printf("\n--- Validator Failure Feedback ---\n%s\n--- End Validator Feedback ---\n\n", feedback)
 
 		// Build prompt for Claude to fix standards issues
 		prompt := buildAfterPhasePrompt(feedback)

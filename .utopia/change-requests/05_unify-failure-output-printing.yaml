@@ -4,7 +4,7 @@ title: Show verification failures to the human, then unify all failure-output pr
 status: in-progress
 phases:
     - type: bugfix
-      status: in-progress
+      status: complete
       tasks:
         - id: print-verification-failure-output
           description: |
@@ -43,6 +43,7 @@ phases:
             - Mirror the existing after-phase validator block at internal/ralph/ralph.go:570-575, which already does exactly this for validator feedback using a "--- Validator Failure Feedback ---" delimiter pair
             - Do not change internal/verification/runner.go - truncation already happens inside Run at line 48, so Result.Output is already the exact string the AI will see
     - type: refactor
+      status: in-progress
       tasks:
         - id: unify-failure-output-printing-mechanism
           description: |
@@ -89,3 +90,4 @@ phases:
             - Validator feedback text is built by AggregateResults in internal/validators/runner.go:364-381 using the format "Validator %s failed:\n%s\n\n" - the ID comes from there, so the shared helper should not prepend it again
             - Consider whether verification should become a subscription action so it routes through the engine like validators do; if so the helper may live behind logResolution rather than at the call sites
             - Capture the resulting decision as an ADR if the unification changes how failure output is expected to flow
+current_phase: 1
