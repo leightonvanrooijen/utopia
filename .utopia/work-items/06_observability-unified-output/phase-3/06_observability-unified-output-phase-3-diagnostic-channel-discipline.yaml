@@ -1,0 +1,76 @@
+id: 06_observability-unified-output-phase-3-diagnostic-channel-discipline
+spec_ref: 06_observability-unified-output-phase-3.diagnostic-channel-discipline
+title: |
+    Progress and status chatter is a diagnostic and belongs on stderr, so
+    piping a Utopia command's stdout yields only its result. internal/cli
+    already honours this - see the note at internal/cli/root.go that a
+    diagnostic "must not land in the stdout a caller pipes". The execution
+    loop, harvest and discover do not: roughly 70 semantically diagnostic
+    lines land on stdout.
+status: pending
+prompt: |-
+    ## TASK
+
+    Progress and status chatter is a diagnostic and belongs on stderr, so
+    piping a Utopia command's stdout yields only its result. internal/cli
+    already honours this - see the note at internal/cli/root.go that a
+    diagnostic "must not land in the stdout a caller pipes". The execution
+    loop, harvest and discover do not: roughly 70 semantically diagnostic
+    lines land on stdout.
+
+
+    Acceptance criteria:
+    - Progress and status lines emitted by internal/ralph, internal/harvest and internal/discover are written to stderr
+    - Piping the stdout of utopia execute yields only result output, with no progress chatter interleaved
+    - A test asserts that the Ralph execution loop writes no progress or status line to stdout
+    - The step-timing summary is still emitted, on the diagnostic channel
+    - The handle resolution ledger from internal/ralph/engine.go is still emitted, on the diagnostic channel
+    - Interactive prompts in internal/validators remain on stdout
+    - No acceptance criterion in any other spec that requires output on stdout is broken
+
+
+
+    ## HINTS
+
+    - Failure-output blocks are deliberately out of scope; the stdout requirements in verification failure-stdout-logging and agentic-validators failure-stdout-logging stay satisfied, and change request 05_unify-failure-output-printing owns those paths
+    - The misclassified sites are concentrated in internal/ralph/ralph.go, internal/ralph/ratelimit.go, internal/ralph/engine.go, internal/harvest/harvest.go and internal/discover
+    - The roughly 157 existing Progressf call sites are already correctly classified and need no change
+
+
+
+    ## STANDARDS
+
+    This project defines coding standards in .utopia/standards/. Before implementing, read the standards docs relevant to the files this task touches:
+
+    - id: cli-organization
+      description: How to structure cobra commands in internal/cli: thin handlers that own the CLI frame and delegate the algorithm to domain packages.
+      tags: go, cli, cobra, architecture
+      path: .utopia/standards/cli-organization.md
+    - id: error-handling
+      description: How errors are created, wrapped, matched, and surfaced: typed domain errors for branching, %w wrapping for infrastructure, one exit point in root.go.
+      tags: go, errors, cli
+      path: .utopia/standards/error-handling.md
+    - id: terminal-output
+      description: One shared output vocabulary (glyphs, banners, progress) routed through cobra's injectable writers so command output is consistent and testable.
+      tags: go, cli, ux, output
+      path: .utopia/standards/terminal-output.md
+
+
+    ## CONSTRAINTS
+
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+order: 0
+estimated_complexity: medium
