@@ -1,0 +1,75 @@
+id: 06_observability-unified-output-phase-2-structured-diagnostics
+spec_ref: 06_observability-unified-output-phase-2.structured-diagnostics
+title: |
+    Diagnostics are emitted through log/slog rather than pre-formatted prose,
+    so each one carries a severity and typed key-value attributes. The result
+    channel is not routed through slog - a "Created 3 drafts" line is not an
+    INFO record, it is the command's answer, and it stays rendered for humans
+    on stdout.
+status: pending
+prompt: |-
+    ## TASK
+
+    Diagnostics are emitted through log/slog rather than pre-formatted prose,
+    so each one carries a severity and typed key-value attributes. The result
+    channel is not routed through slog - a "Created 3 drafts" line is not an
+    INFO record, it is the command's answer, and it stays rendered for humans
+    on stdout.
+
+
+    Acceptance criteria:
+    - Diagnostics are emitted via log/slog from the standard library
+    - No third-party logging dependency is added to go.mod
+    - Every diagnostic carries a severity of debug, info, warn or error
+    - Contextual values are attached as typed slog attributes rather than interpolated into the message string
+    - Diagnostics emitted during an execution run carry cr_id and work_item_id attributes where those are known
+    - The default handler renders diagnostics in the existing human-readable form, so terminal output is unchanged for a user who configures nothing
+    - The result methods Printf, Successf, Banner, Rule and Summary write to stdout and are not routed through slog
+    - A test asserts on a diagnostic by attribute rather than by substring matching the rendered line
+
+
+
+    ## HINTS
+
+    - log/slog is in the standard library as of Go 1.21 and this module is on Go 1.25
+    - Put the slog.Handler behind the existing diagnostic methods (Progressf, Warnf) so the roughly 172 existing call sites keep working unchanged
+    - Add attribute-carrying methods alongside the formatted ones rather than replacing them, so migration to attributes can be incremental
+
+
+
+    ## STANDARDS
+
+    This project defines coding standards in .utopia/standards/. Before implementing, read the standards docs relevant to the files this task touches:
+
+    - id: cli-organization
+      description: How to structure cobra commands in internal/cli: thin handlers that own the CLI frame and delegate the algorithm to domain packages.
+      tags: go, cli, cobra, architecture
+      path: .utopia/standards/cli-organization.md
+    - id: error-handling
+      description: How errors are created, wrapped, matched, and surfaced: typed domain errors for branching, %w wrapping for infrastructure, one exit point in root.go.
+      tags: go, errors, cli
+      path: .utopia/standards/error-handling.md
+    - id: terminal-output
+      description: One shared output vocabulary (glyphs, banners, progress) routed through cobra's injectable writers so command output is consistent and testable.
+      tags: go, cli, ux, output
+      path: .utopia/standards/terminal-output.md
+
+
+    ## CONSTRAINTS
+
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+order: 0
+estimated_complexity: medium
