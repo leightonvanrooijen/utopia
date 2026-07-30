@@ -80,4 +80,44 @@ constraints:
     - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
 order: 0
 estimated_complexity: medium
-iteration_count: 1
+iteration_count: 2
+last_validator_feedback: |
+    Gating connector validators:after-workitem blocked workitem-verified:
+    Validator spec-intent failed:
+    Cannot identify exactly one `in_progress` work item. Two match:
+
+    - `.utopia/work-items/cli-extract-services-layer/cli-extract-services-layer-extract-merge-service.yaml:6` - `status: in_progress`
+    - `.utopia/work-items/09_harvest-runs-opt-in/09_harvest-runs-opt-in-modify-harvest-command.yaml:15` - `status: in_progress`
+
+    Not guessing which is under review. Inferring criteria from the diff is circular and always passes.
+
+    Second, independent observation on the diff supplied: it contains only work-item bookkeeping fields (`selected_validators`, `executor_attempts`, `validators_routed` at `09_harvest-runs-opt-in-modify-harvest-command.yaml:84-91`). No source, test, or doc change is present. Whichever item is running, there is no implementation in this diff to judge against acceptance criteria. The harvest `--runs` implementation appears to have landed in commit `eb357af feat: make execution runs an opt-in harvest source behind --runs`, i.e. before this diff's base - so the diff under review may have been computed from the wrong reference point.
+
+    Both facts point at the same fix: the runner's state, not the executor's comprehension.
+
+    - `.utopia/work-items/cli-extract-services-layer/cli-extract-services-layer-extract-merge-service.yaml:6` - [B] stale `status: in_progress` leaves two items marked running at once; validator cannot resolve the item under review (validator contract in Step 1: "grep `.utopia/work-items/` for the file whose `status:` is `in_progress`. If exactly one matches, that is the item under review.")
+    - `.utopia/work-items/09_harvest-runs-opt-in/09_harvest-runs-opt-in-modify-harvest-command.yaml:84` - [B] diff carries only routing metadata, no implementation; nothing in it can satisfy or violate an acceptance criterion
+
+    <VERDICT>
+    {
+      "verdict": "fail",
+      "failure_class": "mechanical",
+      "diagnosis": "Runner state is inconsistent, not the code: two work items are simultaneously status: in_progress, so the item under review is unresolvable, and the supplied diff contains only work-item bookkeeping with no implementation to judge. This is a harness/state defect the same model can clear by settling the stale item's status and recomputing the diff against the correct base; no comprehension failure is demonstrated because no substantive change was presented.",
+      "confidence": "low"
+    }
+    </VERDICT>
+failure_conclusions:
+    - iteration: 1
+      validator_id: spec-intent
+      failure_class: comprehension
+      diagnosis: 'Runner state is inconsistent, not the code: two work items are simultaneously status: in_progress, so the item under review is unresolvable, and the supplied diff contains only work-item bookkeeping with no implementation to judge. This is a harness/state defect the same model can clear by settling the stale item''s status and recomputing the diff against the correct base; no comprehension failure '
+selected_validators:
+    - spec-intent
+comprehension_count: 1
+comprehension_failures_total: 1
+executor_attempts:
+    - iteration: 1
+      role: default-executor
+      model: ""
+      effort: medium
+validators_routed: true

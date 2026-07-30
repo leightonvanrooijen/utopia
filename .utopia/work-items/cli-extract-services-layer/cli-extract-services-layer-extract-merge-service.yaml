@@ -3,7 +3,7 @@ spec_ref: cli-extract-services-layer.extract-merge-service
 title: |
     Extract merge logic from cli/merge.go into application/merge_service.go.
     Move spec merging algorithms and change application logic.
-status: in_progress
+status: pending
 prompt: |-
     ## TASK
 
