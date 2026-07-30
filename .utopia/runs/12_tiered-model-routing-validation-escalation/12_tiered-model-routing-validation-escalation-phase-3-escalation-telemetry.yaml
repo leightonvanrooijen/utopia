@@ -1,0 +1,28 @@
+workitem_id: 12_tiered-model-routing-validation-escalation-phase-3-escalation-telemetry
+cr_id: 12_tiered-model-routing-validation-escalation
+spec_ref: 12_tiered-model-routing-validation-escalation-phase-3.escalation-telemetry
+iterations: 1
+completed_at: 2026-07-30T10:28:20.385908+10:00
+outcome: completed
+status: unprocessed
+transcript: |
+    --- iteration 1 ---
+    Done. What landed:
+
+    **Record** (`internal/domain/documentation.go`) - `RoutingRecord` hangs off the existing `ExecutionRun`, so it rides the same `.utopia/runs/<cr-id>/<workitem-id>.yaml` write and the same git history is the time series. Carries `cr_type`, per-attempt `{iteration, role, model, effort}`, `sonnet_attempts`, `opus_execution_attempts`, `mechanical_failures`, `comprehension_failures`, `reclassified_failures`, `scoping_escalations`, `spec_rewritten`, `outcome`, wall clock, and `cost_note`. `cr_id`/`spec_ref` were already on the run.
+
+    **Aggregations** - `SummariseRoutingBySpec` / `SummariseRoutingByCRType` give escalation rate and the mechanical:comprehension ratio off the records, no transcript reads.
+
+    **Durability** - lifetime tallies and the attempt list persist on the `WorkItem`, because every counter the routing uses gets reset (mechanical by a comprehension failure, comprehension by a rewrite). A resumed item reports its whole history.
+
+    **Write coverage** - all five existing exits plus a `defer recordAbort`, so an unhandled error leaves a record too. Cancelled runs are excluded - resumable, no outcome yet. Warn-but-don't-block preserved.
+
+    **Effort immutability** - `DefaultExecutorEffort()` returns `(effort, stable)`; a raised effort shows as drift in the persisted record, not just in a test.
+
+    **Wall clock** - the recorder owns its own start marker rather than borrowing `stepTimings`, which `07_observability-execution-spans` deletes.
+
+    Two ADRs: **ADR-005** (Utopia sits above the API, so tokens/cache/cost are unobservable and deliberately not estimated), **ADR-006** (rewrite-before-escalate as a hypothesis, with `SpecRewritten` against `RoutingOutcome` grouped by spec as the evidence that would invert it).
+
+    1168 tests pass, `go vet` clean, gofmt clean. `utopia format --check` parses both ADRs; it still fails on a pre-existing unrelated conversation file (`bufio.Scanner: token too long`).
+
+    <COMPLETE>

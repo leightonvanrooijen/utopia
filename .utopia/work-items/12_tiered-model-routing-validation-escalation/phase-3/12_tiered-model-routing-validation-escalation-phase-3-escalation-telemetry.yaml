@@ -18,7 +18,7 @@ title: |
     approximated from attempt counts and the model each attempt used
     rather than measured. An approximation that is honest about
     being one is more useful than a fabricated dollar figure.
-status: in_progress
+status: completed
 prompt: |-
     ## TASK
 
