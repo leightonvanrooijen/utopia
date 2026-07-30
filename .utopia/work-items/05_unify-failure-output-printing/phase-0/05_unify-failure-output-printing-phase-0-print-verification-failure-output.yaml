@@ -21,7 +21,7 @@ title: |
 
     This phase deliberately takes the narrow fix. Phase 2 removes the duplication
     it introduces.
-status: in_progress
+status: completed
 prompt: |-
     ## TASK
 
@@ -123,3 +123,11 @@ constraints:
 order: 0
 estimated_complexity: medium
 iteration_count: 1
+selected_validators:
+    - spec-intent
+executor_attempts:
+    - iteration: 1
+      role: default-executor
+      model: ""
+      effort: medium
+validators_routed: true
