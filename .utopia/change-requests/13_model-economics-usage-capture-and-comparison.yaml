@@ -1,133 +1,114 @@
 id: 13_model-economics-usage-capture-and-comparison
 type: initiative
 title: Capture per-attempt model usage and cost, then compare model choices across runs
-status: draft
+status: in-progress
 phases:
     - type: feature
+      status: in-progress
       changes:
-          - operation: add
-            spec: model-economics
-            spec_metadata:
-                title: Model Economics
-                description: |
-                  Every Claude attempt Utopia makes has a model, an effort, a token cost and
-                  an outcome. Today the first two are configured and the last two are thrown
-                  away: the claude CLI is invoked with --print, which returns prose and
-                  discards the usage the CLI itself reports.
+        - operation: add
+          spec: model-economics
+          feature:
+            id: attempt-usage-capture
+            description: |
+                Claude invocations from the execution loop ask the CLI for structured
+                output and read the usage it reports, instead of taking prose and
+                discarding the accounting.
 
-                  This spec captures those four facts per attempt and makes them
-                  comparable, so questions like "did escalating to opus actually finish work
-                  sonnet could not, and at what multiple of spend" are answered from
-                  measured records rather than intuition.
+                The resolved model id is recorded rather than the alias passed to --model,
+                because model-mapping remaps aliases over time and a comparison keyed on
+                "opus" would silently pool two different models.
 
-                  The comparison it supports is observational, not experimental. Utopia
-                  never re-runs the same work item under a second model to compare, so
-                  escalated change requests are the harder ones by selection. Reports carry
-                  that caveat rather than implying a controlled result.
-            feature:
-                id: attempt-usage-capture
-                description: |
-                  Claude invocations from the execution loop ask the CLI for structured
-                  output and read the usage it reports, instead of taking prose and
-                  discarding the accounting.
-
-                  The resolved model id is recorded rather than the alias passed to --model,
-                  because model-mapping remaps aliases over time and a comparison keyed on
-                  "opus" would silently pool two different models.
-
-                  Cost needs a caveat baked into the data, not the reader. Under
-                  auth-mode-subscription no per-token charge is incurred, so the CLI's
-                  dollar figure is a list-price equivalent rather than money spent. Tokens
-                  are real under both auth modes; dollars are only real under
-                  auth-mode-api-key.
-                acceptance_criteria:
-                    - Every Claude invocation the execution loop makes requests structured output from the claude CLI and parses the terminal result object for usage
-                    - Each attempt records resolved model id, effort, input tokens, output tokens, cache-read tokens, cache-creation tokens, turn count, wall-clock duration and reported cost
-                    - The recorded model id is the model the CLI resolved to, not the alias passed to --model
-                    - A recorded cost carries whether it was produced under api-key auth or subscription auth, and subscription costs are marked as list-price estimates rather than amounts charged
-                    - Verbose mode still streams assistant text to the operator in real time while usage is captured
-                    - An attempt whose usage cannot be parsed is recorded with usage marked unavailable and does not fail the work item
-                    - Unavailable usage is distinguishable from zero usage in the recorded form, asserted by a test
-                    - Attempts made by validators and by discovery are out of scope for this feature, and the loop does not error when they report no usage
-                hints:
-                    - The invocation to change is CLI.Prompt in internal/claude.go around line 188, which appends --print and returns prose - `claude --print --output-format json` returns a terminal result object carrying usage, total_cost_usd, num_turns and session_id
-                    - streamingPrompt is the verbose path - keep live output by using --output-format stream-json with --include-partial-messages rather than dropping to non-streaming when verbose
-                    - baseArgs at internal/claude.go:159 is where --model and --effort are already assembled, so the output-format flag belongs there or beside it
-                    - The resolved model id arrives in the stream-json init/result payload - prefer it over c.model, which holds the alias from cli-model-injection
-                    - Auth mode is already resolved by ResolveAuth in internal/credentials.go and reachable from the CLI struct via c.authMode
-                    - Capture the decision to record tokens as fact and subscription dollars as estimate in an ADR, including the reason the two cannot be pooled
-
+                Cost needs a caveat baked into the data, not the reader. Under
+                auth-mode-subscription no per-token charge is incurred, so the CLI's
+                dollar figure is a list-price equivalent rather than money spent. Tokens
+                are real under both auth modes; dollars are only real under
+                auth-mode-api-key.
+            acceptance_criteria:
+                - Every Claude invocation the execution loop makes requests structured output from the claude CLI and parses the terminal result object for usage
+                - Each attempt records resolved model id, effort, input tokens, output tokens, cache-read tokens, cache-creation tokens, turn count, wall-clock duration and reported cost
+                - The recorded model id is the model the CLI resolved to, not the alias passed to --model
+                - A recorded cost carries whether it was produced under api-key auth or subscription auth, and subscription costs are marked as list-price estimates rather than amounts charged
+                - Verbose mode still streams assistant text to the operator in real time while usage is captured
+                - An attempt whose usage cannot be parsed is recorded with usage marked unavailable and does not fail the work item
+                - Unavailable usage is distinguishable from zero usage in the recorded form, asserted by a test
+                - Attempts made by validators and by discovery are out of scope for this feature, and the loop does not error when they report no usage
+            hints:
+                - The invocation to change is CLI.Prompt in internal/claude.go around line 188, which appends --print and returns prose - `claude --print --output-format json` returns a terminal result object carrying usage, total_cost_usd, num_turns and session_id
+                - streamingPrompt is the verbose path - keep live output by using --output-format stream-json with --include-partial-messages rather than dropping to non-streaming when verbose
+                - baseArgs at internal/claude.go:159 is where --model and --effort are already assembled, so the output-format flag belongs there or beside it
+                - The resolved model id arrives in the stream-json init/result payload - prefer it over c.model, which holds the alias from cli-model-injection
+                - Auth mode is already resolved by ResolveAuth in internal/credentials.go and reachable from the CLI struct via c.authMode
+                - Capture the decision to record tokens as fact and subscription dollars as estimate in an ADR, including the reason the two cannot be pooled
     - type: feature
       changes:
-          - operation: add
-            spec: model-economics
-            feature:
-                id: run-record-usage-persistence
-                description: |
-                  Captured usage is written into the work item's existing run record, one
-                  entry per iteration, so the model that did the work sits next to what that
-                  attempt cost and whether it worked.
+        - operation: add
+          spec: model-economics
+          feature:
+            id: run-record-usage-persistence
+            description: |
+                Captured usage is written into the work item's existing run record, one
+                entry per iteration, so the model that did the work sits next to what that
+                attempt cost and whether it worked.
 
-                  Run records are committed to git, so history becomes the time series and
-                  no telemetry backend is involved.
-                acceptance_criteria:
-                    - Each attempt's usage is appended to the work item's run record at .utopia/runs/<cr-id>/<workitem-id>.yaml as an ordered list with one entry per iteration
-                    - Each entry carries iteration index, resolved model, effort, outcome, and the attempt's failure class when the attempt failed
-                    - Per-work-item and per-change-request totals for tokens and cost are derivable from the entries without re-reading the transcript
-                    - Usage entries are written using the yaml-formatting package so the record stays consistent with other Utopia YAML
-                    - Usage is persisted in the same commit as its work item, matching workitem-commit behaviour
-                    - A run that aborts or halts as needs_human persists the usage of attempts already completed
-                    - Failure to persist usage logs a warning and does not block the execution loop
-                    - Existing run records without usage entries remain readable, and consumers treat a missing list as unknown rather than as zero spend
-                hints:
-                    - The record to extend is the one written per work item under .utopia/runs/<cr-id>/<workitem-id>.yaml, which already carries workitem_id, cr_id, spec_ref, iterations, completed_at, outcome, status and transcript - add to it rather than writing a parallel file
-                    - The failure class vocabulary already exists from failure-class-routing in the escalation-routing spec - reuse those values, do not invent a second set
-                    - Mirror the non-blocking warn-on-failure behaviour of workitem-commit
-
+                Run records are committed to git, so history becomes the time series and
+                no telemetry backend is involved.
+            acceptance_criteria:
+                - Each attempt's usage is appended to the work item's run record at .utopia/runs/<cr-id>/<workitem-id>.yaml as an ordered list with one entry per iteration
+                - Each entry carries iteration index, resolved model, effort, outcome, and the attempt's failure class when the attempt failed
+                - Per-work-item and per-change-request totals for tokens and cost are derivable from the entries without re-reading the transcript
+                - Usage entries are written using the yaml-formatting package so the record stays consistent with other Utopia YAML
+                - Usage is persisted in the same commit as its work item, matching workitem-commit behaviour
+                - A run that aborts or halts as needs_human persists the usage of attempts already completed
+                - Failure to persist usage logs a warning and does not block the execution loop
+                - Existing run records without usage entries remain readable, and consumers treat a missing list as unknown rather than as zero spend
+            hints:
+                - The record to extend is the one written per work item under .utopia/runs/<cr-id>/<workitem-id>.yaml, which already carries workitem_id, cr_id, spec_ref, iterations, completed_at, outcome, status and transcript - add to it rather than writing a parallel file
+                - The failure class vocabulary already exists from failure-class-routing in the escalation-routing spec - reuse those values, do not invent a second set
+                - Mirror the non-blocking warn-on-failure behaviour of workitem-commit
     - type: feature
       changes:
-          - operation: add
-            spec: model-economics
-            feature:
-                id: model-comparison-report
-                description: |
-                  A report command aggregates the persisted usage entries into a comparison
-                  of model and effort choices, so the operator can see which model finishes
-                  work, in how many iterations, and at what spend per finished work item.
+        - operation: add
+          spec: model-economics
+          feature:
+            id: model-comparison-report
+            description: |
+                A report command aggregates the persisted usage entries into a comparison
+                of model and effort choices, so the operator can see which model finishes
+                work, in how many iterations, and at what spend per finished work item.
 
-                  A second view answers the escalation question directly: for change
-                  requests that escalated, what was spent and achieved before the escalation
-                  versus after it.
+                A second view answers the escalation question directly: for change
+                requests that escalated, what was spent and achieved before the escalation
+                versus after it.
 
-                  The report states its own limits. The comparison is observational, so
-                  escalated change requests are the harder ones by selection and a raw
-                  model-versus-model row is confounded. Attempts with unavailable usage are
-                  counted and shown, never folded into a total as zero.
-                acceptance_criteria:
-                    - utopia report models reads persisted run records and prints one row per model and effort pair
-                    - Each row carries attempts, work items completed, first-pass rate, mean iterations to completion, total tokens and cost per completed work item
-                    - utopia report models --by spec and utopia report models --by cr_type group the same rows by that dimension
-                    - utopia report escalations prints one row per escalated change request carrying the model and spend before escalation, the model and spend after it, and the final outcome
-                    - utopia report escalations prints an aggregate line giving marginal cost and marginal completion rate of escalating
-                    - Both reports print the observational caveat that escalated change requests are selected for difficulty, so the comparison is not a controlled result
-                    - Attempts whose usage was unavailable are counted in a separate column and excluded from token and cost totals rather than summed as zero
-                    - Costs recorded under subscription auth are shown as list-price estimates and are not summed together with api-key costs into a single figure
-                    - A repository with no run records prints a message saying so and exits zero
-                    - Reports read only persisted run records and make no Claude call
-                hints:
-                    - Follow the existing command shape in internal/cli - the report command is a reader over .utopia/runs, with no execution path
-                    - Aggregation belongs in internal/analysis, which already exists for derived views over stored artifacts
-                    - Keep the printed form consistent with whatever output mechanism is current - if change request 06_observability-unified-output has merged, report output is operator output on that system's primary channel, not raw fmt.Println
-
+                The report states its own limits. The comparison is observational, so
+                escalated change requests are the harder ones by selection and a raw
+                model-versus-model row is confounded. Attempts with unavailable usage are
+                counted and shown, never folded into a total as zero.
+            acceptance_criteria:
+                - utopia report models reads persisted run records and prints one row per model and effort pair
+                - Each row carries attempts, work items completed, first-pass rate, mean iterations to completion, total tokens and cost per completed work item
+                - utopia report models --by spec and utopia report models --by cr_type group the same rows by that dimension
+                - utopia report escalations prints one row per escalated change request carrying the model and spend before escalation, the model and spend after it, and the final outcome
+                - utopia report escalations prints an aggregate line giving marginal cost and marginal completion rate of escalating
+                - Both reports print the observational caveat that escalated change requests are selected for difficulty, so the comparison is not a controlled result
+                - Attempts whose usage was unavailable are counted in a separate column and excluded from token and cost totals rather than summed as zero
+                - Costs recorded under subscription auth are shown as list-price estimates and are not summed together with api-key costs into a single figure
+                - A repository with no run records prints a message saying so and exits zero
+                - Reports read only persisted run records and make no Claude call
+            hints:
+                - Follow the existing command shape in internal/cli - the report command is a reader over .utopia/runs, with no execution path
+                - Aggregation belongs in internal/analysis, which already exists for derived views over stored artifacts
+                - Keep the printed form consistent with whatever output mechanism is current - if change request 06_observability-unified-output has merged, report output is operator output on that system's primary channel, not raw fmt.Println
     - type: enhancement
       changes:
-          - operation: modify
-            spec: escalation-routing
-            feature_id: escalation-telemetry
-            criteria:
-                add:
-                    - Each attempt's token usage and cost are read from the persisted run record rather than re-derived from attempt counts
-                    - Cost per change request outcome is reported as measured under api-key auth and as a list-price estimate under subscription auth
-                edit:
-                    - old: "The record notes that token counts and monetary cost are not captured, so a reader does not mistake their absence for zero"
-                      new: "The record notes when token counts or cost were unavailable for an attempt, so a reader does not mistake their absence for zero"
+        - operation: modify
+          spec: escalation-routing
+          feature_id: escalation-telemetry
+          criteria:
+            add:
+                - Each attempt's token usage and cost are read from the persisted run record rather than re-derived from attempt counts
+                - Cost per change request outcome is reported as measured under api-key auth and as a list-price estimate under subscription auth
+            edit:
+                - old: The record notes that token counts and monetary cost are not captured, so a reader does not mistake their absence for zero
+                  new: The record notes when token counts or cost were unavailable for an attempt, so a reader does not mistake their absence for zero
