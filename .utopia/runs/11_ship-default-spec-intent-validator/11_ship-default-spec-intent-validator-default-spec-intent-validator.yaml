@@ -1,0 +1,54 @@
+workitem_id: 11_ship-default-spec-intent-validator-default-spec-intent-validator
+cr_id: 11_ship-default-spec-intent-validator
+spec_ref: 11_ship-default-spec-intent-validator.default-spec-intent-validator
+iterations: 2
+completed_at: 2026-07-30T18:29:26.192888+10:00
+outcome: completed
+status: unprocessed
+transcript: |
+    --- iteration 1 ---
+    Done.
+
+    - `internal/cli/templates/spec-intent.md` - repo-agnostic prompt, embedded via `go:embed` (same pattern as `internal/validators/embed.go`; raw-string const impossible, prompt is full of backticks)
+    - `internal/cli/init.go` - `writeFileIfMissing` helper, used for both `_template.md` and new `spec-intent.md`, `os.Stat`/`os.IsNotExist` guard unchanged
+    - `internal/cli/init_test.go` - 4 tests: file created + parses via `LoadValidator`, frontmatter fields, verdict field names + `{{changed_files}}`, repo-agnostic (banned strings, `verification.command`, `paths.specs`/`paths.adrs` + defaults, optional standards), re-init byte-identical
+    - deleted `.utopia/notes/spec-intent-generic-draft.md`
+
+    `./scripts/verify.sh` green.
+
+    Out of scope per criteria, worth knowing: init does not add the validator to `config.yaml` `validators:`, so it ships but does not run until registered. The file's header comment states the exact snippet (`path: validators/spec-intent.md`, `always: true`).
+
+    <COMPLETE>
+
+    --- iteration 2 ---
+    Done. Summary:
+
+    **Feature was already correctly implemented** in `aacf676`: embedded template `internal/cli/templates/spec-intent.md` via `go:embed`, `writeFileIfMissing` guard in `internal/cli/init.go`, four tests in `init_test.go` covering every acceptance criterion (frontmatter fields, verdict field names, repo-agnostic prompt, `paths.specs`/`paths.adrs` with `.utopia/` fallbacks, optional standards, byte-for-byte re-init preservation, parses via `LoadValidator`). Draft note already deleted, Utopia's own `.utopia/validators/spec-intent.md` untouched.
+
+    **Real defect in last diff**: `aacf676` also committed work item 04 flipped `pending` to `in_progress` with phantom `executor_attempts` - item 04 has zero implementation commits, it was never run. Two `in_progress` items made the running item unidentifiable, which the shipped validator (correctly, per its own Step 1 rule) refuses to guess through - hence `fail` with `confidence: low`. Prior attempt bumped iteration count instead of removing the ambiguity.
+
+    **Fix**: restored item 04 to chunked state (`status: pending`, no attempts) from `0b2bf35`. Only item 11 holds `in_progress` now. `./scripts/verify.sh` passes. Committed as `ee557bd`.
+
+    <COMPLETE>
+routing:
+    cr_type: feature
+    attempts:
+        - iteration: 1
+          role: default-executor
+          model: ""
+          effort: medium
+        - iteration: 2
+          role: escalated-executor
+          model: fable
+          effort: high
+    sonnet_attempts: 1
+    opus_execution_attempts: 1
+    mechanical_failures: 0
+    comprehension_failures: 1
+    reclassified_failures: 0
+    scoping_escalations: 0
+    spec_rewritten: false
+    outcome: passed
+    duration_seconds: 503.631803708
+    duration: 8m24s
+    cost_note: Token counts, cache hits and monetary cost are not captured - not zero, not observable. Utopia drives the claude CLI, which reports none of them (ADR-005). Cost is approximated from attempts, sonnet_attempts and opus_execution_attempts together with the model each attempt ran on.

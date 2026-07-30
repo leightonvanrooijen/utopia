@@ -16,7 +16,7 @@ title: |
     The shipped prompt must carry no Utopia-codebase specifics: no Go, no
     hardcoded `./scripts/verify.sh`, no assumed test framework, no
     hardcoded standards filenames.
-status: in_progress
+status: completed
 prompt: |-
     ## TASK
 
@@ -95,27 +95,6 @@ constraints:
 order: 0
 estimated_complexity: medium
 iteration_count: 2
-last_validator_feedback: |
-    Gating connector validators:after-workitem blocked workitem-verified:
-    Validator spec-intent failed:
-    Two work items have `status: in_progress`, so the item under review cannot be identified without guessing:
-
-    - `.utopia/work-items/11_ship-default-spec-intent-validator/11_ship-default-spec-intent-validator-default-spec-intent-validator.yaml:19`
-    - `.utopia/work-items/04_connectors-cancelled-handle-no-false-error/04_connectors-cancelled-handle-no-false-error-modify-subscription-engine.yaml:4`
-
-    The diff touches item 11 only, but the diff is not admissible evidence of which item is running - judging it against criteria inferred from itself is circular. Item 04's `in_progress` status is likely stale (commit `0b2bf35 chunk: 04_...` predates `807db01 chunk: 11_...`), which suggests the runner does not reset `status` when an item stops being the active one.
-
-    Violations:
-
-    `.utopia/work-items/04_connectors-cancelled-handle-no-false-error/04_connectors-cancelled-handle-no-false-error-modify-subscription-engine.yaml:4` - [A] stale `status: in_progress` on a non-running work item makes the running item unidentifiable; whichever component transitions work-item status must clear the previous item's `in_progress` so at most one item holds it at a time.
-
-    <VERDICT>
-    {
-      "verdict": "fail",
-      "failure_class": "mechanical",
-      "confidence": "low"
-    }
-    </VERDICT>
 failure_conclusions:
     - iteration: 1
       validator_id: spec-intent
@@ -124,10 +103,15 @@ failure_conclusions:
 selected_validators:
     - spec-intent
 comprehension_count: 1
+opus_execution_attempts: 1
 comprehension_failures_total: 1
 executor_attempts:
     - iteration: 1
       role: default-executor
       model: ""
       effort: medium
+    - iteration: 2
+      role: escalated-executor
+      model: fable
+      effort: high
 validators_routed: true
