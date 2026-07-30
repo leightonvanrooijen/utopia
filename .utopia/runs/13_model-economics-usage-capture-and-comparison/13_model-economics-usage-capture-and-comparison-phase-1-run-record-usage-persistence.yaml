@@ -1,0 +1,69 @@
+workitem_id: 13_model-economics-usage-capture-and-comparison-phase-1-run-record-usage-persistence
+cr_id: 13_model-economics-usage-capture-and-comparison
+spec_ref: 13_model-economics-usage-capture-and-comparison-phase-1.run-record-usage-persistence
+iterations: 3
+completed_at: 2026-07-30T19:32:56.789737+10:00
+outcome: completed
+status: unprocessed
+transcript: |
+    --- iteration 1 ---
+    Done. What landed:
+
+    - `internal/domain/workitem.go`: `ExecutorAttempt` gains `Outcome` (`passed`/`failed`/`incomplete`/`errored`) + `FailureClass` (validators' vocabulary, reported class, pre-reclassification).
+    - `internal/domain/usage.go`: `AttemptOutcome`, `UsageEntry` (flat row - iteration, role, outcome, failure class, inlined `AttemptUsage`), `UsageEntriesFor`, `UsageTotals` + `TotalUsage`/`ExecutionRun.UsageTotals`/`TotalRunUsage`. Three cost columns kept apart per ADR-007; unavailable attempts counted, never summed as zero.
+    - `internal/domain/documentation.go`: `ExecutionRun.Usage []UsageEntry`; `CostNotCapturedNote` → `CostApproximationNote` (old text claimed cost unobservable, now false next to captured usage).
+    - `internal/ralph`: `recordAttemptOutcome` booked at each path out of an iteration (turn cap, invocation error, no completion token, verification fail = mechanical, gate fail = reported class, pass); `writeRunTranscript` projects `Usage` from persisted attempts, so halt/abort paths keep spend already made. Warn-on-failure unchanged. `reportedFailureClass` extracted so gate classification has one definition.
+    - `internal/store.go`: `SaveExecutionRun` writes through `FormatYAML`, falling back to unformatted rather than losing a record.
+
+    Tests: 1290 pass, `gofmt`/`go vet`/staticcheck clean. Mutation-verified - dropping the usage projection and reverting the formatter both fail the new tests. Legacy records without `usage:` load and read as unknown spend.
+
+    <COMPLETE>
+
+    --- iteration 2 ---
+    API Error: 529 Overloaded. This is a server-side issue, usually temporary — try again in a moment. If it persists, check https://status.claude.com.
+
+    --- iteration 3 ---
+    Committed `019d158`.
+
+    Finding: implementation already complete in HEAD `00d275f` - every acceptance criterion verified in code:
+
+    - Usage list one entry per iteration: `UsageEntriesFor` projects `ExecutorAttempts` onto `ExecutionRun.Usage` (`internal/domain/usage.go:169`)
+    - Entry carries iteration, resolved model, effort, outcome, failure class (`UsageEntry`, reuses `validators.FailureClass` vocab)
+    - Totals derivable without transcript: `TotalUsage`, `TotalRunUsage`, `UsageTotals`
+    - Shared yaml formatter: `SaveExecutionRun` calls `writeFormattedYAML` (`internal/store.go:816`)
+    - Same commit as work item: `writeRunTranscript` at `internal/ralph/ralph.go:679` runs before `gitCommitWorkItem` at `:680`, which stages `-A`
+    - Abort/needs_human persist usage: `haltNeedsHuman` (`escalation.go:384`) and `recordAbort` both call `writeRunTranscript`
+    - Non-blocking: write failure only warns (`telemetry.go:273`)
+    - Missing usage list reads as unknown: `Usage` is `omitempty`, `UsageTotals()` returns `RecordsWithoutUsage: 1` not zero
+
+    Real blocker was run state, exactly as validator said: work item 02 stale at `status: in_progress` alongside item 13, so spec-intent could not bind the diff to one criteria set. Item 02's constraint strings exist nowhere in code - work never landed - so reset to `pending` for clean re-execution.
+
+    Build clean, 1290 tests pass in 13 packages.
+
+    <COMPLETE>
+routing:
+    cr_type: feature
+    attempts:
+        - iteration: 1
+          role: default-executor
+          model: ""
+          effort: medium
+        - iteration: 2
+          role: escalated-executor
+          model: fable
+          effort: high
+        - iteration: 3
+          role: escalated-executor
+          model: fable
+          effort: high
+    sonnet_attempts: 1
+    opus_execution_attempts: 2
+    mechanical_failures: 0
+    comprehension_failures: 1
+    reclassified_failures: 0
+    scoping_escalations: 0
+    spec_rewritten: false
+    outcome: passed
+    duration_seconds: 1190.022939167
+    duration: 19m50s
+    cost_note: Token counts, cache hits and monetary cost are not captured - not zero, not observable. Utopia drives the claude CLI, which reports none of them (ADR-005). Cost is approximated from attempts, sonnet_attempts and opus_execution_attempts together with the model each attempt ran on.

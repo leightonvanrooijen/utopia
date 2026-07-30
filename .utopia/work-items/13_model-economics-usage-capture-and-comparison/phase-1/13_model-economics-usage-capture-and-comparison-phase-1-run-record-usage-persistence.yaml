@@ -7,7 +7,7 @@ title: |
 
     Run records are committed to git, so history becomes the time series and
     no telemetry backend is involved.
-status: in_progress
+status: completed
 prompt: |-
     ## TASK
 
@@ -76,26 +76,6 @@ constraints:
 order: 0
 estimated_complexity: medium
 iteration_count: 3
-last_validator_feedback: |
-    Gating connector validators:after-workitem blocked workitem-verified:
-    Validator spec-intent failed:
-    Two work items carry `status: in_progress`; cannot resolve which one is under review.
-
-    - `.utopia/work-items/13_model-economics-usage-capture-and-comparison/phase-1/13_model-economics-usage-capture-and-comparison-phase-1-run-record-usage-persistence.yaml:10` - `status: in_progress`
-    - `.utopia/work-items/02_chunking-ralph-sequential-autonomous-decide-and-document/02_chunking-ralph-sequential-autonomous-decide-and-document-modify-default-constraints.yaml:4` - `status: in_progress`
-
-    Validator cannot bind the diff to one item's acceptance criteria without guessing. Fix the run state so exactly one item is `in_progress` (item 02 looks stale - it was never reset to `pending`/`done`), then re-run validation.
-
-    Separate note for whoever fixes state: the diff under review contains only work-item metadata (`selected_validators`, `executor_attempts`, `validators_routed`) and no implementation change, so even with one item resolvable there is nothing here that could satisfy a behavioural criterion.
-
-    <VERDICT>
-    {
-      "verdict": "fail",
-      "failure_class": "mechanical",
-      "diagnosis": "Ambiguous run state, not a code defect: two work items are marked in_progress, so the diff cannot be judged against a single set of acceptance criteria without inventing them from the diff itself.",
-      "confidence": "low"
-    }
-    </VERDICT>
 failure_conclusions:
     - iteration: 1
       validator_id: spec-intent
@@ -104,7 +84,7 @@ failure_conclusions:
 selected_validators:
     - spec-intent
 comprehension_count: 1
-opus_execution_attempts: 1
+opus_execution_attempts: 2
 comprehension_failures_total: 1
 executor_attempts:
     - iteration: 1
@@ -112,6 +92,10 @@ executor_attempts:
       model: ""
       effort: medium
     - iteration: 2
+      role: escalated-executor
+      model: fable
+      effort: high
+    - iteration: 3
       role: escalated-executor
       model: fable
       effort: high
