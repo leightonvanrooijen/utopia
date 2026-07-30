@@ -1,7 +1,7 @@
 id: 04_connectors-cancelled-handle-no-false-error-modify-subscription-engine
 spec_ref: 04_connectors-cancelled-handle-no-false-error.modify-subscription-engine
 title: Modify the subscription-engine feature
-status: in_progress
+status: completed
 prompt: |-
     ## TASK
 
@@ -50,3 +50,11 @@ constraints:
 order: 0
 estimated_complexity: medium
 iteration_count: 1
+selected_validators:
+    - spec-intent
+executor_attempts:
+    - iteration: 1
+      role: default-executor
+      model: ""
+      effort: medium
+validators_routed: true
