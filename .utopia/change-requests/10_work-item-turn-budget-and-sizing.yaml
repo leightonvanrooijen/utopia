@@ -4,7 +4,7 @@ title: Bound work-item cost with a shared turn budget, then size work items agai
 status: in-progress
 phases:
     - type: feature
-      status: in-progress
+      status: complete
       changes:
         - operation: add
           spec: execution-ralph
@@ -109,6 +109,7 @@ phases:
                 - Detection should be resilient to the marker changing - a version bump must not silently reclassify turn exhaustion as an invocation failure, so consider a test that fails loudly if the marker stops matching
                 - max_iterations (currently 6) still bounds retries, so the ceiling becomes turn_budget x max_iterations per work item
     - type: feature
+      status: in-progress
       changes:
         - operation: modify
           spec: chunking-ralph-sequential
@@ -200,3 +201,4 @@ phases:
                 - internal/discover and internal/analysis are the existing precedents for agentic calls that return structured output
                 - Keep prompt building (BuildPromptWithConstraints) unchanged - it operates per WorkItem and should not know a split happened
                 - The fallback path matters - chunking must never become unusable because a sizer call failed
+current_phase: 1

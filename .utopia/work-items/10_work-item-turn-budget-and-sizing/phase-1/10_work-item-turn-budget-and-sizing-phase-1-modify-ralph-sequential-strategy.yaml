@@ -4,7 +4,7 @@ title: |
     Modify the ralph-sequential-strategy feature: Implement the "ralph-sequential" chunking strategy.
     One WorkItem per feature by default, split into several when a feature
     exceeds the configured turn budget. Executed in spec order.
-status: pending
+status: completed
 prompt: |-
     ## TASK
 
@@ -56,3 +56,9 @@ constraints:
     - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
 order: 0
 estimated_complexity: medium
+iteration_count: 1
+executor_attempts:
+    - iteration: 1
+      role: default-executor
+      model: ""
+      effort: medium
