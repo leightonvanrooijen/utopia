@@ -52,7 +52,7 @@ title: |
     work survives uncommitted in the working tree and the next fresh
     iteration rebuilds state from git and files, so a capped iteration is
     a ratchet rather than wasted spend.
-status: in_progress
+status: completed
 prompt: |-
     ## TASK
 
@@ -171,3 +171,8 @@ constraints:
 order: 1
 estimated_complexity: medium
 iteration_count: 1
+executor_attempts:
+    - iteration: 1
+      role: default-executor
+      model: ""
+      effort: medium

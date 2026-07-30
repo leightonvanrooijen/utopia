@@ -1,0 +1,40 @@
+workitem_id: 10_work-item-turn-budget-and-sizing-phase-0-turn-cap-enforcement
+cr_id: 10_work-item-turn-budget-and-sizing
+spec_ref: 10_work-item-turn-budget-and-sizing-phase-0.turn-cap-enforcement
+iterations: 1
+completed_at: 2026-07-30T10:56:10.879646+10:00
+outcome: completed
+status: unprocessed
+transcript: |
+    --- iteration 1 ---
+    Done.
+
+    - `internal/claude.go`: `WithMaxTurns` + `--max-turns N` in `baseArgs()` (zero/negative = no flag, so every other call site unchanged)
+    - `internal/ralph/ralph.go`: `turnBudget := config.WorkItems.TurnBudgetOr()`; each attempt runs `cli.Clone().WithMaxTurns(turnBudget)` - clone keeps the ceiling off the shared CLI the scoper borrows (a rewrite is not an execution iteration). Detection sits after `appendIterationOutput`, before the `err != nil` branch; logs `turn budget of N reached, continuing in a fresh iteration`, then `continue`. Iteration still counted, no verification, `LastFailureOutput` untouched.
+    - `internal/ralph/ratelimit.go`: `DetectTurnExhaustion` alongside `DetectRateLimit`/`DetectSpendLimit`. Pattern `(?i)reached\s+max(?:imum)?\s+turns`, looser than the literal so a reword does not silently reclassify.
+
+    Marker verified live on 2.1.220, not assumed: `claude --print --max-turns 1 ...` gave exit=1, stdout `Error: Reached max turns (1)`, empty stderr. Pinned as `TurnExhaustionMarker` with `TestTurnExhaustionMarkerStillMatches` failing loudly if a version bump breaks it.
+
+    Tests added: baseArgs with/without budget, clone preserves budget, detection table (including rate limit and spend limit as non-matches), and `TestBuildPrompt_NeverMentionsTheTurnBudget`. Full `go test ./internal/...` green, `gofmt`/`go vet` clean.
+
+    Not covered by test: the ordering of detection vs the invocation-failed branch, and "verification not run" - `executeWorkItem` has no Claude injection seam, and adding one would be the restructuring the task ruled out. Both are structural in the diff.
+
+    <COMPLETE>
+routing:
+    cr_type: feature
+    attempts:
+        - iteration: 1
+          role: default-executor
+          model: ""
+          effort: medium
+    sonnet_attempts: 1
+    opus_execution_attempts: 0
+    mechanical_failures: 0
+    comprehension_failures: 0
+    reclassified_failures: 0
+    scoping_escalations: 0
+    spec_rewritten: false
+    outcome: passed
+    duration_seconds: 239.15126875
+    duration: 3m59s
+    cost_note: Token counts, cache hits and monetary cost are not captured - not zero, not observable. Utopia drives the claude CLI, which reports none of them (ADR-005). Cost is approximated from attempts, sonnet_attempts and opus_execution_attempts together with the model each attempt ran on.
