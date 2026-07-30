@@ -16,7 +16,7 @@ title: |
     The shipped prompt must carry no Utopia-codebase specifics: no Go, no
     hardcoded `./scripts/verify.sh`, no assumed test framework, no
     hardcoded standards filenames.
-status: pending
+status: in_progress
 prompt: |-
     ## TASK
 
@@ -94,3 +94,4 @@ constraints:
     - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
 order: 0
 estimated_complexity: medium
+iteration_count: 1

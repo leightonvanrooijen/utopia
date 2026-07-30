@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	_ "embed"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -206,6 +207,17 @@ Example of a failure you cannot classify:
 ========================================================================== -->
 `
 
+// specIntentValidator is the default spec-intent validator every project starts
+// with. It is repo-agnostic on purpose: it names no language, test framework or
+// verification command, and resolves spec and ADR locations through config.
+//
+// It ships because a failure_class can only come from a validator verdict, so a
+// project with no validators can never reach escalation routing - a work item
+// that builds, passes its tests and implements the wrong thing ships silently.
+//
+//go:embed templates/spec-intent.md
+var specIntentValidator string
+
 var initCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Initialize a new Utopia project",
@@ -227,6 +239,15 @@ After init, run 'utopia cr' to create your first change request.`,
 
 func init() {
 	rootCmd.AddCommand(initCmd)
+}
+
+// writeFileIfMissing writes content to path only when nothing is there yet, so a
+// re-init never clobbers a file the project has since edited.
+func writeFileIfMissing(path, content string) error {
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		return nil
+	}
+	return os.WriteFile(path, []byte(content), 0644)
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
@@ -257,12 +278,16 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Create validator template file (idempotent - only if it doesn't exist)
+	// Create validator files (idempotent - existing files are left untouched so a
+	// project's edits to either file survive a re-init)
 	templatePath := filepath.Join(utopiaDir, "validators", "_template.md")
-	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
-		if err := os.WriteFile(templatePath, []byte(validatorTemplate), 0644); err != nil {
-			return fmt.Errorf("failed to create validator template: %w", err)
-		}
+	if err := writeFileIfMissing(templatePath, validatorTemplate); err != nil {
+		return fmt.Errorf("failed to create validator template: %w", err)
+	}
+
+	specIntentPath := filepath.Join(utopiaDir, "validators", "spec-intent.md")
+	if err := writeFileIfMissing(specIntentPath, specIntentValidator); err != nil {
+		return fmt.Errorf("failed to create spec-intent validator: %w", err)
 	}
 
 	// Start with existing config or defaults
@@ -349,10 +374,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 	} else {
 		out.Printf("Initialized Utopia project at %s\n\n", utopiaDir)
 		out.Printf("Created:\n")
-		out.Printf("  .utopia/config.yaml              - Project configuration\n")
-		out.Printf("  .utopia/specs/                   - Living specifications\n")
-		out.Printf("  .utopia/work-items/              - Work items for Ralph\n")
-		out.Printf("  .utopia/validators/_template.md  - Validator template (copy to create validators)\n")
+		out.Printf("  .utopia/config.yaml               - Project configuration\n")
+		out.Printf("  .utopia/specs/                    - Living specifications\n")
+		out.Printf("  .utopia/work-items/               - Work items for Ralph\n")
+		out.Printf("  .utopia/validators/_template.md   - Validator template (copy to create validators)\n")
+		out.Printf("  .utopia/validators/spec-intent.md - Default spec-intent validator (register it in config.yaml)\n")
 		out.Printf("\nNext steps:\n")
 		out.Printf("  utopia cr              - Create a change request\n")
 		out.Printf("  utopia status          - View project status\n")
