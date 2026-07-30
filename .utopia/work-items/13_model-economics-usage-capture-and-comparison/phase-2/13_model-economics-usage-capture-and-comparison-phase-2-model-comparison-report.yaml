@@ -1,0 +1,91 @@
+id: 13_model-economics-usage-capture-and-comparison-phase-2-model-comparison-report
+spec_ref: 13_model-economics-usage-capture-and-comparison-phase-2.model-comparison-report
+title: |
+    A report command aggregates the persisted usage entries into a comparison
+    of model and effort choices, so the operator can see which model finishes
+    work, in how many iterations, and at what spend per finished work item.
+
+    A second view answers the escalation question directly: for change
+    requests that escalated, what was spent and achieved before the escalation
+    versus after it.
+
+    The report states its own limits. The comparison is observational, so
+    escalated change requests are the harder ones by selection and a raw
+    model-versus-model row is confounded. Attempts with unavailable usage are
+    counted and shown, never folded into a total as zero.
+status: pending
+prompt: |-
+    ## TASK
+
+    A report command aggregates the persisted usage entries into a comparison
+    of model and effort choices, so the operator can see which model finishes
+    work, in how many iterations, and at what spend per finished work item.
+
+    A second view answers the escalation question directly: for change
+    requests that escalated, what was spent and achieved before the escalation
+    versus after it.
+
+    The report states its own limits. The comparison is observational, so
+    escalated change requests are the harder ones by selection and a raw
+    model-versus-model row is confounded. Attempts with unavailable usage are
+    counted and shown, never folded into a total as zero.
+
+
+    Acceptance criteria:
+    - utopia report models reads persisted run records and prints one row per model and effort pair
+    - Each row carries attempts, work items completed, first-pass rate, mean iterations to completion, total tokens and cost per completed work item
+    - utopia report models --by spec and utopia report models --by cr_type group the same rows by that dimension
+    - utopia report escalations prints one row per escalated change request carrying the model and spend before escalation, the model and spend after it, and the final outcome
+    - utopia report escalations prints an aggregate line giving marginal cost and marginal completion rate of escalating
+    - Both reports print the observational caveat that escalated change requests are selected for difficulty, so the comparison is not a controlled result
+    - Attempts whose usage was unavailable are counted in a separate column and excluded from token and cost totals rather than summed as zero
+    - Costs recorded under subscription auth are shown as list-price estimates and are not summed together with api-key costs into a single figure
+    - A repository with no run records prints a message saying so and exits zero
+    - Reports read only persisted run records and make no Claude call
+
+
+
+    ## HINTS
+
+    - Follow the existing command shape in internal/cli - the report command is a reader over .utopia/runs, with no execution path
+    - Aggregation belongs in internal/analysis, which already exists for derived views over stored artifacts
+    - Keep the printed form consistent with whatever output mechanism is current - if change request 06_observability-unified-output has merged, report output is operator output on that system's primary channel, not raw fmt.Println
+
+
+
+    ## STANDARDS
+
+    This project defines coding standards in .utopia/standards/. Before implementing, read the standards docs relevant to the files this task touches:
+
+    - id: cli-organization
+      description: How to structure cobra commands in internal/cli: thin handlers that own the CLI frame and delegate the algorithm to domain packages.
+      tags: go, cli, cobra, architecture
+      path: .utopia/standards/cli-organization.md
+    - id: error-handling
+      description: How errors are created, wrapped, matched, and surfaced: typed domain errors for branching, %w wrapping for infrastructure, one exit point in root.go.
+      tags: go, errors, cli
+      path: .utopia/standards/error-handling.md
+    - id: terminal-output
+      description: One shared output vocabulary (glyphs, banners, progress) routed through cobra's injectable writers so command output is consistent and testable.
+      tags: go, cli, ux, output
+      path: .utopia/standards/terminal-output.md
+
+
+    ## CONSTRAINTS
+
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+order: 0
+estimated_complexity: medium
