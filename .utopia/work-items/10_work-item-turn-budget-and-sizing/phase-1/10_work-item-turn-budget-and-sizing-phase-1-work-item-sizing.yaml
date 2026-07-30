@@ -21,7 +21,7 @@ title: |
 
     The sizer is read-only. It must reason about the change, never make
     it.
-status: in_progress
+status: completed
 prompt: |-
     ## TASK
 
@@ -111,3 +111,8 @@ constraints:
 order: 3
 estimated_complexity: medium
 iteration_count: 1
+executor_attempts:
+    - iteration: 1
+      role: default-executor
+      model: ""
+      effort: medium

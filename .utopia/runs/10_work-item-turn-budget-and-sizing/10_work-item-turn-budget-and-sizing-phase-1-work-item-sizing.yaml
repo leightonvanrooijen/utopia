@@ -1,0 +1,37 @@
+workitem_id: 10_work-item-turn-budget-and-sizing-phase-1-work-item-sizing
+cr_id: 10_work-item-turn-budget-and-sizing
+spec_ref: 10_work-item-turn-budget-and-sizing-phase-1.work-item-sizing
+iterations: 1
+completed_at: 2026-07-30T11:13:45.468772+10:00
+outcome: completed
+status: unprocessed
+transcript: |
+    --- iteration 1 ---
+    Done. Sizer built, wired, tested (1238 tests pass).
+
+    - `internal/chunk/sizer.go` — one read-only agent pass per chunk operation (`SizeChangeRequest`/`SizePhase`), `<SIZING>` JSON contract, split validation (partition vs authored), fallback to one work item per feature on error/unparseable output.
+    - `internal/chunk/chunk.go` — derives `CriteriaOrigin` from the slices, records it on each work item.
+    - `internal/claude.go` — added `WithPermissionMode` so the sizer runs allowlist-denied instead of bypass-permitted.
+    - `internal/cli/execute.go` — `chunkCR`/`chunkPhase` size before generating, report verdict + work item count per feature.
+
+    Left `ralph/scoping.go` re-chunking unsized (still `nil` splits): splitting an item mid-loop during a scoping escalation is outside this change's scope.
+
+    <COMPLETE>
+routing:
+    cr_type: feature
+    attempts:
+        - iteration: 1
+          role: default-executor
+          model: ""
+          effort: medium
+    sonnet_attempts: 1
+    opus_execution_attempts: 0
+    mechanical_failures: 0
+    comprehension_failures: 0
+    reclassified_failures: 0
+    scoping_escalations: 0
+    spec_rewritten: false
+    outcome: passed
+    duration_seconds: 476.736859208
+    duration: 7m57s
+    cost_note: Token counts, cache hits and monetary cost are not captured - not zero, not observable. Utopia drives the claude CLI, which reports none of them (ADR-005). Cost is approximated from attempts, sonnet_attempts and opus_execution_attempts together with the model each attempt ran on.
