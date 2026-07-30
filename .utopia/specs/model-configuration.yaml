@@ -1,7 +1,7 @@
 id: model-configuration
 title: model-configuration
 created: "2026-03-23T10:09:13.522167+11:00"
-updated: "2026-07-29T22:01:11.035026+10:00"
+updated: "2026-07-30T10:28:20.566175+10:00"
 description: ""
 features:
     - id: model-mapping
@@ -33,13 +33,24 @@ features:
       description: |
         Define the models section in .utopia/config.yaml with default and
         per-command overrides.
+
+        Execution is no longer one role. The default executor, the
+        escalated executor, the validators and the scoper are four roles
+        with different cost profiles and different failure consequences, so
+        each resolves its own model with a fallback chain rather than
+        sharing one key.
       acceptance_criteria:
         - Config supports optional models section
         - models.default specifies fallback model for all commands
-        - Per-command keys override the default (cr, harvest, execute, validators, discover, standards, refactor, shape, validator_create, validator_edit)
+        - Per-command keys override the default (cr, harvest, execute, execute_escalated, scoper, validators, validator_router, discover, standards, refactor, shape, validator_create, validator_edit)
         - If models section is missing, sonnet is used as implicit default
         - If a command key is missing, models.default is used
         - Invalid model name in config produces clear error at load time
+        - models.execute_escalated specifies the model used once execution escalates after a comprehension failure
+        - models.scoper specifies the model used to rewrite a change request during scoping escalation
+        - If models.execute_escalated is missing, opus is used
+        - If models.scoper is missing, models.execute_escalated is used
+        - models.execute_escalated and models.scoper resolve to a model at least as capable as models.execute, and a configuration that escalates downward produces a clear error at load time
 
     - id: cli-model-flag
       description: |
@@ -53,12 +64,18 @@ features:
 
     - id: cli-model-injection
       description: |
-        Pass the resolved model to the Claude CLI wrapper.
+        Pass the resolved model and effort to the Claude CLI wrapper.
+
+        Effort travels the same path as model - resolved by the caller from
+        the role, threaded through the wrapper, appended as a flag. It is a
+        second parameter on an existing route rather than a new mechanism.
       acceptance_criteria:
-        - CLI struct accepts optional model parameter
+        - CLI struct accepts optional model and effort parameters
         - Model is passed to claude binary via --model flag
         - If no model specified, claude CLI uses its default
-        - Model flows through Prompt and SessionWithCapture methods
+        - Model and effort flow through Prompt and SessionWithCapture methods
+        - Effort is passed to claude binary via --effort flag
+        - If no effort is specified, the flag is omitted and the claude CLI default applies
 
     - id: validator-config-structure
       description: |
@@ -100,3 +117,31 @@ features:
         - No migration required for existing projects
         - No warnings for valid old-format configs
         - New features only activated when new config is present
+
+    - id: effort-configuration
+      description: |
+        Each role resolves an effort level alongside its model, so
+        reasoning depth is configured rather than left to the CLI
+        default.
+
+        Effort and model are separate levers with different economics.
+        Raising the default executor's effort is the intuitive response
+        to a failure and the wrong one: at the top of its effort range a
+        cheaper model can cost more than the expensive model would have,
+        for comparable quality. Escalating the model is therefore
+        strictly cheaper than cranking effort, which makes the default
+        executor's effort a fixed property of its role rather than a dial
+        the loop turns when something fails.
+
+        The consequence is a rule worth stating as a rule: no code path
+        raises effort in response to a validation failure. Failures
+        change which model runs, never how hard the cheap one tries.
+      acceptance_criteria:
+        - Config supports an optional effort section with per-role keys mirroring the models section
+        - Effort accepts low, medium, high, xhigh or max, and any other value produces a clear error at load time
+        - The default executor, escalated executor, validators and scoper each resolve their own effort level
+        - Default effort is medium for the default executor, high for the escalated executor, medium for validators and high for the scoper
+        - If a role's effort is missing, effort.default is used, and if that is missing the claude CLI default applies
+        - No code path raises a role's effort in response to a validation failure, a retry, or an escalation
+        - The default executor's effort is identical on a first attempt and on a mechanical retry
+        - A --effort flag overrides the resolved effort for a single invocation, mirroring --model

@@ -1,7 +1,7 @@
 id: agentic-validators
 title: agentic-validators
 created: "2026-03-17T19:24:58.958332+11:00"
-updated: "2026-07-27T22:29:14.040999+10:00"
+updated: "2026-07-30T10:28:20.566172+10:00"
 description: ""
 features:
     - id: validator-config
@@ -37,7 +37,28 @@ features:
 
     - id: validator-runner
       description: |
-        Execute a validator by invoking Claude with the prompt and changed files.
+        Execute a validator by invoking Claude with the prompt and changed
+        files.
+
+        A validator currently answers one question - did this pass - and on
+        failure hands back its entire output as prose. That is enough to
+        retry and not enough to decide anything: a missing import and a
+        misread specification are indistinguishable to the caller, so the
+        only available response is to try again identically.
+
+        The validator now also classifies the failure. A mechanical failure
+        means the intent was right and the execution slipped, so the same
+        executor can retry. A comprehension failure means the intent was
+        wrong, which the same executor cannot fix by trying harder. That
+        distinction is the input every later phase routes on, and it is
+        cheapest to produce here, where the validator has already read the
+        diff and the specification.
+
+        Because Utopia drives the claude CLI rather than the Anthropic API,
+        the verdict cannot be enforced by a response schema. It is carried
+        in a delimited block in stdout and parsed, and every parse failure
+        resolves toward the more expensive classification rather than the
+        cheaper one.
       acceptance_criteria:
         - Runner loads prompt from configured file
         - Runner injects git diff of changed files into prompt
@@ -45,9 +66,18 @@ features:
         - Runner checks output for <PASSED> token
         - If <PASSED> found, validator passes
         - If <PASSED> not found, entire output is the failure feedback
-        - Runner returns structured result (passed bool, feedback string)
+        - Runner returns structured result carrying passed bool, feedback string, and the parsed verdict
         - Validators run with read-only tools by default (Read, Glob, Grep)
         - Validators cannot modify files - they only review and report
+        - A validator emits its verdict as a single <VERDICT> block containing a JSON object
+        - The verdict object carries verdict (pass or fail), failure_class (mechanical, comprehension, or null), diagnosis, corrected_intent, confidence (high or low), and spec_defect_suspected
+        - failure_class is null when verdict is pass and non-null when verdict is fail
+        - diagnosis is at most 400 characters
+        - corrected_intent is required when failure_class is comprehension, is null otherwise, and is at most 1500 characters
+        - A verdict of fail with confidence low is treated as failure_class comprehension regardless of the class it reported
+        - Output containing neither <PASSED> nor a parseable <VERDICT> block is treated as a failure with failure_class comprehension
+        - A <VERDICT> block whose JSON does not parse, or which omits a required field, is treated as a failure with failure_class comprehension
+        - A validator emitting <PASSED> with no <VERDICT> block still passes, so validator prompts written before this contract keep working
 
     - id: validator-parallel-execution
       description: |
@@ -74,13 +104,27 @@ features:
 
     - id: validator-result-aggregation
       description: |
-        Aggregate results from parallel validators and determine overall pass/fail.
+        Aggregate results from parallel validators and determine overall
+        pass/fail.
+
+        Aggregation is boolean AND over pass flags plus string
+        concatenation of feedback. Once validators classify their failures,
+        flattening them into one string discards exactly the field the
+        routing logic needs, so the aggregate has to carry the
+        classification rather than only the prose.
+
+        Validators disagree, and the disagreement resolves toward
+        escalation: one validator reporting a misread specification is not
+        cancelled out by three reporting lint errors.
       acceptance_criteria:
         - Collect all validator results after parallel execution completes
         - Overall pass requires ALL validators to pass (output <PASSED>)
         - If any validator fails, aggregate all failure feedback
         - Failed validators are listed with their IDs and feedback
         - Passing validators are not included in feedback (reduce noise)
+        - The aggregate carries the strongest failure_class across failing validators, where comprehension is stronger than mechanical
+        - The aggregate is spec_defect_suspected when any failing validator reports spec_defect_suspected
+        - Each failing validator's diagnosis and corrected_intent are retained on the aggregate rather than flattened into the feedback string
 
     - id: validator-execution-hook
       description: |
@@ -124,12 +168,17 @@ features:
 
     - id: validator-template-content
       description: |
-        Define the content of the _template.md validator file.
+        The scaffolded validator prompt teaches the verdict contract by
+        example, so validators created from the template classify their
+        failures without the author having to discover the schema.
       acceptance_criteria:
         - Template frontmatter includes all available fields with comments
         - Template prompt explains the expected input ({{changed_files}})
         - Template prompt explains the expected output (<PASSED> or feedback)
         - Template is educational - helps users understand how to write validators
+        - The template instructs the validator to emit a <VERDICT> block on failure and documents every field
+        - The template explains the mechanical and comprehension distinction in terms of intent - mechanical means the intent was right and the execution slipped, comprehension means the intent was wrong
+        - The template instructs the validator to report confidence low rather than guess a class when the distinction is unclear
 
     - id: validator-command
       description: |

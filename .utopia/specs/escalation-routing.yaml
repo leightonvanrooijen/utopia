@@ -1,0 +1,123 @@
+id: escalation-routing
+title: escalation-routing
+created: "2026-07-30T10:28:20.565885+10:00"
+updated: "2026-07-30T10:28:20.566173+10:00"
+description: ""
+features:
+    - id: failure-class-routing
+      description: |
+        A failing validation gate routes on failure_class rather than on
+        iteration count.
+
+        A mechanical failure retries on the same executor and does not
+        count toward escalation, because the executor was not the
+        problem. A comprehension failure escalates the executor to the
+        higher tier, because the same executor re-reading the same
+        specification will re-derive the same wrong intent.
+
+        Mechanical retries are bounded separately. Enough of them in a
+        row is itself evidence of misunderstanding - a model that keeps
+        slipping in the same place is usually solving the wrong problem
+        - so the mechanical path reclassifies rather than retrying
+        indefinitely.
+      acceptance_criteria:
+        - A validation failure with failure_class mechanical retries on the default executor model
+        - A mechanical retry does not increment comprehension_count
+        - Exceeding the mechanical retry cap reclassifies the failure as comprehension and routes it accordingly
+        - A validation failure with failure_class comprehension increments comprehension_count
+        - When comprehension_count reaches 1, execution escalates to the escalated executor model
+        - When comprehension_count reaches 2, the work item routes to scoping escalation before execution is attempted again
+        - A verdict with spec_defect_suspected routes to scoping escalation regardless of comprehension_count
+        - Escalation state is persisted on the work item so it survives a resume rather than resetting to the default executor
+        - The routing decision for each iteration is logged with the failure class, the counter values, and the model selected
+
+    - id: escalation-caps
+      description: |
+        Every escalation path is bounded, and exhausting a bound halts
+        the work item rather than looping.
+
+        The caps are set so that the worst case is roughly cost-neutral
+        against running the expensive model throughout, and the common
+        case is materially cheaper. They are independently configurable
+        because they are guesses, and the telemetry that would confirm
+        them does not exist yet.
+      acceptance_criteria:
+        - The mechanical retry cap, comprehension escalation cap, opus_execution_attempts cap and scoping_escalations cap are each independently configurable
+        - Default caps are 4 mechanical retries, 2 escalated execution attempts and 1 scoping escalation per change request
+        - Exceeding any cap marks the work item needs_human and halts it without further attempts
+        - A work item halted as needs_human is distinguishable from one that failed verification
+        - Halting one work item as needs_human does not abort the run - execution continues with the next change request
+        - A work item that fails on every available path terminates as needs_human rather than looping indefinitely
+        - Cap configuration is validated at load time, and a non-positive cap produces a clear error before execution starts
+
+    - id: scoping-escalation
+      description: |
+        Repeated comprehension failure is treated as evidence about the
+        change request rather than only about the executor. Scoping
+        escalation rewrites the change request instead of the code.
+
+        The rewritten change request is the highest-value output of a
+        failed iteration, so it is persisted as a first-class artefact
+        and fed to harvesting. A run that produces a sharper
+        specification has produced something durable even if it produced
+        no working code.
+      acceptance_criteria:
+        - Scoping escalation sends the change request, the validator diagnoses and the relevant spec and ADR excerpts to the scoper model
+        - The scoper is instructed to rewrite the change request, not to write code
+        - The rewritten change request is persisted as a change request artefact rather than held in memory
+        - The rewritten change request records which change request it supersedes and which diagnoses motivated the rewrite
+        - The rewritten change request is discoverable by harvesting
+        - Execution resumes against the rewritten change request with comprehension_count reset to 0
+        - opus_execution_attempts is not reset by a scoping escalation
+        - A scoping escalation that produces no parseable change request counts against the scoping_escalations cap and does not resume execution
+
+    - id: escalation-context-construction
+      description: |
+        An escalated attempt is built a fresh context rather than handed
+        the transcript of the attempts that failed.
+
+        Replaying failed attempts anchors the escalated model toward the
+        mental model that just failed, which is the specific thing
+        escalation is meant to escape. It also pays the higher tier's
+        rate to read the cheaper tier's dead ends.
+
+        What survives from a failed attempt is its conclusion, not its
+        reasoning: the validator's diagnosis, the corrected intent, the
+        final diff and the verbatim tooling output. What the model
+        thought on the way there is discarded.
+      acceptance_criteria:
+        - An escalated context contains the change request, the relevant spec and ADR excerpts, each prior failure's diagnosis and corrected_intent, the final diff from the last attempt, and verbatim verification and validator output
+        - An escalated context contains no prior-attempt model reasoning, no prior partial diffs other than the final diff, and no prior tool-call logs
+        - The absence of prior-attempt transcript in a constructed escalated prompt is asserted by a test against the constructed prompt, not only by inspection
+        - Scoping escalation contexts are constructed by the same rules as escalated execution contexts
+        - A non-escalated retry keeps using the existing failure-injection prompt unchanged
+
+    - id: escalation-telemetry
+      description: |
+        Every change request outcome writes a record of how it was
+        routed, so the caps and the premise behind them can be argued
+        with evidence instead of intuition.
+
+        The specific hypothesis under test is that repeated
+        comprehension failure indicates a defective change request
+        rather than an executor limit. That is plausible and unmeasured.
+        If rewritten change requests do not improve first-pass rates,
+        the rule should invert - escalate execution before rewriting the
+        specification - and this record is what makes that decision
+        possible.
+
+        Token counts and monetary cost are deliberately absent. Utopia
+        drives the claude CLI, which reports neither, so cost is
+        approximated from attempt counts and the model each attempt used
+        rather than measured. An approximation that is honest about
+        being one is more useful than a fabricated dollar figure.
+      acceptance_criteria:
+        - One record is written per change request outcome, including outcomes that halted as needs_human
+        - The record carries cr_id, spec_ref, cr_type, the executor model and effort used for each attempt, sonnet_attempts, mechanical_failures, comprehension_failures, opus_execution_attempts, scoping_escalations, spec_rewritten, outcome, and wall-clock duration
+        - The recorded effort for the default executor is identical across every attempt on a change request, which is the persisted evidence that no path raised it
+        - outcome is one of passed, needs_human or abandoned
+        - The record is written when a change request aborts, not only when it completes
+        - Escalation rate can be derived per spec and per cr_type from the persisted records without re-reading run transcripts
+        - The ratio of mechanical to comprehension failures can be derived per spec from the persisted records
+        - The record notes that token counts and monetary cost are not captured, so a reader does not mistake their absence for zero
+        - Failure to write the record logs a warning and does not block the execution loop
