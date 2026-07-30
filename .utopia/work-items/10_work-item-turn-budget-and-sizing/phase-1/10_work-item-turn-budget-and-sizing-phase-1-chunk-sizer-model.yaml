@@ -1,0 +1,80 @@
+id: 10_work-item-turn-budget-and-sizing-phase-1-chunk-sizer-model
+spec_ref: 10_work-item-turn-budget-and-sizing-phase-1.chunk-sizer-model
+title: |
+    Add a chunk_sizer entry to ModelConfig so the work-item sizer's model
+    can be selected independently.
+
+    It inherits models.default rather than defaulting to a cheap tier.
+    The validator_router precedent does not apply: the router classifies
+    a diff that already exists, with the evidence in front of it, whereas
+    the sizer must estimate work that does not exist yet from a feature
+    description. Whether "migrate all call sites" means three files or
+    forty is unknowable without reasoning about the codebase, so the
+    sizer needs real capability.
+status: pending
+prompt: |-
+    ## TASK
+
+    Add a chunk_sizer entry to ModelConfig so the work-item sizer's model
+    can be selected independently.
+
+    It inherits models.default rather than defaulting to a cheap tier.
+    The validator_router precedent does not apply: the router classifies
+    a diff that already exists, with the evidence in front of it, whereas
+    the sizer must estimate work that does not exist yet from a feature
+    description. Whether "migrate all call sites" means three files or
+    forty is unknowable without reasoning about the codebase, so the
+    sizer needs real capability.
+
+
+    Acceptance criteria:
+    - ModelConfig has a chunk_sizer field mapped to the chunk_sizer YAML key
+    - models.chunk_sizer falls back to models.default when omitted
+    - models.chunk_sizer does not default to a cheap tier independently of models.default
+    - The chunk command resolves and applies the chunk_sizer model when invoking the sizer
+
+
+
+    ## HINTS
+
+    - ModelConfig is in internal/domain/discovery.go; note it currently has no chunk entry because chunking made no judgements
+    - Use WithModel (internal/claude.go:75) as the other commands do, e.g. internal/cli/cr.go:441
+
+
+
+    ## STANDARDS
+
+    This project defines coding standards in .utopia/standards/. Before implementing, read the standards docs relevant to the files this task touches:
+
+    - id: cli-organization
+      description: How to structure cobra commands in internal/cli: thin handlers that own the CLI frame and delegate the algorithm to domain packages.
+      tags: go, cli, cobra, architecture
+      path: .utopia/standards/cli-organization.md
+    - id: error-handling
+      description: How errors are created, wrapped, matched, and surfaced: typed domain errors for branching, %w wrapping for infrastructure, one exit point in root.go.
+      tags: go, errors, cli
+      path: .utopia/standards/error-handling.md
+    - id: terminal-output
+      description: One shared output vocabulary (glyphs, banners, progress) routed through cobra's injectable writers so command output is consistent and testable.
+      tags: go, cli, ux, output
+      path: .utopia/standards/terminal-output.md
+
+
+    ## CONSTRAINTS
+
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+order: 2
+estimated_complexity: medium
