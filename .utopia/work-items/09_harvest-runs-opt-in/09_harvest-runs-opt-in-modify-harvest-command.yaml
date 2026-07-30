@@ -80,30 +80,22 @@ constraints:
     - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
 order: 0
 estimated_complexity: medium
-iteration_count: 2
+iteration_count: 3
 last_validator_feedback: |
     Gating connector validators:after-workitem blocked workitem-verified:
     Validator spec-intent failed:
-    Cannot identify exactly one `in_progress` work item. Two match:
+    All 12 acceptance criteria satisfied: flag default false (`internal/cli/harvest.go:51`), no run transcripts without `--runs` (`sourceRuns = nil` at `internal/harvest/harvest.go:618-620`), run priority preserved with `--runs`, session gating hinges on conversations alone without the flag (`harvest.go:626`), runs left unprocessed and re-harvestable, count hint filesystem-derived only (`ListUnprocessedExecutionRuns` + `formatRunsExcludedHint`), no hint at zero runs or when opted in. Prompt no longer instructs marking runs it was never shown (`buildMarkProcessedInstructions`). Spec files correctly left untouched per constraint. Tests exercise the behaviours, not just the strings.
 
-    - `.utopia/work-items/cli-extract-services-layer/cli-extract-services-layer-extract-merge-service.yaml:6` - `status: in_progress`
-    - `.utopia/work-items/09_harvest-runs-opt-in/09_harvest-runs-opt-in-modify-harvest-command.yaml:15` - `status: in_progress`
+    One standards violation:
 
-    Not guessing which is under review. Inferring criteria from the diff is circular and always passes.
-
-    Second, independent observation on the diff supplied: it contains only work-item bookkeeping fields (`selected_validators`, `executor_attempts`, `validators_routed` at `09_harvest-runs-opt-in-modify-harvest-command.yaml:84-91`). No source, test, or doc change is present. Whichever item is running, there is no implementation in this diff to judge against acceptance criteria. The harvest `--runs` implementation appears to have landed in commit `eb357af feat: make execution runs an opt-in harvest source behind --runs`, i.e. before this diff's base - so the diff under review may have been computed from the wrong reference point.
-
-    Both facts point at the same fix: the runner's state, not the executor's comprehension.
-
-    - `.utopia/work-items/cli-extract-services-layer/cli-extract-services-layer-extract-merge-service.yaml:6` - [B] stale `status: in_progress` leaves two items marked running at once; validator cannot resolve the item under review (validator contract in Step 1: "grep `.utopia/work-items/` for the file whose `status:` is `in_progress`. If exactly one matches, that is the item under review.")
-    - `.utopia/work-items/09_harvest-runs-opt-in/09_harvest-runs-opt-in-modify-harvest-command.yaml:84` - [B] diff carries only routing metadata, no implementation; nothing in it can satisfy or violate an acceptance criterion
+    - `internal/harvest/harvest.go:623` - [B] new user-facing output line emitted with package-level `fmt.Println(hint)` instead of cobra's injectable writer, so the criterion-mandated hint is unredirectable and unassertable - no test verifies `Run` actually prints it, only that `formatRunsExcludedHint` returns it. Route it through a writer supplied by the caller (e.g. an `io.Writer`/`ui.Printer` on `harvest.Options`, populated from `cmd.OutOrStdout()` at `internal/cli/harvest.go:58`), keeping the hint before the early return. Standard `terminal-output.md:41`: "every new or touched line of output must go through `cmd.OutOrStdout()` / `cmd.ErrOrStderr()` (usually via a `ui.Printer`)"; anti-pattern table `terminal-output.md:151`: "Package-level `fmt.Print*` for command output | `ui.Printer` over `cmd.OutOrStdout()` / `cmd.ErrOrStderr()` | Error". Emitting from the handler instead is acceptable only if the hint still prints before the session starts.
 
     <VERDICT>
     {
       "verdict": "fail",
       "failure_class": "mechanical",
-      "diagnosis": "Runner state is inconsistent, not the code: two work items are simultaneously status: in_progress, so the item under review is unresolvable, and the supplied diff contains only work-item bookkeeping with no implementation to judge. This is a harness/state defect the same model can clear by settling the stale item's status and recomputing the diff against the correct base; no comprehension failure is demonstrated because no substantive change was presented.",
-      "confidence": "low"
+      "diagnosis": "Intent is correct: every acceptance criterion is satisfied in substance, runs are genuinely excluded from the prompt rather than accepted-and-ignored, the marking instructions were narrowed so the session is never told to touch files it was not shown, and spec files were left for the CR merge as constrained. The single defect is a documented terminal-output rule missed on one new print line; the author understood the task and can fix it from this list without re-deriving anything.",
+      "confidence": "high"
     }
     </VERDICT>
 failure_conclusions:
@@ -111,13 +103,24 @@ failure_conclusions:
       validator_id: spec-intent
       failure_class: comprehension
       diagnosis: 'Runner state is inconsistent, not the code: two work items are simultaneously status: in_progress, so the item under review is unresolvable, and the supplied diff contains only work-item bookkeeping with no implementation to judge. This is a harness/state defect the same model can clear by settling the stale item''s status and recomputing the diff against the correct base; no comprehension failure '
+    - iteration: 2
+      validator_id: spec-intent
+      failure_class: mechanical
+      diagnosis: 'Intent is correct: every acceptance criterion is satisfied in substance, runs are genuinely excluded from the prompt rather than accepted-and-ignored, the marking instructions were narrowed so the session is never told to touch files it was not shown, and spec files were left for the CR merge as constrained. The single defect is a documented terminal-output rule missed on one new print line; the a'
 selected_validators:
     - spec-intent
+mechanical_retry_count: 1
 comprehension_count: 1
+opus_execution_attempts: 1
+mechanical_failures_total: 1
 comprehension_failures_total: 1
 executor_attempts:
     - iteration: 1
       role: default-executor
       model: ""
       effort: medium
+    - iteration: 2
+      role: escalated-executor
+      model: fable
+      effort: high
 validators_routed: true

@@ -88,6 +88,7 @@ func runHarvest(cmd *cobra.Command, args []string) error {
 		Auth:       authMode,
 
 		IncludeRuns: harvestRunsFlag,
+		Out:         cmd.OutOrStdout(),
 	})
 	if err != nil {
 		return fmt.Errorf("harvest failed: %w", err)

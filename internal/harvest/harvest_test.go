@@ -1,6 +1,7 @@
 package harvest
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -23,12 +24,17 @@ func TestRun_NoSourcesSkipsTheSession(t *testing.T) {
 		t.Fatalf("failed to create .utopia dir: %v", err)
 	}
 
-	result, err := Run(context.Background(), internal.NewYAMLStore(utopiaDir), Options{UtopiaDir: utopiaDir})
+	var out bytes.Buffer
+	result, err := Run(context.Background(), internal.NewYAMLStore(utopiaDir), Options{UtopiaDir: utopiaDir, Out: &out})
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
 	if result.UnprocessedConversations != 0 || result.UnprocessedRuns != 0 {
 		t.Errorf("Run() = %+v, want zero counts for both source types", result)
+	}
+	// Zero unprocessed runs means no hint - there is nothing to discover.
+	if out.Len() != 0 {
+		t.Errorf("no sources should print nothing, got %q", out.String())
 	}
 }
 
@@ -53,12 +59,19 @@ func TestRun_WithoutIncludeRunsSkipsTheSessionWhenOnlyRunsAreUnprocessed(t *test
 
 	// A session here would need a live Claude CLI; returning before starting one
 	// is exactly the behaviour under test.
-	result, err := Run(context.Background(), store, Options{UtopiaDir: utopiaDir})
+	var out bytes.Buffer
+	result, err := Run(context.Background(), store, Options{UtopiaDir: utopiaDir, Out: &out})
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
 	if result.UnprocessedRuns != 1 {
 		t.Errorf("UnprocessedRuns = %d, want 1 - the run should still be counted from disk", result.UnprocessedRuns)
+	}
+
+	// The hint is the only trace the skipped runs leave, so Run itself has to
+	// print it - to the writer the caller supplied, before returning.
+	if got, want := out.String(), "1 unprocessed execution run not scanned - pass --runs to include them.\n"; got != want {
+		t.Errorf("Run() output = %q, want %q", got, want)
 	}
 
 	// The run must be left alone so a later --runs harvest can still read it.

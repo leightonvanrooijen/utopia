@@ -8,6 +8,7 @@ package harvest
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -38,6 +39,10 @@ type Options struct {
 	// are always scanned, runs only on request. Runs left out stay unprocessed
 	// and remain eligible for a later run-including harvest.
 	IncludeRuns bool
+	// Out receives the session's user-facing terminal output. The CLI hands in
+	// cmd.OutOrStdout() so tests can capture what a harvest prints; nil falls
+	// back to os.Stdout.
+	Out io.Writer
 }
 
 // Result represents the outcome of a harvest session.
@@ -619,8 +624,12 @@ func Run(ctx context.Context, store *internal.YAMLStore, opts Options) (*Result,
 	// Runs left out are not consumed - they stay unprocessed and a later
 	// --runs harvest still sees them. Say so once, before the early return, so
 	// accumulated runs are discoverable whether or not a session starts.
+	out := opts.Out
+	if out == nil {
+		out = os.Stdout
+	}
 	if hint := formatRunsExcludedHint(opts.IncludeRuns, len(runs)); hint != "" {
-		fmt.Println(hint)
+		fmt.Fprintln(out, hint)
 	}
 
 	// Unprocessed runs are worth a session on their own - a work item can be
