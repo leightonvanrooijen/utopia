@@ -230,6 +230,16 @@ func (c *ModelConfig) ModelForCommand(command string) string {
 // because escalating to the model that just failed is not an escalation.
 const DefaultEscalatedModel = string(ModelOpus)
 
+// DefaultValidatorModel is the model `utopia init` registers for validators on a
+// project that sets none of its own. It is the escalated tier rather than the
+// executor's tier because a validator is the reviewer of the executor's work: a
+// reviewer no more capable than the author it reviews cannot see the misreadings
+// escalation exists to catch. Nothing enforces this at load time - models.validators
+// is not an escalation path, so ValidateEscalationOrder deliberately leaves a
+// project free to review on a cheaper model - which is exactly why init has to
+// write the stronger tier explicitly instead of relying on a fallback.
+const DefaultValidatorModel = string(ModelOpus)
+
 // ExecutorModel resolves the model a first-attempt execution runs on:
 // models.execute > models.default > sonnet.
 func (c *ModelConfig) ExecutorModel() string {

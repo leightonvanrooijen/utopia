@@ -218,6 +218,24 @@ Example of a failure you cannot classify:
 //go:embed templates/spec-intent.md
 var specIntentValidator string
 
+const (
+	// specIntentConfigPath is the validators-list path of the shipped validator,
+	// relative to .utopia/ like every other entry in that list.
+	specIntentConfigPath = "validators/spec-intent.md"
+	// specIntentConfigField names the registration in init's added/skipped report.
+	specIntentConfigField = "validators[" + specIntentConfigPath + "]"
+)
+
+// hasValidatorPath reports whether the validators list already registers path.
+func hasValidatorPath(validators []domain.ValidatorConfig, path string) bool {
+	for _, v := range validators {
+		if v.GetPath() == path {
+			return true
+		}
+	}
+	return false
+}
+
 var initCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Initialize a new Utopia project",
@@ -339,6 +357,36 @@ func runInit(cmd *cobra.Command, args []string) error {
 		skipped = append(skipped, "verification.max_iterations")
 	}
 
+	// Register the shipped spec-intent validator. Writing the file is not enough:
+	// nothing runs an unregistered validator, so escalation routing would be dead
+	// in a project that never hand-edited config. Matching on path (not list
+	// length) keeps a project that already registered other validators intact.
+	if hasValidatorPath(config.Validators, specIntentConfigPath) {
+		skipped = append(skipped, specIntentConfigField)
+	} else {
+		// Always opts this validator out of the relevance router. The router skips
+		// validators a diff cannot violate; intent applies to every diff, and the
+		// router's own escalation decision reads this validator's verdict.
+		config.Validators = append(config.Validators, domain.ValidatorConfig{
+			Path:   specIntentConfigPath,
+			Always: true,
+		})
+		added = append(added, specIntentConfigField)
+	}
+
+	// Default the review tier. See domain.DefaultValidatorModel: no load-time rule
+	// enforces it, so an unset models.validators would silently review on the same
+	// model that wrote the code.
+	if config.Models == nil {
+		config.Models = &domain.ModelConfig{}
+	}
+	if config.Models.Validators == "" {
+		config.Models.Validators = domain.DefaultValidatorModel
+		added = append(added, "models.validators")
+	} else {
+		skipped = append(skipped, "models.validators")
+	}
+
 	// Prompt for project context if missing
 	if config.ProjectContext == "" {
 		out.Printf("Project context (orient an AI to this project's workflow): ")
@@ -378,7 +426,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		out.Printf("  .utopia/specs/                    - Living specifications\n")
 		out.Printf("  .utopia/work-items/               - Work items for Ralph\n")
 		out.Printf("  .utopia/validators/_template.md   - Validator template (copy to create validators)\n")
-		out.Printf("  .utopia/validators/spec-intent.md - Default spec-intent validator (register it in config.yaml)\n")
+		out.Printf("  .utopia/validators/spec-intent.md - Default spec-intent validator (registered in config.yaml)\n")
 		out.Printf("\nNext steps:\n")
 		out.Printf("  utopia cr              - Create a change request\n")
 		out.Printf("  utopia status          - View project status\n")
