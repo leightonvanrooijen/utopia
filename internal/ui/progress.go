@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"io"
+	"log/slog"
 	"time"
 )
 
@@ -15,8 +16,16 @@ type Progress struct {
 	verbose     bool
 }
 
+// NewProgress returns a Progress over w. Detail lines are written when the
+// caller passes verbose or when the process-wide level admits debug, which is
+// what makes --log-level debug and --verbose the same request.
 func NewProgress(w io.Writer, totalPhases int, verbose bool) *Progress {
-	return &Progress{w: w, phaseStart: time.Now(), totalPhases: totalPhases, verbose: verbose}
+	return &Progress{
+		w:           w,
+		phaseStart:  time.Now(),
+		totalPhases: totalPhases,
+		verbose:     verbose || Level() <= slog.LevelDebug,
+	}
 }
 
 // StartPhase restarts the phase timer and writes the "[n/N] name..." prefix.

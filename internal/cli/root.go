@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -46,6 +47,57 @@ Other Commands:
   status   View project state
   report   Compare what past runs spent and achieved
   format   Format YAML files`,
+	// Verbosity is resolved before any handler runs, so the first diagnostic a
+	// command emits is already gated at the level the invocation asked for.
+	PersistentPreRunE: applyLogLevel,
+}
+
+// logLevelEnvVar names the environment variable holding the default diagnostic
+// level, for a shell or CI job that wants every utopia run quieter or louder
+// without editing each command line.
+const logLevelEnvVar = "UTOPIA_LOG_LEVEL"
+
+const logLevelFlagUsage = "diagnostic verbosity (" + ui.LevelNames +
+	"); overrides " + logLevelEnvVar + ". Results are printed at every level"
+
+// applyLogLevel resolves the diagnostic level for this invocation - the
+// --log-level flag first, then UTOPIA_LOG_LEVEL, then the info default - and
+// applies it to every Printer the run constructs.
+//
+// The default is re-applied when neither source is set, rather than left as
+// whatever a previous call chose, because the level is process state: a test
+// running two commands in one process must see the second one start from the
+// documented default.
+func applyLogLevel(cmd *cobra.Command, _ []string) error {
+	source, value := "--log-level", ""
+	if flagValue, _ := cmd.Flags().GetString("log-level"); flagValue != "" {
+		value = flagValue
+	} else if envValue := os.Getenv(logLevelEnvVar); envValue != "" {
+		source, value = logLevelEnvVar, envValue
+	}
+
+	if value == "" {
+		ui.SetLevel(ui.DefaultLevel)
+		return nil
+	}
+
+	level, err := ui.ParseLevel(value)
+	if err != nil {
+		return fmt.Errorf("%s: %w", source, err)
+	}
+	ui.SetLevel(level)
+
+	return nil
+}
+
+// applyVerbose raises the level to debug for the commands that offer their own
+// --verbose flag, which is documented as another way of saying
+// --log-level debug. It only ever raises verbosity: a command asked for detail
+// gets it whatever the ambient level was.
+func applyVerbose(verbose bool) {
+	if verbose && ui.Level() > slog.LevelDebug {
+		ui.SetLevel(slog.LevelDebug)
+	}
 }
 
 // Execute runs the CLI
@@ -62,6 +114,7 @@ func Execute() {
 func init() {
 	// Global flags
 	rootCmd.PersistentFlags().StringP("project", "p", ".", "project directory")
+	rootCmd.PersistentFlags().String("log-level", "", logLevelFlagUsage)
 
 	// Version flag
 	rootCmd.Version = Version

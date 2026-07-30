@@ -53,13 +53,17 @@ func init() {
 	rootCmd.AddCommand(discoverCmd)
 	discoverCmd.Flags().StringSliceVar(&discoverPathFlags, "path", nil, "Limit discovery to specific directory (can be specified multiple times)")
 	discoverCmd.Flags().StringSliceVar(&discoverExcludeFlags, "exclude", nil, "Exclude files matching glob pattern (can be specified multiple times)")
-	discoverCmd.Flags().BoolVarP(&discoverVerboseFlag, "verbose", "v", false, "Enable detailed file-by-file progress output")
+	discoverCmd.Flags().BoolVarP(&discoverVerboseFlag, "verbose", "v", false, "Enable detailed file-by-file progress output (equivalent to --log-level debug)")
 	discoverCmd.Flags().StringVar(&discoverModelFlag, "model", "", "model alias (haiku, sonnet, opus, fable) or a full model identifier")
 	discoverCmd.Flags().StringVar(&discoverEffortFlag, "effort", "", effortFlagUsage)
 	discoverCmd.Flags().StringVar(&discoverAuthFlag, "auth", "", "credential to use (api-key, subscription), overriding config.auth.mode")
 }
 
 func runDiscover(cmd *cobra.Command, args []string) error {
+	// --verbose is the older spelling of --log-level debug; it raises the level
+	// before the first diagnostic so both spellings show the same detail.
+	applyVerbose(discoverVerboseFlag)
+
 	out := ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr())
 
 	// Validate model and effort flags early before any work
@@ -206,13 +210,15 @@ func init() {
 	discoverDomainCmd.Flags().BoolVar(&discoverDomainFullFlag, "full", false, "Force complete re-discovery of entire codebase")
 	discoverDomainCmd.Flags().StringSliceVar(&discoverDomainPathFlags, "path", nil, "Limit discovery to specific directory (can be specified multiple times)")
 	discoverDomainCmd.Flags().StringSliceVar(&discoverDomainExcludeFlags, "exclude", nil, "Exclude files matching glob pattern (can be specified multiple times)")
-	discoverDomainCmd.Flags().BoolVarP(&discoverDomainVerboseFlag, "verbose", "v", false, "Enable detailed file-by-file progress output")
+	discoverDomainCmd.Flags().BoolVarP(&discoverDomainVerboseFlag, "verbose", "v", false, "Enable detailed file-by-file progress output (equivalent to --log-level debug)")
 	discoverDomainCmd.Flags().StringVar(&discoverDomainModelFlag, "model", "", "model alias (haiku, sonnet, opus, fable) or a full model identifier")
 	discoverDomainCmd.Flags().StringVar(&discoverDomainEffortFlag, "effort", "", effortFlagUsage)
 	discoverDomainCmd.Flags().StringVar(&discoverDomainAuthFlag, "auth", "", "credential to use (api-key, subscription), overriding config.auth.mode")
 }
 
 func runDiscoverDomain(cmd *cobra.Command, args []string) error {
+	applyVerbose(discoverDomainVerboseFlag)
+
 	out := ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr())
 
 	// Validate model and effort flags early before any work

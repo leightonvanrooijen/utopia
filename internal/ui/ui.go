@@ -52,8 +52,10 @@ type Printer struct {
 	log *slog.Logger
 }
 
+// NewPrinter returns a Printer whose diagnostics are gated by the process-wide
+// level (see SetLevel) and whose results are never gated at all.
 func NewPrinter(out, err io.Writer) *Printer {
-	return &Printer{out: out, err: err, log: slog.New(NewTextHandler(err, DefaultLevel))}
+	return &Printer{out: out, err: err, log: slog.New(NewTextHandler(err, level))}
 }
 
 // DefaultPrinter returns a Printer over the process's own streams.

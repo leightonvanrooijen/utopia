@@ -5,7 +5,7 @@ title: |
     and a deep-debugging run are the same command with a different level. The
     result channel is never suppressed - lowering verbosity must never hide a
     command's answer.
-status: pending
+status: in_progress
 prompt: |-
     ## TASK
 
@@ -69,3 +69,4 @@ constraints:
     - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
 order: 1
 estimated_complexity: medium
+iteration_count: 1
