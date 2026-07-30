@@ -76,6 +76,8 @@ func init() {
 }
 
 func runValidatorCreate(cmd *cobra.Command, args []string) error {
+	out := ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr())
+
 	// Validate model and effort flags early before any work
 	modelID, err := ResolveModelFlag(cmd)
 	if err != nil {
@@ -113,7 +115,7 @@ func runValidatorCreate(cmd *cobra.Command, args []string) error {
 	}()
 
 	// Run the validator creation assistant
-	creator := validators.NewCreator(projectDir).WithAuth(authMode)
+	creator := validators.NewCreator(projectDir).WithAuth(authMode).WithPrinter(out)
 	if modelID != "" {
 		creator = creator.WithModel(modelID)
 	}
@@ -187,7 +189,7 @@ func runValidatorEdit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create the editor
-	editor := validators.NewEditor(projectDir).WithAuth(authMode)
+	editor := validators.NewEditor(projectDir).WithAuth(authMode).WithPrinter(out)
 	if modelID != "" {
 		editor = editor.WithModel(modelID)
 	}
@@ -320,7 +322,7 @@ func runValidatorDelete(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create the editor to list validators
-	editor := validators.NewEditor(projectDir)
+	editor := validators.NewEditor(projectDir).WithPrinter(out)
 
 	// List available validators
 	validatorList, err := editor.ListValidators()

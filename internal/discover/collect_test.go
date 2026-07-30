@@ -31,7 +31,7 @@ func TestCollectCodebaseContext(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	context, files, err := collectCodebaseContext(dir, Scope{}, newProgress(4, false))
+	context, files, err := collectCodebaseContext(dir, Scope{}, newProgress(nil, 4, false))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestCollectCodebaseContext_ExcludePatterns(t *testing.T) {
 	writeFile(t, dir, "main_test.go", "package main")
 
 	scope := Scope{ExcludePatterns: []string{"*_test.go"}}
-	_, files, err := collectCodebaseContext(dir, scope, newProgress(4, false))
+	_, files, err := collectCodebaseContext(dir, scope, newProgress(nil, 4, false))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestCollectCodebaseContext_ScopedPath(t *testing.T) {
 	writeFile(t, dir, "sub/inner.go", "package sub")
 
 	scope := Scope{Paths: []string{"sub"}}
-	_, files, err := collectCodebaseContext(dir, scope, newProgress(4, false))
+	_, files, err := collectCodebaseContext(dir, scope, newProgress(nil, 4, false))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -82,7 +82,7 @@ func TestCollectCodebaseContext_ScopedPath(t *testing.T) {
 }
 
 func TestCollectCodebaseContext_EmptyDir(t *testing.T) {
-	_, files, err := collectCodebaseContext(t.TempDir(), Scope{}, newProgress(4, false))
+	_, files, err := collectCodebaseContext(t.TempDir(), Scope{}, newProgress(nil, 4, false))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestCollectDomainContextIncremental_SkipsNonTypeFiles(t *testing.T) {
 	writeFile(t, dir, "api.gen.go", "package main")
 	writeFile(t, dir, "readme.txt", "not a type file")
 
-	context, files, err := collectDomainContextIncremental(dir, time.Time{}, false, Scope{}, newProgress(4, false))
+	context, files, err := collectDomainContextIncremental(dir, time.Time{}, false, Scope{}, newProgress(nil, 4, false))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestCollectDomainContextIncremental_IncrementalSkipsOldFiles(t *testing.T) 
 	}
 
 	lastRun := time.Now().Add(-1 * time.Hour)
-	_, files, err := collectDomainContextIncremental(dir, lastRun, true, Scope{}, newProgress(4, false))
+	_, files, err := collectDomainContextIncremental(dir, lastRun, true, Scope{}, newProgress(nil, 4, false))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

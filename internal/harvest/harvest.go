@@ -8,7 +8,6 @@ package harvest
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -40,9 +39,9 @@ type Options struct {
 	// and remain eligible for a later run-including harvest.
 	IncludeRuns bool
 	// Out receives the session's user-facing terminal output. The CLI hands in
-	// cmd.OutOrStdout() so tests can capture what a harvest prints; nil falls
-	// back to os.Stdout.
-	Out io.Writer
+	// the printer it built over cobra's writers so tests can capture what a
+	// harvest prints; nil falls back to the process's own streams.
+	Out *ui.Printer
 }
 
 // Result represents the outcome of a harvest session.
@@ -624,12 +623,9 @@ func Run(ctx context.Context, store *internal.YAMLStore, opts Options) (*Result,
 	// Runs left out are not consumed - they stay unprocessed and a later
 	// --runs harvest still sees them. Say so once, before the early return, so
 	// accumulated runs are discoverable whether or not a session starts.
-	out := opts.Out
-	if out == nil {
-		out = os.Stdout
-	}
+	out := ui.OrDefault(opts.Out)
 	if hint := formatRunsExcludedHint(opts.IncludeRuns, len(runs)); hint != "" {
-		fmt.Fprintln(out, hint)
+		out.Printf("%s\n", hint)
 	}
 
 	// Unprocessed runs are worth a session on their own - a work item can be
@@ -736,31 +732,31 @@ func Run(ctx context.Context, store *internal.YAMLStore, opts Options) (*Result,
 	readmeSignalCount := countREADMESignals(opts.ProjectDir, store)
 
 	// Display harvest summary
-	fmt.Println("Starting unified harvest session...")
-	fmt.Printf("Found %d unprocessed conversations:\n", len(unprocessedConvs))
-	fmt.Printf("  "+ui.Bullet+" %d system-truth (has CR + executed)\n", systemTruthCount)
-	fmt.Printf("  "+ui.Bullet+" %d exploratory (no CR)\n", exploratoryCount)
+	out.Println("Starting unified harvest session...")
+	out.Printf("Found %d unprocessed conversations:\n", len(unprocessedConvs))
+	out.Printf("  "+ui.Bullet+" %d system-truth (has CR + executed)\n", systemTruthCount)
+	out.Printf("  "+ui.Bullet+" %d exploratory (no CR)\n", exploratoryCount)
 	if opts.IncludeRuns {
-		fmt.Printf("Found %d unprocessed execution runs (system-truth - what was built)\n", len(runs))
+		out.Printf("Found %d unprocessed execution runs (system-truth - what was built)\n", len(runs))
 	}
-	fmt.Println()
-	fmt.Println("Existing documentation:")
-	fmt.Printf("  "+ui.Bullet+" %d ADRs\n", len(existingADRs))
-	fmt.Printf("  "+ui.Bullet+" %d Concepts\n", len(existingConcepts))
-	fmt.Printf("  "+ui.Bullet+" %d Domain Docs\n", len(existingDomainDocs))
-	fmt.Println()
-	fmt.Println("Documentation signals:")
-	fmt.Printf("  "+ui.Bullet+" %s README signal%s\n", formatSignalCount(readmeSignalCount), pluralize(readmeSignalCount))
-	fmt.Printf("  "+ui.Bullet+" %d rewritten change request%s (scoping escalations)\n", len(rewrites), pluralize(len(rewrites)))
-	fmt.Println()
-	fmt.Println("Documents will be saved to:")
-	fmt.Printf("  "+ui.Bullet+" ADRs: %s\n", adrsDir)
-	fmt.Printf("  "+ui.Bullet+" Concepts: %s\n", conceptsDir)
-	fmt.Printf("  "+ui.Bullet+" Domain: %s\n", domainDir)
-	fmt.Println()
+	out.Println()
+	out.Println("Existing documentation:")
+	out.Printf("  "+ui.Bullet+" %d ADRs\n", len(existingADRs))
+	out.Printf("  "+ui.Bullet+" %d Concepts\n", len(existingConcepts))
+	out.Printf("  "+ui.Bullet+" %d Domain Docs\n", len(existingDomainDocs))
+	out.Println()
+	out.Println("Documentation signals:")
+	out.Printf("  "+ui.Bullet+" %s README signal%s\n", formatSignalCount(readmeSignalCount), pluralize(readmeSignalCount))
+	out.Printf("  "+ui.Bullet+" %d rewritten change request%s (scoping escalations)\n", len(rewrites), pluralize(len(rewrites)))
+	out.Println()
+	out.Println("Documents will be saved to:")
+	out.Printf("  "+ui.Bullet+" ADRs: %s\n", adrsDir)
+	out.Printf("  "+ui.Bullet+" Concepts: %s\n", conceptsDir)
+	out.Printf("  "+ui.Bullet+" Domain: %s\n", domainDir)
+	out.Println()
 
 	// Run interactive Claude session
-	cli := internal.NewCLI().WithAuth(opts.Auth, opts.UtopiaDir)
+	cli := internal.NewCLI().WithAuth(opts.Auth, opts.UtopiaDir).WithPrinter(out)
 	if opts.Model != "" {
 		cli = cli.WithModel(opts.Model)
 	}
@@ -770,8 +766,8 @@ func Run(ctx context.Context, store *internal.YAMLStore, opts Options) (*Result,
 
 	_, sessionErr := cli.SessionWithCapture(ctx, systemPrompt)
 
-	fmt.Println()
-	fmt.Println("Harvest session ended.")
+	out.Println()
+	out.Println("Harvest session ended.")
 
 	// Note: We don't save this conversation to avoid infinite loops
 	// (harvest sessions reviewing harvest sessions)

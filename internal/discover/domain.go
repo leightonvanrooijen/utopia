@@ -8,6 +8,7 @@ import (
 
 	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
+	"github.com/leightonvanrooijen/utopia/internal/ui"
 )
 
 const domainSystemPrompt = `You are a Domain Discovery Claude - an AI assistant that analyzes codebases to identify domain vocabulary, bounded contexts, and canonical terminology.
@@ -92,6 +93,10 @@ type DomainOptions struct {
 	LastRun time.Time
 	// ExistingDocs are summarized in the prompt so Claude builds on prior discovery
 	ExistingDocs []*domain.DomainDoc
+	// Out receives the pipeline's user-facing terminal output. The CLI hands in
+	// the printer it built over cobra's writers so a discovery run is capturable;
+	// nil falls back to the process's own streams.
+	Out *ui.Printer
 }
 
 // DomainResult represents the outcome of the domain discovery pipeline.
@@ -108,7 +113,8 @@ type DomainResult struct {
 // runs. It returns early (with a nil error) when a stage produces nothing to
 // carry forward; callers inspect the result to frame the outcome.
 func Domain(ctx context.Context, store *internal.YAMLStore, opts DomainOptions) (*DomainResult, error) {
-	prog := newProgress(4, opts.Verbose)
+	out := ui.OrDefault(opts.Out)
+	prog := newProgress(out, 4, opts.Verbose)
 
 	prog.StartPhase(1, "Scanning files")
 	codebaseContext, filesAnalyzed, err := collectDomainContextIncremental(opts.ProjectDir, opts.LastRun, opts.Incremental, opts.Scope, prog)
@@ -117,7 +123,7 @@ func Domain(ctx context.Context, store *internal.YAMLStore, opts DomainOptions) 
 	}
 	result := &DomainResult{FilesAnalyzed: filesAnalyzed}
 	if len(filesAnalyzed) == 0 {
-		fmt.Printf(" done (no new files)\n")
+		out.Printf(" done (no new files)\n")
 		return result, nil
 	}
 	prog.EndPhase(fmt.Sprintf("%d files found", len(filesAnalyzed)))
@@ -126,7 +132,7 @@ func Domain(ctx context.Context, store *internal.YAMLStore, opts DomainOptions) 
 	systemPrompt := fmt.Sprintf(domainSystemPrompt, codebaseContext, domainDocsSummary)
 
 	prog.StartPhase(2, "Analyzing codebase with Claude")
-	cli := internal.NewCLI().WithVerbose(true).WithAuth(opts.Auth, utopiaDirOf(opts.ProjectDir))
+	cli := internal.NewCLI().WithVerbose(true).WithAuth(opts.Auth, utopiaDirOf(opts.ProjectDir)).WithPrinter(out)
 	if opts.Model != "" {
 		cli = cli.WithModel(opts.Model)
 	}
@@ -146,7 +152,7 @@ func Domain(ctx context.Context, store *internal.YAMLStore, opts DomainOptions) 
 	}
 	result.Drafts = drafts
 	if len(drafts) == 0 {
-		fmt.Printf(" done (no drafts found)\n")
+		out.Printf(" done (no drafts found)\n")
 		return result, nil
 	}
 	prog.EndPhase(fmt.Sprintf("%d drafts parsed", len(drafts)))

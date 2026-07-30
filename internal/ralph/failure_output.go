@@ -1,8 +1,9 @@
 package ralph
 
 import (
-	"fmt"
 	"strings"
+
+	"github.com/leightonvanrooijen/utopia/internal/ui"
 )
 
 // failureSourceVerification names the verification command in a failure-output
@@ -25,9 +26,9 @@ const failureSourceVerification = "verification"
 // The content is printed verbatim rather than reformatted, so the block and the
 // feedback injected into the next prompt cannot disagree. Empty content prints
 // nothing rather than an empty frame.
-func printFailureBlock(source, content string) {
+func printFailureBlock(out *ui.Printer, source, content string) {
 	if strings.TrimSpace(content) == "" {
 		return
 	}
-	fmt.Printf("\n--- Failure Output: %s ---\n%s\n--- End Failure Output: %s ---\n\n", source, content, source)
+	ui.OrDefault(out).Printf("\n--- Failure Output: %s ---\n%s\n--- End Failure Output: %s ---\n\n", source, content, source)
 }

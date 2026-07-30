@@ -16,7 +16,7 @@ import (
 const aggregatedFeedback = "Validator go-style failed:\nexported func Foo missing a doc comment\n\n"
 
 func TestPrintFailureBlock_FramesContentInMatchingDelimiters(t *testing.T) {
-	out := captureStdout(t, func() { printFailureBlock("verification", "--- FAIL: TestFoo (0.00s)") })
+	out := captureStdout(t, func() { printFailureBlock(nil, "verification", "--- FAIL: TestFoo (0.00s)") })
 
 	want := "\n--- Failure Output: verification ---\n--- FAIL: TestFoo (0.00s)\n--- End Failure Output: verification ---\n\n"
 	if out != want {
@@ -26,7 +26,7 @@ func TestPrintFailureBlock_FramesContentInMatchingDelimiters(t *testing.T) {
 
 func TestPrintFailureBlock_EmptyContentPrintsNoFrame(t *testing.T) {
 	for _, content := range []string{"", "  \n\t"} {
-		out := captureStdout(t, func() { printFailureBlock("verification", content) })
+		out := captureStdout(t, func() { printFailureBlock(nil, "verification", content) })
 		if out != "" {
 			t.Errorf("content %q must print nothing, got %q", content, out)
 		}
@@ -41,7 +41,7 @@ func TestPrintFailureBlock_EmptyContentPrintsNoFrame(t *testing.T) {
 func TestVerificationFailure_PrintsFailureOutputBlock(t *testing.T) {
 	verifyOutput := "--- FAIL: TestUnify (0.01s)\n    want one block, got two"
 
-	out := captureStdout(t, func() { printFailureBlock(failureSourceVerification, verifyOutput) })
+	out := captureStdout(t, func() { printFailureBlock(nil, failureSourceVerification, verifyOutput) })
 
 	if !strings.Contains(out, verifyOutput) {
 		t.Errorf("verification output must be printed verbatim, got:\n%s", out)

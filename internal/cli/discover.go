@@ -114,6 +114,7 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 		Effort:        effort,
 		Auth:          authMode,
 		ExistingSpecs: existingSpecs,
+		Out:           out,
 	})
 	if err != nil {
 		return fmt.Errorf("spec discovery failed: %w", err)
@@ -284,6 +285,7 @@ func runDiscoverDomain(cmd *cobra.Command, args []string) error {
 		Incremental:  isIncremental,
 		LastRun:      lastRunTime,
 		ExistingDocs: existingDomainDocs,
+		Out:          out,
 	})
 	if err != nil {
 		return fmt.Errorf("domain discovery failed: %w", err)

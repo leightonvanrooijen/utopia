@@ -82,7 +82,7 @@ func resolveExecuteOverrides(cmd *cobra.Command) (ralph.Overrides, error) {
 		return ralph.Overrides{}, err
 	}
 
-	return ralph.Overrides{Model: modelID, Effort: effort}, nil
+	return ralph.Overrides{Model: modelID, Effort: effort, Out: ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr())}, nil
 }
 
 func runExecute(cmd *cobra.Command, args []string) error {

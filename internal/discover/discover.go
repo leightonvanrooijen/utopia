@@ -7,7 +7,6 @@ package discover
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -26,10 +25,11 @@ type Scope struct {
 	ExcludePatterns []string
 }
 
-// newProgress builds the shared phase-progress renderer over stdout,
-// matching the package-level fmt output used elsewhere in this pipeline.
-func newProgress(totalPhases int, verbose bool) *ui.Progress {
-	return ui.NewProgress(os.Stdout, totalPhases, verbose)
+// newProgress builds the shared phase-progress renderer over the caller's
+// results writer, which is the same stream the rest of this pipeline prints to.
+// A nil printer means the process's own streams.
+func newProgress(out *ui.Printer, totalPhases int, verbose bool) *ui.Progress {
+	return ui.NewProgress(ui.OrDefault(out).Out(), totalPhases, verbose)
 }
 
 // utopiaDirOf returns the .utopia directory of a project, which is where
@@ -59,6 +59,10 @@ type SpecsOptions struct {
 	Auth domain.AuthMode
 	// ExistingSpecs are summarized in the prompt so Claude skips documented capabilities
 	ExistingSpecs []*domain.Spec
+	// Out receives the pipeline's user-facing terminal output. The CLI hands in
+	// the printer it built over cobra's writers so a discovery run is capturable;
+	// nil falls back to the process's own streams.
+	Out *ui.Printer
 }
 
 // SpecsResult represents the outcome of the spec discovery pipeline.
@@ -77,7 +81,8 @@ type SpecsResult struct {
 // It returns early (with a nil error) when a stage produces nothing to
 // carry forward; callers inspect the result to frame the outcome.
 func Specs(ctx context.Context, store *internal.YAMLStore, opts SpecsOptions) (*SpecsResult, error) {
-	prog := newProgress(4, opts.Verbose)
+	out := ui.OrDefault(opts.Out)
+	prog := newProgress(out, 4, opts.Verbose)
 	result := &SpecsResult{}
 
 	prog.StartPhase(1, "Scanning files")
@@ -87,13 +92,13 @@ func Specs(ctx context.Context, store *internal.YAMLStore, opts SpecsOptions) (*
 	}
 	result.FilesAnalyzed = filesAnalyzed
 	if len(filesAnalyzed) == 0 {
-		fmt.Printf(" done (no files found)\n")
+		out.Printf(" done (no files found)\n")
 		return result, nil
 	}
 	prog.EndPhase(fmt.Sprintf("%d files found", len(filesAnalyzed)))
 
 	specsSummary := buildExistingSpecsSummary(opts.ExistingSpecs)
-	cli := internal.NewCLI().WithVerbose(opts.Verbose).WithAuth(opts.Auth, utopiaDirOf(opts.ProjectDir))
+	cli := internal.NewCLI().WithVerbose(opts.Verbose).WithAuth(opts.Auth, utopiaDirOf(opts.ProjectDir)).WithPrinter(out)
 	if opts.Model != "" {
 		cli = cli.WithModel(opts.Model)
 	}
@@ -112,7 +117,7 @@ func Specs(ctx context.Context, store *internal.YAMLStore, opts SpecsOptions) (*
 	prog.EndPhase(fmt.Sprintf("%d qualified, %d disqualified", qualifiedCount, disqualifiedCount))
 
 	disqualified := parseDisqualifiedCandidates(qualifiedResult.Stdout)
-	logDisqualifiedCandidates(disqualified, opts.Verbose)
+	logDisqualifiedCandidates(out, disqualified, opts.Verbose)
 	qualified := parseQualifiedCandidates(qualifiedResult.Stdout)
 	result.Qualified = len(qualified)
 
@@ -121,13 +126,13 @@ func Specs(ctx context.Context, store *internal.YAMLStore, opts SpecsOptions) (*
 	}
 
 	prog.StartPhase(3, fmt.Sprintf("Stage 2: Refining %d candidates in parallel", len(qualified)))
-	drafts, refinementErrors := runParallelRefinement(ctx, qualified, defaultRefinementIterations, opts.Verbose, opts.Model, opts.Effort, opts.Auth, opts.ProjectDir)
+	drafts, refinementErrors := runParallelRefinement(ctx, out, qualified, defaultRefinementIterations, opts.Verbose, opts.Model, opts.Effort, opts.Auth, opts.ProjectDir)
 	prog.EndPhase(fmt.Sprintf("%d drafts refined", len(drafts)))
 
 	if len(refinementErrors) > 0 && opts.Verbose {
-		fmt.Println("\n  Refinement errors:")
+		out.Println("\n  Refinement errors:")
 		for _, err := range refinementErrors {
-			fmt.Printf("    ✗ %v\n", err)
+			out.Printf("    ✗ %v\n", err)
 		}
 	}
 
@@ -231,7 +236,7 @@ THEN: Output ONLY the YAML block with your refined specification.`,
 		iteration, maxIterations, candidate.ID, candidate.Title, candidate.Description, sourceFilesStr, candidate.QualificationReason, candidate.ID)
 }
 
-func runParallelRefinement(ctx context.Context, candidates []qualifiedCandidate, iterations int, verbose bool, modelID, effort string, auth domain.AuthMode, projectDir string) ([]*domain.DraftSpec, []error) {
+func runParallelRefinement(ctx context.Context, out *ui.Printer, candidates []qualifiedCandidate, iterations int, verbose bool, modelID, effort string, auth domain.AuthMode, projectDir string) ([]*domain.DraftSpec, []error) {
 	var (
 		drafts []*domain.DraftSpec
 		errors []error
@@ -240,7 +245,7 @@ func runParallelRefinement(ctx context.Context, candidates []qualifiedCandidate,
 	)
 
 	refinementCLI := internal.NewCLI().WithVerbose(verbose).WithAllowedTools([]string{"Read", "Grep", "Glob"}).
-		WithAuth(auth, utopiaDirOf(projectDir))
+		WithAuth(auth, utopiaDirOf(projectDir)).WithPrinter(out)
 	if modelID != "" {
 		refinementCLI = refinementCLI.WithModel(modelID)
 	}
@@ -253,7 +258,7 @@ func runParallelRefinement(ctx context.Context, candidates []qualifiedCandidate,
 		go func(c qualifiedCandidate) {
 			defer wg.Done()
 			if verbose {
-				fmt.Printf("\n  Starting refinement for: %s\n", c.ID)
+				out.Printf("\n  Starting refinement for: %s\n", c.ID)
 			}
 			var lastOutput string
 			var lastErr error
@@ -267,7 +272,7 @@ func runParallelRefinement(ctx context.Context, candidates []qualifiedCandidate,
 				lastOutput = result.Stdout
 				lastErr = nil
 				if verbose {
-					fmt.Printf("  ✓ %s iteration %d/%d complete\n", c.ID, i, iterations)
+					out.Printf("  ✓ %s iteration %d/%d complete\n", c.ID, i, iterations)
 				}
 			}
 			if lastErr != nil {
@@ -287,7 +292,7 @@ func runParallelRefinement(ctx context.Context, candidates []qualifiedCandidate,
 			drafts = append(drafts, draft)
 			mu.Unlock()
 			if verbose {
-				fmt.Printf("  ✓ %s refinement complete (confidence: %s)\n", c.ID, draft.Confidence)
+				out.Printf("  ✓ %s refinement complete (confidence: %s)\n", c.ID, draft.Confidence)
 			}
 		}(candidate)
 	}
@@ -295,13 +300,13 @@ func runParallelRefinement(ctx context.Context, candidates []qualifiedCandidate,
 	return drafts, errors
 }
 
-func logDisqualifiedCandidates(disqualified []disqualifiedCandidate, verbose bool) {
+func logDisqualifiedCandidates(out *ui.Printer, disqualified []disqualifiedCandidate, verbose bool) {
 	if len(disqualified) == 0 || !verbose {
 		return
 	}
-	fmt.Println("\n  Disqualified candidates:")
+	out.Println("\n  Disqualified candidates:")
 	for _, d := range disqualified {
-		fmt.Printf("    ✗ %s: %s\n", d.ID, d.Reason)
+		out.Printf("    ✗ %s: %s\n", d.ID, d.Reason)
 	}
 }
 

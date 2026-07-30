@@ -45,12 +45,21 @@ type Result struct {
 // separate fields rather than one setting: --model changes which model runs,
 // --effort changes how much reasoning a turn may spend. Neither is touched again
 // once the run starts.
+//
+// Out rides along here rather than as a positional parameter because the call
+// tree below Execute is wide: the printer reaches the work-item loop, the
+// escalation paths, the engine's resolution ledger and the claude subprocesses
+// from one place the caller already constructs.
 type Overrides struct {
 	// Model is a Claude model override: an alias the CLI resolves (e.g. "opus")
 	// or a full model identifier.
 	Model string
 	// Effort is a reasoning-effort override (low, medium, high, xhigh, max).
 	Effort string
+	// Out receives everything the run prints. The CLI hands in the printer it
+	// built over cobra's writers, so a run's output is capturable; nil falls back
+	// to the process's own streams.
+	Out *ui.Printer
 }
 
 // Execute runs all work items for a spec sequentially.
@@ -65,6 +74,8 @@ type Overrides struct {
 // run's usage across two accounts. The empty mode inherits the ambient
 // environment, which is the pre-auth behaviour.
 func Execute(ctx context.Context, specID string, store *internal.YAMLStore, config *domain.Config, projectDir string, auth domain.AuthMode, over Overrides) (*Result, error) {
+	out := ui.OrDefault(over.Out)
+
 	// Load work items for this spec
 	items, err := store.ListWorkItemsForSpec(specID)
 	if err != nil {
@@ -96,7 +107,7 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 	// before the first work item starts and nothing below recomputes it, which is
 	// what makes "no code path raises effort on failure" a property of the
 	// structure rather than a convention.
-	cli := internal.NewCLI().WithVerbose(true).WithAuth(auth, filepath.Join(projectDir, ".utopia"))
+	cli := internal.NewCLI().WithVerbose(true).WithAuth(auth, filepath.Join(projectDir, ".utopia")).WithPrinter(out)
 	efforts := resolveRoleEfforts(config.Effort, over.Effort)
 	cli = cli.WithEffort(efforts.executor)
 	defaultExecutorModel := ""
@@ -138,7 +149,9 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 	subs := CompileValidators(validatorRunner, validatorList, config.Verification.ValidatorConcurrency)
 	subs = append(subs, CompileConnectors(config.Connectors, projectDir)...)
 	if len(subs) > 0 {
-		runner := &ConnectorRunner{engine: NewEngine(subs)}
+		engine := NewEngine(subs)
+		engine.out = out
+		runner := &ConnectorRunner{engine: engine}
 		dispatcher.Subscribe(func(e Event) error {
 			return runner.Handle(ctx, e)
 		})
@@ -172,7 +185,7 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 		// Skip completed items
 		if item.Status == domain.WorkItemCompleted {
 			result.Completed++
-			fmt.Printf("[%d/%d] %s - already completed\n", i+1, len(items), item.ID)
+			out.Printf("[%d/%d] %s - already completed\n", i+1, len(items), item.ID)
 			continue
 		}
 
@@ -181,14 +194,14 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 		// the same place; the change request has to change first.
 		if item.Status == domain.WorkItemNeedsHuman {
 			result.NeedsHuman = append(result.NeedsHuman, item.ID)
-			fmt.Printf("[%d/%d] %s - halted, needs human attention (skipped)\n", i+1, len(items), item.ID)
+			out.Printf("[%d/%d] %s - halted, needs human attention (skipped)\n", i+1, len(items), item.ID)
 			continue
 		}
 
-		fmt.Printf("[%d/%d] %s - starting execution\n", i+1, len(items), item.ID)
+		out.Printf("[%d/%d] %s - starting execution\n", i+1, len(items), item.ID)
 
 		// Execute this work item with the Ralph loop
-		timings, err := executeWorkItem(ctx, item, specID, store, cli, defaultExecutorModel, efforts, verifier, config, projectDir, auth, dispatcher, basePayload, validatorRunner, validatorList)
+		timings, err := executeWorkItem(ctx, out, item, specID, store, cli, defaultExecutorModel, efforts, verifier, config, projectDir, auth, dispatcher, basePayload, validatorRunner, validatorList)
 		if err != nil {
 			// A halted item is skipped, not fatal. Batch execution runs every draft
 			// change request in order, so aborting the run on one ambiguous change
@@ -197,7 +210,7 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 			var needsHuman *NeedsHumanError
 			if errors.As(err, &needsHuman) {
 				result.NeedsHuman = append(result.NeedsHuman, item.ID)
-				fmt.Printf("[%d/%d] %s - halted after %d iteration(s), needs human attention: %s\n",
+				out.Printf("[%d/%d] %s - halted after %d iteration(s), needs human attention: %s\n",
 					i+1, len(items), item.ID, item.IterationCount, err)
 				continue
 			}
@@ -210,11 +223,11 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 		}
 
 		result.Completed++
-		fmt.Printf("[%d/%d] %s - completed in %d iteration(s)\n", i+1, len(items), item.ID, item.IterationCount)
+		out.Printf("[%d/%d] %s - completed in %d iteration(s)\n", i+1, len(items), item.ID, item.IterationCount)
 		// Where the item's wall clock went, under the line that announced it
 		// finished. Only a completed item carries timings.
 		if timings != nil {
-			fmt.Printf("  timing: %s\n", timings.summary())
+			out.Printf("  timing: %s\n", timings.summary())
 		}
 	}
 
@@ -222,7 +235,7 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 	// fires phase-verified and phase-completed (and their gating connectors)
 	// even when no validators are configured.
 	if result.Completed == result.Total {
-		if err := runAfterPhaseValidators(ctx, cli, config, projectDir, auth, dispatcher, basePayload, validatorRunner, validatorList); err != nil {
+		if err := runAfterPhaseValidators(ctx, out, cli, config, projectDir, auth, dispatcher, basePayload, validatorRunner, validatorList); err != nil {
 			result.Reason = err.Error()
 			failPayload := basePayload
 			failPayload.Reason = err.Error()
@@ -248,6 +261,7 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 // completion line; an item that stops early returns nil timings.
 func executeWorkItem(
 	ctx context.Context,
+	out *ui.Printer,
 	item *domain.WorkItem,
 	specID string,
 	store *internal.YAMLStore,
@@ -281,6 +295,7 @@ func executeWorkItem(
 	// keeps misreading it. It is built once per work item rather than per
 	// escalation because its dependencies do not change across one item's run.
 	sc := &scoper{
+		out:       out,
 		store:     store,
 		cli:       cli,
 		model:     resolveScoperModel(config.Models),
@@ -311,6 +326,7 @@ func executeWorkItem(
 	// clock and change request type its routing record needs. It is written to
 	// .utopia/runs/ when the item finishes, however it finishes.
 	rec := newRunRecorder(crType)
+	rec.out = out
 
 	// Every way out of this loop leaves a record, not only the outcomes the loop
 	// routed to. An item that aborted on an error nobody anticipated is exactly the
@@ -359,7 +375,7 @@ func executeWorkItem(
 			// produces nothing has still been made.
 			item.ScopingEscalationCount++
 			esc := &ScopingEscalationError{WorkItemID: item.ID, ComprehensionCount: item.ComprehensionCount}
-			if err := escalateScoping(ctx, sc, item, specID, crID, esc, caps, rec, escalationDiff(ctx, validatorRunner)); err != nil {
+			if err := escalateScoping(ctx, sc, item, specID, crID, esc, caps, rec, escalationDiff(ctx, out, validatorRunner)); err != nil {
 				return nil, err
 			}
 			continue
@@ -397,7 +413,7 @@ func executeWorkItem(
 		// three agree on whether this attempt is escalated.
 		prompt := buildPrompt(item)
 		if item.ComprehensionCount > 0 {
-			escalated, err := buildEscalatedPrompt(store, item, crID, escalationDiff(ctx, validatorRunner))
+			escalated, err := buildEscalatedPrompt(store, item, crID, escalationDiff(ctx, out, validatorRunner))
 			if err != nil {
 				return nil, err
 			}
@@ -442,9 +458,9 @@ func executeWorkItem(
 		attemptCLI := cli.Clone().WithMaxTurns(turnBudget).WithUsageCapture(true)
 		if attemptModel != defaultExecutorModel || attemptEffort != efforts.executor {
 			attemptCLI = attemptCLI.WithModel(attemptModel).WithEffort(attemptEffort)
-			fmt.Printf("  Iteration %d: invoking Claude on the escalated executor (%s, effort %s)...\n", item.IterationCount, attemptModel, attemptEffort)
+			out.Printf("  Iteration %d: invoking Claude on the escalated executor (%s, effort %s)...\n", item.IterationCount, attemptModel, attemptEffort)
 		} else {
-			fmt.Printf("  Iteration %d: invoking Claude...\n", item.IterationCount)
+			out.Printf("  Iteration %d: invoking Claude...\n", item.IterationCount)
 		}
 
 		// Invoke Claude. The call is timed from the outside, so the duration
@@ -462,11 +478,11 @@ func executeWorkItem(
 		// iterations, so we undo the increment and retry with a normally
 		// rebuilt prompt. A limit error means ctx was cancelled while
 		// waiting/probing (Ctrl+C or timeout) - take the graceful shutdown path.
-		if outcome, limitErr := handleClaudeLimits(ctx, claudeResult, auth, projectDir); limitErr != nil {
+		if outcome, limitErr := handleClaudeLimits(ctx, out, claudeResult, auth, projectDir); limitErr != nil {
 			_ = store.SaveWorkItemForSpec(specID, item)
 			return nil, limitErr
 		} else if outcome == limitWaited {
-			fmt.Printf("  Iteration %d: usage limit handled, re-running this iteration (claude %s)\n", item.IterationCount, ui.Duration(claudeElapsed))
+			out.Printf("  Iteration %d: usage limit handled, re-running this iteration (claude %s)\n", item.IterationCount, ui.Duration(claudeElapsed))
 			item.IterationCount--
 			// The attempt produced no work, so it is refunded: the cap bounds spend on
 			// the escalated executor, and nothing was spent here. The routing record is
@@ -503,7 +519,7 @@ func executeWorkItem(
 		// iteration rebuilds its state from git and the files, so the capped
 		// iteration is a ratchet rather than wasted spend.
 		if claudeResult != nil && DetectTurnExhaustion(claudeResult.Stdout, claudeResult.Stderr) {
-			fmt.Printf("  Iteration %d: turn budget of %d reached, continuing in a fresh iteration (claude %s)\n", item.IterationCount, turnBudget, ui.Duration(claudeElapsed))
+			out.Printf("  Iteration %d: turn budget of %d reached, continuing in a fresh iteration (claude %s)\n", item.IterationCount, turnBudget, ui.Duration(claudeElapsed))
 			// A capped attempt claimed nothing, so nothing it produced was judged. Its
 			// spend is recorded either way: the ratchet cost what it cost.
 			recordAttemptOutcome(item, domain.AttemptIncomplete, "")
@@ -511,7 +527,7 @@ func executeWorkItem(
 		}
 
 		if err != nil {
-			fmt.Printf("  Iteration %d: Claude invocation failed: %v (claude %s)\n", item.IterationCount, err, ui.Duration(claudeElapsed))
+			out.Printf("  Iteration %d: Claude invocation failed: %v (claude %s)\n", item.IterationCount, err, ui.Duration(claudeElapsed))
 			recordAttemptOutcome(item, domain.AttemptErrored, "")
 			// Continue to next iteration - Claude may have hit an error
 			continue
@@ -519,7 +535,7 @@ func executeWorkItem(
 
 		// Check for completion token
 		if !strings.Contains(claudeResult.Stdout, CompletionToken) {
-			fmt.Printf("  Iteration %d: no %s token found, retrying... (claude %s)\n", item.IterationCount, CompletionToken, ui.Duration(claudeElapsed))
+			out.Printf("  Iteration %d: no %s token found, retrying... (claude %s)\n", item.IterationCount, CompletionToken, ui.Duration(claudeElapsed))
 			recordAttemptOutcome(item, domain.AttemptIncomplete, "")
 			// No completion token - Claude hit step limit or got stuck
 			// Clear any previous failure since this is a different failure mode
@@ -528,7 +544,7 @@ func executeWorkItem(
 			continue
 		}
 
-		fmt.Printf("  Iteration %d: %s token found, running verification... (claude %s)\n", item.IterationCount, CompletionToken, ui.Duration(claudeElapsed))
+		out.Printf("  Iteration %d: %s token found, running verification... (claude %s)\n", item.IterationCount, CompletionToken, ui.Duration(claudeElapsed))
 
 		// Route validators once for this work item, the first time it reaches the
 		// gate. The cheap relevance router picks which validators apply to the
@@ -541,13 +557,13 @@ func executeWorkItem(
 			if diff, diffErr := validatorRunner.GetGitDiff(ctx); diffErr == nil {
 				selected, routeErr := validatorRunner.SelectApplicable(ctx, validatorList, diff)
 				if routeErr != nil {
-					fmt.Printf("  Iteration %d: validator router failed, running all applicable: %v\n", item.IterationCount, routeErr)
+					out.Printf("  Iteration %d: validator router failed, running all applicable: %v\n", item.IterationCount, routeErr)
 				}
 				item.SelectedValidators = selected
 				item.ValidatorsRouted = true
 				_ = store.SaveWorkItemForSpec(specID, item)
 			} else {
-				fmt.Printf("  Iteration %d: could not compute diff for validator routing: %v\n", item.IterationCount, diffErr)
+				out.Printf("  Iteration %d: could not compute diff for validator routing: %v\n", item.IterationCount, diffErr)
 			}
 		}
 
@@ -581,21 +597,21 @@ func executeWorkItem(
 			verifyPassed = verifyResult.Passed
 			verifyOutput = verifyResult.Output
 		} else {
-			fmt.Printf("  Iteration %d: no verification command configured, marking complete\n", item.IterationCount)
+			out.Printf("  Iteration %d: no verification command configured, marking complete\n", item.IterationCount)
 		}
 
 		if !verifyPassed {
 			// Verification failed - inject failure and retry. Signal that the
 			// completion claim did not hold so the engine cancels the
 			// speculative validators; their feedback is discarded.
-			fmt.Printf("  Iteration %d: verification failed, will retry with failure output (verification %s)\n", item.IterationCount, ui.Duration(verifyElapsed))
+			out.Printf("  Iteration %d: verification failed, will retry with failure output (verification %s)\n", item.IterationCount, ui.Duration(verifyElapsed))
 			// The human running the loop sees exactly what the runner is about to be
 			// handed. verifyOutput is already truncated by verifier.Run, so this block
 			// is byte-identical to what lands in item.LastFailureOutput below and in
 			// the retry prompt. Verification does not resolve through the engine, so
 			// this is the one failure source that renders its own block; everything
 			// else reaches the same helper through the resolution ledger.
-			printFailureBlock(failureSourceVerification, verifyOutput)
+			printFailureBlock(out, failureSourceVerification, verifyOutput)
 			failedPayload := itemPayload
 			failedPayload.IterationCount = item.IterationCount
 			dispatcher.Dispatch(Event{Name: EventWorkItemVerificationFailed, Payload: failedPayload})
@@ -610,7 +626,7 @@ func executeWorkItem(
 		}
 
 		if verifyCommand != "" {
-			fmt.Printf("  Iteration %d: verification passed! (verification %s)\n", item.IterationCount, ui.Duration(verifyElapsed))
+			out.Printf("  Iteration %d: verification passed! (verification %s)\n", item.IterationCount, ui.Duration(verifyElapsed))
 		}
 
 		// Verification passed - join the speculative validators (and any gating
@@ -641,8 +657,8 @@ func executeWorkItem(
 			// again here.
 			aggregate := aggregateFromGate(gateErr)
 			decision := routeValidationFailure(item, aggregate, caps, defaultExecutorModel, escalatedExecutorModel)
-			fmt.Printf("  Iteration %d: gate blocked workitem-verified (validators %s)\n", item.IterationCount, ui.Duration(joinElapsed))
-			fmt.Printf("  %s\n", decision.logLine(item.IterationCount, maxIterations, caps))
+			out.Printf("  Iteration %d: gate blocked workitem-verified (validators %s)\n", item.IterationCount, ui.Duration(joinElapsed))
+			out.Printf("  %s\n", decision.logLine(item.IterationCount, maxIterations, caps))
 			item.LastFailureOutput = ""
 			item.LastValidatorFeedback = gateFeedback(gateErr)
 			// What this attempt concluded is kept, persisted with the item, so a later
@@ -672,7 +688,7 @@ func executeWorkItem(
 				// The change request, not the code, is what gets rewritten here. A
 				// rewrite the loop can resume against returns nil and execution carries
 				// on against the new specification; anything else stops the item.
-				if err := escalateScoping(ctx, sc, item, specID, crID, scopingEscalationError(item, aggregate, decision), caps, rec, escalationDiff(ctx, validatorRunner)); err != nil {
+				if err := escalateScoping(ctx, sc, item, specID, crID, scopingEscalationError(item, aggregate, decision), caps, rec, escalationDiff(ctx, out, validatorRunner)); err != nil {
 					return nil, err
 				}
 			}
@@ -685,11 +701,11 @@ func executeWorkItem(
 		if err := store.SaveWorkItemForSpec(specID, item); err != nil {
 			return nil, err
 		}
-		logExecutionEntry(store, crID, item, operationType)
+		logExecutionEntry(out, store, crID, item, operationType)
 		// Written before the commit so the transcript is picked up by the same
 		// `git add -A` and lands in the work item's own commit.
 		writeRunTranscript(store, crID, item, rec, domain.RunCompleted)
-		p.CommitSHA = gitCommitWorkItem(projectDir, item, crTitle)
+		p.CommitSHA = gitCommitWorkItem(out, projectDir, item, crTitle)
 		dispatcher.Dispatch(Event{Name: EventWorkItemCommitted, Payload: p})
 		return timings, nil
 	}
@@ -774,7 +790,7 @@ func deriveOperationType(cr *domain.ChangeRequest, specRef string) string {
 }
 
 // logExecutionEntry appends an execution log entry to conversations that reference the CR.
-func logExecutionEntry(store *internal.YAMLStore, crID string, item *domain.WorkItem, operation string) {
+func logExecutionEntry(out *ui.Printer, store *internal.YAMLStore, crID string, item *domain.WorkItem, operation string) {
 	entry := domain.ExecutionLogEntry{
 		WorkItemID:  item.ID,
 		SpecRef:     item.SpecRef,
@@ -782,7 +798,7 @@ func logExecutionEntry(store *internal.YAMLStore, crID string, item *domain.Work
 		CompletedAt: time.Now(),
 	}
 	if err := store.AppendExecutionLogEntry(crID, entry); err != nil {
-		fmt.Printf("  warning: failed to log execution entry: %v\n", err)
+		out.Printf("  warning: failed to log execution entry: %v\n", err)
 	}
 }
 
@@ -805,7 +821,7 @@ func appendIterationOutput(transcript *strings.Builder, iteration int, result *i
 // gitCommitWorkItem creates a git commit after a work item passes verification.
 // Logs warning and returns on failure (non-blocking).
 // Returns the SHA of the created commit, or "" if no commit was created.
-func gitCommitWorkItem(projectDir string, item *domain.WorkItem, crTitle string) string {
+func gitCommitWorkItem(out *ui.Printer, projectDir string, item *domain.WorkItem, crTitle string) string {
 	// Build commit message: subject line + body with CR title
 	subject := fmt.Sprintf("workitem: %s", item.ID)
 	body := crTitle
@@ -813,7 +829,7 @@ func gitCommitWorkItem(projectDir string, item *domain.WorkItem, crTitle string)
 
 	// Stage all changes first to check if there's anything to commit
 	if err := git.Add(projectDir, "-A"); err != nil {
-		fmt.Printf("  warning: git add failed: %v\n", err)
+		out.Printf("  warning: git add failed: %v\n", err)
 		return ""
 	}
 
@@ -824,11 +840,11 @@ func gitCommitWorkItem(projectDir string, item *domain.WorkItem, crTitle string)
 
 	// Commit
 	if err := git.Commit(projectDir, message); err != nil {
-		fmt.Printf("  warning: git commit failed: %v\n", err)
+		out.Printf("  warning: git commit failed: %v\n", err)
 		return ""
 	}
 
-	fmt.Printf("  Created commit for %s\n", item.ID)
+	out.Printf("  Created commit for %s\n", item.ID)
 
 	sha, err := git.HeadSHA(projectDir)
 	if err != nil {
@@ -844,6 +860,7 @@ func gitCommitWorkItem(projectDir string, item *domain.WorkItem, crTitle string)
 // until all validators pass or max iterations is reached.
 func runAfterPhaseValidators(
 	ctx context.Context,
+	out *ui.Printer,
 	cli *internal.CLI,
 	config *domain.Config,
 	projectDir string,
@@ -865,12 +882,12 @@ func runAfterPhaseValidators(
 		if diff, diffErr := validatorRunner.GetGitDiffSince(ctx, basePayload.PhaseStartSHA); diffErr == nil {
 			selected, routeErr := validatorRunner.SelectApplicable(ctx, validatorList, diff)
 			if routeErr != nil {
-				fmt.Printf("  After-phase: validator router failed, running all applicable: %v\n", routeErr)
+				out.Printf("  After-phase: validator router failed, running all applicable: %v\n", routeErr)
 			}
 			basePayload.SelectedValidatorIDs = selected
 			basePayload.ValidatorsRouted = true
 		} else {
-			fmt.Printf("  After-phase: could not compute diff for validator routing: %v\n", diffErr)
+			out.Printf("  After-phase: could not compute diff for validator routing: %v\n", diffErr)
 		}
 	}
 
@@ -902,7 +919,7 @@ func runAfterPhaseValidators(
 			p := basePayload
 			// Create commit for a successful fix if this wasn't the first iteration
 			if iteration > 1 {
-				p.CommitSHA = gitCommitAfterPhase(projectDir)
+				p.CommitSHA = gitCommitAfterPhase(out, projectDir)
 			}
 			dispatcher.Dispatch(Event{Name: EventPhaseCompleted, Payload: p})
 			return nil
@@ -915,12 +932,12 @@ func runAfterPhaseValidators(
 		// when the gate joined, above - printing it again here would show one
 		// validator failure twice.
 		feedback := gateFeedback(gateErr)
-		fmt.Printf("  After-phase iteration %d: validators failed, will retry with feedback (validators %s)\n", iteration, ui.Duration(joinElapsed))
+		out.Printf("  After-phase iteration %d: validators failed, will retry with feedback (validators %s)\n", iteration, ui.Duration(joinElapsed))
 
 		// Build prompt for Claude to fix standards issues
 		prompt := buildAfterPhasePrompt(feedback)
 
-		fmt.Printf("  After-phase iteration %d: invoking Claude to fix standards issues...\n", iteration)
+		out.Printf("  After-phase iteration %d: invoking Claude to fix standards issues...\n", iteration)
 
 		// Invoke Claude, timed from the outside as in the work-item loop, and asking for
 		// the same structured output: an after-phase fix is an execution attempt and its
@@ -933,27 +950,27 @@ func runAfterPhaseValidators(
 		// Detect and handle Claude usage limits without counting the attempt
 		// against max iterations. A limit error means ctx was cancelled while
 		// waiting/probing (Ctrl+C or timeout) - take the graceful shutdown path.
-		if outcome, limitErr := handleClaudeLimits(ctx, claudeResult, auth, projectDir); limitErr != nil {
+		if outcome, limitErr := handleClaudeLimits(ctx, out, claudeResult, auth, projectDir); limitErr != nil {
 			return limitErr
 		} else if outcome == limitWaited {
-			fmt.Printf("  After-phase iteration %d: usage limit handled, re-running this iteration (claude %s)\n", iteration, ui.Duration(claudeElapsed))
+			out.Printf("  After-phase iteration %d: usage limit handled, re-running this iteration (claude %s)\n", iteration, ui.Duration(claudeElapsed))
 			iteration--
 			continue
 		}
 
 		if err != nil {
-			fmt.Printf("  After-phase iteration %d: Claude invocation failed: %v (claude %s)\n", iteration, err, ui.Duration(claudeElapsed))
+			out.Printf("  After-phase iteration %d: Claude invocation failed: %v (claude %s)\n", iteration, err, ui.Duration(claudeElapsed))
 			// Continue to next iteration - Claude may have hit an error
 			continue
 		}
 
 		// Check for completion token
 		if !strings.Contains(claudeResult.Stdout, CompletionToken) {
-			fmt.Printf("  After-phase iteration %d: no %s token found, retrying... (claude %s)\n", iteration, CompletionToken, ui.Duration(claudeElapsed))
+			out.Printf("  After-phase iteration %d: no %s token found, retrying... (claude %s)\n", iteration, CompletionToken, ui.Duration(claudeElapsed))
 			continue
 		}
 
-		fmt.Printf("  After-phase iteration %d: %s token found, re-running validators... (claude %s)\n", iteration, CompletionToken, ui.Duration(claudeElapsed))
+		out.Printf("  After-phase iteration %d: %s token found, re-running validators... (claude %s)\n", iteration, CompletionToken, ui.Duration(claudeElapsed))
 		// Loop continues to re-run validators
 	}
 }
@@ -970,12 +987,12 @@ func buildAfterPhasePrompt(validatorFeedback string) string {
 
 // gitCommitAfterPhase creates a git commit after fixing after-phase validator issues.
 // Returns the SHA of the created commit, or "" if no commit was created.
-func gitCommitAfterPhase(projectDir string) string {
+func gitCommitAfterPhase(out *ui.Printer, projectDir string) string {
 	message := "fix: after-phase validator standards issues"
 
 	// Stage all changes first
 	if err := git.Add(projectDir, "-A"); err != nil {
-		fmt.Printf("  warning: git add failed: %v\n", err)
+		out.Printf("  warning: git add failed: %v\n", err)
 		return ""
 	}
 
@@ -986,11 +1003,11 @@ func gitCommitAfterPhase(projectDir string) string {
 
 	// Commit
 	if err := git.Commit(projectDir, message); err != nil {
-		fmt.Printf("  warning: git commit failed: %v\n", err)
+		out.Printf("  warning: git commit failed: %v\n", err)
 		return ""
 	}
 
-	fmt.Println("  Created commit for after-phase validator fixes")
+	out.Println("  Created commit for after-phase validator fixes")
 
 	sha, err := git.HeadSHA(projectDir)
 	if err != nil {

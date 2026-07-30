@@ -71,6 +71,10 @@ type handle struct {
 	// how long its work ran - a validator batch or connector command timed as
 	// a black-box call from the outside
 	launchedAt time.Time
+	// out is where this handle's ledger line and failure block are written. It is
+	// copied from the engine at launch so every door - join, cancel, drain -
+	// reports to the same printer; nil means the process's own streams.
+	out *ui.Printer
 }
 
 // join blocks until the work exits, collects its outcome, and marks the
@@ -125,6 +129,10 @@ func causedByCancellation(err error) bool {
 type Engine struct {
 	subs    []Subscription
 	handles []*handle
+	// out receives the resolution ledger and the gate lines Emit reports. The
+	// execution loop sets it to the printer the run was handed; nil means the
+	// process's own streams.
+	out *ui.Printer
 }
 
 // NewEngine creates an engine over a fixed set of subscriptions.
@@ -153,7 +161,7 @@ func (en *Engine) Emit(ctx context.Context, e Event) error {
 	// Pass 2: launch.
 	for i := range en.subs {
 		if en.subs[i].Launch == e.Name {
-			en.handles = append(en.handles, launchHandle(ctx, &en.subs[i], e))
+			en.handles = append(en.handles, launchHandle(ctx, &en.subs[i], e, en.out))
 		}
 	}
 
@@ -167,7 +175,7 @@ func (en *Engine) Emit(ctx context.Context, e Event) error {
 		if res.Err == nil {
 			continue
 		}
-		fmt.Printf("  gating connector %s blocked %s: %v\n", res.Name, e.Name, res.Err)
+		ui.OrDefault(en.out).Printf("  gating connector %s blocked %s: %v\n", res.Name, e.Name, res.Err)
 		if gateErr == nil {
 			gateErr = &GateError{Connector: res.Name, Event: e.Name, Stdout: res.Stdout, Aggregate: res.Aggregate}
 		}
@@ -227,29 +235,30 @@ func (en *Engine) reapCompleted() {
 // a validators subscription is how long the validator agents actually took,
 // however much of it overlapped verification.
 func logResolution(h *handle) {
+	p := ui.OrDefault(h.out)
 	line := fmt.Sprintf("  connector %s %s in %s (exit %d)",
 		h.sub.Name, h.state, ui.Duration(time.Since(h.launchedAt)), h.result.ExitCode)
 	if h.result.Err != nil {
 		line += ": " + h.result.Err.Error()
 	}
-	fmt.Println(line)
+	p.Println(line)
 	out := strings.TrimSpace(h.result.Stdout + h.result.Stderr)
 	if out == "" {
 		return
 	}
 	if h.result.Err != nil {
-		printFailureBlock(h.sub.Name, out)
+		printFailureBlock(p, h.sub.Name, out)
 		return
 	}
 	for _, l := range strings.Split(out, "\n") {
-		fmt.Println("    " + l)
+		p.Println("    " + l)
 	}
 }
 
 // launchHandle starts the subscription's action under a per-handle context
 // carrying the subscription timeout, and spawns the collector goroutine that
 // records the outcome and releases the context once the work exits.
-func launchHandle(ctx context.Context, sub *Subscription, e Event) *handle {
+func launchHandle(ctx context.Context, sub *Subscription, e Event, out *ui.Printer) *handle {
 	runCtx, cancel := context.WithCancel(ctx)
 	if sub.Timeout > 0 {
 		timeoutCtx, timeoutCancel := context.WithTimeout(runCtx, sub.Timeout)
@@ -258,7 +267,7 @@ func launchHandle(ctx context.Context, sub *Subscription, e Event) *handle {
 		cancel = func() { timeoutCancel(); runCancel() }
 	}
 
-	h := &handle{sub: sub, cancel: cancel, done: make(chan struct{}), state: handleRunning, launchedAt: time.Now()}
+	h := &handle{sub: sub, cancel: cancel, done: make(chan struct{}), state: handleRunning, launchedAt: time.Now(), out: out}
 	wait := sub.Action(runCtx, e)
 	go func() {
 		h.result = wait()

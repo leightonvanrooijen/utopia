@@ -17,6 +17,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
+	"github.com/leightonvanrooijen/utopia/internal/ui"
 )
 
 // PromptResult contains the output from a Claude prompt invocation.
@@ -68,6 +69,9 @@ type CLI struct {
 	authMode       domain.AuthMode // credential selection; empty inherits the ambient environment
 	utopiaDir      string          // project .utopia dir, where api-key mode looks for .env
 	captureUsage   bool            // ask for structured output and read the usage it reports
+	// out receives the subprocess's streamed output. Nil means the process's own
+	// streams, which is what an unwired caller always got.
+	out *ui.Printer
 }
 
 // NewCLI creates a new Claude CLI wrapper with sensible defaults for Utopia
@@ -84,6 +88,14 @@ func NewCLI() *CLI {
 // is denied rather than waved through by the bypass.
 func (c *CLI) WithPermissionMode(mode PermissionMode) *CLI {
 	c.permissionMode = mode
+	return c
+}
+
+// WithPrinter routes this invocation's streamed subprocess output through the
+// caller's printer instead of the process streams, so a command's output stays
+// capturable all the way down to what claude itself prints.
+func (c *CLI) WithPrinter(p *ui.Printer) *CLI {
+	c.out = p
 	return c
 }
 
@@ -315,6 +327,7 @@ func (c *CLI) streamingPrompt(ctx context.Context, args []string) (*PromptResult
 	}
 
 	// Capture output while streaming to terminal
+	out := ui.OrDefault(c.out)
 	var stdoutBuilder strings.Builder
 	var stderrBuilder strings.Builder
 	var collector streamCollector
@@ -342,7 +355,7 @@ func (c *CLI) streamingPrompt(ctx context.Context, args []string) (*PromptResult
 				}
 				mu.Unlock()
 				if display != "" {
-					fmt.Print(display) // Stream to terminal
+					out.Print(display) // Stream to terminal
 				}
 			}
 			if err != nil {
@@ -358,7 +371,7 @@ func (c *CLI) streamingPrompt(ctx context.Context, args []string) (*PromptResult
 		for {
 			line, err := reader.ReadString('\n')
 			if len(line) > 0 {
-				fmt.Fprint(os.Stderr, line) // Stream to terminal stderr
+				out.Progressf("%s", line) // Stream to terminal stderr
 				mu.Lock()
 				stderrBuilder.WriteString(line)
 				mu.Unlock()
@@ -412,7 +425,11 @@ func (c *CLI) SessionWithCapture(ctx context.Context, systemPrompt string) (tran
 	cmd := exec.CommandContext(ctx, c.binaryPath, args...)
 	cmd.Env = env
 
-	// Connect stdin/stdout/stderr directly for full TUI experience
+	// Connect stdin/stdout/stderr directly for full TUI experience. This is the
+	// one place the process streams are named deliberately rather than routed
+	// through a printer: an interactive session needs the real terminal on all
+	// three descriptors, and a captured stdout would break the TUI rather than
+	// record it.
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

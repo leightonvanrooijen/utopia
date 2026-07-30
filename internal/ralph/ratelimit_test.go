@@ -409,7 +409,7 @@ func TestProbeUntilRecovered(t *testing.T) {
 			calls++
 			return &internal.PromptResult{Stdout: "ok"}, nil
 		}
-		if err := probeUntilRecovered(context.Background(), probe, time.Millisecond); err != nil {
+		if err := probeUntilRecovered(context.Background(), nil, probe, time.Millisecond); err != nil {
 			t.Fatalf("probeUntilRecovered() error = %v, want nil", err)
 		}
 		if calls != 1 {
@@ -427,7 +427,7 @@ func TestProbeUntilRecovered(t *testing.T) {
 			}
 			return &internal.PromptResult{Stdout: "ok"}, nil
 		}
-		if err := probeUntilRecovered(context.Background(), probe, time.Millisecond); err != nil {
+		if err := probeUntilRecovered(context.Background(), nil, probe, time.Millisecond); err != nil {
 			t.Fatalf("probeUntilRecovered() error = %v, want nil", err)
 		}
 		if calls != 3 {
@@ -445,7 +445,7 @@ func TestProbeUntilRecovered(t *testing.T) {
 		}
 		// A long interval ensures the cancelled ctx wins the select, exercising
 		// the Ctrl+C / timeout graceful-shutdown path.
-		err := probeUntilRecovered(ctx, probe, time.Hour)
+		err := probeUntilRecovered(ctx, nil, probe, time.Hour)
 		if err != context.Canceled {
 			t.Errorf("probeUntilRecovered() error = %v, want context.Canceled", err)
 		}
@@ -458,7 +458,7 @@ func TestProbeUntilRecovered(t *testing.T) {
 func TestHandleClaudeLimits(t *testing.T) {
 	t.Run("no limit returns limitNone", func(t *testing.T) {
 		result := &internal.PromptResult{Stdout: "all good"}
-		outcome, err := handleClaudeLimits(context.Background(), result, "", "")
+		outcome, err := handleClaudeLimits(context.Background(), nil, result, "", "")
 		if err != nil {
 			t.Fatalf("handleClaudeLimits() error = %v, want nil", err)
 		}
@@ -468,7 +468,7 @@ func TestHandleClaudeLimits(t *testing.T) {
 	})
 
 	t.Run("nil result returns limitNone", func(t *testing.T) {
-		outcome, err := handleClaudeLimits(context.Background(), nil, "", "")
+		outcome, err := handleClaudeLimits(context.Background(), nil, nil, "", "")
 		if err != nil || outcome != limitNone {
 			t.Errorf("handleClaudeLimits(nil) = (%v, %v), want (limitNone, nil)", outcome, err)
 		}
@@ -478,7 +478,7 @@ func TestHandleClaudeLimits(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 		result := &internal.PromptResult{Stderr: "Limit reached · resets 1am (Australia/Sydney)"}
-		outcome, err := handleClaudeLimits(ctx, result, "", "")
+		outcome, err := handleClaudeLimits(ctx, nil, result, "", "")
 		if outcome != limitWaited {
 			t.Errorf("handleClaudeLimits() outcome = %v, want limitWaited", outcome)
 		}

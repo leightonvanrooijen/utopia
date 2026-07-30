@@ -3,12 +3,12 @@ package validators
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
+	"github.com/leightonvanrooijen/utopia/internal/ui"
 )
 
 // buildValidatorEditorSystemPrompt builds the system prompt for the AI assistant
@@ -105,6 +105,9 @@ type Editor struct {
 	cli        *internal.CLI
 	store      *internal.YAMLStore
 	model      string
+	// out receives the session's prompts and the load warnings ListValidators
+	// raises. Nil means the process's own streams.
+	out *ui.Printer
 }
 
 // NewEditor creates a new validator editor for the given project directory.
@@ -115,6 +118,15 @@ func NewEditor(projectDir string) *Editor {
 		cli:        internal.NewCLI(),
 		store:      internal.NewYAMLStore(utopiaDir),
 	}
+}
+
+// WithPrinter routes the editor's output through the caller's printer, so what an
+// edit session prints is capturable rather than written straight to the process
+// streams.
+func (e *Editor) WithPrinter(p *ui.Printer) *Editor {
+	e.out = p
+	e.cli = e.cli.WithPrinter(p)
+	return e
 }
 
 // WithModel sets the Claude model to use for this editor.
@@ -163,7 +175,7 @@ func (e *Editor) ListValidators() ([]ValidatorInfo, error) {
 		validator, err := e.store.LoadValidator(vc.GetPath())
 		if err != nil {
 			// Include the error but continue listing others
-			fmt.Fprintf(os.Stderr, "Warning: failed to load validator %s: %v\n", vc.GetPath(), err)
+			ui.OrDefault(e.out).Progressf("Warning: failed to load validator %s: %v\n", vc.GetPath(), err)
 			continue
 		}
 		validators = append(validators, ValidatorInfo{
@@ -190,12 +202,13 @@ func (e *Editor) Run(ctx context.Context, validatorPath string) error {
 
 	fullPath := filepath.Join(e.projectDir, ".utopia", validatorPath)
 
-	fmt.Printf("Editing validator: %s\n", validator.ID)
-	fmt.Printf("File: %s\n", fullPath)
-	fmt.Println()
-	fmt.Println("Starting validator edit assistant...")
-	fmt.Println("Press Ctrl+C to exit at any time.")
-	fmt.Println()
+	out := ui.OrDefault(e.out)
+	out.Printf("Editing validator: %s\n", validator.ID)
+	out.Printf("File: %s\n", fullPath)
+	out.Println()
+	out.Println("Starting validator edit assistant...")
+	out.Println("Press Ctrl+C to exit at any time.")
+	out.Println()
 
 	// Build the system prompt with the current validator state
 	systemPrompt := buildValidatorEditorSystemPrompt(validator, fullPath)
@@ -205,7 +218,7 @@ func (e *Editor) Run(ctx context.Context, validatorPath string) error {
 	if err != nil {
 		// Check if it was a user cancellation
 		if ctx.Err() == context.Canceled {
-			fmt.Println("\nValidator editing cancelled.")
+			out.Println("\nValidator editing cancelled.")
 			return nil
 		}
 		return fmt.Errorf("validator edit session failed: %w", err)

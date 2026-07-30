@@ -10,6 +10,7 @@ import (
 	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/chunk"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
+	"github.com/leightonvanrooijen/utopia/internal/ui"
 	"github.com/leightonvanrooijen/utopia/internal/validators"
 )
 
@@ -220,13 +221,13 @@ func failureConclusionLines(item *domain.WorkItem, fallback []string) []string {
 // context to carry as evidence. A diff that cannot be computed costs the
 // escalated attempt some evidence, which is never worth stopping a run over, so
 // the failure is reported and the context is built without it.
-func escalationDiff(ctx context.Context, runner *validators.Runner) string {
+func escalationDiff(ctx context.Context, out *ui.Printer, runner *validators.Runner) string {
 	if runner == nil {
 		return ""
 	}
 	diff, err := runner.GetGitDiff(ctx)
 	if err != nil {
-		fmt.Printf("  warning: could not compute the diff for the escalated context: %v\n", err)
+		ui.OrDefault(out).Printf("  warning: could not compute the diff for the escalated context: %v\n", err)
 		return ""
 	}
 	return diff

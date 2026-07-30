@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/leightonvanrooijen/utopia/internal/domain"
+	"github.com/leightonvanrooijen/utopia/internal/ui"
 	"gopkg.in/yaml.v3"
 )
 
@@ -1254,7 +1255,7 @@ func (s *YAMLStore) LoadValidator(path string) (*domain.Validator, error) {
 
 	// Warn if deprecated 'run' field is present
 	if fm.Run != "" {
-		fmt.Fprintf(os.Stderr, "Warning: validator file %s contains 'run' field which is deprecated; configure 'run' in config.yaml instead\n", path)
+		ui.DefaultPrinter().Progressf("Warning: validator file %s contains 'run' field which is deprecated; configure 'run' in config.yaml instead\n", path)
 	}
 
 	// Build validator (without deprecated run field)

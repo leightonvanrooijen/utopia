@@ -51,7 +51,10 @@ Other Commands:
 // Execute runs the CLI
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		// The one exit point. It reports through the root command's own error
+		// writer, which defaults to stderr, so a test that swaps the writer sees
+		// the failure it provoked.
+		ui.NewPrinter(rootCmd.OutOrStdout(), rootCmd.ErrOrStderr()).Progressf("%v\n", err)
 		os.Exit(1)
 	}
 }

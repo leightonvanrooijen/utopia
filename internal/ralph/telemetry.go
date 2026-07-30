@@ -2,7 +2,6 @@ package ralph
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 
@@ -36,6 +35,10 @@ type runRecorder struct {
 	// catch-all write on the way out of the loop cannot overwrite the record a
 	// deliberate path already wrote.
 	written bool
+	// out is where a failed write is reported. It rides on the recorder because
+	// every path that persists a record already carries one; nil means the
+	// process's own streams.
+	out *ui.Printer
 }
 
 // newRunRecorder starts a work item's run record.
@@ -270,6 +273,6 @@ func writeRunTranscript(store *internal.YAMLStore, crID string, item *domain.Wor
 		Usage:      domain.UsageEntriesFor(item.ExecutorAttempts),
 	}
 	if err := store.SaveExecutionRun(run); err != nil {
-		fmt.Printf("  warning: failed to write run record for %s: %v\n", item.ID, err)
+		ui.OrDefault(rec.out).Printf("  warning: failed to write run record for %s: %v\n", item.ID, err)
 	}
 }

@@ -12,6 +12,7 @@ import (
 
 	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
+	"github.com/leightonvanrooijen/utopia/internal/ui"
 )
 
 // Runs and conversations are two halves of one harvest queue, and only an empty
@@ -25,7 +26,7 @@ func TestRun_NoSourcesSkipsTheSession(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	result, err := Run(context.Background(), internal.NewYAMLStore(utopiaDir), Options{UtopiaDir: utopiaDir, Out: &out})
+	result, err := Run(context.Background(), internal.NewYAMLStore(utopiaDir), Options{UtopiaDir: utopiaDir, Out: ui.NewPrinter(&out, &out)})
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -60,7 +61,7 @@ func TestRun_WithoutIncludeRunsSkipsTheSessionWhenOnlyRunsAreUnprocessed(t *test
 	// A session here would need a live Claude CLI; returning before starting one
 	// is exactly the behaviour under test.
 	var out bytes.Buffer
-	result, err := Run(context.Background(), store, Options{UtopiaDir: utopiaDir, Out: &out})
+	result, err := Run(context.Background(), store, Options{UtopiaDir: utopiaDir, Out: ui.NewPrinter(&out, &out)})
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}

@@ -9,6 +9,7 @@ import (
 
 	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
+	"github.com/leightonvanrooijen/utopia/internal/ui"
 )
 
 // validatorCreatorSystemPrompt is the system prompt for the AI assistant
@@ -62,6 +63,9 @@ type Creator struct {
 	projectDir string
 	cli        *internal.CLI
 	model      string
+	// out receives the session's prompts and reminders. Nil means the process's
+	// own streams, which is what an unwired caller always got.
+	out *ui.Printer
 }
 
 // NewCreator creates a new validator creator for the given project directory.
@@ -70,6 +74,15 @@ func NewCreator(projectDir string) *Creator {
 		projectDir: projectDir,
 		cli:        internal.NewCLI(),
 	}
+}
+
+// WithPrinter routes the session's output through the caller's printer, so what
+// a create session prints is capturable rather than written straight to the
+// process stdout.
+func (c *Creator) WithPrinter(p *ui.Printer) *Creator {
+	c.out = p
+	c.cli = c.cli.WithPrinter(p)
+	return c
 }
 
 // WithModel sets the Claude model to use for this creator.
@@ -99,21 +112,22 @@ func (c *Creator) WithAuth(mode domain.AuthMode) *Creator {
 // Returns an error if the session fails.
 func (c *Creator) Run(ctx context.Context) error {
 	// Ensure the validators directory exists
+	out := ui.OrDefault(c.out)
 	validatorsDir := filepath.Join(c.projectDir, ".utopia", "validators")
 	if err := os.MkdirAll(validatorsDir, 0755); err != nil {
 		return fmt.Errorf("failed to create validators directory: %w", err)
 	}
 
-	fmt.Println("Starting validator creation assistant...")
-	fmt.Println("Press Ctrl+C to exit at any time.")
-	fmt.Println()
+	out.Println("Starting validator creation assistant...")
+	out.Println("Press Ctrl+C to exit at any time.")
+	out.Println()
 
 	// Run the interactive session
 	_, err := c.cli.SessionWithCapture(ctx, validatorCreatorSystemPrompt)
 	if err != nil {
 		// Check if it was a user cancellation
 		if ctx.Err() == context.Canceled {
-			fmt.Println("\nValidator creation cancelled.")
+			out.Println("\nValidator creation cancelled.")
 			return nil
 		}
 		return fmt.Errorf("validator creation session failed: %w", err)
@@ -122,15 +136,15 @@ func (c *Creator) Run(ctx context.Context) error {
 	// Check if a validator was created and remind about config
 	files, _ := filepath.Glob(filepath.Join(validatorsDir, "*.md"))
 	if len(files) > 0 {
-		fmt.Println()
-		fmt.Println("Don't forget to add your validator to .utopia/config.yaml:")
-		fmt.Println()
-		fmt.Println("  validators:")
+		out.Println()
+		out.Println("Don't forget to add your validator to .utopia/config.yaml:")
+		out.Println()
+		out.Println("  validators:")
 		for _, f := range files {
 			relPath := strings.TrimPrefix(f, filepath.Join(c.projectDir, ".utopia")+"/")
-			fmt.Printf("    - %s\n", relPath)
+			out.Printf("    - %s\n", relPath)
 		}
-		fmt.Println()
+		out.Println()
 	}
 
 	return nil

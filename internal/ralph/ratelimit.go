@@ -11,6 +11,7 @@ import (
 
 	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
+	"github.com/leightonvanrooijen/utopia/internal/ui"
 )
 
 // rateLimitPattern matches the Claude rolling usage-limit message across the
@@ -290,7 +291,8 @@ const (
 // credential the run resolved. A probe on the wrong account answers the wrong
 // question: it would report the limit lifted while the account actually doing
 // the work is still capped, and the loop would spin on a limit that never clears.
-func handleClaudeLimits(ctx context.Context, result *internal.PromptResult, auth domain.AuthMode, projectDir string) (limitOutcome, error) {
+func handleClaudeLimits(ctx context.Context, out *ui.Printer, result *internal.PromptResult, auth domain.AuthMode, projectDir string) (limitOutcome, error) {
+	out = ui.OrDefault(out)
 	if result == nil {
 		return limitNone, nil
 	}
@@ -299,10 +301,10 @@ func handleClaudeLimits(ctx context.Context, result *internal.PromptResult, auth
 	if DetectRateLimit(result.Stdout, result.Stderr) {
 		waitDuration, parseErr := ParseRateLimitWait(result.Stdout, result.Stderr)
 		if parseErr != nil {
-			fmt.Printf("  Rate limit detected but failed to parse reset time: %v\n", parseErr)
-			fmt.Printf("  Falling back to %v wait...\n", DefaultRateLimitWait)
+			out.Printf("  Rate limit detected but failed to parse reset time: %v\n", parseErr)
+			out.Printf("  Falling back to %v wait...\n", DefaultRateLimitWait)
 		}
-		fmt.Printf("  %s\n", FormatWaitMessage(result.Stdout, result.Stderr))
+		out.Printf("  %s\n", FormatWaitMessage(result.Stdout, result.Stderr))
 
 		select {
 		case <-ctx.Done():
@@ -314,11 +316,11 @@ func handleClaudeLimits(ctx context.Context, result *internal.PromptResult, auth
 
 	// Org monthly spend limit: no reset time exists, so probe until it lifts.
 	if DetectSpendLimit(result.Stdout, result.Stderr) {
-		probeCLI := internal.NewCLI().WithAuth(auth, filepath.Join(projectDir, ".utopia"))
+		probeCLI := internal.NewCLI().WithAuth(auth, filepath.Join(projectDir, ".utopia")).WithPrinter(out)
 		probe := func(pctx context.Context) (*internal.PromptResult, error) {
 			return probeCLI.Prompt(pctx, spendLimitProbePrompt)
 		}
-		if err := probeUntilRecovered(ctx, probe, ProbeInterval); err != nil {
+		if err := probeUntilRecovered(ctx, out, probe, ProbeInterval); err != nil {
 			return limitWaited, err
 		}
 		return limitWaited, nil
@@ -333,8 +335,9 @@ func handleClaudeLimits(ctx context.Context, result *internal.PromptResult, auth
 // once a probe succeeds, or a context error if ctx is cancelled during a wait
 // or probe (Ctrl+C / session timeout), so the caller can take the graceful
 // shutdown path. Probe attempts never count against the max iterations limit.
-func probeUntilRecovered(ctx context.Context, probe func(context.Context) (*internal.PromptResult, error), interval time.Duration) error {
-	fmt.Printf("  %s\n", SpendLimitNoticeMessage())
+func probeUntilRecovered(ctx context.Context, out *ui.Printer, probe func(context.Context) (*internal.PromptResult, error), interval time.Duration) error {
+	out = ui.OrDefault(out)
+	out.Printf("  %s\n", SpendLimitNoticeMessage())
 
 	for {
 		// Wait out the probe interval. Ctrl+C or the elapsing session timeout
@@ -357,14 +360,14 @@ func probeUntilRecovered(ctx context.Context, probe func(context.Context) (*inte
 		stillLimited := result != nil && DetectSpendLimit(result.Stdout, result.Stderr)
 		switch {
 		case !stillLimited && err == nil:
-			fmt.Printf("  [%s] probe succeeded: org monthly spend limit lifted, resuming...\n", ts)
+			out.Printf("  [%s] probe succeeded: org monthly spend limit lifted, resuming...\n", ts)
 			return nil
 		case stillLimited:
-			fmt.Printf("  [%s] probe: still limited\n", ts)
+			out.Printf("  [%s] probe: still limited\n", ts)
 		default:
 			// Probe failed for a reason other than the spend limit (e.g. a
 			// transient error). Treat as still limited and keep probing.
-			fmt.Printf("  [%s] probe: still limited (probe error: %v)\n", ts, err)
+			out.Printf("  [%s] probe: still limited (probe error: %v)\n", ts, err)
 		}
 	}
 }
