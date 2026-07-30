@@ -5,6 +5,23 @@ iterations: 1
 completed_at: 2026-07-30T10:59:39.192119+10:00
 outcome: completed
 status: unprocessed
+usage:
+    - iteration: 1
+      role: default-executor
+      outcome: passed
+      available: true
+      source: backfilled
+      source_ref: c4f59bde-4165-4fdc-a8fe-63a6d12ad0df.jsonl
+      model: claude-opus-5
+      effort: medium
+      input_tokens: 66
+      output_tokens: 26118
+      cache_read_tokens: 1819189
+      cache_creation_tokens: 145658
+      turns: 35
+      duration_ms: 203292
+      cost_usd: 3.0195
+      cost_basis: list-price-estimate
 transcript: |
     --- iteration 1 ---
     Done.

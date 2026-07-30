@@ -1,0 +1,58 @@
+workitem_id: 06_observability-unified-output-phase-2-diagnostic-level-control
+cr_id: 06_observability-unified-output
+spec_ref: 06_observability-unified-output-phase-2.diagnostic-level-control
+iterations: 3
+completed_at: 2026-07-30T21:14:29.670438+10:00
+outcome: completed
+status: unprocessed
+transcript: |
+    --- iteration 3 ---
+    Done. What changed from the failed attempt:
+
+    **Progress** - phase lines (`StartPhase`/`EndPhase`) now gate at info, not just `Verbosef` at debug. Also folded the three hand-written `out.Printf(" done (...)")` early-return tails in `discover`/`domain` into `prog.EndPhase`, so a completion can't outlive the suppressed line it belongs to.
+
+    **Claude streaming** - `WithVerbose(bool)` replaced by `WithStreamLevel(slog.Level)`. The call site declares a *severity*, not a gate; `streamsDetail()` asks `ui.Enabled(c.streamLevel)`. So:
+
+    | run | executor transcript (info) | validator/sizer/discover transcript (debug) |
+    |---|---|---|
+    | `--log-level warn`/`error` | silent | silent |
+    | default (info) | streams | silent |
+    | `--log-level debug` / `--verbose` | streams | streams |
+
+    That keeps `execution-ralph`'s `streaming-output` criteria intact (`utopia execute` still streams at the default level) while giving the level real authority in both directions — the pure-global variant the last attempt built would have silenced `utopia execute` at info, breaking that spec.
+
+    **`--verbose` equivalence in substance** - `discover` no longer threads its flag anywhere. `applyVerbose` raises the level; nothing else reads the bool. `SpecsOptions.Verbose`, `DomainOptions.Verbose` and `SizerOptions.Verbose` are gone, along with `WithVerbose` on `validators.NewRunner`. Discover's refinement/disqualification chatter moved to `out.Debugf`.
+
+    **Tests** - phase lines across all four levels, `streamsDetail` across the stream-level × active-level matrix, `-v` shorthand + help text naming `--log-level debug` on both commands, and the two spellings landing on the same level.
+
+    `./scripts/verify.sh` passes.
+
+    One thing to flag: running the suite wrote usage backfill into 31 `.utopia/runs/**` files and created `.utopia/change-requests/14_usage-provenance.yaml`. That's a test writing into the real project dir, unrelated to this work item — I left it uncommitted rather than reverting it, since it may be wanted.
+
+    <COMPLETE>
+routing:
+    cr_type: feature
+    attempts:
+        - iteration: 1
+          role: default-executor
+          model: ""
+          effort: medium
+        - iteration: 2
+          role: escalated-executor
+          model: opus
+          effort: high
+        - iteration: 3
+          role: escalated-executor
+          model: opus
+          effort: high
+    sonnet_attempts: 1
+    opus_execution_attempts: 2
+    mechanical_failures: 0
+    comprehension_failures: 1
+    reclassified_failures: 0
+    scoping_escalations: 0
+    spec_rewritten: false
+    outcome: passed
+    duration_seconds: 757.569919459
+    duration: 12m38s
+    cost_note: Token counts, cache hits and monetary cost are not captured - not zero, not observable. Utopia drives the claude CLI, which reports none of them (ADR-005). Cost is approximated from attempts, sonnet_attempts and opus_execution_attempts together with the model each attempt ran on.

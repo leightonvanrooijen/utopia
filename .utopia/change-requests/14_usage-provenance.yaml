@@ -1,0 +1,76 @@
+id: 14_usage-provenance
+type: enhancement
+title: Record whether a usage entry was captured or reconstructed, and never let a report present the two as one figure
+status: draft
+notes: |
+    Motivation: 31 of the 32 run records that existed before usage capture shipped
+    have been backfilled by hand from the Claude Code session logs under
+    ~/.claude/projects/-Users-leighton-vanrooijen-projects-utopia/*.jsonl. Those logs
+    carry model, effort, token counts, cache split and timestamps per assistant
+    message, but no cost - so every backfilled cost is computed from published list
+    prices and is an estimate, and the session-to-work-item mapping is inferred from
+    prompt text plus completed_at proximity rather than recorded.
+
+    Two problems follow, and both are why this CR exists:
+
+    1. The backfill wrote `source: backfilled` and `source_ref: <session file>` into
+       each entry, but AttemptUsage models neither field. Go's yaml decoder ignores
+       unknown keys on read and SaveExecutionRun re-marshals from the struct, so the
+       marker survives only until something rewrites the record. Harvest flipping
+       `status: unprocessed` to `processed` is exactly that - one harvest run and the
+       provenance is silently gone while the numbers stay.
+
+    2. `utopia report models|escalations|outcomes` now render those figures
+       indistinguishably from captured ones. cost_basis: list-price-estimate says
+       how the money was priced, not where the tokens came from - a subscription-auth
+       captured attempt carries the same basis. So the reports currently claim
+       measured spend for reconstructed spend.
+
+    Known gaps the backfill could not close, which the reports should also be able to
+    state rather than round to zero:
+      - 02_chunking-ralph-sequential-autonomous-decide-and-document-modify-default-constraints
+        matched no session; left with no usage entries.
+      - 12_tiered-model-routing-validation-escalation-phase-1-escalation-caps has 5
+        entries for 8 recorded iterations.
+      - 13_model-economics-usage-capture-and-comparison-phase-1-run-record-usage-persistence
+        has 2 entries for 3 recorded iterations.
+    In those last two the entry list is a floor: the iterations ran and spent tokens
+    that no session log accounts for.
+changes:
+    - operation: add
+      spec: model-economics
+      feature:
+          id: usage-provenance
+          description: |
+              A usage entry records where its numbers came from, so a reconstructed
+              figure can never be read as a measured one. Provenance is a separate
+              axis from cost basis: cost_basis says how a cost was priced, provenance
+              says whether the tokens were observed by the execution loop at all.
+          acceptance_criteria:
+              - AttemptUsage carries a provenance field that serialises to `source`, with `captured` meaning the execution loop read the counts off a CLI result object and `backfilled` meaning they were reconstructed from a record outside the loop
+              - An entry written by the execution loop is `captured`, and the field is serialised unconditionally rather than omitted, so a missing value is distinguishable from a captured one
+              - A backfilled entry carries a `source_ref` naming the artifact the numbers were read from, so a reader can go back to the evidence
+              - An entry that is neither captured nor recognised as a known provenance value round-trips unchanged rather than being coerced to captured
+              - "Provenance survives a re-marshal: reading a run record and saving it again preserves both `source` and `source_ref`"
+          hints:
+              - AttemptUsage is internal/domain/usage.go:57; Available and UnavailableReason are the existing precedent for a field that must not be inferred from a zero value
+              - "The 31 already-backfilled records on disk carry `source: backfilled` and `source_ref: <uuid>.jsonl` - match those key names so the existing data is read correctly rather than requiring a rewrite"
+              - UsageEntry inlines AttemptUsage (usage.go:159), so the fields land on the flat row without extra work
+    - operation: modify
+      spec: model-economics
+      feature_id: run-record-usage-persistence
+      criteria:
+          add:
+              - Each persisted usage entry records its provenance, and a record whose entries were reconstructed outside the execution loop is distinguishable from one the loop wrote
+              - Rewriting a run record for an unrelated reason - a harvest status change, for instance - preserves the provenance of every entry it already carried
+    - operation: modify
+      spec: model-economics
+      feature_id: model-comparison-report
+      criteria:
+          add:
+              - A row aggregating any backfilled entry is labelled as containing reconstructed figures, so no reader takes it for measured spend
+              - The reading notes state how many of the attempts behind the table were backfilled rather than captured
+              - A run record whose entry count is below its recorded iteration count is reported as a floor, since the unaccounted iterations spent tokens that are not in the total
+      hints:
+              - internal/cli/report.go and internal/analysis/economics.go already keep charged and list-price-estimate apart rather than summing them - provenance wants the same treatment, a separate column or an explicit note, never folded into one figure
+              - The three report commands share the reading-notes footer; the backfilled count belongs there alongside the existing unavailable-usage note

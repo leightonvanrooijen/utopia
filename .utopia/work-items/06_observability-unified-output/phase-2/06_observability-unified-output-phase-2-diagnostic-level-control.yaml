@@ -5,7 +5,7 @@ title: |
     and a deep-debugging run are the same command with a different level. The
     result channel is never suppressed - lowering verbosity must never hide a
     command's answer.
-status: in_progress
+status: completed
 prompt: |-
     ## TASK
 
@@ -70,28 +70,6 @@ constraints:
 order: 1
 estimated_complexity: medium
 iteration_count: 3
-last_validator_feedback: |
-    Gating connector validators:after-workitem blocked workitem-verified:
-    Validator spec-intent failed:
-    Found one `in_progress` item; implementation is commit `fcfabdf`.
-
-    **Violations**
-
-    `internal/ui/progress.go:27 - [A] Only Progress detail lines consult the level; StartPhase (progress.go:32) and EndPhase (progress.go:38) still Fprintf unconditionally, so at --log-level warn or error every "[n/N] name... done (X.Xs)" phase line is still written. Breaks criterion "Diagnostics below the active level are written to no stream" - the CR itself classes discover/harvest/ralph progress as "semantically diagnostic lines" (change-requests/06_observability-unified-output.yaml:122). Gate the phase lines on the level too, not just Verbosef.`
-
-    `internal/cli/discover.go:65 - [A] applyVerbose raises the ui level only; discover.go:116 (and :287) still pass the raw flag bool into opts.Verbose, which reaches internal.NewCLI().WithVerbose(opts.Verbose) at internal/discover/discover.go:101. So --verbose streams Claude output in real time (internal/claude.go:261) while --log-level debug does not. The help text added at discover.go:56/:213 documents the two as equivalent when they are not. Breaks criterion "--verbose and -v ... are documented as equivalent to --log-level debug" in substance, and the feature description "a quiet run and a deep-debugging run are the same command with a different level". The hint named claude.CLI.WithVerbose as one of the two existing gates; it was left un-migrated.`
-
-    No B (standards) violations found: level resolution sits in `root.go` as the standard's hint directs, the invalid-value error returns through `RunE` to the single `Execute()` exit point, and results stay on `p.out` ungated.
-
-    <VERDICT>
-    {
-      "verdict": "fail",
-      "failure_class": "comprehension",
-      "diagnosis": "The level was wired into the one diagnostic path that already had a severity (Printer's slog logger) and treated as a property of that path, while the criteria and description define it as the single process-wide threshold every diagnostic obeys. The two diagnostic mechanisms the hint named - Progress and claude.CLI.WithVerbose - still gate themselves, so a quiet run still prints progress and a debug run still misses the deepest detail.",
-      "corrected_intent": "One process-wide level governs every diagnostic, whatever mechanism emits it. Progress phase lines are diagnostics and are suppressed when the level is above info, exactly as Printer diagnostics are. Claude streaming detail is debug-level diagnostic output, so it turns on whenever the level admits debug, which is what makes --verbose and --log-level debug the same request in both directions. Only results bypass the level.",
-      "confidence": "high"
-    }
-    </VERDICT>
 failure_conclusions:
     - iteration: 1
       validator_id: spec-intent
@@ -101,7 +79,7 @@ failure_conclusions:
 selected_validators:
     - spec-intent
 comprehension_count: 1
-opus_execution_attempts: 1
+opus_execution_attempts: 2
 comprehension_failures_total: 1
 executor_attempts:
     - iteration: 1
@@ -109,6 +87,10 @@ executor_attempts:
       model: ""
       effort: medium
     - iteration: 2
+      role: escalated-executor
+      model: opus
+      effort: high
+    - iteration: 3
       role: escalated-executor
       model: opus
       effort: high

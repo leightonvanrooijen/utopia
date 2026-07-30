@@ -5,6 +5,39 @@ iterations: 2
 completed_at: 2026-07-30T20:39:17.40955+10:00
 outcome: completed
 status: unprocessed
+usage:
+    - iteration: 1
+      role: default-executor
+      outcome: failed
+      available: true
+      source: backfilled
+      source_ref: 9b95d514-8028-4c54-9364-41e16cc39f68.jsonl
+      model: claude-opus-5
+      effort: medium
+      input_tokens: 273
+      output_tokens: 97203
+      cache_read_tokens: 18931316
+      cache_creation_tokens: 412071
+      turns: 144
+      duration_ms: 849893
+      cost_usd: 16.0178
+      cost_basis: list-price-estimate
+    - iteration: 2
+      role: default-executor
+      outcome: passed
+      available: true
+      source: backfilled
+      source_ref: a11781c9-219f-41f3-8b0b-d8f280fcc9ce.jsonl
+      model: claude-opus-5
+      effort: medium
+      input_tokens: 45
+      output_tokens: 7243
+      cache_read_tokens: 796044
+      cache_creation_tokens: 81157
+      turns: 23
+      duration_ms: 83499
+      cost_usd: 1.3909
+      cost_basis: list-price-estimate
 transcript: |
     --- iteration 1 ---
     Done. `go test ./...` passes (13 packages, exit 0), `gofmt`/`go vet` clean.

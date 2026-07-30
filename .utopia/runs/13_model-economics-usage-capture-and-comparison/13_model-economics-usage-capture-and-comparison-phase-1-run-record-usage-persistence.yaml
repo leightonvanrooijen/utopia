@@ -5,6 +5,39 @@ iterations: 3
 completed_at: 2026-07-30T19:32:56.789737+10:00
 outcome: completed
 status: unprocessed
+usage:
+    - iteration: 1
+      role: default-executor
+      outcome: failed
+      available: true
+      source: backfilled
+      source_ref: 4983dc79-83cd-4f73-a563-50ba28ca6ec8.jsonl
+      model: claude-opus-5
+      effort: medium
+      input_tokens: 211
+      output_tokens: 77349
+      cache_read_tokens: 9749109
+      cache_creation_tokens: 268377
+      turns: 113
+      duration_ms: 648213
+      cost_usd: 9.4931
+      cost_basis: list-price-estimate
+    - iteration: 2
+      role: escalated-executor
+      outcome: passed
+      available: true
+      source: backfilled
+      source_ref: 3e0fb632-d188-487f-b26b-f5fe31712747.jsonl
+      model: claude-fable-5
+      effort: high
+      input_tokens: 89
+      output_tokens: 24252
+      cache_read_tokens: 2307232
+      cache_creation_tokens: 156837
+      turns: 47
+      duration_ms: 184452
+      cost_usd: 6.6575
+      cost_basis: list-price-estimate
 transcript: |
     --- iteration 1 ---
     Done. What landed:
