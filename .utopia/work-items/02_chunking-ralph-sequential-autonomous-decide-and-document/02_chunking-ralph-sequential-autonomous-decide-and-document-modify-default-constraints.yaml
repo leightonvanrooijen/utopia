@@ -1,7 +1,7 @@
 id: 02_chunking-ralph-sequential-autonomous-decide-and-document-modify-default-constraints
 spec_ref: 02_chunking-ralph-sequential-autonomous-decide-and-document.modify-default-constraints
 title: Modify the default-constraints feature
-status: in_progress
+status: pending
 prompt: |-
     ## TASK
 
