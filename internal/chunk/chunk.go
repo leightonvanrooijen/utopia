@@ -47,11 +47,26 @@ type bugfixFeature struct {
 	featureID string // The feature ID within that spec
 }
 
+// FeatureSplits records how the sizer divided features that exceed the turn
+// budget. Keys are feature IDs; each value is the ordered list of slices that
+// feature becomes, in the order the sizer returned them. A feature absent from
+// the map - or mapped to fewer than two slices - produces exactly one work
+// item, unchanged. Pass nil when no sizing ran.
+type FeatureSplits map[string][]domain.Feature
+
+// workUnit is one work item's worth of a feature: the feature itself when it fit
+// the turn budget, or one slice of a feature the sizer split.
+type workUnit struct {
+	feature       domain.Feature // description and criteria this work item covers
+	sourceFeature string         // ID of the feature the unit was derived from
+}
+
 // Chunk transforms a change request into work items.
 // For bugfix CRs that reference specs, specLoader must be provided.
 // The standards index (frontmatter metadata of .utopia/standards/ docs) is
 // injected into every work item prompt; pass nil when no standards exist.
-func Chunk(cr *domain.ChangeRequest, specLoader SpecLoader, standards []domain.StandardsDocMeta) ([]*domain.WorkItem, error) {
+// splits carries the sizer's verdicts; pass nil for one work item per feature.
+func Chunk(cr *domain.ChangeRequest, specLoader SpecLoader, standards []domain.StandardsDocMeta, splits FeatureSplits) ([]*domain.WorkItem, error) {
 	// Extract features from the CR
 	features, bugfixRefs := extractFeatures(cr)
 
@@ -74,39 +89,15 @@ func Chunk(cr *domain.ChangeRequest, specLoader SpecLoader, standards []domain.S
 		return nil, err
 	}
 
-	workItems := make([]*domain.WorkItem, 0, len(features))
-
-	for i, feature := range features {
-		workItem := domain.NewWorkItem(
-			fmt.Sprintf("%s-%s", cr.ID, feature.ID),
-			cr.ID,
-			feature.ID,
-			feature,
-			i, // Order is the position in the CR
-		)
-
-		// Apply constraints (defaults + type-specific constraints)
-		workItem.Constraints = mergeConstraintsForCRType(isRefactor, isBugfix)
-
-		// Build the prompt with task + criteria + constraints baked in
-		// For bugfix items, include the referenced feature for the REFERENCE section
-		var refFeature *domain.Feature
-		if isBugfix && refFeatures != nil {
-			refFeature = refFeatures[feature.ID]
-		}
-		workItem.Prompt = BuildPromptWithConstraints(feature, workItem.Constraints, nil, refFeature, feature.Hints, standards)
-
-		workItems = append(workItems, workItem)
-	}
-
-	return workItems, nil
+	return generateWorkItems(expandFeatures(features, splits), cr.ID, isRefactor, isBugfix, refFeatures, standards), nil
 }
 
 // ChunkPhase transforms a single phase of an initiative CR into work items.
 // For bugfix phases that reference specs, specLoader must be provided.
 // The standards index is injected into every work item prompt; pass nil
 // when no standards exist.
-func ChunkPhase(crID string, phaseIndex int, phase *domain.Phase, specLoader SpecLoader, standards []domain.StandardsDocMeta) ([]*domain.WorkItem, error) {
+// splits carries the sizer's verdicts; pass nil for one work item per feature.
+func ChunkPhase(crID string, phaseIndex int, phase *domain.Phase, specLoader SpecLoader, standards []domain.StandardsDocMeta, splits FeatureSplits) ([]*domain.WorkItem, error) {
 	// Extract features from the phase
 	features, bugfixRefs := extractFeaturesFromPhase(phase)
 
@@ -129,33 +120,73 @@ func ChunkPhase(crID string, phaseIndex int, phase *domain.Phase, specLoader Spe
 		return nil, err
 	}
 
-	workItems := make([]*domain.WorkItem, 0, len(features))
 	phaseWorkItemPrefix := fmt.Sprintf("%s-phase-%d", crID, phaseIndex)
 
-	for i, feature := range features {
+	return generateWorkItems(expandFeatures(features, splits), phaseWorkItemPrefix, isRefactor, isBugfix, refFeatures, standards), nil
+}
+
+// expandFeatures flattens features into the units work items are generated from.
+// Features are walked in spec order, and a split feature's units are emitted
+// adjacently in the order the sizer returned them, so a running position over
+// the result stays contiguous and sequential while preserving spec order.
+//
+// Unit identity is owned here rather than taken from the sizer: a split unit is
+// named <featureID>-<n>, 1-based, which keeps work item IDs unique and every
+// unit traceable back to the feature it came from.
+func expandFeatures(features []domain.Feature, splits FeatureSplits) []workUnit {
+	units := make([]workUnit, 0, len(features))
+
+	for _, feature := range features {
+		slices := splits[feature.ID]
+		if len(slices) < 2 {
+			// Not split: the feature is one unit, unchanged.
+			units = append(units, workUnit{feature: feature, sourceFeature: feature.ID})
+			continue
+		}
+
+		for n, slice := range slices {
+			slice.ID = fmt.Sprintf("%s-%d", feature.ID, n+1)
+			if len(slice.Hints) == 0 {
+				slice.Hints = feature.Hints
+			}
+			units = append(units, workUnit{feature: slice, sourceFeature: feature.ID})
+		}
+	}
+
+	return units
+}
+
+// generateWorkItems builds one work item per unit, assigning Order from the
+// unit's position so order is contiguous and sequential across split features.
+// idPrefix prefixes work item IDs and is the SpecRef the items are keyed to.
+func generateWorkItems(units []workUnit, idPrefix string, isRefactor, isBugfix bool, refFeatures map[string]*domain.Feature, standards []domain.StandardsDocMeta) []*domain.WorkItem {
+	workItems := make([]*domain.WorkItem, 0, len(units))
+
+	for i, unit := range units {
 		workItem := domain.NewWorkItem(
-			fmt.Sprintf("%s-%s", phaseWorkItemPrefix, feature.ID),
-			phaseWorkItemPrefix,
-			feature.ID,
-			feature,
-			i, // Order is the position in the phase
+			fmt.Sprintf("%s-%s", idPrefix, unit.feature.ID),
+			idPrefix,
+			unit.feature.ID,
+			unit.feature,
+			i, // Order is the position in the expanded unit list
 		)
 
 		// Apply constraints (defaults + type-specific constraints)
 		workItem.Constraints = mergeConstraintsForCRType(isRefactor, isBugfix)
 
-		// Build the prompt with task + criteria + constraints baked in
-		// For bugfix items, include the referenced feature for the REFERENCE section
+		// Build the prompt with task + criteria + constraints baked in.
+		// For bugfix items, include the referenced feature for the REFERENCE
+		// section - keyed to the source feature, which a split unit shares.
 		var refFeature *domain.Feature
 		if isBugfix && refFeatures != nil {
-			refFeature = refFeatures[feature.ID]
+			refFeature = refFeatures[unit.sourceFeature]
 		}
-		workItem.Prompt = BuildPromptWithConstraints(feature, workItem.Constraints, nil, refFeature, feature.Hints, standards)
+		workItem.Prompt = BuildPromptWithConstraints(unit.feature, workItem.Constraints, nil, refFeature, unit.feature.Hints, standards)
 
 		workItems = append(workItems, workItem)
 	}
 
-	return workItems, nil
+	return workItems
 }
 
 // extractFeatures converts CR tasks and changes into a flat list of features for chunking.

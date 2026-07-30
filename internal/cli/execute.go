@@ -603,7 +603,7 @@ func chunkCR(out *ui.Printer, cr *domain.ChangeRequest, crID string, store *inte
 		return nil, fmt.Errorf("failed to update CR status: %w", err)
 	}
 
-	workItems, err := chunk.Chunk(cr, store.LoadSpec, store.LoadStandardsIndex())
+	workItems, err := chunk.Chunk(cr, store.LoadSpec, store.LoadStandardsIndex(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("chunking failed: %w", err)
 	}
@@ -632,7 +632,7 @@ func chunkCR(out *ui.Printer, cr *domain.ChangeRequest, crID string, store *inte
 func chunkPhase(out *ui.Printer, crID string, phaseIndex int, phase *domain.Phase, store *internal.YAMLStore, config *domain.Config, projectDir string) ([]*domain.WorkItem, error) {
 	out.Progressf("Chunking phase %d (type: %s)\n", phaseIndex+1, phase.Type)
 
-	workItems, err := chunk.ChunkPhase(crID, phaseIndex, phase, store.LoadSpec, store.LoadStandardsIndex())
+	workItems, err := chunk.ChunkPhase(crID, phaseIndex, phase, store.LoadSpec, store.LoadStandardsIndex(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("chunking failed: %w", err)
 	}

@@ -333,7 +333,7 @@ func resumeAgainst(item *domain.WorkItem, rewritten *domain.ChangeRequest, specI
 func chunkRewritten(rewritten *domain.ChangeRequest, specID string, store *internal.YAMLStore, standards []domain.StandardsDocMeta) ([]*domain.WorkItem, error) {
 	phaseIndex, isPhase := phaseIndexFromSpecID(specID)
 	if !isPhase {
-		items, err := chunk.Chunk(rewritten, store.LoadSpec, standards)
+		items, err := chunk.Chunk(rewritten, store.LoadSpec, standards, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to chunk rewritten change request %s: %w", rewritten.ID, err)
 		}
@@ -346,7 +346,7 @@ func chunkRewritten(rewritten *domain.ChangeRequest, specID string, store *inter
 			Reason: fmt.Sprintf("the rewritten change request has no phase %d to resume", phaseIndex+1),
 		}
 	}
-	items, err := chunk.ChunkPhase(extractCRID(specID), phaseIndex, &rewritten.Phases[phaseIndex], store.LoadSpec, standards)
+	items, err := chunk.ChunkPhase(extractCRID(specID), phaseIndex, &rewritten.Phases[phaseIndex], store.LoadSpec, standards, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to chunk phase %d of rewritten change request %s: %w", phaseIndex+1, rewritten.ID, err)
 	}

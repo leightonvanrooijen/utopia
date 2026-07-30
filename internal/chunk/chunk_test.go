@@ -18,7 +18,7 @@ func TestChunk_SingleFeature(t *testing.T) {
 		},
 	}
 
-	items, err := Chunk(cr, nil, nil)
+	items, err := Chunk(cr, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestChunk_MultipleFeatures(t *testing.T) {
 		},
 	}
 
-	items, err := Chunk(cr, nil, nil)
+	items, err := Chunk(cr, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestChunk_NoFeatures(t *testing.T) {
 		Changes: []domain.Change{},
 	}
 
-	items, err := Chunk(cr, nil, nil)
+	items, err := Chunk(cr, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
@@ -119,7 +119,7 @@ func TestChunk_Validate_NoAcceptanceCriteria(t *testing.T) {
 		},
 	}
 
-	_, err := Chunk(cr, nil, nil)
+	_, err := Chunk(cr, nil, nil, nil)
 	if err == nil {
 		t.Fatal("Chunk() should return error for feature without acceptance criteria")
 	}
@@ -151,7 +151,7 @@ func TestChunk_Validate_MultipleEmptyCriteria(t *testing.T) {
 		},
 	}
 
-	_, err := Chunk(cr, nil, nil)
+	_, err := Chunk(cr, nil, nil, nil)
 	if err == nil {
 		t.Fatal("Chunk() should return error for features without acceptance criteria")
 	}
@@ -177,7 +177,7 @@ func TestChunk_MergeConstraints_DefaultsOnly(t *testing.T) {
 		},
 	}
 
-	items, err := Chunk(cr, nil, nil)
+	items, err := Chunk(cr, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -270,7 +270,7 @@ func TestChunk_RefactorCR_InjectsConstraints(t *testing.T) {
 		},
 	}
 
-	items, err := Chunk(cr, nil, nil)
+	items, err := Chunk(cr, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
@@ -318,7 +318,7 @@ func TestChunk_NonRefactorCR_NoRefactorConstraints(t *testing.T) {
 		},
 	}
 
-	items, err := Chunk(cr, nil, nil)
+	items, err := Chunk(cr, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -344,7 +344,7 @@ func TestChunk_MergeConstraints_RefactorConstraintsFirst(t *testing.T) {
 		},
 	}
 
-	items, err := Chunk(cr, nil, nil)
+	items, err := Chunk(cr, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
@@ -386,7 +386,7 @@ func TestChunk_RefactorCR_MultipleTasks(t *testing.T) {
 		},
 	}
 
-	items, err := Chunk(cr, nil, nil)
+	items, err := Chunk(cr, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
@@ -437,7 +437,7 @@ func TestChunk_FeatureCR_NoRefactorConstraints(t *testing.T) {
 		},
 	}
 
-	items, err := Chunk(cr, nil, nil)
+	items, err := Chunk(cr, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
@@ -467,7 +467,7 @@ func TestChunkPhase_SingleTask(t *testing.T) {
 		},
 	}
 
-	items, err := ChunkPhase("initiative-1", 0, phase, nil, nil)
+	items, err := ChunkPhase("initiative-1", 0, phase, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("ChunkPhase() error = %v", err)
 	}
@@ -494,7 +494,7 @@ func TestChunkPhase_RefactorPhase(t *testing.T) {
 		},
 	}
 
-	items, err := ChunkPhase("initiative-1", 1, phase, nil, nil)
+	items, err := ChunkPhase("initiative-1", 1, phase, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("ChunkPhase() error = %v", err)
 	}
@@ -529,7 +529,7 @@ func TestChunkPhase_WithChanges(t *testing.T) {
 		},
 	}
 
-	items, err := ChunkPhase("initiative-1", 0, phase, nil, nil)
+	items, err := ChunkPhase("initiative-1", 0, phase, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("ChunkPhase() error = %v", err)
 	}
@@ -557,7 +557,7 @@ func TestChunk_ExtractFeatures_RemoveOperation(t *testing.T) {
 		},
 	}
 
-	items, err := Chunk(cr, nil, nil)
+	items, err := Chunk(cr, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
@@ -593,7 +593,7 @@ func TestChunk_ExtractFeatures_ModifyOperation(t *testing.T) {
 		},
 	}
 
-	items, err := Chunk(cr, nil, nil)
+	items, err := Chunk(cr, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
@@ -626,7 +626,7 @@ func TestChunk_ExtractFeatures_DeleteSpecOperation(t *testing.T) {
 		},
 	}
 
-	items, err := Chunk(cr, nil, nil)
+	items, err := Chunk(cr, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
@@ -684,7 +684,7 @@ func TestChunk_BugfixCR_InjectsConstraints(t *testing.T) {
 		},
 	}
 
-	items, err := Chunk(cr, nil, nil)
+	items, err := Chunk(cr, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
@@ -758,7 +758,7 @@ func TestChunk_BugfixCR_WithSpecReference(t *testing.T) {
 		},
 	}
 
-	items, err := Chunk(cr, specLoader, nil)
+	items, err := Chunk(cr, specLoader, nil, nil)
 	if err != nil {
 		t.Fatalf("Chunk() error = %v", err)
 	}
@@ -800,7 +800,7 @@ func TestChunk_BugfixCR_MissingSpec(t *testing.T) {
 		},
 	}
 
-	_, err := Chunk(cr, specLoader, nil)
+	_, err := Chunk(cr, specLoader, nil, nil)
 	if err == nil {
 		t.Fatal("Chunk() should return error when referenced spec not found")
 	}
@@ -836,7 +836,7 @@ func TestChunk_BugfixCR_MissingFeature(t *testing.T) {
 		},
 	}
 
-	_, err := Chunk(cr, specLoader, nil)
+	_, err := Chunk(cr, specLoader, nil, nil)
 	if err == nil {
 		t.Fatal("Chunk() should return error when referenced feature not found")
 	}
@@ -863,7 +863,7 @@ func TestChunk_BugfixCR_NoSpecLoader(t *testing.T) {
 		},
 	}
 
-	_, err := Chunk(cr, nil, nil) // No spec loader
+	_, err := Chunk(cr, nil, nil, nil) // No spec loader
 	if err == nil {
 		t.Fatal("Chunk() should return error when spec loader not configured")
 	}
@@ -903,7 +903,7 @@ func TestChunkPhase_BugfixPhase_WithSpecReference(t *testing.T) {
 		},
 	}
 
-	items, err := ChunkPhase("initiative-1", 0, phase, specLoader, nil)
+	items, err := ChunkPhase("initiative-1", 0, phase, specLoader, nil, nil)
 	if err != nil {
 		t.Fatalf("ChunkPhase() error = %v", err)
 	}
@@ -1107,7 +1107,7 @@ func TestChunk_InjectsStandardsIndex(t *testing.T) {
 		},
 	}
 
-	workItems, err := Chunk(cr, nil, standards)
+	workItems, err := Chunk(cr, nil, standards, nil)
 	if err != nil {
 		t.Fatalf("Chunk failed: %v", err)
 	}
@@ -1144,7 +1144,7 @@ func TestChunkPhase_InjectsStandardsIndex(t *testing.T) {
 		},
 	}
 
-	workItems, err := ChunkPhase("initiative-1", 0, phase, nil, standards)
+	workItems, err := ChunkPhase("initiative-1", 0, phase, nil, standards, nil)
 	if err != nil {
 		t.Fatalf("ChunkPhase failed: %v", err)
 	}
@@ -1171,7 +1171,7 @@ func TestChunk_PreservesTaskHints(t *testing.T) {
 		},
 	}
 
-	workItems, err := Chunk(cr, nil, nil)
+	workItems, err := Chunk(cr, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("Chunk failed: %v", err)
 	}
@@ -1206,7 +1206,7 @@ func TestChunk_PreservesFeatureHints(t *testing.T) {
 		},
 	}
 
-	workItems, err := Chunk(cr, nil, nil)
+	workItems, err := Chunk(cr, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("Chunk failed: %v", err)
 	}
@@ -1244,5 +1244,199 @@ func TestEscapeTemplateContent(t *testing.T) {
 				t.Errorf("escapeTemplateContent(%q) = %q, want %q", tt.input, got, tt.expected)
 			}
 		})
+	}
+}
+
+func TestChunk_SplitFeatureOrderIsContiguousAndAdjacent(t *testing.T) {
+	first := domain.Feature{ID: "feature-1", Description: "First feature", AcceptanceCriteria: []string{"A"}}
+	oversized := domain.Feature{ID: "feature-2", Description: "Oversized feature", AcceptanceCriteria: []string{"B", "C", "D"}}
+	last := domain.Feature{ID: "feature-3", Description: "Third feature", AcceptanceCriteria: []string{"E"}}
+	cr := &domain.ChangeRequest{
+		ID:    "test-cr",
+		Type:  domain.CRTypeFeature,
+		Title: "Test CR",
+		Changes: []domain.Change{
+			{Operation: "add", Feature: &first},
+			{Operation: "add", Feature: &oversized},
+			{Operation: "add", Feature: &last},
+		},
+	}
+
+	splits := FeatureSplits{
+		"feature-2": {
+			{Description: "Oversized feature, part 1", AcceptanceCriteria: []string{"B"}},
+			{Description: "Oversized feature, part 2", AcceptanceCriteria: []string{"C", "D"}},
+		},
+	}
+
+	items, err := Chunk(cr, nil, nil, splits)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	wantIDs := []string{
+		"test-cr-feature-1",
+		"test-cr-feature-2-1",
+		"test-cr-feature-2-2",
+		"test-cr-feature-3",
+	}
+	if len(items) != len(wantIDs) {
+		t.Fatalf("Chunk() returned %d items, want %d", len(items), len(wantIDs))
+	}
+
+	for i, item := range items {
+		// Order is contiguous and sequential across the split.
+		if item.Order != i {
+			t.Errorf("items[%d].Order = %d, want %d", i, item.Order, i)
+		}
+		// Spec order is preserved and the split units sit adjacently, in the
+		// order the sizer returned them.
+		if item.ID != wantIDs[i] {
+			t.Errorf("items[%d].ID = %q, want %q", i, item.ID, wantIDs[i])
+		}
+	}
+
+	// Each split work item carries only its own slice of the criteria.
+	if !strings.Contains(items[1].Prompt, "- B") || strings.Contains(items[1].Prompt, "- C") {
+		t.Errorf("first split item prompt should cover only criterion B, got:\n%s", items[1].Prompt)
+	}
+	if !strings.Contains(items[2].Prompt, "- C") || !strings.Contains(items[2].Prompt, "- D") {
+		t.Errorf("second split item prompt should cover criteria C and D, got:\n%s", items[2].Prompt)
+	}
+	if items[1].Title != "Oversized feature, part 1" {
+		t.Errorf("items[1].Title = %q, want the sizer's slice description", items[1].Title)
+	}
+}
+
+func TestChunkPhase_SplitFeatureOrderIsContiguousAndAdjacent(t *testing.T) {
+	oversized := domain.Feature{ID: "feature-1", Description: "Oversized feature", AcceptanceCriteria: []string{"A", "B"}}
+	last := domain.Feature{ID: "feature-2", Description: "Second feature", AcceptanceCriteria: []string{"C"}}
+	phase := &domain.Phase{
+		Type: domain.CRTypeFeature,
+		Changes: []domain.Change{
+			{Operation: "add", Feature: &oversized},
+			{Operation: "add", Feature: &last},
+		},
+	}
+
+	splits := FeatureSplits{
+		"feature-1": {
+			{Description: "Oversized feature, part 1", AcceptanceCriteria: []string{"A"}},
+			{Description: "Oversized feature, part 2", AcceptanceCriteria: []string{"B"}},
+		},
+	}
+
+	items, err := ChunkPhase("initiative-1", 0, phase, nil, nil, splits)
+	if err != nil {
+		t.Fatalf("ChunkPhase() error = %v", err)
+	}
+
+	wantIDs := []string{
+		"initiative-1-phase-0-feature-1-1",
+		"initiative-1-phase-0-feature-1-2",
+		"initiative-1-phase-0-feature-2",
+	}
+	if len(items) != len(wantIDs) {
+		t.Fatalf("ChunkPhase() returned %d items, want %d", len(items), len(wantIDs))
+	}
+	for i, item := range items {
+		if item.Order != i {
+			t.Errorf("items[%d].Order = %d, want %d", i, item.Order, i)
+		}
+		if item.ID != wantIDs[i] {
+			t.Errorf("items[%d].ID = %q, want %q", i, item.ID, wantIDs[i])
+		}
+	}
+}
+
+func TestChunk_UnsplitFeaturesAreUnchangedBySizing(t *testing.T) {
+	f := domain.Feature{ID: "feature-1", Description: "First feature", AcceptanceCriteria: []string{"A"}}
+	cr := &domain.ChangeRequest{
+		ID:      "test-cr",
+		Type:    domain.CRTypeFeature,
+		Title:   "Test CR",
+		Changes: []domain.Change{{Operation: "add", Feature: &f}},
+	}
+
+	// A feature the sizer assessed as fitting the budget: absent from the map,
+	// or present with a single slice. Both produce one unchanged work item.
+	for name, splits := range map[string]FeatureSplits{
+		"absent from splits": {"other-feature": {{Description: "x", AcceptanceCriteria: []string{"y"}}}},
+		"single slice":       {"feature-1": {{Description: "First feature", AcceptanceCriteria: []string{"A"}}}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			items, err := Chunk(cr, nil, nil, splits)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(items) != 1 {
+				t.Fatalf("Chunk() returned %d items, want 1", len(items))
+			}
+			if items[0].ID != "test-cr-feature-1" {
+				t.Errorf("items[0].ID = %q, want %q", items[0].ID, "test-cr-feature-1")
+			}
+			if items[0].Order != 0 {
+				t.Errorf("items[0].Order = %d, want 0", items[0].Order)
+			}
+		})
+	}
+}
+
+func TestExpandFeatures_PreservesSpecOrderAndSourceFeature(t *testing.T) {
+	features := []domain.Feature{
+		{ID: "a", Description: "A", AcceptanceCriteria: []string{"1"}},
+		{ID: "b", Description: "B", AcceptanceCriteria: []string{"2", "3"}},
+	}
+	splits := FeatureSplits{
+		"b": {
+			{Description: "B1", AcceptanceCriteria: []string{"2"}},
+			{Description: "B2", AcceptanceCriteria: []string{"3"}},
+		},
+	}
+
+	units := expandFeatures(features, splits)
+
+	want := []struct {
+		id     string
+		source string
+	}{
+		{"a", "a"},
+		{"b-1", "b"},
+		{"b-2", "b"},
+	}
+	if len(units) != len(want) {
+		t.Fatalf("expandFeatures() returned %d units, want %d", len(units), len(want))
+	}
+	for i, w := range want {
+		if units[i].feature.ID != w.id {
+			t.Errorf("units[%d].feature.ID = %q, want %q", i, units[i].feature.ID, w.id)
+		}
+		if units[i].sourceFeature != w.source {
+			t.Errorf("units[%d].sourceFeature = %q, want %q", i, units[i].sourceFeature, w.source)
+		}
+	}
+}
+
+func TestExpandFeatures_SplitInheritsFeatureHints(t *testing.T) {
+	features := []domain.Feature{
+		{ID: "a", Description: "A", AcceptanceCriteria: []string{"1", "2"}, Hints: []string{"hint from feature"}},
+	}
+	splits := FeatureSplits{
+		"a": {
+			{Description: "A1", AcceptanceCriteria: []string{"1"}},
+			{Description: "A2", AcceptanceCriteria: []string{"2"}, Hints: []string{"hint from sizer"}},
+		},
+	}
+
+	units := expandFeatures(features, splits)
+
+	if len(units) != 2 {
+		t.Fatalf("expandFeatures() returned %d units, want 2", len(units))
+	}
+	if len(units[0].feature.Hints) != 1 || units[0].feature.Hints[0] != "hint from feature" {
+		t.Errorf("split unit without hints should inherit the feature's, got %v", units[0].feature.Hints)
+	}
+	if len(units[1].feature.Hints) != 1 || units[1].feature.Hints[0] != "hint from sizer" {
+		t.Errorf("split unit with hints should keep them, got %v", units[1].feature.Hints)
 	}
 }
