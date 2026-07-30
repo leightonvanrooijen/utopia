@@ -1,7 +1,7 @@
 id: model-configuration
 title: model-configuration
 created: "2026-03-23T10:09:13.522167+11:00"
-updated: "2026-07-30T10:28:20.566175+10:00"
+updated: "2026-07-30T11:13:45.640454+10:00"
 description: ""
 features:
     - id: model-mapping
@@ -145,3 +145,21 @@ features:
         - No code path raises a role's effort in response to a validation failure, a retry, or an escalation
         - The default executor's effort is identical on a first attempt and on a mechanical retry
         - A --effort flag overrides the resolved effort for a single invocation, mirroring --model
+
+    - id: chunk-sizer-model
+      description: |
+        Add a chunk_sizer entry to ModelConfig so the work-item sizer's model
+        can be selected independently.
+
+        It inherits models.default rather than defaulting to a cheap tier.
+        The validator_router precedent does not apply: the router classifies
+        a diff that already exists, with the evidence in front of it, whereas
+        the sizer must estimate work that does not exist yet from a feature
+        description. Whether "migrate all call sites" means three files or
+        forty is unknowable without reasoning about the codebase, so the
+        sizer needs real capability.
+      acceptance_criteria:
+        - ModelConfig has a chunk_sizer field mapped to the chunk_sizer YAML key
+        - models.chunk_sizer falls back to models.default when omitted
+        - models.chunk_sizer does not default to a cheap tier independently of models.default
+        - The chunk command resolves and applies the chunk_sizer model when invoking the sizer

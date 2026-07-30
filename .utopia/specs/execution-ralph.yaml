@@ -1,7 +1,7 @@
 id: execution-ralph
 title: Ralph Execution Loop
 created: "0001-01-01T00:00:00+00:00"
-updated: "2026-07-29T16:47:03.908757+10:00"
+updated: "2026-07-30T11:13:45.640454+10:00"
 description: |
     The Ralph execution loop runs WorkItems produced by the chunker.
 
@@ -271,3 +271,89 @@ features:
         - The project .gitignore does not exclude .utopia/runs/
         - Failure to write a run transcript logs a warning but does not block the execution loop
         - Each run record can be joined back to its originating CR and conversation via cr_id and workitem_id
+
+    - id: work-item-turn-budget
+      description: |
+        Add a configurable per-iteration turn ceiling for work-item execution,
+        expressed as work_items.turn_budget in .utopia/config.yaml.
+
+        The budget is a single shared knob with two enforcement postures. The
+        executor treats it as a hard cap (passed to the Claude CLI as
+        --max-turns). The chunker later treats the same value as a sizing
+        target (phase 2). One number therefore governs both how large work
+        items are cut and how much a single iteration may spend, so tuning
+        cost means changing one value rather than keeping two in sync.
+
+        It lives in config rather than as a CLI flag because `chunk` and
+        `execute` are separate commands; a flag on `execute` would be
+        invisible to the chunker. It is named after work items rather than
+        after either command because it belongs to neither.
+      acceptance_criteria:
+        - Config has an optional work_items section with a turn_budget integer field
+        - work_items.turn_budget defaults to 40 when the section or field is omitted
+        - A turn_budget of zero or a negative value is rejected at config load with an error naming the field
+        - Config files with no work_items section continue to load without error
+
+    - id: turn-cap-enforcement
+      description: |
+        Pass work_items.turn_budget to the Claude CLI as --max-turns so a
+        single iteration cannot run unbounded. Today no turn ceiling exists
+        anywhere: baseArgs() passes only --permission-mode, --allowedTools
+        and --model, so an iteration can burn 100+ turns before producing
+        anything.
+
+        --max-turns is a real flag on Claude Code 2.1.220, but it is hidden
+        from --help; it was confirmed by option-parse probe against a bogus
+        control flag. Its exhaustion behaviour was measured rather than
+        assumed, and it does NOT slot into the existing no-token path as a
+        naive reading suggests:
+
+          exit code: 1 (non-zero)
+          stdout:    "Reached max turns (N)"
+          stderr:    empty
+
+        A non-zero exit makes cmd.Output() return an error, so cli.Prompt
+        returns an error and the loop takes the generic invocation-failed
+        branch at ralph.go:298, NOT the no-token branch at 305.
+
+        That branch's handling of failure state is CORRECT and must be left
+        alone. It does not clear LastFailureOutput, and it should not.
+        LastFailureOutput is written in exactly one place (ralph.go:378) from
+        verification output when verification fails, so it means "the last
+        known verification result, and it was a failure". A turn-capped
+        iteration runs no verification, so nothing supersedes that value - it
+        is the most recent evidence in existence, not stale data. Carrying a
+        failure forward that the capped iteration happened to fix costs a few
+        turns of the executor checking and moving on. Dropping a failure that
+        is still live costs an entire fresh iteration that does not know
+        verification ever failed, and may converge on <COMPLETE> and fail the
+        same way. Cheap redundancy beats expensive blindness.
+
+        What IS wrong on that branch is the logging. It reports "Claude
+        invocation failed", indistinguishable from a crash, an auth error, or
+        the monthly-spend-limit case that also exits 1. Turn exhaustion is
+        normal, expected operation and must not read as breakage.
+
+        So this needs explicit detection before the error branch - not to
+        change the retry behaviour, but to classify and report it correctly.
+        Detection follows the established DetectRateLimit / DetectSpendLimit
+        pattern that already inspects stdout and stderr for exactly this class
+        of CLI-signalled condition.
+
+        Separately, and deliberately excluded here: no message about turns,
+        limits, or the cap may reach the retry prompt. That is a scarcity
+        signal - it says hurry, and it invites shortcuts. PREVIOUS FAILURES is
+        task information, which is a different thing and is welcome. Partial
+        work survives uncommitted in the working tree and the next fresh
+        iteration rebuilds state from git and files, so a capped iteration is
+        a ratchet rather than wasted spend.
+      acceptance_criteria:
+        - Work-item execution invokes the Claude CLI with --max-turns set to the configured work_items.turn_budget
+        - A DetectTurnExhaustion function reports whether a PromptResult's stdout or stderr indicates the turn cap was reached
+        - Turn exhaustion is detected before the generic invocation-failed branch, so a capped iteration never logs as a Claude invocation failure
+        - A turn-exhausted iteration is logged as expected operation, distinctly from both invocation failures and no-token retries
+        - A turn-exhausted iteration preserves LastFailureOutput unchanged, so a still-unverified failure survives into the retry
+        - No message referencing turns, turn limits, or the cap is injected into any retry prompt
+        - A turn-exhausted iteration counts against max_iterations
+        - Verification is not run for an iteration that exhausted the turn cap
+        - A non-zero exit that is not turn exhaustion still takes the existing invocation-failed path unchanged
