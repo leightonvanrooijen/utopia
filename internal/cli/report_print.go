@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/leightonvanrooijen/utopia/internal/analysis"
-	"github.com/leightonvanrooijen/utopia/internal/cli/ui"
+	"github.com/leightonvanrooijen/utopia/internal/ui"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 )
 

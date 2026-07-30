@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/leightonvanrooijen/utopia/internal/analysis/types"
-	"github.com/leightonvanrooijen/utopia/internal/cli/ui"
+	"github.com/leightonvanrooijen/utopia/internal/ui"
 )
 
 // File collection types

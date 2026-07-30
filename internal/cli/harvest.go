@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/leightonvanrooijen/utopia/internal/cli/ui"
+	"github.com/leightonvanrooijen/utopia/internal/ui"
 	"github.com/leightonvanrooijen/utopia/internal/harvest"
 	"github.com/spf13/cobra"
 )

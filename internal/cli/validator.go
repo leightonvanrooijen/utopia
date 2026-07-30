@@ -10,7 +10,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/leightonvanrooijen/utopia/internal/cli/ui"
+	"github.com/leightonvanrooijen/utopia/internal/ui"
 	"github.com/leightonvanrooijen/utopia/internal/validators"
 	"github.com/spf13/cobra"
 )

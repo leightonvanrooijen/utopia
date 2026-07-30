@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/leightonvanrooijen/utopia/internal/cli/ui"
+	"github.com/leightonvanrooijen/utopia/internal/ui"
 )
 
 // stepTimings accumulates the wall-clock time one work item spends in each

@@ -14,18 +14,18 @@ tags:
 | Purpose | Technology | Version | Notes |
 |---------|------------|---------|-------|
 | Output streams | cobra `cmd.OutOrStdout()` / `cmd.ErrOrStderr()` | v1.10.2 | The ONLY way to write output - never package-level `fmt.Print*` |
-| Shared renderer | `internal/cli/ui` (to be created) | N/A | Banners, glyphs, progress, summaries live here |
+| Shared renderer | `internal/ui` | N/A | Banners, glyphs, progress, summaries live here |
 | Testing | `cmd.SetOut(&buf)` + std testing | stdlib | Output becomes assertable once routed through the writer |
 
 ## File Structure
 
 ```
-internal/cli/
-  ui/
-    ui.go          # Printer type wrapping an io.Writer; glyph + banner vocabulary
-    progress.go    # phase progress ([n/N] ... done (X.Xs)) - promoted from discover.go
-    summary.go     # shared "COMPLETE" summary renderer (replaces the two
+internal/ui/          # neutral - any layer may import it, including domain packages
+  ui.go            # Printer type wrapping an io.Writer; glyph + banner vocabulary
+  progress.go      # phase progress ([n/N] ... done (X.Xs)) - promoted from discover.go
+  summary.go       # shared "COMPLETE" summary renderer (replaces the two
                    #   near-duplicate printers in discover.go)
+internal/cli/
   <command>.go     # commands hold NO formatting logic beyond one-line status prints
 ```
 
@@ -105,7 +105,7 @@ case domain.DraftConfidenceMedium:
 
 ✅ **Good**
 ```go
-// internal/cli/ui/ui.go
+// internal/ui/ui.go
 const ruleWidth = 63
 
 func (p *Printer) Banner(title string) {
@@ -172,7 +172,7 @@ Consistency by discipline has already failed here: three commands grew banners, 
 ### The ui package core
 
 ```go
-// internal/cli/ui/ui.go
+// internal/ui/ui.go
 package ui
 
 import (

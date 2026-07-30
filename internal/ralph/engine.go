@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/leightonvanrooijen/utopia/internal/cli/ui"
+	"github.com/leightonvanrooijen/utopia/internal/ui"
 )
 
 // Handle states. Every launched handle starts running and resolves as

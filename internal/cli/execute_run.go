@@ -27,7 +27,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/leightonvanrooijen/utopia/internal/cli/ui"
+	"github.com/leightonvanrooijen/utopia/internal/ui"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 	"github.com/spf13/cobra"
 )
