@@ -144,6 +144,17 @@ type RoutingDecision struct {
 	CapExhausted string
 }
 
+// reportedFailureClass is the class a failing validation gate reported, before any
+// cap reclassifies it. A gate carrying no aggregate - a gating connector rather
+// than a validator - is mechanical: a connector never claimed anything about
+// intent, so it cannot have concluded the specification was misread.
+func reportedFailureClass(agg *validators.AggregateResult) validators.FailureClass {
+	if agg != nil && agg.FailureClass != "" {
+		return agg.FailureClass
+	}
+	return validators.FailureMechanical
+}
+
 // routeValidationFailure decides what to do with a work item whose validation
 // gate failed, and applies the decision's counter changes to the item so they are
 // persisted with it and survive a resume.
@@ -154,14 +165,8 @@ type RoutingDecision struct {
 // that keeps blocking is reclassified by the mechanical cap like any other
 // repeated slip.
 func routeValidationFailure(item *domain.WorkItem, agg *validators.AggregateResult, caps EscalationCaps, defaultModel, escalatedModel string) RoutingDecision {
-	class := validators.FailureMechanical
-	specDefect := false
-	if agg != nil {
-		specDefect = agg.SpecDefectSuspected
-		if agg.FailureClass != "" {
-			class = agg.FailureClass
-		}
-	}
+	class := reportedFailureClass(agg)
+	specDefect := agg != nil && agg.SpecDefectSuspected
 
 	// Tally the reported class before any of the routing below reclassifies it, so
 	// the persisted ratio of mechanical to comprehension failures measures what the

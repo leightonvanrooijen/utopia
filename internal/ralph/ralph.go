@@ -504,11 +504,15 @@ func executeWorkItem(
 		// iteration is a ratchet rather than wasted spend.
 		if claudeResult != nil && DetectTurnExhaustion(claudeResult.Stdout, claudeResult.Stderr) {
 			fmt.Printf("  Iteration %d: turn budget of %d reached, continuing in a fresh iteration (claude %s)\n", item.IterationCount, turnBudget, ui.Duration(claudeElapsed))
+			// A capped attempt claimed nothing, so nothing it produced was judged. Its
+			// spend is recorded either way: the ratchet cost what it cost.
+			recordAttemptOutcome(item, domain.AttemptIncomplete, "")
 			continue
 		}
 
 		if err != nil {
 			fmt.Printf("  Iteration %d: Claude invocation failed: %v (claude %s)\n", item.IterationCount, err, ui.Duration(claudeElapsed))
+			recordAttemptOutcome(item, domain.AttemptErrored, "")
 			// Continue to next iteration - Claude may have hit an error
 			continue
 		}
@@ -516,6 +520,7 @@ func executeWorkItem(
 		// Check for completion token
 		if !strings.Contains(claudeResult.Stdout, CompletionToken) {
 			fmt.Printf("  Iteration %d: no %s token found, retrying... (claude %s)\n", item.IterationCount, CompletionToken, ui.Duration(claudeElapsed))
+			recordAttemptOutcome(item, domain.AttemptIncomplete, "")
 			// No completion token - Claude hit step limit or got stuck
 			// Clear any previous failure since this is a different failure mode
 			item.LastFailureOutput = ""
@@ -587,6 +592,11 @@ func executeWorkItem(
 			failedPayload := itemPayload
 			failedPayload.IterationCount = item.IterationCount
 			dispatcher.Dispatch(Event{Name: EventWorkItemVerificationFailed, Payload: failedPayload})
+			// A failing verification command is a mechanical failure by the class
+			// vocabulary's own terms - the intent was right and the execution slipped -
+			// and it is the same default the routing applies to a failure no validator
+			// classified.
+			recordAttemptOutcome(item, domain.AttemptFailed, validators.FailureMechanical)
 			item.LastFailureOutput = verifyOutput
 			item.LastValidatorFeedback = "" // Clear any previous validator feedback
 			continue
@@ -628,6 +638,11 @@ func executeWorkItem(
 			// verbatim feedback above is still only the previous iteration's, which is
 			// what a mechanical retry is given.
 			recordFailureConclusions(item, aggregate)
+			// The attempt is recorded as rejected under the class the validators
+			// reported, not the class the caps routed on: the attempt's own record says
+			// what was concluded about it, and decision.Class already says what the
+			// routing did next.
+			recordAttemptOutcome(item, domain.AttemptFailed, reportedFailureClass(aggregate))
 			if err := store.SaveWorkItemForSpec(specID, item); err != nil {
 				return nil, fmt.Errorf("failed to save work item state: %w", err)
 			}
@@ -652,6 +667,7 @@ func executeWorkItem(
 			continue
 		}
 		item.Status = domain.WorkItemCompleted
+		recordAttemptOutcome(item, domain.AttemptPassed, "")
 		item.LastFailureOutput = ""
 		item.LastValidatorFeedback = ""
 		if err := store.SaveWorkItemForSpec(specID, item); err != nil {

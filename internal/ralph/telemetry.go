@@ -121,6 +121,23 @@ func recordAttemptUsage(item *domain.WorkItem, result *internal.PromptResult, el
 	attempt.Usage = usage
 }
 
+// recordAttemptOutcome books what the attempt just made achieved onto that
+// attempt's routing record: whether its work passed, was rejected, or never reached
+// a verdict, and the class it was rejected as.
+//
+// It is recorded as the loop leaves the iteration rather than reconstructed
+// afterwards, because only the loop knows which of the paths out of an iteration
+// was taken. The class is passed empty on every outcome but AttemptFailed.
+func recordAttemptOutcome(item *domain.WorkItem, outcome domain.AttemptOutcome, class validators.FailureClass) {
+	n := len(item.ExecutorAttempts)
+	if n == 0 {
+		return
+	}
+	attempt := &item.ExecutorAttempts[n-1]
+	attempt.Outcome = outcome
+	attempt.FailureClass = string(class)
+}
+
 // refundExecutorAttempt drops the last recorded attempt, for an attempt that never
 // ran. It is the record's half of the usage-limit refund: the iteration and the
 // escalation charge are both undone there, and an attempt that produced no work
@@ -181,7 +198,7 @@ func routingRecordFor(item *domain.WorkItem, crType domain.CRType, outcome domai
 		Outcome:               outcome,
 		DurationSeconds:       elapsed.Seconds(),
 		Duration:              ui.Duration(elapsed),
-		CostNote:              domain.CostNotCapturedNote,
+		CostNote:              domain.CostApproximationNote,
 	}
 }
 
@@ -223,14 +240,19 @@ func routingOutcomeFor(item *domain.WorkItem, outcome domain.RunOutcome) domain.
 // routing record.
 //
 // It is called on every path out of the loop, not only the completing one, so an
-// item that aborted or halted as needs_human is recorded too. A change request's
-// outcome is the set of these records in its run directory: one per work item,
-// each carrying cr_id, spec_ref and cr_type, which is what makes escalation rate
-// per spec and per cr_type a read of the records rather than of the transcripts.
+// item that aborted or halted as needs_human is recorded too, carrying the usage of
+// the attempts it did make. A change request's outcome is the set of these records
+// in its run directory: one per work item, each carrying cr_id, spec_ref and
+// cr_type, which is what makes escalation rate per spec and per cr_type a read of
+// the records rather than of the transcripts.
+//
+// The usage list is projected from the attempts persisted on the work item, so a
+// resumed item reports every attempt it ever made rather than the ones this process
+// happened to observe.
 //
 // Logs a warning and returns on failure (non-blocking): a lost record costs
-// future harvests some signal and the routing evidence for one item, neither of
-// which is worth stopping a run over.
+// future harvests some signal, the routing evidence and the spend for one item,
+// none of which is worth stopping a run over.
 func writeRunTranscript(store *internal.YAMLStore, crID string, item *domain.WorkItem, rec *runRecorder, outcome domain.RunOutcome) {
 	rec.written = true
 	run := &domain.ExecutionRun{
@@ -245,6 +267,7 @@ func writeRunTranscript(store *internal.YAMLStore, crID string, item *domain.Wor
 		Status:     domain.ConversationUnprocessed,
 		Transcript: rec.transcript.String(),
 		Routing:    routingRecordFor(item, rec.crType, routingOutcomeFor(item, outcome), rec.elapsed()),
+		Usage:      domain.UsageEntriesFor(item.ExecutorAttempts),
 	}
 	if err := store.SaveExecutionRun(run); err != nil {
 		fmt.Printf("  warning: failed to write run record for %s: %v\n", item.ID, err)

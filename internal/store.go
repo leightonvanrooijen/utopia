@@ -637,6 +637,31 @@ func (s *YAMLStore) writeYAML(path string, data interface{}) error {
 	return nil
 }
 
+// writeFormattedYAML is writeYAML with the marshalled document put through the
+// shared formatter, so the file reads the same way as every other Utopia YAML
+// rather than however yaml.Marshal happened to indent it.
+//
+// A formatting failure is not a write failure: the record is written unformatted
+// instead. Losing a run record - and the spend it accounts for - because a
+// cosmetic pass could not parse its own output would be the worse trade.
+func (s *YAMLStore) writeFormattedYAML(path string, data interface{}) error {
+	bytes, err := yaml.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("failed to marshal YAML: %w", err)
+	}
+
+	content := bytes
+	if formatted, formatErr := FormatYAML(bytes); formatErr == nil {
+		content = formatted
+	}
+
+	if err := os.WriteFile(path, content, 0644); err != nil {
+		return fmt.Errorf("failed to write file %s: %w", path, err)
+	}
+
+	return nil
+}
+
 // featureMarshaler wraps domain.Feature to provide custom YAML marshaling.
 // This keeps YAML-specific formatting logic in the storage layer rather than
 // polluting domain types with serialization concerns.
@@ -778,8 +803,17 @@ func (s *YAMLStore) SaveConversation(conv *domain.Conversation) error {
 // SaveExecutionRun writes a run transcript to .utopia/runs/{cr_id}/{workitem_id}.yaml.
 // Runs are grouped by CR so a change request's whole execution history is one
 // directory, and a work item's run overwrites its own file on re-execution.
+//
+// The document goes through the shared formatter: these records are committed and
+// read as history - the routing and usage entries in particular - so they are
+// formatted like the rest of the project's YAML rather than like marshal output.
 func (s *YAMLStore) SaveExecutionRun(run *domain.ExecutionRun) error {
-	return Save(s, filepath.Join("runs", run.CRID, run.WorkItemID+".yaml"), run)
+	path := filepath.Join("runs", run.CRID, run.WorkItemID+".yaml")
+	fullPath := s.fullPath(path)
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+		return fmt.Errorf("failed to create directory %s: %w", filepath.Dir(fullPath), err)
+	}
+	return s.writeFormattedYAML(fullPath, run)
 }
 
 // ListExecutionRuns returns every persisted execution run, across all CRs.

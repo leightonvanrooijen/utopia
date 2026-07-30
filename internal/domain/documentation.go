@@ -157,6 +157,17 @@ type ExecutionRun struct {
 	//
 	// It is omitted only on runs written before routing was recorded.
 	Routing *RoutingRecord `yaml:"routing,omitempty"`
+
+	// Usage is what each iteration of the run spent, one ordered entry per attempt
+	// that ran, so the model and effort that did the work sit next to what that
+	// attempt cost and whether it worked. Totals for the work item are a sum of these
+	// entries (UsageTotals), and totals for the change request a sum across the run
+	// records in its directory (TotalRunUsage) - neither re-reads the transcript.
+	//
+	// An absent list is unknown spend, not zero: it is every run written before usage
+	// was persisted. Consumers go through UsageTotals rather than summing the slice
+	// directly, because that distinction is what UsageTotals keeps.
+	Usage []UsageEntry `yaml:"usage,omitempty"`
 }
 
 // RoutingOutcome records how a work item's routing ended. It is a separate
@@ -177,13 +188,18 @@ const (
 	RoutingAbandoned RoutingOutcome = "abandoned"
 )
 
-// CostNotCapturedNote is recorded verbatim on every routing record so a reader
-// does not mistake the absence of token counts and dollar figures for zero. See
-// ADR-005: Utopia drives the claude CLI, which reports neither, so cost is
-// approximated from attempt counts and the model each attempt ran on.
-const CostNotCapturedNote = "Token counts, cache hits and monetary cost are not captured - not zero, not observable. " +
-	"Utopia drives the claude CLI, which reports none of them (ADR-005). " +
-	"Cost is approximated from attempts, sonnet_attempts and opus_execution_attempts together with the model each attempt ran on."
+// CostApproximationNote is recorded verbatim on every routing record so a reader
+// knows what the counters here do and do not say about spend: they approximate it
+// by tier, from attempt counts and the model each attempt ran on.
+//
+// The record's usage list is the measured spend where it is present (ADR-007
+// supersedes ADR-005, whose premise was that the claude CLI reports none of it).
+// Where it is absent - a run written before capture, or an attempt whose
+// accounting could not be read - the spend is unknown rather than zero, and these
+// counters are the only approximation of it there is.
+const CostApproximationNote = "The counters here approximate cost by tier: attempts, sonnet_attempts and opus_execution_attempts " +
+	"together with the model each attempt ran on. Measured token counts and dollar figures are on the record's usage list (ADR-007). " +
+	"An attempt with no usage entry, or an entry marked unavailable, is unknown spend - not zero."
 
 // RoutingRecord is the persisted evidence for how one work item was routed. It
 // exists so the escalation caps, and the premise behind them, can be argued from
@@ -235,7 +251,7 @@ type RoutingRecord struct {
 	DurationSeconds float64 `yaml:"duration_seconds"`
 	Duration        string  `yaml:"duration"`
 
-	// CostNote is CostNotCapturedNote, written into every record rather than left
+	// CostNote is CostApproximationNote, written into every record rather than left
 	// to documentation, because the reader who needs it is reading the record.
 	CostNote string `yaml:"cost_note"`
 }

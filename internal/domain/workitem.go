@@ -200,6 +200,25 @@ type ExecutorAttempt struct {
 	// recorded before capture existed. Non-nil with Available false means the attempt
 	// ran and its accounting could not be read. Neither is zero spend.
 	Usage *AttemptUsage `yaml:"usage,omitempty"`
+
+	// Outcome is how this attempt ended - whether the work it produced passed, was
+	// rejected, or never reached a verdict at all. It is recorded per attempt rather
+	// than derived from the run's outcome because only the last attempt of a run
+	// shares it, and "what did this model, at this effort, achieve" is a question
+	// about every attempt.
+	//
+	// Empty on attempts recorded before outcomes were, and on an attempt the loop
+	// left before concluding anything about it.
+	Outcome AttemptOutcome `yaml:"outcome,omitempty"`
+
+	// FailureClass is the class the attempt's failure was reported as, in the
+	// validators' vocabulary (mechanical, comprehension). It is the class reported
+	// before any cap reclassified it, for the same reason the item's tallies are:
+	// the per-attempt record is evidence of what was concluded about the attempt,
+	// not of what the routing did next.
+	//
+	// Empty unless Outcome is AttemptFailed.
+	FailureClass string `yaml:"failure_class,omitempty"`
 }
 
 // FailureConclusion is one failing validator's conclusion about one attempt. It

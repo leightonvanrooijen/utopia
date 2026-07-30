@@ -87,9 +87,10 @@ func TestWriteRunTranscript_CarriesTheRoutingRecord(t *testing.T) {
 	if r.DurationSeconds < 0 || r.Duration == "" {
 		t.Errorf("wall clock = %v (%q), want a measured duration", r.DurationSeconds, r.Duration)
 	}
-	// The absence of token counts must not read as zero to whoever finds this file.
-	if r.CostNote != domain.CostNotCapturedNote {
-		t.Errorf("cost_note = %q, want the not-captured note", r.CostNote)
+	// What these counters do and do not say about spend must not be left to whoever
+	// finds this file to guess at.
+	if r.CostNote != domain.CostApproximationNote {
+		t.Errorf("cost_note = %q, want the approximation note", r.CostNote)
 	}
 }
 
@@ -436,4 +437,146 @@ func TestDeriveCRType(t *testing.T) {
 			}
 		})
 	}
+}
+
+// spentItem is a work item mid-run: three attempts that ran and spent tokens, the
+// middle one's accounting unreadable, none of them yet passing.
+func spentItem() *domain.WorkItem {
+	item := routedItem()
+	item.IterationCount = 3
+	item.ExecutorAttempts = []domain.ExecutorAttempt{
+		{
+			Iteration: 1, Role: domain.ExecutorRoleDefault, Model: "sonnet", Effort: "medium",
+			Outcome: domain.AttemptFailed, FailureClass: string(validators.FailureMechanical),
+			Usage: &domain.AttemptUsage{
+				Available: true, Model: "claude-sonnet-5-20260101", Effort: "medium",
+				InputTokens: 100, OutputTokens: 20, CostUSD: 0.5, CostBasis: domain.CostBasisCharged,
+			},
+		},
+		{
+			Iteration: 2, Role: domain.ExecutorRoleDefault, Model: "sonnet", Effort: "medium",
+			Outcome: domain.AttemptIncomplete,
+			Usage:   domain.UnavailableUsage("the invocation reported no usage"),
+		},
+		{
+			Iteration: 3, Role: domain.ExecutorRoleEscalated, Model: "opus", Effort: "high",
+			Outcome: domain.AttemptFailed, FailureClass: string(validators.FailureComprehension),
+			Usage: &domain.AttemptUsage{
+				Available: true, Model: "claude-opus-5-20260101", Effort: "high",
+				InputTokens: 300, OutputTokens: 40, CostUSD: 2, CostBasis: domain.CostBasisCharged,
+			},
+		},
+	}
+	return item
+}
+
+// The record carries one usage entry per iteration, so the model that did the work
+// sits next to what it spent and whether it worked - and the work item's total is a
+// read of those entries rather than of the transcript.
+func TestWriteRunTranscript_CarriesTheUsageEntries(t *testing.T) {
+	store := internal.NewYAMLStore(t.TempDir())
+	item := spentItem()
+	item.Status = domain.WorkItemCompleted
+	item.ExecutorAttempts[2].Outcome = domain.AttemptPassed
+	item.ExecutorAttempts[2].FailureClass = ""
+
+	writeRunTranscript(store, "cr-1", item, recorderWith(domain.CRTypeFeature, "out"), domain.RunCompleted)
+
+	run, err := internal.Load[domain.ExecutionRun](store, "runs/cr-1/cr-1-phase-0-add-thing.yaml")
+	if err != nil {
+		t.Fatalf("run record should be written: %v", err)
+	}
+	if len(run.Usage) != 3 {
+		t.Fatalf("usage entries = %d, want one per iteration (3)", len(run.Usage))
+	}
+	first := run.Usage[0]
+	if first.Iteration != 1 || first.Model != "claude-sonnet-5-20260101" || first.Effort != "medium" {
+		t.Errorf("entry 1 = %+v, want iteration 1 on the resolved model at its effort", first)
+	}
+	if first.Outcome != domain.AttemptFailed || first.FailureClass != string(validators.FailureMechanical) {
+		t.Errorf("entry 1 = %q/%q, want failed with the class the validators reported", first.Outcome, first.FailureClass)
+	}
+	if last := run.Usage[2]; last.Outcome != domain.AttemptPassed || last.FailureClass != "" {
+		t.Errorf("entry 3 = %q/%q, want passed with no class", last.Outcome, last.FailureClass)
+	}
+
+	totals := run.UsageTotals()
+	if totals.InputTokens != 400 || totals.OutputTokens != 60 || totals.ChargedCostUSD != 2.5 {
+		t.Errorf("totals = %+v, want the readable attempts summed off the entries", totals)
+	}
+	if totals.Unavailable != 1 {
+		t.Errorf("unavailable = %d, want the unreadable attempt counted rather than summed as zero", totals.Unavailable)
+	}
+}
+
+// A run that halted as needs_human, or aborted on an error nobody anticipated,
+// still spent what it spent. Those are the runs whose cost is most worth having.
+func TestWriteRunTranscript_PersistsUsageOfAttemptsAlreadyMade(t *testing.T) {
+	tests := []struct {
+		name   string
+		status domain.WorkItemStatus
+		want   domain.RoutingOutcome
+	}{
+		{"halted as needs_human", domain.WorkItemNeedsHuman, domain.RoutingNeedsHuman},
+		{"aborted", domain.WorkItemFailed, domain.RoutingAbandoned},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := internal.NewYAMLStore(t.TempDir())
+			item := spentItem()
+			item.Status = tt.status
+
+			writeRunTranscript(store, "cr-1", item, recorderWith(domain.CRTypeFeature, "out"), domain.RunFailed)
+
+			run, err := internal.Load[domain.ExecutionRun](store, "runs/cr-1/cr-1-phase-0-add-thing.yaml")
+			if err != nil {
+				t.Fatalf("run record should be written: %v", err)
+			}
+			if run.Routing == nil || run.Routing.Outcome != tt.want {
+				t.Fatalf("routing outcome = %+v, want %q", run.Routing, tt.want)
+			}
+			if len(run.Usage) != 3 {
+				t.Fatalf("usage entries = %d, want the three attempts that ran", len(run.Usage))
+			}
+			if totals := run.UsageTotals(); totals.ChargedCostUSD != 2.5 {
+				t.Errorf("charged cost = %v, want the 2.5 already spent", totals.ChargedCostUSD)
+			}
+			// Nothing passed, and the record says so per attempt rather than only for
+			// the run as a whole.
+			for _, e := range run.Usage {
+				if e.Outcome == domain.AttemptPassed {
+					t.Errorf("entry %d reports passed, want the attempt outcomes the loop recorded", e.Iteration)
+				}
+			}
+		})
+	}
+}
+
+// The outcome is booked onto the attempt the loop just made, which is the last one
+// recorded - the same attempt its usage was booked onto.
+func TestRecordAttemptOutcome_BooksOntoTheAttemptJustMade(t *testing.T) {
+	item := &domain.WorkItem{
+		ExecutorAttempts: []domain.ExecutorAttempt{
+			{Iteration: 1, Role: domain.ExecutorRoleDefault, Model: "sonnet"},
+			{Iteration: 2, Role: domain.ExecutorRoleDefault, Model: "sonnet"},
+		},
+	}
+
+	recordAttemptOutcome(item, domain.AttemptFailed, validators.FailureComprehension)
+
+	if item.ExecutorAttempts[0].Outcome != "" {
+		t.Errorf("earlier attempt = %q, want it untouched", item.ExecutorAttempts[0].Outcome)
+	}
+	last := item.ExecutorAttempts[1]
+	if last.Outcome != domain.AttemptFailed || last.FailureClass != string(validators.FailureComprehension) {
+		t.Errorf("last attempt = %q/%q, want failed/comprehension", last.Outcome, last.FailureClass)
+	}
+
+	// A passing attempt carries no class, and an item with no attempts is a no-op
+	// rather than a panic - the same contract the usage booking has.
+	recordAttemptOutcome(item, domain.AttemptPassed, "")
+	if last := item.ExecutorAttempts[1]; last.Outcome != domain.AttemptPassed || last.FailureClass != "" {
+		t.Errorf("last attempt = %q/%q, want passed with the class cleared", last.Outcome, last.FailureClass)
+	}
+	recordAttemptOutcome(&domain.WorkItem{}, domain.AttemptFailed, validators.FailureMechanical)
 }

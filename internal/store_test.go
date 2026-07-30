@@ -2449,3 +2449,90 @@ models:
 		}
 	}
 }
+
+// Run records are committed and read as history, so they are formatted like every
+// other Utopia YAML rather than however yaml.Marshal indented them - and the
+// transcript survives the formatting pass byte for byte.
+func TestSaveExecutionRun_WritesThroughTheSharedFormatter(t *testing.T) {
+	dir := t.TempDir()
+	store := NewYAMLStore(dir)
+
+	transcript := "--- iteration 1 ---\nfixed `internal/store.go`:\n\n\tno completion token: retrying\n\n<COMPLETE>\n"
+	run := &domain.ExecutionRun{
+		WorkItemID: "item-a",
+		CRID:       "cr-1",
+		Iterations: 2,
+		Outcome:    domain.RunCompleted,
+		Transcript: transcript,
+		Usage: []domain.UsageEntry{
+			{
+				Iteration: 1,
+				Role:      domain.ExecutorRoleDefault,
+				Outcome:   domain.AttemptFailed,
+				AttemptUsage: domain.AttemptUsage{
+					Available: true, Model: "claude-sonnet-5-20260101", InputTokens: 100,
+					CostUSD: 0.25, CostBasis: domain.CostBasisCharged,
+				},
+			},
+		},
+	}
+	if err := store.SaveExecutionRun(run); err != nil {
+		t.Fatalf("SaveExecutionRun(): %v", err)
+	}
+
+	written, err := os.ReadFile(filepath.Join(dir, "runs", "cr-1", "item-a.yaml"))
+	if err != nil {
+		t.Fatalf("reading the record: %v", err)
+	}
+	formatted, err := FormatYAML(written)
+	if err != nil {
+		t.Fatalf("FormatYAML(): %v", err)
+	}
+	if string(written) != string(formatted) {
+		t.Errorf("record on disk is not what the formatter produces:\n%s", written)
+	}
+	if !strings.Contains(string(written), "\n  - iteration: 1") {
+		t.Errorf("record =\n%s\nwant the usage entries indented by the shared config (2 spaces)", written)
+	}
+
+	loaded, err := Load[domain.ExecutionRun](store, "runs/cr-1/item-a.yaml")
+	if err != nil {
+		t.Fatalf("Load(): %v", err)
+	}
+	if loaded.Transcript != transcript {
+		t.Errorf("transcript round-tripped to %q, want it unchanged by formatting", loaded.Transcript)
+	}
+	if len(loaded.Usage) != 1 || loaded.Usage[0].InputTokens != 100 || !loaded.Usage[0].Available {
+		t.Errorf("usage round-tripped to %+v, want the entry intact", loaded.Usage)
+	}
+}
+
+// A record written before usage was persisted stays readable, and its silence
+// about spend reads as unknown rather than as zero.
+func TestLoadExecutionRun_WithoutUsageEntriesStaysReadable(t *testing.T) {
+	dir := t.TempDir()
+	store := NewYAMLStore(dir)
+
+	legacy := "workitem_id: item-old\ncr_id: cr-1\nspec_ref: my-spec.add-thing\niterations: 2\noutcome: completed\nstatus: unprocessed\ntranscript: |\n  did the work\n"
+	if err := os.MkdirAll(filepath.Join(dir, "runs", "cr-1"), 0755); err != nil {
+		t.Fatalf("MkdirAll(): %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "runs", "cr-1", "item-old.yaml"), []byte(legacy), 0644); err != nil {
+		t.Fatalf("WriteFile(): %v", err)
+	}
+
+	runs, err := store.ListExecutionRuns()
+	if err != nil {
+		t.Fatalf("ListExecutionRuns(): %v", err)
+	}
+	if len(runs) != 1 {
+		t.Fatalf("runs = %d, want the record without usage entries listed", len(runs))
+	}
+	if runs[0].Usage != nil {
+		t.Errorf("usage = %+v, want no list at all", runs[0].Usage)
+	}
+	totals := domain.TotalRunUsage(runs)
+	if totals.RecordsWithoutUsage != 1 || totals.TotalTokens() != 0 || totals.Complete() {
+		t.Errorf("totals = %+v, want the record counted as unknown spend rather than zero", totals)
+	}
+}
