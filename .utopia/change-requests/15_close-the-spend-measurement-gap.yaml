@@ -1,0 +1,129 @@
+id: 15_close-the-spend-measurement-gap
+type: enhancement
+title: Account for the spend the reports currently cannot see - non-executor roles, rework, and turn-budget headroom
+status: draft
+notes: |
+    Measured from the backfilled run records plus the Claude Code session logs, the
+    reports currently see about a third of what the project actually spent:
+
+      executor attempts with run records   43 attempts   $249.65   in the reports
+      validator attempts                   21 attempts    $39.32   recorded nowhere
+      executor attempts, pre-CR-09 items   58 attempts   $431.17   no run record exists
+
+    Validators alone add ~16% on top of executor spend and appear in no report, so
+    every cost-per-completion figure is understated by at least that much. Cause is
+    concrete: internal/validators/runner.go:287 and internal/validators/router.go:69
+    call cli.Prompt without WithUsageCapture(true), so the CLI is never asked for a
+    result object and there is nothing to record. internal/ralph/scoping.go:215 does
+    ask for usage and then discards it with `if _, err :=`.
+
+    Separately, this CR adds the two report surfaces the existing data can already
+    support but does not expose:
+
+      Rework. Cost is dominated by repeat attempts, not by model choice. Median
+      work-item cost by iteration count: 1 iteration $4.06, 2 iterations $12.55,
+      3 iterations $18.69 - a 4.6x spread. Attempt cost correlates with
+      cache_read_tokens at r=+0.932, so spend tracks context times turns, which
+      chunking sets. The actionable figure is what share of spend went to attempts
+      that were rejected, and that is computable from entries already persisted.
+
+      Turn-budget headroom. Turns per attempt is already recorded; the configured
+      turn budget is not recorded alongside it, so nobody can tell a work item that
+      finished comfortably from one that finished just under the cap - and the
+      latter predicts a future failure.
+
+    Deliberately out of scope: comparing models by cost per completion. That is not
+    a data-volume problem and this CR does not pretend to fix it. Every fable-5
+    attempt on record is an escalated retry of work opus-5 had already failed
+    (6 attempts, all role escalated-executor, all iteration 2 or 3), so model, role
+    and item difficulty are the same variable and no amount of further observation
+    separates them. A trustworthy comparison needs a replay harness that runs the
+    same work item from the same parent commit under both models.
+changes:
+    - operation: add
+      spec: model-economics
+      feature:
+          id: non-executor-attempt-usage
+          description: |
+              Every Claude invocation the execution loop makes on a work item's
+              behalf records what it spent, not just the executor attempts. A
+              validator, the relevance router and the scoper each cost real tokens,
+              and a total that omits them understates the work item.
+          acceptance_criteria:
+              - Validator invocations ask the CLI for structured output and record the usage it reports, on the same terms as an executor attempt
+              - The relevance router's invocation records its usage
+              - The scoper's usage is recorded rather than discarded
+              - An invocation whose usage could not be read is recorded as unavailable rather than dropped, so the attempt is still visible as having happened
+              - Each recorded entry names the role that spent it, distinguishing validator, router and scoper from the executor roles
+          hints:
+              - internal/validators/runner.go:287 and internal/validators/router.go:69 both call cli.Prompt without WithUsageCapture(true) - that flag is what makes the CLI return a result object at all
+              - internal/ralph/scoping.go:215 already passes WithUsageCapture(true) and then throws the result away with `if _, err :=`
+              - internal/ralph/ralph.go:476 is the working precedent for an executor attempt
+              - domain.UnavailableUsage (internal/domain/usage.go:97) is the existing way to record that an invocation ran and its accounting could not be read
+    - operation: add
+      spec: model-economics
+      feature:
+          id: support-spend-persistence
+          description: |
+              Non-executor spend is persisted on the work item's run record in its
+              own list, kept separate from the executor iteration list. Folding a
+              validator into the iteration list would corrupt every per-iteration
+              figure derived from it; leaving it out entirely understates the work
+              item. It therefore sits alongside, and is reported alongside.
+          acceptance_criteria:
+              - A run record carries non-executor usage in a list separate from the executor usage entries
+              - Each non-executor entry records which executor iteration it accompanied, so support spend can be attributed to the attempt that triggered it
+              - Executor-only totals - attempts, mean iterations, first-pass rate - are computed from the executor list alone and are unchanged by the presence of support spend
+              - A work item's full cost is reportable as executor spend plus support spend, with the two figures also available separately
+              - A run record written before support spend was captured reads back with an empty support list rather than failing
+          hints:
+              - ExecutionRun is internal/domain/documentation.go:133; UsageEntriesFor (internal/domain/usage.go:169) is the projection precedent
+              - TotalUsage (usage.go:264) and TotalRunUsage (usage.go:305) are where the separate-but-summable arithmetic belongs
+    - operation: add
+      spec: model-economics
+      feature:
+          id: rework-report
+          description: |
+              A report that says what share of spend bought rejected work. Since
+              cost scales with repeat attempts rather than model choice, this is the
+              figure that identifies where money is actually going.
+          acceptance_criteria:
+              - The report states total spend split into spend on attempts that passed and spend on attempts that were rejected, and the rejected share as a percentage
+              - Rework is broken down by failure class, so a mechanical failure loop is distinguishable from a comprehension one
+              - Rework is broken down by target spec, so a spec whose work items repeatedly fail is identifiable
+              - Median and maximum work-item cost are reported by iteration count, since the distribution is wide and a mean alone misrepresents it
+              - Support spend from validators, router and scoper is included and shown as its own line rather than folded into either the passed or rejected executor figure
+              - Attempts with unavailable usage are counted and excluded from the totals, consistent with the existing reports
+          hints:
+              - internal/cli/report.go holds the existing three report commands and the shared reading-notes footer; internal/analysis/economics.go holds the aggregation
+              - UsageEntry already carries Outcome and FailureClass (internal/domain/usage.go:144), so the split needs no new capture
+    - operation: add
+      spec: model-economics
+      feature:
+          id: turn-budget-headroom
+          description: |
+              The turn budget an attempt ran under is recorded alongside the turns
+              it actually used, so headroom is knowable after the fact. An attempt
+              that completed just under its cap is a near miss, and near misses
+              predict the multi-iteration work items that dominate cost.
+          acceptance_criteria:
+              - Each executor usage entry records the effective turn budget the attempt ran under, so headroom survives a later config change
+              - A report shows turns used against turn budget per work item, and flags attempts that finished within a narrow margin of the cap
+              - Attempts halted by the turn cap are distinguished from attempts that finished on their own well inside it
+              - An entry with no recorded turn budget is reported as unknown headroom rather than as full headroom
+          hints:
+              - AttemptUsage already records Turns (internal/domain/usage.go:82); the budget comes from work_items.turn_budget and is applied at internal/ralph/ralph.go:476 via WithMaxTurns
+              - Record the resolved budget rather than reading config at report time - config changes and the historical record must not move with it
+    - operation: modify
+      spec: agentic-validators
+      feature_id: validator-runner
+      criteria:
+          add:
+              - The runner asks the CLI for structured output so each validator invocation's token usage and cost are readable, and records them
+              - A validator whose usage cannot be read still returns its verdict, and the unreadable accounting is recorded as unavailable rather than failing the gate
+    - operation: modify
+      spec: agentic-validators
+      feature_id: validator-relevance-router
+      criteria:
+          add:
+              - The router's invocation records its token usage and cost, so routing overhead is attributable rather than invisible

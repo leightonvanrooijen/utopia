@@ -1,0 +1,42 @@
+workitem_id: 06_observability-unified-output-phase-3-diagnostic-channel-discipline
+cr_id: 06_observability-unified-output
+spec_ref: 06_observability-unified-output-phase-3.diagnostic-channel-discipline
+iterations: 1
+completed_at: 2026-07-30T21:22:55.388417+10:00
+outcome: completed
+status: unprocessed
+transcript: |
+    --- iteration 1 ---
+    Done. All 1396 tests pass.
+
+    What changed:
+    - `internal/ralph` (`ralph.go`, `ratelimit.go`, `engine.go`, `scoping.go`, `escalation_context.go`, `telemetry.go`): ~55 `Printf`/`Println` diagnostic sites now `Progressf`. Text byte-identical, stream differs.
+    - `internal/harvest/harvest.go`: session summary + runs hint + session-ended lines to `Progressf`.
+    - `internal/discover/discover.go`: `newProgress` builds over `.Err()`, not `.Out()`.
+    - Loop status lines routed through `itemOut` so each diagnostic carries `work_item_id` (they couldn't while bypassing slog).
+
+    Tests:
+    - `TestExecute_ReportsProgressOnTheDiagnosticChannelOnly` asserts stdout empty, both status lines on the diagnostic channel, nothing leaked to process stdout.
+    - Added `captureStd` (both streams); ledger tests now assert per-stream - ledger line on stderr, failure block on stdout.
+
+    Preserved: step-timing summary, handle resolution ledger (both on diagnostic channel), failure-output blocks on stdout (CR 05's), `internal/validators` interactive prompts on stdout.
+
+    <COMPLETE>
+routing:
+    cr_type: feature
+    attempts:
+        - iteration: 1
+          role: default-executor
+          model: ""
+          effort: medium
+    sonnet_attempts: 1
+    opus_execution_attempts: 0
+    mechanical_failures: 0
+    comprehension_failures: 0
+    reclassified_failures: 0
+    scoping_escalations: 0
+    spec_rewritten: false
+    outcome: passed
+    duration_seconds: 505.374649542
+    duration: 8m25s
+    cost_note: Token counts, cache hits and monetary cost are not captured - not zero, not observable. Utopia drives the claude CLI, which reports none of them (ADR-005). Cost is approximated from attempts, sonnet_attempts and opus_execution_attempts together with the model each attempt ran on.

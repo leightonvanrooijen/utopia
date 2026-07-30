@@ -7,7 +7,7 @@ title: |
     diagnostic "must not land in the stdout a caller pipes". The execution
     loop, harvest and discover do not: roughly 70 semantically diagnostic
     lines land on stdout.
-status: in_progress
+status: completed
 prompt: |-
     ## TASK
 
@@ -75,3 +75,11 @@ constraints:
 order: 0
 estimated_complexity: medium
 iteration_count: 1
+selected_validators:
+    - spec-intent
+executor_attempts:
+    - iteration: 1
+      role: default-executor
+      model: ""
+      effort: medium
+validators_routed: true
