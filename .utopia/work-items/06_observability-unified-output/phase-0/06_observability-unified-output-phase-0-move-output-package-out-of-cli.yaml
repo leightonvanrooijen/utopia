@@ -1,0 +1,92 @@
+id: 06_observability-unified-output-phase-0-move-output-package-out-of-cli
+spec_ref: 06_observability-unified-output-phase-0.move-output-package-out-of-cli
+title: |
+    internal/ralph, internal/harvest and internal/discover already import
+    internal/cli/ui, so domain packages depend on the CLI layer today. That
+    inversion is why the unification has never happened: the package is
+    reachable, but it lives in the wrong place and nothing outside
+    internal/cli is given a Printer to use, so those packages fall back to
+    bare fmt.Printf.
+
+    Move the package out from under internal/cli to a neutral location that
+    any layer may import, and leave everything else alone. Pure relocation -
+    no new methods, no behaviour change, no call-site rewrites beyond the
+    import path.
+status: pending
+prompt: |-
+    ## TASK
+
+    internal/ralph, internal/harvest and internal/discover already import
+    internal/cli/ui, so domain packages depend on the CLI layer today. That
+    inversion is why the unification has never happened: the package is
+    reachable, but it lives in the wrong place and nothing outside
+    internal/cli is given a Printer to use, so those packages fall back to
+    bare fmt.Printf.
+
+    Move the package out from under internal/cli to a neutral location that
+    any layer may import, and leave everything else alone. Pure relocation -
+    no new methods, no behaviour change, no call-site rewrites beyond the
+    import path.
+
+
+    Acceptance criteria:
+    - The output package no longer lives under internal/cli
+    - No package outside the CLI layer imports internal/cli
+    - Printer, Progress, Summary, Duration and ConfidenceGlyph keep their existing exported names and signatures
+    - Every existing call site compiles with only its import path changed
+    - Output is byte-identical to before the change, on the same streams
+    - go test ./... passes
+
+
+
+    ## HINTS
+
+    - Current importers outside the CLI layer are internal/discover/collect.go, internal/discover/discover.go, internal/harvest/harvest.go, internal/ralph/engine.go, internal/ralph/ralph.go and internal/ralph/timing.go
+    - The package is 4 files and roughly 220 non-test lines - ui.go, summary.go, progress.go, duration.go
+    - Suggested destination is internal/output, but any location outside internal/cli that expresses "results and diagnostics" is acceptable
+    - This should be close to a git mv plus an import rewrite - resist the urge to improve the API in this phase
+
+
+
+    ## STANDARDS
+
+    This project defines coding standards in .utopia/standards/. Before implementing, read the standards docs relevant to the files this task touches:
+
+    - id: cli-organization
+      description: How to structure cobra commands in internal/cli: thin handlers that own the CLI frame and delegate the algorithm to domain packages.
+      tags: go, cli, cobra, architecture
+      path: .utopia/standards/cli-organization.md
+    - id: error-handling
+      description: How errors are created, wrapped, matched, and surfaced: typed domain errors for branching, %w wrapping for infrastructure, one exit point in root.go.
+      tags: go, errors, cli
+      path: .utopia/standards/error-handling.md
+    - id: terminal-output
+      description: One shared output vocabulary (glyphs, banners, progress) routed through cobra's injectable writers so command output is consistent and testable.
+      tags: go, cli, ux, output
+      path: .utopia/standards/terminal-output.md
+
+
+    ## CONSTRAINTS
+
+    - This is a refactor. Existing behavior MUST be preserved.
+    - All existing tests must pass without modification
+    - Do not introduce new abstractions, interfaces, or packages
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - This is a refactor. Existing behavior MUST be preserved.
+    - All existing tests must pass without modification
+    - Do not introduce new abstractions, interfaces, or packages
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+order: 0
+estimated_complexity: medium
