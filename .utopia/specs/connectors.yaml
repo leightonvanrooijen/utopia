@@ -1,7 +1,7 @@
 id: connectors
 title: connectors
 created: "2026-07-27T18:56:05.450266+10:00"
-updated: "2026-07-27T21:36:47.506461+10:00"
+updated: "2026-07-30T20:08:26.401481+10:00"
 description: ""
 features:
     - id: connector-config
@@ -73,6 +73,8 @@ features:
         - Cancelling a handle sends SIGTERM to the process group, then SIGKILL after a grace period
         - Joining a handle blocks until process exit and captures exit code and stdout
         - A handle exceeding its timeout is killed and its outcome recorded as failed
+        - When a handle is cancelled, an action error that was caused by the cancellation (the context being cancelled, or a subprocess killed by the SIGTERM/SIGKILL the cancellation sent) is reported as a cancellation and is not surfaced as a connector failure or error message
+        - A cancellation resolution log line does not include a subordinate error string that reads like a genuine failure (for example the git-diff-killed message seen when verification failure cancels an after-workitem validator)
 
     - id: speculative-events
       description: |
