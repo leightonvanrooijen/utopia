@@ -1,0 +1,51 @@
+id: 04_connectors-cancelled-handle-no-false-error-modify-subscription-engine
+spec_ref: 04_connectors-cancelled-handle-no-false-error.modify-subscription-engine
+title: Modify the subscription-engine feature
+status: pending
+prompt: |-
+    ## TASK
+
+    Modify the subscription-engine feature
+
+    Acceptance criteria:
+    - When a handle is cancelled, an action error that was caused by the cancellation (the context being cancelled, or a subprocess killed by the SIGTERM/SIGKILL the cancellation sent) is reported as a cancellation and is not surfaced as a connector failure or error message
+    - A cancellation resolution log line does not include a subordinate error string that reads like a genuine failure (for example the git-diff-killed message seen when verification failure cancels an after-workitem validator)
+
+
+
+    ## STANDARDS
+
+    This project defines coding standards in .utopia/standards/. Before implementing, read the standards docs relevant to the files this task touches:
+
+    - id: cli-organization
+      description: How to structure cobra commands in internal/cli: thin handlers that own the CLI frame and delegate the algorithm to domain packages.
+      tags: go, cli, cobra, architecture
+      path: .utopia/standards/cli-organization.md
+    - id: error-handling
+      description: How errors are created, wrapped, matched, and surfaced: typed domain errors for branching, %w wrapping for infrastructure, one exit point in root.go.
+      tags: go, errors, cli
+      path: .utopia/standards/error-handling.md
+    - id: terminal-output
+      description: One shared output vocabulary (glyphs, banners, progress) routed through cobra's injectable writers so command output is consistent and testable.
+      tags: go, cli, ux, output
+      path: .utopia/standards/terminal-output.md
+
+
+    ## CONSTRAINTS
+
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+order: 0
+estimated_complexity: medium
