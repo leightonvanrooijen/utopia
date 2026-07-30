@@ -33,6 +33,10 @@ func newStepTimings() *stepTimings {
 
 // summary renders the total wall clock with its per-category breakdown.
 //
+// It is a diagnostic like the status lines the per-step durations are appended
+// to, so the caller emits it on the diagnostic channel - a caller piping the
+// command's stdout gets the result, not an account of where the time went.
+//
 // Total is measured, not summed: the categories account for part of it rather
 // than partitioning it. Validators launch speculatively at
 // workitem-completion-claimed and run alongside verification, so their share

@@ -109,7 +109,7 @@ phases:
                 - Verbose gating currently exists only in Progress.verbose and claude.CLI.WithVerbose - there is no global level today
                 - Register the persistent flag in internal/cli/root.go where the Printer is already constructed
     - type: feature
-      status: in-progress
+      status: complete
       changes:
         - operation: add
           spec: observability
@@ -135,6 +135,7 @@ phases:
                 - The misclassified sites are concentrated in internal/ralph/ralph.go, internal/ralph/ratelimit.go, internal/ralph/engine.go, internal/harvest/harvest.go and internal/discover
                 - The roughly 157 existing Progressf call sites are already correctly classified and need no change
     - type: enhancement
+      status: in-progress
       changes:
         - operation: modify
           spec: execution-ralph
@@ -152,4 +153,4 @@ phases:
             only the command's result. Timing is captured in the loop itself (start
             marker before the step, elapsed after it), so the Claude and validator
             agents are timed as black-box calls without changing their APIs.
-current_phase: 3
+current_phase: 4
