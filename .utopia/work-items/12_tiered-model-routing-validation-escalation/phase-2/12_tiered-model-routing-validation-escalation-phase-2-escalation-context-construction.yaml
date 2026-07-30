@@ -13,7 +13,7 @@ title: |
     reasoning: the validator's diagnosis, the corrected intent, the
     final diff and the verbatim tooling output. What the model
     thought on the way there is discarded.
-status: in_progress
+status: completed
 prompt: |-
     ## TASK
 

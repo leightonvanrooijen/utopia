@@ -1,0 +1,20 @@
+workitem_id: 12_tiered-model-routing-validation-escalation-phase-2-escalation-context-construction
+cr_id: 12_tiered-model-routing-validation-escalation
+spec_ref: 12_tiered-model-routing-validation-escalation-phase-2.escalation-context-construction
+iterations: 1
+completed_at: 2026-07-30T10:13:42.213512+10:00
+outcome: completed
+status: unprocessed
+transcript: |
+    --- iteration 1 ---
+    Done. What changed:
+
+    - `internal/ralph/escalation_context.go` (new): `escalationContext` + `buildEscalationContext`/`render` - the one place both escalated paths get their evidence. `buildEscalatedPrompt` for escalated execution, `recordFailureConclusions`, `escalationDiff`. Scoper's `changeRequestSource`/`specExcerpt`/`adrExcerpt` moved here as free functions taking the store, so nothing is duplicated.
+    - `internal/ralph/ralph.go:370` - branches on `item.ComprehensionCount > 0`: escalated gets fresh context, mechanical retry keeps `buildPrompt(item)` byte-for-byte. Gate failure records conclusions; both `escalateScoping` call sites pass the working-tree diff.
+    - `internal/ralph/scoping.go` - `scoper.buildPrompt` renders the shared context (so it now also carries final diff + verbatim tooling output); `diagnosisSection` narrowed to `escalationReason` (framing only, evidence comes from the shared render); `resumeAgainst` clears `FailureConclusions`.
+    - `internal/domain/workitem.go` - `FailureConclusions []FailureConclusion` (iteration, validator, class, diagnosis, corrected intent - conclusions only).
+    - `internal/ralph/escalation_context_test.go` - plants a run transcript with sentinel reasoning, tool-call log and partial diff, asserts neither constructed prompt contains any of it while both carry diagnosis, corrected intent, final diff and verbatim output; plus a test that the non-escalated retry prompt is unchanged.
+
+    `go vet ./...` clean, 1135 tests pass.
+
+    <COMPLETE>
