@@ -1,0 +1,36 @@
+workitem_id: 10_work-item-turn-budget-and-sizing-phase-1-modify-work-item-model
+cr_id: 10_work-item-turn-budget-and-sizing
+spec_ref: 10_work-item-turn-budget-and-sizing-phase-1.modify-work-item-model
+iterations: 1
+completed_at: 2026-07-30T11:02:41.506913+10:00
+outcome: completed
+status: unprocessed
+transcript: |
+    --- iteration 1 ---
+    Done. `904abc6`.
+
+    - `internal/domain/workitem.go`: `SourceFeatureID string` (`source_feature_id,omitempty`), `CriteriaOrigin CriteriaOrigin` (`criteria_origin,omitempty`); new `CriteriaOrigin` type + `CriteriaOriginPartitioned`/`CriteriaOriginAuthored`. `NewWorkItem` sets `SourceFeatureID = featureID`, leaves `CriteriaOrigin` empty - unsplit case.
+    - `internal/chunk/chunk.go:generateWorkItems`: restates `SourceFeatureID` from `unit.sourceFeature`, so a split slice reports parent feature (no-op unsplit).
+    - Tests: constants, YAML round trip, omitted keys when unset, source IDs across a split, unsplit stays empty. `go vet ./...` clean, full suite 1209 pass.
+
+    Note: `.utopia/validators/_template.md` had uncommitted edits from outside this task - left unstaged, not mine to commit.
+
+    <COMPLETE>
+routing:
+    cr_type: feature
+    attempts:
+        - iteration: 1
+          role: default-executor
+          model: ""
+          effort: medium
+    sonnet_attempts: 1
+    opus_execution_attempts: 0
+    mechanical_failures: 0
+    comprehension_failures: 0
+    reclassified_failures: 0
+    scoping_escalations: 0
+    spec_rewritten: false
+    outcome: passed
+    duration_seconds: 182.124427583
+    duration: 3m02s
+    cost_note: Token counts, cache hits and monetary cost are not captured - not zero, not observable. Utopia drives the claude CLI, which reports none of them (ADR-005). Cost is approximated from attempts, sonnet_attempts and opus_execution_attempts together with the model each attempt ran on.

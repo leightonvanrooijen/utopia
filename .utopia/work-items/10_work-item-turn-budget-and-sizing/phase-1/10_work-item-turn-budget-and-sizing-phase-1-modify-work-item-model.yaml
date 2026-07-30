@@ -1,7 +1,7 @@
 id: 10_work-item-turn-budget-and-sizing-phase-1-modify-work-item-model
 spec_ref: 10_work-item-turn-budget-and-sizing-phase-1.modify-work-item-model
 title: Modify the work-item-model feature
-status: in_progress
+status: completed
 prompt: |-
     ## TASK
 
@@ -51,3 +51,8 @@ constraints:
 order: 1
 estimated_complexity: medium
 iteration_count: 1
+executor_attempts:
+    - iteration: 1
+      role: default-executor
+      model: ""
+      effort: medium
