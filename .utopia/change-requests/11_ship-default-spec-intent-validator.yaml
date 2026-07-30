@@ -1,0 +1,70 @@
+id: 11_ship-default-spec-intent-validator
+type: feature
+title: Ship a repo-agnostic spec-intent validator with `utopia init` and register it live
+status: draft
+changes:
+  - operation: add
+    spec: agentic-validators
+    feature:
+      id: default-spec-intent-validator
+      description: |
+        `utopia init` writes a repo-agnostic `spec-intent` validator into
+        `.utopia/validators/spec-intent.md`, alongside the existing `_template.md`.
+
+        Today init ships only `_template.md`, so a fresh project has zero
+        registered validators. Because a `failure_class` can only come from a
+        validator verdict, that means `models.execute_escalated`, `models.scoper`
+        and the whole escalation-routing spec are unreachable configuration in
+        every new repo, and a work item that compiles, passes its tests and
+        implements the wrong thing ships silently. Utopia hand-wrote this
+        validator for itself; shipping it makes the gate the default rather
+        than an artefact of one repo's setup.
+
+        The shipped prompt must carry no Utopia-codebase specifics: no Go, no
+        hardcoded `./scripts/verify.sh`, no assumed test framework, no
+        hardcoded standards filenames.
+      acceptance_criteria:
+        - "`utopia init` in a directory with no `.utopia/` creates `.utopia/validators/spec-intent.md`"
+        - "The written file's frontmatter has `id: spec-intent`, a non-empty `description`, and `allowed_tools: [Read, Glob, Grep]`"
+        - "The written prompt instructs the validator to emit the same verdict block the validator runner already parses, using the existing field names `verdict`, `failure_class`, `diagnosis`, `corrected_intent`, `confidence`, `spec_defect_suspected`, with no new or renamed fields"
+        - "The written prompt names no programming language, test framework, build tool, or specific verification command; it refers to the project's configured `verification.command` instead"
+        - "The written prompt resolves spec and ADR locations through the configured `paths.specs` and `paths.adrs`, falling back to the defaults when unset"
+        - "The written prompt treats project standards as optional: when the project documents no standards, the validator flags no standards violations rather than inventing rules"
+        - "Re-running `utopia init` in a project where `.utopia/validators/spec-intent.md` already exists leaves that file byte-for-byte unchanged"
+        - "The file written by init parses as a valid validator file under the existing validator-file-format rules"
+      hints:
+        - "A generalized draft of the prompt is at `.utopia/notes/spec-intent-generic-draft.md` - use it as the starting content rather than rewriting from scratch, and delete the note once the content lands in code."
+        - "The current Utopia-specific version is `.utopia/validators/spec-intent.md`; do not edit it, and do not let init overwrite it."
+        - "Follow the existing `validatorTemplate` pattern in `internal/cli/init.go` (const string + `os.Stat` / `os.IsNotExist` guard before write) rather than adding a new mechanism."
+        - "Configurable artifact paths live in the `paths` config keys - see the `configurable-artifact-paths` feature in the initialization spec for which keys actually exist (`specs`, `adrs`, `concepts`, `domain`). Work items are NOT in that set and stay at `.utopia/work-items/`."
+  - operation: add
+    spec: agentic-validators
+    feature:
+      id: default-validator-registration
+      description: |
+        `utopia init` registers the shipped `spec-intent` validator in the
+        project config so the gate is live out of the box, and defaults
+        `models.validators` to the stronger review tier.
+
+        Writing the file without registering it would leave escalation dead in
+        practice, since nothing runs an unregistered validator. Registration is
+        additive and follows init's existing merge behaviour: init only fills in
+        what is missing and reports what it added versus skipped, so it never
+        clobbers a project that has already made its own choices.
+
+        `always: true` on the entry is deliberate. The relevance router exists
+        to skip validators a diff cannot possibly violate; intent applies to
+        every diff by definition, and routing itself depends on this
+        validator's verdict, so it must never be routed away.
+      acceptance_criteria:
+        - "After `utopia init` on a fresh project, the config contains a validators entry with path `validators/spec-intent.md` and `always: true`"
+        - "After `utopia init` on a fresh project, `models.validators` is set to a stronger tier than `models.execute` rather than left unset"
+        - "Init reports the registration in its added/skipped output the same way it reports other config fields it filled in"
+        - "Re-running `utopia init` on a project whose config already lists a `validators/spec-intent.md` entry does not add a duplicate entry and does not change the existing entry's `always` value"
+        - "Re-running `utopia init` on a project that has other validators registered but not `spec-intent` adds the `spec-intent` entry while leaving the existing entries untouched"
+        - "Re-running `utopia init` on a project that already sets `models.validators` leaves that value unchanged"
+        - "A project initialized by `utopia init` and given a work item whose diff satisfies its tests but contradicts its acceptance criteria produces a validator verdict with a `failure_class`, i.e. escalation routing is reachable without any hand-editing of config"
+      hints:
+        - "Registration belongs in the same additive merge block in `internal/cli/init.go:runInit` that handles `verification.command`, using the `added` / `skipped` slices."
+        - "Match on the validator path when checking for an existing entry, not on list length - a project may already have unrelated validators registered."
+        - "Load-time validation already rejects an escalated model weaker than `models.execute`; check whether an equivalent rule covers `models.validators` before assuming the default is enforced."
