@@ -291,7 +291,8 @@ func (s *YAMLStore) SaveConfig(config *domain.Config) error {
 
 // LoadConfig reads the project configuration.
 // Returns an error if any configured model names, effort levels, connector
-// entries, the auth mode, or the escalation caps are invalid.
+// entries, the auth mode, the escalation caps, or the work-item turn budget are
+// invalid.
 func (s *YAMLStore) LoadConfig() (*domain.Config, error) {
 	config, err := Load[domain.Config](s, "config.yaml")
 	if err != nil {
@@ -331,6 +332,13 @@ func (s *YAMLStore) LoadConfig() (*domain.Config, error) {
 	// Validate the escalation caps at load time, so a cap that could never bound
 	// anything fails before a run starts rather than mid-loop.
 	if err := domain.ValidateEscalationConfig(config.Escalation); err != nil {
+		return nil, fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// Validate the work-item turn budget at load time, for the same reason as the
+	// escalation caps: a budget that could never bound anything must fail before
+	// an iteration is launched with it.
+	if err := domain.ValidateWorkItemsConfig(config.WorkItems); err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 

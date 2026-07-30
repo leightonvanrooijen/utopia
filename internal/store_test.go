@@ -1167,6 +1167,83 @@ effort:
 	}
 }
 
+func TestConfigWorkItems_TurnBudget(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	configContent := `project_context: Test context
+verification:
+    command: ./test.sh
+work_items:
+    turn_budget: 25
+`
+	if err := os.WriteFile(filepath.Join(store.baseDir, "config.yaml"), []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	config, err := store.LoadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error loading config: %v", err)
+	}
+	if got := config.WorkItems.TurnBudgetOr(); got != 25 {
+		t.Errorf("TurnBudgetOr() = %d, want 25", got)
+	}
+}
+
+// Config files written before the section existed must keep loading, and the
+// budget still resolves - to its default.
+func TestConfigWorkItems_OmittedSectionLoads(t *testing.T) {
+	store, cleanup := SetupTestStore(t)
+	defer cleanup()
+
+	configContent := `project_context: Test context
+verification:
+    command: ./test.sh
+`
+	if err := os.WriteFile(filepath.Join(store.baseDir, "config.yaml"), []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	config, err := store.LoadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error loading config: %v", err)
+	}
+	if config.WorkItems != nil {
+		t.Errorf("expected nil WorkItems when not configured, got %+v", config.WorkItems)
+	}
+	if got := config.WorkItems.TurnBudgetOr(); got != domain.DefaultTurnBudget {
+		t.Errorf("TurnBudgetOr() = %d, want the default %d", got, domain.DefaultTurnBudget)
+	}
+}
+
+// A budget of zero must fail at load time: an iteration allowed no turns can
+// never do anything, and finding that out mid-run costs a whole run.
+func TestConfigWorkItems_NonPositiveTurnBudgetProducesError(t *testing.T) {
+	for _, budget := range []string{"0", "-3"} {
+		t.Run(budget, func(t *testing.T) {
+			store, cleanup := SetupTestStore(t)
+			defer cleanup()
+
+			configContent := `project_context: Test context
+verification:
+    command: ./test.sh
+work_items:
+    turn_budget: ` + budget + "\n"
+			if err := os.WriteFile(filepath.Join(store.baseDir, "config.yaml"), []byte(configContent), 0644); err != nil {
+				t.Fatalf("failed to write config: %v", err)
+			}
+
+			_, err := store.LoadConfig()
+			if err == nil {
+				t.Fatalf("expected error for turn_budget %s, got nil", budget)
+			}
+			if !strings.Contains(err.Error(), "work_items.turn_budget") {
+				t.Errorf("expected error to name 'work_items.turn_budget', got: %v", err)
+			}
+		})
+	}
+}
+
 func TestConfigModels_InvalidModelNameProducesError(t *testing.T) {
 	store, cleanup := SetupTestStore(t)
 	defer cleanup()

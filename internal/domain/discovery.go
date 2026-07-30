@@ -51,6 +51,11 @@ type Config struct {
 	// Escalation bounds each escalation path the execution loop can take.
 	// If omitted entirely, the built-in caps apply. See EscalationConfig.
 	Escalation *EscalationConfig `yaml:"escalation,omitempty"`
+	// WorkItems holds settings that belong to work items rather than to any one
+	// command handling them - notably the shared turn budget both the chunker and
+	// the executor read. If omitted entirely, the built-in defaults apply.
+	// See WorkItemsConfig.
+	WorkItems *WorkItemsConfig `yaml:"work_items,omitempty"`
 }
 
 // PathsConfig configures where the specs, adrs, concepts, and domain folders live.

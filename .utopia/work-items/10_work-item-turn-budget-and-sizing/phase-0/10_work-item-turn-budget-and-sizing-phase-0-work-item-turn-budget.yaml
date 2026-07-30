@@ -15,7 +15,7 @@ title: |
     `execute` are separate commands; a flag on `execute` would be
     invisible to the chunker. It is named after work items rather than
     after either command because it belongs to neither.
-status: pending
+status: in_progress
 prompt: |-
     ## TASK
 
@@ -87,3 +87,4 @@ constraints:
     - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
 order: 0
 estimated_complexity: medium
+iteration_count: 1

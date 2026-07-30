@@ -1,214 +1,202 @@
 id: 10_work-item-turn-budget-and-sizing
 type: initiative
 title: Bound work-item cost with a shared turn budget, then size work items against it before chunking
-status: draft
+status: in-progress
 phases:
-    # ------------------------------------------------------------------
-    # PHASE 1 - the cost ceiling. Self-contained and independently
-    # valuable: it caps cost per iteration even if phase 2 never ships.
-    # ------------------------------------------------------------------
     - type: feature
+      status: in-progress
       changes:
-          - operation: add
-            spec: execution-ralph
-            feature:
-                id: work-item-turn-budget
-                description: |
-                    Add a configurable per-iteration turn ceiling for work-item execution,
-                    expressed as work_items.turn_budget in .utopia/config.yaml.
-
-                    The budget is a single shared knob with two enforcement postures. The
-                    executor treats it as a hard cap (passed to the Claude CLI as
-                    --max-turns). The chunker later treats the same value as a sizing
-                    target (phase 2). One number therefore governs both how large work
-                    items are cut and how much a single iteration may spend, so tuning
-                    cost means changing one value rather than keeping two in sync.
-
-                    It lives in config rather than as a CLI flag because `chunk` and
-                    `execute` are separate commands; a flag on `execute` would be
-                    invisible to the chunker. It is named after work items rather than
-                    after either command because it belongs to neither.
-                acceptance_criteria:
-                    - Config has an optional work_items section with a turn_budget integer field
-                    - work_items.turn_budget defaults to 40 when the section or field is omitted
-                    - A turn_budget of zero or a negative value is rejected at config load with an error naming the field
-                    - Config files with no work_items section continue to load without error
-                hints:
-                    - Config struct is domain.Config in internal/domain/discovery.go
-                    - Follow the pointer-to-struct-with-omitempty pattern used by PathsConfig and ModelConfig
-                    - Do not add turn_budget under the verification section - max_iterations is already misfiled there, see .utopia/notes/max-iterations-misfiled-under-verification.md
-
-          - operation: add
-            spec: execution-ralph
-            feature:
-                id: turn-cap-enforcement
-                description: |
-                    Pass work_items.turn_budget to the Claude CLI as --max-turns so a
-                    single iteration cannot run unbounded. Today no turn ceiling exists
-                    anywhere: baseArgs() passes only --permission-mode, --allowedTools
-                    and --model, so an iteration can burn 100+ turns before producing
-                    anything.
-
-                    --max-turns is a real flag on Claude Code 2.1.220, but it is hidden
-                    from --help; it was confirmed by option-parse probe against a bogus
-                    control flag. Its exhaustion behaviour was measured rather than
-                    assumed, and it does NOT slot into the existing no-token path as a
-                    naive reading suggests:
-
-                      exit code: 1 (non-zero)
-                      stdout:    "Reached max turns (N)"
-                      stderr:    empty
-
-                    A non-zero exit makes cmd.Output() return an error, so cli.Prompt
-                    returns an error and the loop takes the generic invocation-failed
-                    branch at ralph.go:298, NOT the no-token branch at 305.
-
-                    That branch's handling of failure state is CORRECT and must be left
-                    alone. It does not clear LastFailureOutput, and it should not.
-                    LastFailureOutput is written in exactly one place (ralph.go:378) from
-                    verification output when verification fails, so it means "the last
-                    known verification result, and it was a failure". A turn-capped
-                    iteration runs no verification, so nothing supersedes that value - it
-                    is the most recent evidence in existence, not stale data. Carrying a
-                    failure forward that the capped iteration happened to fix costs a few
-                    turns of the executor checking and moving on. Dropping a failure that
-                    is still live costs an entire fresh iteration that does not know
-                    verification ever failed, and may converge on <COMPLETE> and fail the
-                    same way. Cheap redundancy beats expensive blindness.
-
-                    What IS wrong on that branch is the logging. It reports "Claude
-                    invocation failed", indistinguishable from a crash, an auth error, or
-                    the monthly-spend-limit case that also exits 1. Turn exhaustion is
-                    normal, expected operation and must not read as breakage.
-
-                    So this needs explicit detection before the error branch - not to
-                    change the retry behaviour, but to classify and report it correctly.
-                    Detection follows the established DetectRateLimit / DetectSpendLimit
-                    pattern that already inspects stdout and stderr for exactly this class
-                    of CLI-signalled condition.
-
-                    Separately, and deliberately excluded here: no message about turns,
-                    limits, or the cap may reach the retry prompt. That is a scarcity
-                    signal - it says hurry, and it invites shortcuts. PREVIOUS FAILURES is
-                    task information, which is a different thing and is welcome. Partial
-                    work survives uncommitted in the working tree and the next fresh
-                    iteration rebuilds state from git and files, so a capped iteration is
-                    a ratchet rather than wasted spend.
-                acceptance_criteria:
-                    - Work-item execution invokes the Claude CLI with --max-turns set to the configured work_items.turn_budget
-                    - A DetectTurnExhaustion function reports whether a PromptResult's stdout or stderr indicates the turn cap was reached
-                    - Turn exhaustion is detected before the generic invocation-failed branch, so a capped iteration never logs as a Claude invocation failure
-                    - A turn-exhausted iteration is logged as expected operation, distinctly from both invocation failures and no-token retries
-                    - A turn-exhausted iteration preserves LastFailureOutput unchanged, so a still-unverified failure survives into the retry
-                    - No message referencing turns, turn limits, or the cap is injected into any retry prompt
-                    - A turn-exhausted iteration counts against max_iterations
-                    - Verification is not run for an iteration that exhausted the turn cap
-                    - A non-zero exit that is not turn exhaustion still takes the existing invocation-failed path unchanged
-                hints:
-                    - baseArgs() is at internal/claude.go:110
-                    - Detection belongs alongside DetectRateLimit and DetectSpendLimit in internal/ralph/ratelimit.go, and must be checked around ralph.go:283 where handleClaudeLimits already runs - before the err check at ralph.go:298
-                    - Do not route turn exhaustion through the no-token path at ralph.go:305-311, and do not copy its behaviour - it clears LastFailureOutput, which is the opposite of what is wanted here
-                    - The retry behaviour of the invocation-failed branch is already right; this change is about classification and logging, so resist the urge to restructure the branch
-                    - Verify the exact stdout marker rather than trusting this description; it was observed as "Reached max turns (1)" on 2.1.220 and may be worded differently in other versions
-                    - Detection should be resilient to the marker changing - a version bump must not silently reclassify turn exhaustion as an invocation failure, so consider a test that fails loudly if the marker stops matching
-                    - max_iterations (currently 6) still bounds retries, so the ceiling becomes turn_budget x max_iterations per work item
-
-    # ------------------------------------------------------------------
-    # PHASE 2 - the sizer. Stops the cap from firing routinely by
-    # cutting work items that fit the budget in the first place.
-    # ------------------------------------------------------------------
-    - type: feature
-      changes:
-          - operation: modify
-            spec: chunking-ralph-sequential
-            feature_id: ralph-sequential-strategy
+        - operation: add
+          spec: execution-ralph
+          feature:
+            id: work-item-turn-budget
             description: |
-                Implement the "ralph-sequential" chunking strategy.
-                One WorkItem per feature by default, split into several when a feature
-                exceeds the configured turn budget. Executed in spec order.
-            criteria:
-                edit:
-                    - old: "Strategy creates one WorkItem per feature in spec"
-                      new: "Strategy creates one WorkItem per feature, or several when the sizer splits an oversized feature"
-                add:
-                    - Order remains contiguous and sequential across split WorkItems, preserving spec order
-                    - WorkItems produced from one feature are ordered adjacently, in the order the sizer returned them
+                Add a configurable per-iteration turn ceiling for work-item execution,
+                expressed as work_items.turn_budget in .utopia/config.yaml.
 
-          - operation: modify
-            spec: chunking-ralph-sequential
-            feature_id: work-item-model
-            criteria:
-                add:
-                    - WorkItem has SourceFeatureID recording the feature it was derived from
-                    - WorkItem has CriteriaOrigin recording whether its criteria were partitioned from the feature or authored by the sizer
-                    - SourceFeatureID equals the feature ID and CriteriaOrigin is empty for WorkItems that were not split
+                The budget is a single shared knob with two enforcement postures. The
+                executor treats it as a hard cap (passed to the Claude CLI as
+                --max-turns). The chunker later treats the same value as a sizing
+                target (phase 2). One number therefore governs both how large work
+                items are cut and how much a single iteration may spend, so tuning
+                cost means changing one value rather than keeping two in sync.
 
-          - operation: add
-            spec: model-configuration
-            feature:
-                id: chunk-sizer-model
-                description: |
-                    Add a chunk_sizer entry to ModelConfig so the work-item sizer's model
-                    can be selected independently.
+                It lives in config rather than as a CLI flag because `chunk` and
+                `execute` are separate commands; a flag on `execute` would be
+                invisible to the chunker. It is named after work items rather than
+                after either command because it belongs to neither.
+            acceptance_criteria:
+                - Config has an optional work_items section with a turn_budget integer field
+                - work_items.turn_budget defaults to 40 when the section or field is omitted
+                - A turn_budget of zero or a negative value is rejected at config load with an error naming the field
+                - Config files with no work_items section continue to load without error
+            hints:
+                - Config struct is domain.Config in internal/domain/discovery.go
+                - Follow the pointer-to-struct-with-omitempty pattern used by PathsConfig and ModelConfig
+                - Do not add turn_budget under the verification section - max_iterations is already misfiled there, see .utopia/notes/max-iterations-misfiled-under-verification.md
+        - operation: add
+          spec: execution-ralph
+          feature:
+            id: turn-cap-enforcement
+            description: |
+                Pass work_items.turn_budget to the Claude CLI as --max-turns so a
+                single iteration cannot run unbounded. Today no turn ceiling exists
+                anywhere: baseArgs() passes only --permission-mode, --allowedTools
+                and --model, so an iteration can burn 100+ turns before producing
+                anything.
 
-                    It inherits models.default rather than defaulting to a cheap tier.
-                    The validator_router precedent does not apply: the router classifies
-                    a diff that already exists, with the evidence in front of it, whereas
-                    the sizer must estimate work that does not exist yet from a feature
-                    description. Whether "migrate all call sites" means three files or
-                    forty is unknowable without reasoning about the codebase, so the
-                    sizer needs real capability.
-                acceptance_criteria:
-                    - ModelConfig has a chunk_sizer field mapped to the chunk_sizer YAML key
-                    - models.chunk_sizer falls back to models.default when omitted
-                    - models.chunk_sizer does not default to a cheap tier independently of models.default
-                    - The chunk command resolves and applies the chunk_sizer model when invoking the sizer
-                hints:
-                    - ModelConfig is in internal/domain/discovery.go; note it currently has no chunk entry because chunking made no judgements
-                    - Use WithModel (internal/claude.go:75) as the other commands do, e.g. internal/cli/cr.go:441
+                --max-turns is a real flag on Claude Code 2.1.220, but it is hidden
+                from --help; it was confirmed by option-parse probe against a bogus
+                control flag. Its exhaustion behaviour was measured rather than
+                assumed, and it does NOT slot into the existing no-token path as a
+                naive reading suggests:
 
-          - operation: add
-            spec: chunking-ralph-sequential
-            feature:
-                id: work-item-sizing
-                description: |
-                    Before generating WorkItems, the chunker runs a single read-only
-                    agent over the whole document. The agent explores the codebase once
-                    and returns, for every feature, an assessment of whether it fits
-                    work_items.turn_budget and a split when it does not.
+                  exit code: 1 (non-zero)
+                  stdout:    "Reached max turns (N)"
+                  stderr:    empty
 
-                    One pass rather than one call per feature: exploration is amortised
-                    across all features, and the agent gains cross-feature context, so
-                    it can see that two features touch the same files and size both
-                    accordingly. Independent per-feature calls would re-explore the same
-                    repository and each be blind to the others.
+                A non-zero exit makes cmd.Output() return an error, so cli.Prompt
+                returns an error and the loop takes the generic invocation-failed
+                branch at ralph.go:298, NOT the no-token branch at 305.
 
-                    Splitting prefers partitioning the feature's existing acceptance
-                    criteria into bundles, which keeps every criterion traceable to the
-                    reviewed change request. Only when a single criterion is itself too
-                    large to partition may the sizer author sub-steps, and that
-                    escalation is recorded on the WorkItem so it is visible rather than
-                    silent.
+                That branch's handling of failure state is CORRECT and must be left
+                alone. It does not clear LastFailureOutput, and it should not.
+                LastFailureOutput is written in exactly one place (ralph.go:378) from
+                verification output when verification fails, so it means "the last
+                known verification result, and it was a failure". A turn-capped
+                iteration runs no verification, so nothing supersedes that value - it
+                is the most recent evidence in existence, not stale data. Carrying a
+                failure forward that the capped iteration happened to fix costs a few
+                turns of the executor checking and moving on. Dropping a failure that
+                is still live costs an entire fresh iteration that does not know
+                verification ever failed, and may converge on <COMPLETE> and fail the
+                same way. Cheap redundancy beats expensive blindness.
 
-                    The sizer is read-only. It must reason about the change, never make
-                    it.
-                acceptance_criteria:
-                    - The chunker invokes exactly one sizer agent per chunk operation, receiving all features in the document
-                    - The sizer is invoked with a read-only tool allowlist and cannot edit, write, or run mutating commands
-                    - The sizer receives work_items.turn_budget and assesses each feature against it
-                    - Features assessed as fitting the budget produce exactly one WorkItem, unchanged from current behaviour
-                    - Features assessed as exceeding the budget produce multiple WorkItems
-                    - A split that partitions existing criteria assigns every criterion of the feature to exactly one WorkItem, with none dropped or duplicated
-                    - Partitioned WorkItems record CriteriaOrigin as partitioned
-                    - The sizer only authors new criteria for a feature whose single criterion cannot be partitioned further
-                    - WorkItems with sizer-authored criteria record CriteriaOrigin as authored
-                    - Every produced WorkItem records SourceFeatureID naming the feature it came from
-                    - Chunk output reports each feature's sizing verdict and the number of WorkItems produced for it
-                    - A sizer invocation that fails or returns unparseable output falls back to one WorkItem per feature and reports the fallback
-                    - The sizer never merges two features into one WorkItem
-                hints:
-                    - Chunk() and ChunkPhase() are in internal/chunk/chunk.go; sizing runs after validateFeatures() and before WorkItem generation
-                    - Use WithAllowedTools (internal/claude.go:62) scoped to Read, Grep, Glob
-                    - internal/discover and internal/analysis are the existing precedents for agentic calls that return structured output
-                    - Keep prompt building (BuildPromptWithConstraints) unchanged - it operates per WorkItem and should not know a split happened
-                    - The fallback path matters - chunking must never become unusable because a sizer call failed
+                What IS wrong on that branch is the logging. It reports "Claude
+                invocation failed", indistinguishable from a crash, an auth error, or
+                the monthly-spend-limit case that also exits 1. Turn exhaustion is
+                normal, expected operation and must not read as breakage.
+
+                So this needs explicit detection before the error branch - not to
+                change the retry behaviour, but to classify and report it correctly.
+                Detection follows the established DetectRateLimit / DetectSpendLimit
+                pattern that already inspects stdout and stderr for exactly this class
+                of CLI-signalled condition.
+
+                Separately, and deliberately excluded here: no message about turns,
+                limits, or the cap may reach the retry prompt. That is a scarcity
+                signal - it says hurry, and it invites shortcuts. PREVIOUS FAILURES is
+                task information, which is a different thing and is welcome. Partial
+                work survives uncommitted in the working tree and the next fresh
+                iteration rebuilds state from git and files, so a capped iteration is
+                a ratchet rather than wasted spend.
+            acceptance_criteria:
+                - Work-item execution invokes the Claude CLI with --max-turns set to the configured work_items.turn_budget
+                - A DetectTurnExhaustion function reports whether a PromptResult's stdout or stderr indicates the turn cap was reached
+                - Turn exhaustion is detected before the generic invocation-failed branch, so a capped iteration never logs as a Claude invocation failure
+                - A turn-exhausted iteration is logged as expected operation, distinctly from both invocation failures and no-token retries
+                - A turn-exhausted iteration preserves LastFailureOutput unchanged, so a still-unverified failure survives into the retry
+                - No message referencing turns, turn limits, or the cap is injected into any retry prompt
+                - A turn-exhausted iteration counts against max_iterations
+                - Verification is not run for an iteration that exhausted the turn cap
+                - A non-zero exit that is not turn exhaustion still takes the existing invocation-failed path unchanged
+            hints:
+                - baseArgs() is at internal/claude.go:110
+                - Detection belongs alongside DetectRateLimit and DetectSpendLimit in internal/ralph/ratelimit.go, and must be checked around ralph.go:283 where handleClaudeLimits already runs - before the err check at ralph.go:298
+                - Do not route turn exhaustion through the no-token path at ralph.go:305-311, and do not copy its behaviour - it clears LastFailureOutput, which is the opposite of what is wanted here
+                - The retry behaviour of the invocation-failed branch is already right; this change is about classification and logging, so resist the urge to restructure the branch
+                - Verify the exact stdout marker rather than trusting this description; it was observed as "Reached max turns (1)" on 2.1.220 and may be worded differently in other versions
+                - Detection should be resilient to the marker changing - a version bump must not silently reclassify turn exhaustion as an invocation failure, so consider a test that fails loudly if the marker stops matching
+                - max_iterations (currently 6) still bounds retries, so the ceiling becomes turn_budget x max_iterations per work item
+    - type: feature
+      changes:
+        - operation: modify
+          spec: chunking-ralph-sequential
+          feature_id: ralph-sequential-strategy
+          description: |
+            Implement the "ralph-sequential" chunking strategy.
+            One WorkItem per feature by default, split into several when a feature
+            exceeds the configured turn budget. Executed in spec order.
+          criteria:
+            add:
+                - Order remains contiguous and sequential across split WorkItems, preserving spec order
+                - WorkItems produced from one feature are ordered adjacently, in the order the sizer returned them
+            edit:
+                - old: Strategy creates one WorkItem per feature in spec
+                  new: Strategy creates one WorkItem per feature, or several when the sizer splits an oversized feature
+        - operation: modify
+          spec: chunking-ralph-sequential
+          feature_id: work-item-model
+          criteria:
+            add:
+                - WorkItem has SourceFeatureID recording the feature it was derived from
+                - WorkItem has CriteriaOrigin recording whether its criteria were partitioned from the feature or authored by the sizer
+                - SourceFeatureID equals the feature ID and CriteriaOrigin is empty for WorkItems that were not split
+        - operation: add
+          spec: model-configuration
+          feature:
+            id: chunk-sizer-model
+            description: |
+                Add a chunk_sizer entry to ModelConfig so the work-item sizer's model
+                can be selected independently.
+
+                It inherits models.default rather than defaulting to a cheap tier.
+                The validator_router precedent does not apply: the router classifies
+                a diff that already exists, with the evidence in front of it, whereas
+                the sizer must estimate work that does not exist yet from a feature
+                description. Whether "migrate all call sites" means three files or
+                forty is unknowable without reasoning about the codebase, so the
+                sizer needs real capability.
+            acceptance_criteria:
+                - ModelConfig has a chunk_sizer field mapped to the chunk_sizer YAML key
+                - models.chunk_sizer falls back to models.default when omitted
+                - models.chunk_sizer does not default to a cheap tier independently of models.default
+                - The chunk command resolves and applies the chunk_sizer model when invoking the sizer
+            hints:
+                - ModelConfig is in internal/domain/discovery.go; note it currently has no chunk entry because chunking made no judgements
+                - Use WithModel (internal/claude.go:75) as the other commands do, e.g. internal/cli/cr.go:441
+        - operation: add
+          spec: chunking-ralph-sequential
+          feature:
+            id: work-item-sizing
+            description: |
+                Before generating WorkItems, the chunker runs a single read-only
+                agent over the whole document. The agent explores the codebase once
+                and returns, for every feature, an assessment of whether it fits
+                work_items.turn_budget and a split when it does not.
+
+                One pass rather than one call per feature: exploration is amortised
+                across all features, and the agent gains cross-feature context, so
+                it can see that two features touch the same files and size both
+                accordingly. Independent per-feature calls would re-explore the same
+                repository and each be blind to the others.
+
+                Splitting prefers partitioning the feature's existing acceptance
+                criteria into bundles, which keeps every criterion traceable to the
+                reviewed change request. Only when a single criterion is itself too
+                large to partition may the sizer author sub-steps, and that
+                escalation is recorded on the WorkItem so it is visible rather than
+                silent.
+
+                The sizer is read-only. It must reason about the change, never make
+                it.
+            acceptance_criteria:
+                - The chunker invokes exactly one sizer agent per chunk operation, receiving all features in the document
+                - The sizer is invoked with a read-only tool allowlist and cannot edit, write, or run mutating commands
+                - The sizer receives work_items.turn_budget and assesses each feature against it
+                - Features assessed as fitting the budget produce exactly one WorkItem, unchanged from current behaviour
+                - Features assessed as exceeding the budget produce multiple WorkItems
+                - A split that partitions existing criteria assigns every criterion of the feature to exactly one WorkItem, with none dropped or duplicated
+                - Partitioned WorkItems record CriteriaOrigin as partitioned
+                - The sizer only authors new criteria for a feature whose single criterion cannot be partitioned further
+                - WorkItems with sizer-authored criteria record CriteriaOrigin as authored
+                - Every produced WorkItem records SourceFeatureID naming the feature it came from
+                - Chunk output reports each feature's sizing verdict and the number of WorkItems produced for it
+                - A sizer invocation that fails or returns unparseable output falls back to one WorkItem per feature and reports the fallback
+                - The sizer never merges two features into one WorkItem
+            hints:
+                - Chunk() and ChunkPhase() are in internal/chunk/chunk.go; sizing runs after validateFeatures() and before WorkItem generation
+                - Use WithAllowedTools (internal/claude.go:62) scoped to Read, Grep, Glob
+                - internal/discover and internal/analysis are the existing precedents for agentic calls that return structured output
+                - Keep prompt building (BuildPromptWithConstraints) unchanged - it operates per WorkItem and should not know a split happened
+                - The fallback path matters - chunking must never become unusable because a sizer call failed
