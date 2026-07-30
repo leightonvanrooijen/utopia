@@ -1,0 +1,89 @@
+id: 10_work-item-turn-budget-and-sizing-phase-0-work-item-turn-budget
+spec_ref: 10_work-item-turn-budget-and-sizing-phase-0.work-item-turn-budget
+title: |
+    Add a configurable per-iteration turn ceiling for work-item execution,
+    expressed as work_items.turn_budget in .utopia/config.yaml.
+
+    The budget is a single shared knob with two enforcement postures. The
+    executor treats it as a hard cap (passed to the Claude CLI as
+    --max-turns). The chunker later treats the same value as a sizing
+    target (phase 2). One number therefore governs both how large work
+    items are cut and how much a single iteration may spend, so tuning
+    cost means changing one value rather than keeping two in sync.
+
+    It lives in config rather than as a CLI flag because `chunk` and
+    `execute` are separate commands; a flag on `execute` would be
+    invisible to the chunker. It is named after work items rather than
+    after either command because it belongs to neither.
+status: pending
+prompt: |-
+    ## TASK
+
+    Add a configurable per-iteration turn ceiling for work-item execution,
+    expressed as work_items.turn_budget in .utopia/config.yaml.
+
+    The budget is a single shared knob with two enforcement postures. The
+    executor treats it as a hard cap (passed to the Claude CLI as
+    --max-turns). The chunker later treats the same value as a sizing
+    target (phase 2). One number therefore governs both how large work
+    items are cut and how much a single iteration may spend, so tuning
+    cost means changing one value rather than keeping two in sync.
+
+    It lives in config rather than as a CLI flag because `chunk` and
+    `execute` are separate commands; a flag on `execute` would be
+    invisible to the chunker. It is named after work items rather than
+    after either command because it belongs to neither.
+
+
+    Acceptance criteria:
+    - Config has an optional work_items section with a turn_budget integer field
+    - work_items.turn_budget defaults to 40 when the section or field is omitted
+    - A turn_budget of zero or a negative value is rejected at config load with an error naming the field
+    - Config files with no work_items section continue to load without error
+
+
+
+    ## HINTS
+
+    - Config struct is domain.Config in internal/domain/discovery.go
+    - Follow the pointer-to-struct-with-omitempty pattern used by PathsConfig and ModelConfig
+    - Do not add turn_budget under the verification section - max_iterations is already misfiled there, see .utopia/notes/max-iterations-misfiled-under-verification.md
+
+
+
+    ## STANDARDS
+
+    This project defines coding standards in .utopia/standards/. Before implementing, read the standards docs relevant to the files this task touches:
+
+    - id: cli-organization
+      description: How to structure cobra commands in internal/cli: thin handlers that own the CLI frame and delegate the algorithm to domain packages.
+      tags: go, cli, cobra, architecture
+      path: .utopia/standards/cli-organization.md
+    - id: error-handling
+      description: How errors are created, wrapped, matched, and surfaced: typed domain errors for branching, %w wrapping for infrastructure, one exit point in root.go.
+      tags: go, errors, cli
+      path: .utopia/standards/error-handling.md
+    - id: terminal-output
+      description: One shared output vocabulary (glyphs, banners, progress) routed through cobra's injectable writers so command output is consistent and testable.
+      tags: go, cli, ux, output
+      path: .utopia/standards/terminal-output.md
+
+
+    ## CONSTRAINTS
+
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+order: 0
+estimated_complexity: medium

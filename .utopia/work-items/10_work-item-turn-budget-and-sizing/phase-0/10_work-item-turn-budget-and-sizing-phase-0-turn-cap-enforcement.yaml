@@ -1,0 +1,172 @@
+id: 10_work-item-turn-budget-and-sizing-phase-0-turn-cap-enforcement
+spec_ref: 10_work-item-turn-budget-and-sizing-phase-0.turn-cap-enforcement
+title: |
+    Pass work_items.turn_budget to the Claude CLI as --max-turns so a
+    single iteration cannot run unbounded. Today no turn ceiling exists
+    anywhere: baseArgs() passes only --permission-mode, --allowedTools
+    and --model, so an iteration can burn 100+ turns before producing
+    anything.
+
+    --max-turns is a real flag on Claude Code 2.1.220, but it is hidden
+    from --help; it was confirmed by option-parse probe against a bogus
+    control flag. Its exhaustion behaviour was measured rather than
+    assumed, and it does NOT slot into the existing no-token path as a
+    naive reading suggests:
+
+      exit code: 1 (non-zero)
+      stdout:    "Reached max turns (N)"
+      stderr:    empty
+
+    A non-zero exit makes cmd.Output() return an error, so cli.Prompt
+    returns an error and the loop takes the generic invocation-failed
+    branch at ralph.go:298, NOT the no-token branch at 305.
+
+    That branch's handling of failure state is CORRECT and must be left
+    alone. It does not clear LastFailureOutput, and it should not.
+    LastFailureOutput is written in exactly one place (ralph.go:378) from
+    verification output when verification fails, so it means "the last
+    known verification result, and it was a failure". A turn-capped
+    iteration runs no verification, so nothing supersedes that value - it
+    is the most recent evidence in existence, not stale data. Carrying a
+    failure forward that the capped iteration happened to fix costs a few
+    turns of the executor checking and moving on. Dropping a failure that
+    is still live costs an entire fresh iteration that does not know
+    verification ever failed, and may converge on <COMPLETE> and fail the
+    same way. Cheap redundancy beats expensive blindness.
+
+    What IS wrong on that branch is the logging. It reports "Claude
+    invocation failed", indistinguishable from a crash, an auth error, or
+    the monthly-spend-limit case that also exits 1. Turn exhaustion is
+    normal, expected operation and must not read as breakage.
+
+    So this needs explicit detection before the error branch - not to
+    change the retry behaviour, but to classify and report it correctly.
+    Detection follows the established DetectRateLimit / DetectSpendLimit
+    pattern that already inspects stdout and stderr for exactly this class
+    of CLI-signalled condition.
+
+    Separately, and deliberately excluded here: no message about turns,
+    limits, or the cap may reach the retry prompt. That is a scarcity
+    signal - it says hurry, and it invites shortcuts. PREVIOUS FAILURES is
+    task information, which is a different thing and is welcome. Partial
+    work survives uncommitted in the working tree and the next fresh
+    iteration rebuilds state from git and files, so a capped iteration is
+    a ratchet rather than wasted spend.
+status: pending
+prompt: |-
+    ## TASK
+
+    Pass work_items.turn_budget to the Claude CLI as --max-turns so a
+    single iteration cannot run unbounded. Today no turn ceiling exists
+    anywhere: baseArgs() passes only --permission-mode, --allowedTools
+    and --model, so an iteration can burn 100+ turns before producing
+    anything.
+
+    --max-turns is a real flag on Claude Code 2.1.220, but it is hidden
+    from --help; it was confirmed by option-parse probe against a bogus
+    control flag. Its exhaustion behaviour was measured rather than
+    assumed, and it does NOT slot into the existing no-token path as a
+    naive reading suggests:
+
+      exit code: 1 (non-zero)
+      stdout:    "Reached max turns (N)"
+      stderr:    empty
+
+    A non-zero exit makes cmd.Output() return an error, so cli.Prompt
+    returns an error and the loop takes the generic invocation-failed
+    branch at ralph.go:298, NOT the no-token branch at 305.
+
+    That branch's handling of failure state is CORRECT and must be left
+    alone. It does not clear LastFailureOutput, and it should not.
+    LastFailureOutput is written in exactly one place (ralph.go:378) from
+    verification output when verification fails, so it means "the last
+    known verification result, and it was a failure". A turn-capped
+    iteration runs no verification, so nothing supersedes that value - it
+    is the most recent evidence in existence, not stale data. Carrying a
+    failure forward that the capped iteration happened to fix costs a few
+    turns of the executor checking and moving on. Dropping a failure that
+    is still live costs an entire fresh iteration that does not know
+    verification ever failed, and may converge on <COMPLETE> and fail the
+    same way. Cheap redundancy beats expensive blindness.
+
+    What IS wrong on that branch is the logging. It reports "Claude
+    invocation failed", indistinguishable from a crash, an auth error, or
+    the monthly-spend-limit case that also exits 1. Turn exhaustion is
+    normal, expected operation and must not read as breakage.
+
+    So this needs explicit detection before the error branch - not to
+    change the retry behaviour, but to classify and report it correctly.
+    Detection follows the established DetectRateLimit / DetectSpendLimit
+    pattern that already inspects stdout and stderr for exactly this class
+    of CLI-signalled condition.
+
+    Separately, and deliberately excluded here: no message about turns,
+    limits, or the cap may reach the retry prompt. That is a scarcity
+    signal - it says hurry, and it invites shortcuts. PREVIOUS FAILURES is
+    task information, which is a different thing and is welcome. Partial
+    work survives uncommitted in the working tree and the next fresh
+    iteration rebuilds state from git and files, so a capped iteration is
+    a ratchet rather than wasted spend.
+
+
+    Acceptance criteria:
+    - Work-item execution invokes the Claude CLI with --max-turns set to the configured work_items.turn_budget
+    - A DetectTurnExhaustion function reports whether a PromptResult's stdout or stderr indicates the turn cap was reached
+    - Turn exhaustion is detected before the generic invocation-failed branch, so a capped iteration never logs as a Claude invocation failure
+    - A turn-exhausted iteration is logged as expected operation, distinctly from both invocation failures and no-token retries
+    - A turn-exhausted iteration preserves LastFailureOutput unchanged, so a still-unverified failure survives into the retry
+    - No message referencing turns, turn limits, or the cap is injected into any retry prompt
+    - A turn-exhausted iteration counts against max_iterations
+    - Verification is not run for an iteration that exhausted the turn cap
+    - A non-zero exit that is not turn exhaustion still takes the existing invocation-failed path unchanged
+
+
+
+    ## HINTS
+
+    - baseArgs() is at internal/claude.go:110
+    - Detection belongs alongside DetectRateLimit and DetectSpendLimit in internal/ralph/ratelimit.go, and must be checked around ralph.go:283 where handleClaudeLimits already runs - before the err check at ralph.go:298
+    - Do not route turn exhaustion through the no-token path at ralph.go:305-311, and do not copy its behaviour - it clears LastFailureOutput, which is the opposite of what is wanted here
+    - The retry behaviour of the invocation-failed branch is already right; this change is about classification and logging, so resist the urge to restructure the branch
+    - Verify the exact stdout marker rather than trusting this description; it was observed as "Reached max turns (1)" on 2.1.220 and may be worded differently in other versions
+    - Detection should be resilient to the marker changing - a version bump must not silently reclassify turn exhaustion as an invocation failure, so consider a test that fails loudly if the marker stops matching
+    - max_iterations (currently 6) still bounds retries, so the ceiling becomes turn_budget x max_iterations per work item
+
+
+
+    ## STANDARDS
+
+    This project defines coding standards in .utopia/standards/. Before implementing, read the standards docs relevant to the files this task touches:
+
+    - id: cli-organization
+      description: How to structure cobra commands in internal/cli: thin handlers that own the CLI frame and delegate the algorithm to domain packages.
+      tags: go, cli, cobra, architecture
+      path: .utopia/standards/cli-organization.md
+    - id: error-handling
+      description: How errors are created, wrapped, matched, and surfaced: typed domain errors for branching, %w wrapping for infrastructure, one exit point in root.go.
+      tags: go, errors, cli
+      path: .utopia/standards/error-handling.md
+    - id: terminal-output
+      description: One shared output vocabulary (glyphs, banners, progress) routed through cobra's injectable writers so command output is consistent and testable.
+      tags: go, cli, ux, output
+      path: .utopia/standards/terminal-output.md
+
+
+    ## CONSTRAINTS
+
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+order: 1
+estimated_complexity: medium
