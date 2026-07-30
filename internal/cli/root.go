@@ -44,6 +44,7 @@ Quick Start:
 Other Commands:
   merge    Manually merge a CR (execute does this automatically)
   status   View project state
+  report   Compare what past runs spent and achieved
   format   Format YAML files`,
 }
 

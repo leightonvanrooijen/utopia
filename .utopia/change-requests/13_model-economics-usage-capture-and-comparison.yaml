@@ -41,7 +41,7 @@ phases:
                 - Auth mode is already resolved by ResolveAuth in internal/credentials.go and reachable from the CLI struct via c.authMode
                 - Capture the decision to record tokens as fact and subscription dollars as estimate in an ADR, including the reason the two cannot be pooled
     - type: feature
-      status: in-progress
+      status: complete
       changes:
         - operation: add
           spec: model-economics
@@ -68,6 +68,7 @@ phases:
                 - The failure class vocabulary already exists from failure-class-routing in the escalation-routing spec - reuse those values, do not invent a second set
                 - Mirror the non-blocking warn-on-failure behaviour of workitem-commit
     - type: feature
+      status: in-progress
       changes:
         - operation: add
           spec: model-economics
@@ -113,4 +114,4 @@ phases:
             edit:
                 - old: The record notes that token counts and monetary cost are not captured, so a reader does not mistake their absence for zero
                   new: The record notes when token counts or cost were unavailable for an attempt, so a reader does not mistake their absence for zero
-current_phase: 1
+current_phase: 2

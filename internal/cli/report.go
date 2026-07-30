@@ -1,0 +1,381 @@
+package cli
+
+import (
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/leightonvanrooijen/utopia/internal/analysis"
+	"github.com/leightonvanrooijen/utopia/internal/cli/ui"
+	"github.com/leightonvanrooijen/utopia/internal/domain"
+	"github.com/spf13/cobra"
+)
+
+// noRunRecords is what both reports print for a repository that has executed
+// nothing yet. It is a result, not an error: there is no failure in asking for a
+// report before there is anything to report, so the command exits zero.
+const noRunRecords = "No run records yet. Run 'utopia execute' to produce some, then re-run this report."
+
+// NewReportCmd builds the report command family: readers over the persisted run
+// records under .utopia/runs. Nothing here executes work or calls Claude - every
+// figure printed was written by a previous run.
+func NewReportCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "report",
+		Short: "Report on what past runs spent and achieved",
+		Long: `Aggregate the usage entries persisted on run records under .utopia/runs.
+
+Reports read only what execution already wrote - no Claude call is made, and no
+transcript is re-read.`,
+	}
+	cmd.AddCommand(newReportModelsCmd(), newReportEscalationsCmd())
+	return cmd
+}
+
+func init() {
+	rootCmd.AddCommand(NewReportCmd())
+}
+
+func newReportModelsCmd() *cobra.Command {
+	var by string
+	cmd := &cobra.Command{
+		Use:   "models",
+		Short: "Compare model and effort choices by what they finished and spent",
+		Long: `Print one row per model and effort pair: how many attempts it made, how many work
+items it finished, its first-pass rate, its mean iterations to completion, and
+its tokens and cost per completed work item.
+
+Use --by spec or --by cr_type to group the same rows by that dimension.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			grouping, err := analysis.ParseGroupBy(by)
+			if err != nil {
+				return err
+			}
+			_, _, store, err := ResolveProject(cmd)
+			if err != nil {
+				return err
+			}
+			runs, err := store.ListExecutionRuns()
+			if err != nil {
+				return fmt.Errorf("failed to read run records: %w", err)
+			}
+
+			out := ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr())
+			printModelReport(out, analysis.ModelComparison(runs, grouping))
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&by, "by", "", "group rows by a dimension: spec, cr_type")
+	return cmd
+}
+
+func newReportEscalationsCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "escalations",
+		Short: "Compare what escalated change requests spent before and after escalating",
+		Long: `Print one row per escalated change request: the model and spend before it left the
+default executor, the model and spend after, and how it ended - followed by the
+marginal cost and marginal completion rate of escalating.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			_, _, store, err := ResolveProject(cmd)
+			if err != nil {
+				return err
+			}
+			runs, err := store.ListExecutionRuns()
+			if err != nil {
+				return fmt.Errorf("failed to read run records: %w", err)
+			}
+
+			out := ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr())
+			printEscalationReport(out, analysis.Escalations(runs))
+			return nil
+		},
+	}
+}
+
+// printModelReport renders the model comparison: a header saying what was read,
+// one table per group, and the report's own limits.
+func printModelReport(out *ui.Printer, report analysis.ModelReport) {
+	out.Printf("MODEL ECONOMICS\n")
+	out.Printf("===============\n")
+	if report.Empty() {
+		out.Printf("  %s\n", noRunRecords)
+		return
+	}
+	out.Printf("  %d run record(s) read\n", report.Records)
+	if report.RecordsWithoutUsage > 0 {
+		out.Printf("  %d carry no usage entries (written before usage was captured): unknown spend, excluded from every row\n",
+			report.RecordsWithoutUsage)
+	}
+	out.Printf("\n")
+
+	if len(report.Groups) == 0 {
+		out.Printf("  No run record carries usage entries yet, so there is nothing to compare.\n\n")
+		printCaveats(out, report.HasUnknownBasisCost())
+		return
+	}
+
+	for _, group := range report.Groups {
+		if group.Key != "" {
+			out.Printf("%s: %s\n", strings.ToUpper(groupLabel(report.By)), group.Key)
+		}
+		out.Table(ui.Table{
+			Headers: []string{
+				"MODEL", "EFFORT", "ATTEMPTS", "UNAVAIL", "ITEMS", "DONE",
+				"FIRST-PASS", "MEAN ITERS", "TOKENS", "TOKENS/DONE", "COST/DONE",
+			},
+			Rows: modelRows(group.Rows),
+		})
+		out.Printf("\n")
+	}
+
+	printCaveats(out, report.HasUnknownBasisCost())
+}
+
+func modelRows(rows []analysis.ModelRow) [][]string {
+	cells := make([][]string, 0, len(rows))
+	for _, row := range rows {
+		charged, listPrice, unknownBasis := row.CostPerCompleted()
+		cells = append(cells, []string{
+			row.Model,
+			row.Effort,
+			strconv.Itoa(row.Attempts),
+			strconv.Itoa(row.Unavailable),
+			strconv.Itoa(row.WorkItems),
+			strconv.Itoa(row.Completed),
+			formatRate(row.FirstPassRate(), row.WorkItems > 0),
+			formatMean(row.MeanIterationsToCompletion(), row.Completed > 0),
+			formatTokenTotal(row.Usage),
+			formatTokenMean(row.TokensPerCompleted(), row.Completed > 0 && row.Usage.Available > 0),
+			formatCost(charged, listPrice, unknownBasis),
+		})
+	}
+	return cells
+}
+
+// printEscalationReport renders the before-versus-after view, its aggregate line,
+// and the report's own limits.
+func printEscalationReport(out *ui.Printer, report analysis.EscalationReport) {
+	out.Printf("ESCALATIONS\n")
+	out.Printf("===========\n")
+	if report.Empty() {
+		out.Printf("  %s\n", noRunRecords)
+		return
+	}
+	out.Printf("  %d run record(s) read\n\n", report.Records)
+
+	if report.EscalatedCRs() == 0 {
+		out.Printf("  No change request has escalated, so there is no before-and-after to compare.\n")
+		out.Printf("  Baseline: %d of %d change request(s) that never escalated completed (%s).\n\n",
+			report.BaselineCompleted, report.BaselineCRs, formatRate(report.BaselineCompletionRate(), report.BaselineCRs > 0))
+		printCaveats(out, false)
+		return
+	}
+
+	out.Table(ui.Table{
+		Headers: []string{
+			"CHANGE REQUEST", "ITEMS", "ESC ITEMS",
+			"BEFORE MODEL", "B-ATT", "B-UNAVAIL", "B-TOKENS", "B-COST",
+			"AFTER MODEL", "A-ATT", "A-UNAVAIL", "A-TOKENS", "A-COST",
+			"OUTCOME",
+		},
+		Rows: escalationRows(report.Rows),
+	})
+	out.Printf("\n")
+
+	charged, listPrice, unknownBasis := report.MarginalCostPerEscalation()
+	marginal := report.MarginalUsage()
+	out.Printf("Aggregate: %d of %d escalated change request(s) completed after escalating (marginal completion rate %s).\n",
+		report.CompletedAfterEscalating(), report.EscalatedCRs(), formatRate(report.MarginalCompletionRate(), true))
+	if marginal.Available == 0 {
+		out.Printf("  Spend after escalation: not measured on any of these records, so the marginal cost is unknown rather than zero.\n")
+	} else {
+		out.Printf("  Spend after escalation: %s over %s token(s); marginal cost per escalation %s.\n",
+			formatCost(marginal.ChargedCostUSD, marginal.ListPriceCostUSD, marginal.UnknownBasisCostUSD),
+			formatTokenTotal(marginal),
+			formatCost(charged, listPrice, unknownBasis))
+	}
+	if marginal.Unavailable > 0 {
+		out.Printf("  %d attempt(s) after escalation had unavailable usage and are excluded from those figures.\n",
+			marginal.Unavailable)
+	}
+	if without := recordsWithoutUsage(report); without > 0 {
+		out.Printf("  %d run record(s) of these change requests carry no usage entries (written before usage was captured),\n", without)
+		out.Printf("    so their spend is shown as \"-\": unknown, not zero.\n")
+	}
+	out.Printf("  Baseline: %d of %d change request(s) that never escalated completed (%s).\n\n",
+		report.BaselineCompleted, report.BaselineCRs, formatRate(report.BaselineCompletionRate(), report.BaselineCRs > 0))
+
+	printCaveats(out, hasUnknownBasis(report))
+}
+
+func escalationRows(rows []analysis.EscalationRow) [][]string {
+	cells := make([][]string, 0, len(rows))
+	for _, row := range rows {
+		cells = append(cells, []string{
+			row.CRID,
+			strconv.Itoa(row.WorkItems),
+			strconv.Itoa(row.Escalated),
+			formatModels(row.Before),
+			strconv.Itoa(row.Before.Attempts),
+			strconv.Itoa(row.Before.Unavailable),
+			formatTokenTotal(row.Before.Usage),
+			formatCost(row.Before.Usage.ChargedCostUSD, row.Before.Usage.ListPriceCostUSD, row.Before.Usage.UnknownBasisCostUSD),
+			formatModels(row.After),
+			strconv.Itoa(row.After.Attempts),
+			strconv.Itoa(row.After.Unavailable),
+			formatTokenTotal(row.After.Usage),
+			formatCost(row.After.Usage.ChargedCostUSD, row.After.Usage.ListPriceCostUSD, row.After.Usage.UnknownBasisCostUSD),
+			row.Outcome,
+		})
+	}
+	return cells
+}
+
+// recordsWithoutUsage is how many run records behind these rows carry no usage
+// list at all, so the report can say why a side reads as "-".
+func recordsWithoutUsage(report analysis.EscalationReport) int {
+	n := 0
+	for _, row := range report.Rows {
+		n += row.RecordsWithoutUsage
+	}
+	return n
+}
+
+// hasUnknownBasis reports whether any side of any row carries dollars whose auth
+// mode was not resolved.
+func hasUnknownBasis(report analysis.EscalationReport) bool {
+	for _, row := range report.Rows {
+		if row.Before.Usage.UnknownBasisCostUSD != 0 || row.After.Usage.UnknownBasisCostUSD != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// printCaveats prints what the report does not claim: the unavailable-usage
+// exclusion, the two cost bases, and that the comparison is observational.
+func printCaveats(out *ui.Printer, unknownBasis bool) {
+	out.Printf("Reading these figures\n")
+	out.Printf("---------------------\n")
+	out.Printf("  %s %s\n", ui.Bullet, analysis.UnavailableUsageNote)
+	out.Printf("  %s Costs are kept apart by basis and never summed into one figure: %q is money billed under\n",
+		ui.Bullet, costLabel(domain.CostBasisCharged))
+	out.Printf("    api-key auth, %q is the list-price equivalent of tokens spent under subscription auth, where no\n",
+		costLabel(domain.CostBasisListPriceEstimate))
+	out.Printf("    per-token charge was incurred at all.\n")
+	if unknownBasis {
+		out.Printf("  %s %q is spend whose auth mode Utopia did not resolve, so which of the two above applies is not\n",
+			ui.Bullet, costLabel(domain.CostBasisUnknown))
+		out.Printf("    knowable from the record.\n")
+	}
+	out.Printf("  %s %s\n", ui.Bullet, analysis.ObservationalCaveat)
+}
+
+// groupLabel names the grouping dimension for a group header.
+func groupLabel(by analysis.GroupBy) string {
+	switch by {
+	case analysis.GroupBySpec:
+		return "spec"
+	case analysis.GroupByCRType:
+		return "cr_type"
+	default:
+		return "all"
+	}
+}
+
+// costLabel is the short tag a dollar figure carries in a cost cell, one per
+// basis, so a reader can tell what any number in that column means.
+func costLabel(basis domain.CostBasis) string {
+	switch basis {
+	case domain.CostBasisCharged:
+		return "charged"
+	case domain.CostBasisListPriceEstimate:
+		return "list-est"
+	default:
+		return "unknown-basis"
+	}
+}
+
+// formatCost renders the three dollar bases as separate labelled parts joined by
+// " + ", never added together: charged money and a list-price equivalent are
+// different quantities, and one figure summing both is neither (see ADR-007).
+func formatCost(charged, listPrice, unknownBasis float64) string {
+	var parts []string
+	if charged != 0 {
+		parts = append(parts, fmt.Sprintf("$%.4f %s", charged, costLabel(domain.CostBasisCharged)))
+	}
+	if listPrice != 0 {
+		parts = append(parts, fmt.Sprintf("$%.4f %s", listPrice, costLabel(domain.CostBasisListPriceEstimate)))
+	}
+	if unknownBasis != 0 {
+		parts = append(parts, fmt.Sprintf("$%.4f %s", unknownBasis, costLabel(domain.CostBasisUnknown)))
+	}
+	if len(parts) == 0 {
+		return "-"
+	}
+	return strings.Join(parts, " + ")
+}
+
+// formatModels renders a side's models, or "-" when nothing ran on it - which is
+// the change request escalated by rewrite alone, where the escalated executor
+// never took an attempt.
+func formatModels(side analysis.EscalationSide) string {
+	if len(side.Models) == 0 {
+		return "-"
+	}
+	return strings.Join(side.Models, ",")
+}
+
+// formatRate renders a share as a percentage, or "-" when its denominator was
+// zero: a rate over nothing is undefined, not 0%.
+func formatRate(rate float64, defined bool) string {
+	if !defined {
+		return "-"
+	}
+	return fmt.Sprintf("%.1f%%", rate*100)
+}
+
+// formatMean renders a mean to one decimal, or "-" when nothing was averaged.
+func formatMean(mean float64, defined bool) string {
+	if !defined {
+		return "-"
+	}
+	return fmt.Sprintf("%.1f", mean)
+}
+
+// formatTokenMean renders a per-completion token figure as a whole grouped
+// number: a tenth of a token is not a quantity anyone reads.
+func formatTokenMean(mean float64, defined bool) string {
+	if !defined {
+		return "-"
+	}
+	return formatTokens(int(mean + 0.5))
+}
+
+// formatTokenTotal renders a measured token count, or "-" when no attempt in the
+// total carried readable counts. A total of zero over zero readable attempts is
+// unknown spend, and printing "0" for it would say the attempts spent nothing.
+func formatTokenTotal(t domain.UsageTotals) string {
+	if t.Available == 0 {
+		return "-"
+	}
+	return formatTokens(t.TotalTokens())
+}
+
+// formatTokens groups a token count in thousands so a seven-figure column is
+// scannable.
+func formatTokens(n int) string {
+	s := strconv.Itoa(n)
+	if n < 0 {
+		return s
+	}
+	var b strings.Builder
+	for i, digit := range s {
+		if i > 0 && (len(s)-i)%3 == 0 {
+			b.WriteByte(',')
+		}
+		b.WriteRune(digit)
+	}
+	return b.String()
+}
