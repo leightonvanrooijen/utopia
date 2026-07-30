@@ -16,6 +16,9 @@ var DefaultConstraints = []string{
 	"Do not refactor unrelated code",
 	"Architecture is already correct",
 	"Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges",
+	"You are running autonomously and non-interactively; never ask for, or wait on, human input",
+	"When a genuine design choice arises, choose the best-justified option and implement it rather than deferring the decision to a human",
+	"Record any non-obvious decision - rationale and the alternatives considered - in the commit or PR body, so PR review is the human checkpoint",
 }
 
 // RefactorSystemConstraints are automatically injected for refactor WorkItems.

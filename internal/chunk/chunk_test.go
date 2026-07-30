@@ -227,6 +227,62 @@ func TestDefaultConstraints_NotEmpty(t *testing.T) {
 	}
 }
 
+func TestDefaultConstraints_AutonomousDecideAndDocumentText(t *testing.T) {
+	// Verify required constraint text per acceptance criteria
+	requiredPhrases := []string{
+		"You are running autonomously and non-interactively; never ask for, or wait on, human input",
+		"When a genuine design choice arises, choose the best-justified option and implement it rather than deferring the decision to a human",
+		"Record any non-obvious decision - rationale and the alternatives considered - in the commit or PR body, so PR review is the human checkpoint",
+	}
+
+	for _, phrase := range requiredPhrases {
+		found := false
+		for _, c := range DefaultConstraints {
+			if c == phrase {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("missing default constraint: %q", phrase)
+		}
+	}
+}
+
+func TestChunk_AutonomousConstraintsInNonRefactorPrompts(t *testing.T) {
+	autonomous := []string{
+		"You are running autonomously and non-interactively; never ask for, or wait on, human input",
+		"When a genuine design choice arises, choose the best-justified option and implement it rather than deferring the decision to a human",
+		"Record any non-obvious decision - rationale and the alternatives considered - in the commit or PR body, so PR review is the human checkpoint",
+	}
+
+	crTypes := []domain.CRType{domain.CRTypeFeature, domain.CRTypeEnhancement, domain.CRTypeBugfix}
+
+	for _, crType := range crTypes {
+		feature := domain.Feature{ID: "f1", Description: "Feature 1", AcceptanceCriteria: []string{"C1"}}
+		cr := &domain.ChangeRequest{
+			ID:      "auto-cr",
+			Type:    crType,
+			Title:   "Test CR",
+			Changes: []domain.Change{{Operation: "add", Feature: &feature}},
+		}
+
+		items, err := Chunk(cr, nil, nil, nil)
+		if err != nil {
+			t.Fatalf("%s: unexpected error: %v", crType, err)
+		}
+		if len(items) == 0 {
+			t.Fatalf("%s: expected at least one work item", crType)
+		}
+
+		for _, phrase := range autonomous {
+			if !strings.Contains(items[0].Prompt, phrase) {
+				t.Errorf("%s: prompt missing autonomous constraint: %q", crType, phrase)
+			}
+		}
+	}
+}
+
 func TestRefactorSystemConstraints_NotEmpty(t *testing.T) {
 	if len(RefactorSystemConstraints) == 0 {
 		t.Error("RefactorSystemConstraints should not be empty")
