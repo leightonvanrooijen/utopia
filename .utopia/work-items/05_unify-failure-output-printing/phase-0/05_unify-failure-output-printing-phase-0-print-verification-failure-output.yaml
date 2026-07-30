@@ -1,0 +1,124 @@
+id: 05_unify-failure-output-printing-phase-0-print-verification-failure-output
+spec_ref: 05_unify-failure-output-printing-phase-0.print-verification-failure-output
+title: |
+    Fix verification failure reporting to match spec verification, feature failure-stdout-logging.
+
+    Current behavior: when a verification command fails, the captured output is
+    assigned to item.LastFailureOutput and surfaces only inside the AI retry prompt.
+    The human running the loop sees a single status line
+    ("Iteration N: verification failed, will retry with failure output")
+    and never sees the actual test failures.
+
+    Expected behavior: the same captured output that gets injected into the retry
+    prompt is also printed to stdout, before injection, so the human sees exactly
+    what the AI sees.
+
+    Root cause: verification runs as a direct verifier.Run call in the ralph loop
+    body rather than as a subscription action, so it bypasses the engine's
+    logResolution path that prints captured output for validators. The dedicated
+    print was never added for verification, and no work item was ever generated
+    for this feature.
+
+    This phase deliberately takes the narrow fix. Phase 2 removes the duplication
+    it introduces.
+status: pending
+prompt: |-
+    ## TASK
+
+    Fix verification failure reporting to match spec verification, feature failure-stdout-logging.
+
+    Current behavior: when a verification command fails, the captured output is
+    assigned to item.LastFailureOutput and surfaces only inside the AI retry prompt.
+    The human running the loop sees a single status line
+    ("Iteration N: verification failed, will retry with failure output")
+    and never sees the actual test failures.
+
+    Expected behavior: the same captured output that gets injected into the retry
+    prompt is also printed to stdout, before injection, so the human sees exactly
+    what the AI sees.
+
+    Root cause: verification runs as a direct verifier.Run call in the ralph loop
+    body rather than as a subscription action, so it bypasses the engine's
+    logResolution path that prints captured output for validators. The dedicated
+    print was never added for verification, and no work item was ever generated
+    for this feature.
+
+    This phase deliberately takes the narrow fix. Phase 2 removes the duplication
+    it introduces.
+
+
+    Acceptance criteria:
+    - When a verification command exits non-zero, its captured output is printed to stdout
+    - The printed output is byte-identical to the string assigned to item.LastFailureOutput
+    - The printed output is already truncated to 2000 chars with the tail preserved, matching what the AI receives
+    - Printing happens before the output is injected into the AI retry prompt
+    - The output is wrapped in delimiter lines so it is visually distinct from surrounding loop status lines
+    - When verification passes, no failure output block is printed
+    - When verification fails with empty output, no empty delimiter block is printed
+
+
+    ## REFERENCE
+
+    The following spec feature defines the correct behavior:
+
+    Print verification failure output to stdout so humans can see the same
+    information that gets fed to the AI runner.
+
+
+    Acceptance criteria:
+    - When verification fails, captured output is printed to stdout
+    - Output is printed before being injected into the AI retry prompt
+    - Uses the same content that would be fed to the AI (truncated if applicable)
+
+
+
+    ## HINTS
+
+    - The fix belongs in internal/ralph/ralph.go in the verification failure branch around lines 332-343, immediately after the existing "verification failed, will retry" status line and before item.LastFailureOutput is assigned
+    - Mirror the existing after-phase validator block at internal/ralph/ralph.go:570-575, which already does exactly this for validator feedback using a "--- Validator Failure Feedback ---" delimiter pair
+    - Do not change internal/verification/runner.go - truncation already happens inside Run at line 48, so Result.Output is already the exact string the AI will see
+
+
+
+    ## STANDARDS
+
+    This project defines coding standards in .utopia/standards/. Before implementing, read the standards docs relevant to the files this task touches:
+
+    - id: cli-organization
+      description: How to structure cobra commands in internal/cli: thin handlers that own the CLI frame and delegate the algorithm to domain packages.
+      tags: go, cli, cobra, architecture
+      path: .utopia/standards/cli-organization.md
+    - id: error-handling
+      description: How errors are created, wrapped, matched, and surfaced: typed domain errors for branching, %w wrapping for infrastructure, one exit point in root.go.
+      tags: go, errors, cli
+      path: .utopia/standards/error-handling.md
+    - id: terminal-output
+      description: One shared output vocabulary (glyphs, banners, progress) routed through cobra's injectable writers so command output is consistent and testable.
+      tags: go, cli, ux, output
+      path: .utopia/standards/terminal-output.md
+
+
+    ## CONSTRAINTS
+
+    - This is a bugfix. The implementation must be corrected to match the spec.
+    - The acceptance criteria below are the source of truth for correct behavior.
+    - Fix only the behavior that deviates from the spec
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - This is a bugfix. The implementation must be corrected to match the spec.
+    - The acceptance criteria below are the source of truth for correct behavior.
+    - Fix only the behavior that deviates from the spec
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+order: 0
+estimated_complexity: medium
