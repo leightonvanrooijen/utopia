@@ -1,0 +1,64 @@
+workitem_id: 13_model-economics-usage-capture-and-comparison-phase-0-attempt-usage-capture
+cr_id: 13_model-economics-usage-capture-and-comparison
+spec_ref: 13_model-economics-usage-capture-and-comparison-phase-0.attempt-usage-capture
+iterations: 3
+completed_at: 2026-07-30T19:13:06.424894+10:00
+outcome: completed
+status: unprocessed
+transcript: |
+    --- iteration 1 ---
+    Done. What landed:
+
+    - `internal/domain/usage.go`: `AttemptUsage` (available flag, resolved model, effort, 4 token counts, turns, `duration_ms`, cost) + `CostBasis` (`charged` / `list-price-estimate` / `unknown`) and `CostBasisForAuth`.
+    - `internal/claude_usage.go`: terminal-result-object reader for `--output-format json` and a `stream-json` line collector that prints text deltas live and keeps the accounting.
+    - `internal/claude.go`: `WithUsageCapture`, format flags in `outputFormatArgs`, `PromptResult.Usage`, `GetUsage()` nil-safe. Stdout still carries assistant prose (raw output on error paths, so rate-limit/turn-exhaustion detection unchanged).
+    - `internal/ralph`: execution loop and after-phase fix invocations capture usage; `recordAttemptUsage` books it onto `ExecutorAttempt.Usage`, unavailable-with-reason when unparseable, measured wall clock as fallback.
+    - ADR-007 written; ADR-005 marked `superseded` (its "not observable" premise held only for the prose path).
+
+    Tests: 1275 pass, staticcheck clean. Recorded-form test asserts nil vs `available: false` vs `available: true`+zeros all stay distinct through YAML round trip.
+
+    <COMPLETE>
+
+    --- iteration 2 ---
+    API Error: 529 Overloaded. This is a server-side issue, usually temporary — try again in a moment. If it persists, check https://status.claude.com.
+
+    --- iteration 3 ---
+    Done. Committed `17419db`.
+
+    Three fixes against validator findings:
+
+    1. **`--verbose` contract** (`internal/claude.go`): flag now emitted in `outputFormatArgs` alongside `--output-format stream-json --include-partial-messages`, where format chosen. Note: `streamingPrompt` already appended `--verbose`, so real argv was arguably legal - but contract now lives with format selection per hint, `streamingPrompt` guards against duplicate via `slices.Contains`.
+    2. **Faithful test doubles** (`claude_usage_test.go`, `claude_test.go`): `scriptedClaude` and `argRecordingClaude` now run `claudeFlagContract` - exit 1 with real binary's exact error (`When using --print, --output-format=stream-json requires --verbose`) when stream-json lacks `--verbose`. Verbose arg-assertion test now requires `--verbose` explicitly. Mutation-verified: stripping flag from both code paths fails `TestCLI_Prompt_VerboseStreamsTextAndCapturesUsage` and `TestCLI_UsageCapture_RequestsStructuredOutput`.
+    3. **Scoper capture** (`internal/ralph/scoping.go:211`): rewrite invocation now carries `.WithUsageCapture(true)` - scoper is loop invocation like executor attempt and after-phase fix; validators and discovery stay on prose.
+
+    Full suite: 1275 tests pass, `gofmt`/`go vet` clean.
+
+    One incident during work: mutation-test cleanup accidentally ran `git stash pop`, conflicting into `.gitignore`. Fixed - `.gitignore` restored from HEAD, your stash `stash@{0}: chore: stop tracking utopia binary` untouched and still in list.
+
+    <COMPLETE>
+routing:
+    cr_type: feature
+    attempts:
+        - iteration: 1
+          role: default-executor
+          model: ""
+          effort: medium
+        - iteration: 2
+          role: escalated-executor
+          model: fable
+          effort: high
+        - iteration: 3
+          role: escalated-executor
+          model: fable
+          effort: high
+    sonnet_attempts: 1
+    opus_execution_attempts: 2
+    mechanical_failures: 0
+    comprehension_failures: 1
+    reclassified_failures: 0
+    scoping_escalations: 0
+    spec_rewritten: false
+    outcome: passed
+    duration_seconds: 1890.696788959
+    duration: 31m31s
+    cost_note: Token counts, cache hits and monetary cost are not captured - not zero, not observable. Utopia drives the claude CLI, which reports none of them (ADR-005). Cost is approximated from attempts, sonnet_attempts and opus_execution_attempts together with the model each attempt ran on.
