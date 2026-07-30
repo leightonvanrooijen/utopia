@@ -1,0 +1,51 @@
+workitem_id: 13_model-economics-usage-capture-and-comparison-phase-3-modify-escalation-telemetry
+cr_id: 13_model-economics-usage-capture-and-comparison
+spec_ref: 13_model-economics-usage-capture-and-comparison-phase-3.modify-escalation-telemetry
+iterations: 2
+completed_at: 2026-07-30T19:57:07.446985+10:00
+outcome: completed
+status: unprocessed
+transcript: |
+    --- iteration 1 ---
+    Done. What changed:
+
+    **AC1 - usage read from record, not attempt counts**
+    - `internal/domain/documentation.go`: added `RoutingRecord.UsageTotals()`, sums each attempt's recorded usage via existing `TotalUsage`/`UsageEntriesFor`. Reworded `SonnetAttempts`/`OpusExecutionAttempts` docs - they count routing, not spend.
+
+    **AC2 - cost per change request outcome, both auth modes**
+    - `internal/analysis/economics.go`: `OutcomeCosts(runs) OutcomeReport`, one row per CR outcome (completed/needs_human/abandoned/failed), with CRs, work items, escalated CRs, attempts, unavailable, tokens, `CostPerChangeRequest()` split into charged / list-price / unknown-basis.
+    - `internal/cli/report.go`: `utopia report outcomes`, separate `CHARGED` and `LIST-EST` columns plus per-CR columns, never summed; unresolved-basis spend gets its own line; reuses `printCaveats`, `ui.Table`, `ui.Printer`.
+
+    **AC3 - note names unavailability per attempt**
+    - `domain.CostApproximationNote` const replaced by `domain.CostNoteFor(attempts)`, naming attempts with no usage and, separately, attempts with tokens but no cost. `telemetry.go` writes it per record.
+
+    Tests: `CostNoteFor` table (3 cases), `UsageTotals` floor behaviour, 4 `OutcomeCosts` tests, CLI `outcomes` output test; `outcomes` added to the shared caveat and empty-repo loops. `go test ./internal/...` - 1323 passed.
+
+    <COMPLETE>
+
+    --- iteration 2 ---
+    Split done. `report.go` 120 lines (command wiring only), `report_print.go` 369 lines (printers, row builders, formatters). Both under ceiling. 538 tests pass, `go vet` clean, no behaviour change.
+
+    <COMPLETE>
+routing:
+    cr_type: enhancement
+    attempts:
+        - iteration: 1
+          role: default-executor
+          model: ""
+          effort: medium
+        - iteration: 2
+          role: default-executor
+          model: ""
+          effort: medium
+    sonnet_attempts: 2
+    opus_execution_attempts: 0
+    mechanical_failures: 1
+    comprehension_failures: 0
+    reclassified_failures: 0
+    scoping_escalations: 0
+    spec_rewritten: false
+    outcome: passed
+    duration_seconds: 724.679791958
+    duration: 12m05s
+    cost_note: Token counts, cache hits and monetary cost are not captured - not zero, not observable. Utopia drives the claude CLI, which reports none of them (ADR-005). Cost is approximated from attempts, sonnet_attempts and opus_execution_attempts together with the model each attempt ran on.
