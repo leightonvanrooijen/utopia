@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -47,6 +48,7 @@ type CLI struct {
 	verbose        bool
 	model          string          // model override: alias (e.g. "opus") or full model identifier
 	effort         string          // reasoning effort per turn; empty leaves the CLI on its own default
+	maxTurns       int             // per-invocation turn ceiling; zero leaves the CLI unbounded
 	authMode       domain.AuthMode // credential selection; empty inherits the ambient environment
 	utopiaDir      string          // project .utopia dir, where api-key mode looks for .env
 }
@@ -89,6 +91,20 @@ func (c *CLI) WithModel(model string) *CLI {
 // See domain.EffortConfig and ADR-004.
 func (c *CLI) WithEffort(effort string) *CLI {
 	c.effort = effort
+	return c
+}
+
+// WithMaxTurns caps how many turns one invocation of this CLI may spend. The
+// value is passed to the claude binary's --max-turns flag; zero or a negative
+// value passes no flag, leaving the invocation unbounded, which is the
+// behaviour of every call site that does not set a ceiling.
+//
+// Exhausting the cap is not an error condition of the work: the CLI exits
+// non-zero with "Reached max turns (N)" on stdout, and it is the caller's job
+// to recognise that as the cap doing what it exists to do. See
+// ralph.DetectTurnExhaustion.
+func (c *CLI) WithMaxTurns(maxTurns int) *CLI {
+	c.maxTurns = maxTurns
 	return c
 }
 
@@ -148,6 +164,10 @@ func (c *CLI) baseArgs() []string {
 
 	if c.effort != "" {
 		args = append(args, "--effort", c.effort)
+	}
+
+	if c.maxTurns > 0 {
+		args = append(args, "--max-turns", strconv.Itoa(c.maxTurns))
 	}
 
 	return args

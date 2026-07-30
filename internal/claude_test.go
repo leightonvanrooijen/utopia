@@ -774,3 +774,45 @@ func TestCLI_SpawnSitesApplyCredentialEnv(t *testing.T) {
 		})
 	}
 }
+
+func TestCLI_baseArgs_WithMaxTurns(t *testing.T) {
+	cli := NewCLI().WithMaxTurns(40)
+	args := cli.baseArgs()
+
+	found := false
+	for i, arg := range args {
+		if arg == "--max-turns" && i+1 < len(args) {
+			if args[i+1] == "40" {
+				found = true
+			}
+			break
+		}
+	}
+
+	if !found {
+		t.Errorf("baseArgs should include --max-turns 40, got %v", args)
+	}
+}
+
+func TestCLI_baseArgs_NoMaxTurns(t *testing.T) {
+	for _, budget := range []int{0, -1} {
+		cli := NewCLI().WithMaxTurns(budget)
+		for _, arg := range cli.baseArgs() {
+			if arg == "--max-turns" {
+				t.Errorf("baseArgs should not include --max-turns for budget %d, got %v", budget, cli.baseArgs())
+			}
+		}
+	}
+}
+
+func TestCLI_WithMaxTurns_SurvivesClone(t *testing.T) {
+	cli := NewCLI().WithMaxTurns(40)
+	clone := cli.Clone().WithModel("opus")
+
+	if clone.maxTurns != 40 {
+		t.Errorf("clone.maxTurns = %d, want 40", clone.maxTurns)
+	}
+	if cli.model != "" {
+		t.Errorf("Clone should not mutate the original: model = %q, want empty", cli.model)
+	}
+}

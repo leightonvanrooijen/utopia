@@ -634,3 +634,25 @@ func TestWriteRunTranscript_UnwritableStoreDoesNotPanic(t *testing.T) {
 
 	writeRunTranscript(internal.NewYAMLStore(notADir), "cr-1", &domain.WorkItem{ID: "item"}, recorderWith("", "out"), domain.RunFailed)
 }
+
+// TestBuildPrompt_NeverMentionsTheTurnBudget guards the deliberate exclusion:
+// the retry prompt carries task information (PREVIOUS FAILURES) but never a word
+// about turns, limits or the cap. A scarcity signal says hurry, and hurrying is
+// what invites the shortcuts the loop then has to undo.
+func TestBuildPrompt_NeverMentionsTheTurnBudget(t *testing.T) {
+	item := &domain.WorkItem{
+		ID:                    "test-item",
+		Prompt:                "## TASK\n\nImplement feature X\n\n---\n\nWhen complete, output: <COMPLETE>",
+		Status:                domain.WorkItemInProgress,
+		LastFailureOutput:     "Error: test failed",
+		LastValidatorFeedback: "Validator: naming is off",
+	}
+
+	prompt := strings.ToLower(buildPrompt(item))
+
+	for _, banned := range []string{"turn budget", "max-turns", "max turns", "turn limit", "turn cap", "running out of"} {
+		if strings.Contains(prompt, banned) {
+			t.Errorf("retry prompt must not reference the turn cap, but contains %q", banned)
+		}
+	}
+}

@@ -52,7 +52,7 @@ title: |
     work survives uncommitted in the working tree and the next fresh
     iteration rebuilds state from git and files, so a capped iteration is
     a ratchet rather than wasted spend.
-status: pending
+status: in_progress
 prompt: |-
     ## TASK
 
@@ -170,3 +170,4 @@ constraints:
     - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
 order: 1
 estimated_complexity: medium
+iteration_count: 1

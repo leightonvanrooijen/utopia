@@ -266,6 +266,11 @@ func executeWorkItem(
 	maxIterations := config.Verification.MaxIterations
 	verifyCommand := config.Verification.Command
 
+	// The per-iteration turn ceiling. maxIterations above bounds how many
+	// iterations the item gets; this bounds what any one of them may spend, so the
+	// item's ceiling is turnBudget x maxIterations rather than unbounded.
+	turnBudget := config.WorkItems.TurnBudgetOr()
+
 	// The escalation caps are the inner bounds on the retry paths; maxIterations
 	// above is the outer bound on the item as a whole. Both appear on the routing
 	// log line so an operator can tell which one stopped the item.
@@ -426,9 +431,14 @@ func executeWorkItem(
 		// the evidence that the default executor's effort was never raised.
 		recordExecutorAttempt(item, attemptModel, attemptEffort)
 
-		attemptCLI := cli
+		// Every execution attempt runs under the turn budget, escalated or not: the
+		// budget bounds one iteration's spend, and an escalated attempt is still one
+		// iteration. The clone is what keeps the ceiling off the loop's shared CLI,
+		// which the scoper also borrows - a rewrite is not an execution iteration and
+		// is not budgeted as one.
+		attemptCLI := cli.Clone().WithMaxTurns(turnBudget)
 		if attemptModel != defaultExecutorModel || attemptEffort != efforts.executor {
-			attemptCLI = cli.Clone().WithModel(attemptModel).WithEffort(attemptEffort)
+			attemptCLI = attemptCLI.WithModel(attemptModel).WithEffort(attemptEffort)
 			fmt.Printf("  Iteration %d: invoking Claude on the escalated executor (%s, effort %s)...\n", item.IterationCount, attemptModel, attemptEffort)
 		} else {
 			fmt.Printf("  Iteration %d: invoking Claude...\n", item.IterationCount)
@@ -470,6 +480,24 @@ func executeWorkItem(
 		// deliberately excluded above: it produced no work and does not count
 		// as an iteration, so it would only misnumber the transcript.
 		appendIterationOutput(&rec.transcript, item.IterationCount, claudeResult)
+
+		// The turn budget being spent is expected operation, so it is reported as
+		// such - before the branch below, which would otherwise report the non-zero
+		// exit as an invocation failure indistinguishable from a crash or an auth
+		// error. Nothing else about the iteration changes: it counts against max
+		// iterations, no verification runs, and LastFailureOutput is deliberately
+		// left standing, because a capped iteration ran no verification and so has
+		// produced nothing that supersedes the last verification result there is.
+		//
+		// Nothing about the cap reaches the next prompt either. A message about
+		// running out of turns is a scarcity signal - it says hurry, and it invites
+		// shortcuts. The partial work is uncommitted in the working tree and the next
+		// iteration rebuilds its state from git and the files, so the capped
+		// iteration is a ratchet rather than wasted spend.
+		if claudeResult != nil && DetectTurnExhaustion(claudeResult.Stdout, claudeResult.Stderr) {
+			fmt.Printf("  Iteration %d: turn budget of %d reached, continuing in a fresh iteration (claude %s)\n", item.IterationCount, turnBudget, ui.Duration(claudeElapsed))
+			continue
+		}
 
 		if err != nil {
 			fmt.Printf("  Iteration %d: Claude invocation failed: %v (claude %s)\n", item.IterationCount, err, ui.Duration(claudeElapsed))

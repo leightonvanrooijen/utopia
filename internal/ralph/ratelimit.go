@@ -232,6 +232,33 @@ func SpendLimitNoticeMessage() string {
 		"so the loop will probe with a minimal Claude invocation every %v until usage is restored.", ProbeInterval)
 }
 
+// TurnExhaustionMarker is the message the Claude CLI prints when an invocation
+// runs out of the turns --max-turns allowed it. Observed verbatim on Claude Code
+// 2.1.220 as "Error: Reached max turns (1)" on stdout, with an empty stderr and
+// exit code 1. It is exported so a test can assert the pattern below still
+// matches it: a CLI version that reworded the message would otherwise silently
+// reclassify every turn-capped iteration as an invocation failure.
+const TurnExhaustionMarker = "Error: Reached max turns (1)"
+
+// turnExhaustionPattern matches that message. It is deliberately looser than the
+// observed marker - case-insensitive, tolerant of "maximum" and of any run of
+// whitespace - so a cosmetic rewording across a CLI version still classifies as
+// turn exhaustion rather than falling through to the invocation-failed path.
+var turnExhaustionPattern = regexp.MustCompile(`(?i)reached\s+max(?:imum)?\s+turns`)
+
+// DetectTurnExhaustion reports whether the output indicates the invocation hit
+// the turn ceiling set by --max-turns. It checks both stdout and stderr, as the
+// message may appear in either.
+//
+// Turn exhaustion is expected operation, not a failure: the cap did what it
+// exists to do, and the partial work survives uncommitted in the working tree
+// for the next iteration to build on. The caller uses this only to classify and
+// report the iteration; it exits non-zero either way.
+func DetectTurnExhaustion(stdout, stderr string) bool {
+	combined := stdout + "\n" + stderr
+	return turnExhaustionPattern.MatchString(combined)
+}
+
 // limitOutcome describes how handleClaudeLimits classified a Claude invocation.
 type limitOutcome int
 

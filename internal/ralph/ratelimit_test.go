@@ -487,3 +487,81 @@ func TestHandleClaudeLimits(t *testing.T) {
 		}
 	})
 }
+
+func TestDetectTurnExhaustion(t *testing.T) {
+	tests := []struct {
+		name     string
+		stdout   string
+		stderr   string
+		expected bool
+	}{
+		{
+			name:     "observed marker on stdout",
+			stdout:   TurnExhaustionMarker,
+			expected: true,
+		},
+		{
+			name:     "marker on stderr",
+			stderr:   "Error: Reached max turns (40)",
+			expected: true,
+		},
+		{
+			name:     "marker after other output",
+			stdout:   "Reading files...\nError: Reached max turns (40)",
+			expected: true,
+		},
+		{
+			name:     "reworded to maximum",
+			stdout:   "Reached maximum turns (40)",
+			expected: true,
+		},
+		{
+			name:     "reworded case and spacing",
+			stdout:   "reached  max   turns (40)",
+			expected: true,
+		},
+		{
+			name:     "ordinary output",
+			stdout:   "Done. <COMPLETE>",
+			expected: false,
+		},
+		{
+			name:     "a different non-zero exit is not turn exhaustion",
+			stderr:   "Error: invalid API key",
+			expected: false,
+		},
+		{
+			name:     "the rolling usage limit is not turn exhaustion",
+			stderr:   "Limit reached · resets 1am (Australia/Sydney)",
+			expected: false,
+		},
+		{
+			name:     "the spend limit is not turn exhaustion",
+			stderr:   "You've hit your org's monthly spend limit",
+			expected: false,
+		},
+		{
+			name:     "empty output",
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := DetectTurnExhaustion(tt.stdout, tt.stderr); got != tt.expected {
+				t.Errorf("DetectTurnExhaustion(%q, %q) = %v, want %v", tt.stdout, tt.stderr, got, tt.expected)
+			}
+		})
+	}
+}
+
+// TestTurnExhaustionMarkerStillMatches pins the detection to the message the
+// Claude CLI was actually observed printing. If a CLI version reworded it past
+// what the pattern tolerates, this fails loudly here rather than silently
+// reclassifying every turn-capped iteration as a Claude invocation failure.
+func TestTurnExhaustionMarkerStillMatches(t *testing.T) {
+	if !DetectTurnExhaustion(TurnExhaustionMarker, "") {
+		t.Fatalf("DetectTurnExhaustion no longer matches the observed marker %q - "+
+			"turn exhaustion would be misreported as an invocation failure", TurnExhaustionMarker)
+	}
+}
