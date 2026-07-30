@@ -1,6 +1,8 @@
 package ralph
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	"github.com/leightonvanrooijen/utopia/internal/domain"
@@ -78,6 +80,31 @@ func TestCompileValidators_AggregatesPerTriggerIntoOneSubscription(t *testing.T)
 	}
 	if subs[1].Launch != EventPhaseVerified {
 		t.Errorf("after-phase subscription must be registered second, got launch %q", subs[1].Launch)
+	}
+}
+
+// TestValidatorAction_CancelledRunReportsCancellation covers the abandoned
+// after-workitem validator: the git diff and any validator subprocess die with
+// the cancellation, so the action must report the cancellation rather than the
+// kill's fallout, which the engine then resolves as cancelled.
+func TestValidatorAction_CancelledRunReportsCancellation(t *testing.T) {
+	action := validatorAction(validators.NewRunner(t.TempDir()), []*domain.Validator{
+		{ID: "style", Run: domain.RunAfterWorkitem},
+	}, domain.RunAfterWorkitem, 1)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	wait := action(ctx, Event{Name: EventWorkItemCompletionClaimed})
+	cancel()
+	res := wait()
+
+	if !errors.Is(res.Err, context.Canceled) {
+		t.Fatalf("cancelled run must report the cancellation, got %v", res.Err)
+	}
+	if !causedByCancellation(res.Err) {
+		t.Error("the reported error must resolve the handle as cancelled, not failed")
+	}
+	if res.Stdout != "" || res.Aggregate != nil {
+		t.Errorf("cancelled run must carry no verdict, got stdout %q aggregate %v", res.Stdout, res.Aggregate)
 	}
 }
 

@@ -88,7 +88,8 @@ func hasTrigger(list []*domain.Validator, trigger domain.RunTrigger) bool {
 // reports a ConnectorResult carrying the combined feedback as stdout and a
 // non-nil error, so joining it surfaces a *GateError whose feedback is injected
 // into the next iteration - exactly as the bespoke loop did. Cancelling ctx
-// kills in-flight validator subprocesses so the run returns promptly.
+// kills in-flight validator subprocesses so the run returns promptly, and the
+// abandoned run reports the cancellation rather than the kill's fallout.
 func validatorAction(runner *validators.Runner, list []*domain.Validator, trigger domain.RunTrigger, concurrency int) Action {
 	name := "validators:" + string(trigger)
 	return func(ctx context.Context, e Event) func() ConnectorResult {
@@ -125,6 +126,14 @@ func validatorAction(runner *validators.Runner, list []*domain.Validator, trigge
 		return func() ConnectorResult {
 			o := <-done
 			res := ConnectorResult{Name: name, Event: e.Name}
+			if err := ctx.Err(); errors.Is(err, context.Canceled) {
+				// The run was abandoned mid-flight, so whatever the killed
+				// validator subprocesses reported is not a verdict on the work.
+				// Reporting the cancellation lets the engine resolve the handle
+				// as cancelled rather than as a validator failure.
+				res.Err = err
+				return res
+			}
 			if o.err != nil {
 				res.Err = fmt.Errorf("failed to compute git diff: %w", o.err)
 				return res

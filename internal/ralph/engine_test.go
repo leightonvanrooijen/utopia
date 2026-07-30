@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os/exec"
 	"sync"
 	"testing"
 	"time"
@@ -188,6 +189,78 @@ func TestEngine_LaunchOnlyHandleReapedAsDrainedOnLaterEmit(t *testing.T) {
 	if en.handles[0].state != handleDrained {
 		t.Errorf("completed launch-only handle must reap as drained, got %s", en.handles[0].state)
 	}
+}
+
+func TestEngine_CancelDropsCancellationCausedError(t *testing.T) {
+	// The shape of the after-workitem validator abandoned by a verification
+	// failure: its git diff subprocess is killed by the cancellation and the
+	// wrapped "signal: killed" must not resolve as a validator failure.
+	killed := func(ctx context.Context, e Event) func() ConnectorResult {
+		cmd := exec.CommandContext(ctx, "sh", "-c", "sleep 5")
+		if err := cmd.Start(); err != nil {
+			t.Fatalf("start failed: %v", err)
+		}
+		return func() ConnectorResult {
+			err := cmd.Wait()
+			return ConnectorResult{Name: "validators:after-workitem", Err: fmt.Errorf("failed to compute git diff: %w", err)}
+		}
+	}
+	sub := Subscription{
+		Name:   "validators:after-workitem",
+		Launch: EventWorkItemCompletionClaimed,
+		Join:   EventWorkItemVerified,
+		Cancel: []string{EventWorkItemVerificationFailed},
+		Action: killed,
+	}
+	en := NewEngine([]Subscription{sub})
+
+	if err := en.Emit(context.Background(), Event{Name: EventWorkItemCompletionClaimed}); err != nil {
+		t.Fatalf("launch emit failed: %v", err)
+	}
+	if err := en.Emit(context.Background(), Event{Name: EventWorkItemVerificationFailed}); err != nil {
+		t.Fatalf("cancel emit failed: %v", err)
+	}
+
+	h := en.handles[0]
+	if h.state != handleCancelled {
+		t.Fatalf("handle state = %s, want %s", h.state, handleCancelled)
+	}
+	if h.result.Err != nil {
+		t.Errorf("cancellation-caused error must not be reported as a failure, got %v", h.result.Err)
+	}
+}
+
+func TestCausedByCancellation(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil", nil, false},
+		{"context cancelled", fmt.Errorf("running validators: %w", context.Canceled), true},
+		{"deadline exceeded", fmt.Errorf("timed out: %w", context.DeadlineExceeded), false},
+		{"genuine failure", errors.New("validators failed"), false},
+		{"nonzero exit", fmt.Errorf("git diff failed: %w", exitErr(t, "exit 1")), false},
+		{"killed subprocess", fmt.Errorf("git diff failed: %w", exitErr(t, "kill -KILL $$")), true},
+		{"terminated subprocess", fmt.Errorf("git diff failed: %w", exitErr(t, "kill -TERM $$")), true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := causedByCancellation(tc.err); got != tc.want {
+				t.Errorf("causedByCancellation(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+// exitErr runs a shell command expected to fail and returns its exit error.
+func exitErr(t *testing.T, command string) error {
+	t.Helper()
+	err := exec.Command("sh", "-c", command).Run()
+	if err == nil {
+		t.Fatalf("command %q unexpectedly succeeded", command)
+	}
+	return err
 }
 
 func TestEngine_TimeoutKillsHandleAndRecordsFailure(t *testing.T) {

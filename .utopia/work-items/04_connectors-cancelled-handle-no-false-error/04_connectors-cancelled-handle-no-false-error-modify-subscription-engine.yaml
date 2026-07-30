@@ -1,7 +1,7 @@
 id: 04_connectors-cancelled-handle-no-false-error-modify-subscription-engine
 spec_ref: 04_connectors-cancelled-handle-no-false-error.modify-subscription-engine
 title: Modify the subscription-engine feature
-status: pending
+status: in_progress
 prompt: |-
     ## TASK
 
@@ -49,3 +49,4 @@ constraints:
     - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
 order: 0
 estimated_complexity: medium
+iteration_count: 1

@@ -2,8 +2,11 @@ package ralph
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/leightonvanrooijen/utopia/internal/cli/ui"
@@ -81,11 +84,39 @@ func (h *handle) join() ConnectorResult {
 
 // cancelRun kills the in-flight work and blocks until it exits. The action's
 // SIGTERM -> SIGKILL escalation bounds the wait to the grace period.
+//
+// An error the cancellation itself caused is dropped: the outcome of a
+// cancelled handle is the cancellation, so reporting the kill's shrapnel as
+// well would read as a genuine connector failure.
 func (h *handle) cancelRun() {
 	h.cancel()
 	<-h.done
 	h.state = handleCancelled
+	if causedByCancellation(h.result.Err) {
+		h.result.Err = nil
+	}
 	logResolution(h)
+}
+
+// causedByCancellation reports whether err describes the kill rather than the
+// work: the run's context being cancelled, or a subprocess killed by the
+// SIGTERM/SIGKILL the cancellation sent. A timeout is deliberately not
+// cancellation - it is the handle's own failure and stays reported as one.
+func causedByCancellation(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) {
+		return true
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		if status, ok := exitErr.Sys().(syscall.WaitStatus); ok && status.Signaled() {
+			sig := status.Signal()
+			return sig == syscall.SIGTERM || sig == syscall.SIGKILL
+		}
+	}
+	return false
 }
 
 // Engine launches, joins, and cancels subscription actions as lifecycle

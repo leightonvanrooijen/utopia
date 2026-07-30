@@ -387,8 +387,39 @@ func TestEngine_CancelEscalatesToSIGKILLAfterGracePeriod(t *testing.T) {
 	if h.state != handleCancelled {
 		t.Errorf("handle state = %s, want %s", h.state, handleCancelled)
 	}
-	if h.result.Err == nil {
-		t.Error("a killed run must record a failure outcome")
+	if h.result.Err != nil {
+		// The SIGKILL is the cancellation, not a connector failure.
+		t.Errorf("a cancelled run must not record a failure outcome, got %v", h.result.Err)
+	}
+}
+
+func TestEngine_CancelDoesNotReportTheKillAsFailure(t *testing.T) {
+	sub := Subscription{
+		Name:   "speculative",
+		Launch: EventWorkItemStarted,
+		Cancel: []string{EventWorkItemVerificationFailed},
+		Action: commandAction(domain.ConnectorConfig{Name: "speculative", Command: "sleep 5"}, t.TempDir()),
+	}
+	en := NewEngine([]Subscription{sub})
+
+	if err := en.Emit(context.Background(), Event{Name: EventWorkItemStarted}); err != nil {
+		t.Fatalf("launch emit failed: %v", err)
+	}
+	time.Sleep(50 * time.Millisecond)
+
+	out := captureStdout(t, func() {
+		if err := en.Emit(context.Background(), Event{Name: EventWorkItemVerificationFailed}); err != nil {
+			t.Fatalf("cancel emit failed: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, handleCancelled) {
+		t.Fatalf("cancel ledger must record the resolution, got:\n%s", out)
+	}
+	for _, unwanted := range []string{"signal:", "killed", "terminated"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("cancellation ledger line must not read like a failure, contains %q:\n%s", unwanted, out)
+		}
 	}
 }
 
