@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -74,7 +75,11 @@ type Overrides struct {
 // run's usage across two accounts. The empty mode inherits the ambient
 // environment, which is the pre-auth behaviour.
 func Execute(ctx context.Context, specID string, store *internal.YAMLStore, config *domain.Config, projectDir string, auth domain.AuthMode, over Overrides) (*Result, error) {
-	out := ui.OrDefault(over.Out)
+	// Every diagnostic this run emits carries the change request it belongs to, so
+	// no call site below has to interpolate the ID into its message. Attached here,
+	// before the printer reaches the claude subprocesses, the engine or the
+	// work-item loop, so a run has no path that emits a diagnostic without it.
+	out := ui.OrDefault(over.Out).WithAttrs(slog.String("cr_id", extractCRID(specID)))
 
 	// Load work items for this spec
 	items, err := store.ListWorkItemsForSpec(specID)
@@ -182,6 +187,16 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 
 	// Execute each work item in order
 	for i, item := range items {
+		// The item's printer adds it to the run's attributes, so every diagnostic
+		// raised while this item is the one being considered says which item it
+		// belongs to - the skip decisions below included.
+		itemOut := out.WithAttrs(slog.String("work_item_id", item.ID))
+		itemOut.Debug("work item reached",
+			slog.Int("position", i+1),
+			slog.Int("total", len(items)),
+			slog.String("status", string(item.Status)),
+			slog.Int("iteration_count", item.IterationCount))
+
 		// Skip completed items
 		if item.Status == domain.WorkItemCompleted {
 			result.Completed++
@@ -201,7 +216,7 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 		out.Printf("[%d/%d] %s - starting execution\n", i+1, len(items), item.ID)
 
 		// Execute this work item with the Ralph loop
-		timings, err := executeWorkItem(ctx, out, item, specID, store, cli, defaultExecutorModel, efforts, verifier, config, projectDir, auth, dispatcher, basePayload, validatorRunner, validatorList)
+		timings, err := executeWorkItem(ctx, itemOut, item, specID, store, cli, defaultExecutorModel, efforts, verifier, config, projectDir, auth, dispatcher, basePayload, validatorRunner, validatorList)
 		if err != nil {
 			// A halted item is skipped, not fatal. Batch execution runs every draft
 			// change request in order, so aborting the run on one ambiguous change

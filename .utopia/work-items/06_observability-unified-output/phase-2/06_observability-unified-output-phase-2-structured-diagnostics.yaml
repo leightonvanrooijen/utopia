@@ -6,7 +6,7 @@ title: |
     channel is not routed through slog - a "Created 3 drafts" line is not an
     INFO record, it is the command's answer, and it stays rendered for humans
     on stdout.
-status: pending
+status: in_progress
 prompt: |-
     ## TASK
 
@@ -73,3 +73,4 @@ constraints:
     - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
 order: 0
 estimated_complexity: medium
+iteration_count: 1
