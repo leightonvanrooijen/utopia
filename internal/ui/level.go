@@ -29,6 +29,17 @@ func Level() slog.Level { return level.Level() }
 // SetLevel sets the active diagnostic threshold for every Printer.
 func SetLevel(l slog.Level) { level.Set(l) }
 
+// Enabled reports whether a diagnostic of severity l is admitted by the active
+// level.
+//
+// Every diagnostic mechanism asks this one question rather than keeping a gate
+// of its own: the slog handler behind a Printer's Progressf and Warnf, the
+// phase-progress renderer, and the decision to stream a claude subprocess's own
+// output. A mechanism outside slog therefore still classifies its output by
+// severity - it just does not get to decide the threshold - which is what makes
+// a run at warn quiet everywhere and --log-level debug loud everywhere.
+func Enabled(l slog.Level) bool { return l >= level.Level() }
+
 // ParseLevel maps a level name to its slog level. An unrecognised name is an
 // error naming the accepted values rather than a silent fallback to the default:
 // a run asked for debug output and given info has no way to tell.

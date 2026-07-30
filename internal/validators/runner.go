@@ -61,7 +61,7 @@ type Runner struct {
 func NewRunner(workDir string) *Runner {
 	return &Runner{
 		workDir:          workDir,
-		cli:              internal.NewCLI().WithVerbose(false),
+		cli:              internal.NewCLI(),
 		validatorTimeout: DefaultValidatorTimeout,
 	}
 }

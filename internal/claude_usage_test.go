@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,6 +55,17 @@ func scriptedClaude(t *testing.T, body string) *CLI {
 	return cli
 }
 
+// streamLevel maps "does this test want a live transcript" onto the severity a
+// call site classifies its transcript at. Info is the execution loop's setting,
+// so it streams at the default level; debug is the constructor default, so it
+// does not.
+func streamLevel(stream bool) slog.Level {
+	if stream {
+		return slog.LevelInfo
+	}
+	return slog.LevelDebug
+}
+
 // apiKeyUtopiaDir returns a .utopia directory holding a key, so api-key auth
 // resolves without reaching for the ambient environment.
 func apiKeyUtopiaDir(t *testing.T) string {
@@ -104,7 +116,7 @@ func TestCLI_UsageCapture_RequestsStructuredOutput(t *testing.T) {
 	tests := []struct {
 		name    string
 		capture bool
-		verbose bool
+		stream  bool
 		want    []string
 		notWant []string
 	}{
@@ -121,9 +133,9 @@ func TestCLI_UsageCapture_RequestsStructuredOutput(t *testing.T) {
 		{
 			// --verbose is part of the contract, not a nicety: the real binary
 			// refuses --print with stream-json without it.
-			name:    "capture on and verbose asks for the stream with --verbose",
+			name:    "capture on and a streamed transcript asks for the stream with --verbose",
 			capture: true,
-			verbose: true,
+			stream:  true,
 			want:    []string{"--output-format stream-json", "--include-partial-messages", "--verbose"},
 		},
 	}
@@ -133,7 +145,7 @@ func TestCLI_UsageCapture_RequestsStructuredOutput(t *testing.T) {
 			cli, recorded := argRecordingClaude(t)
 			restore := captureStdout(t)
 
-			_, err := cli.WithUsageCapture(tt.capture).WithVerbose(tt.verbose).Prompt(context.Background(), "hello")
+			_, err := cli.WithUsageCapture(tt.capture).WithStreamLevel(streamLevel(tt.stream)).Prompt(context.Background(), "hello")
 			restore()
 			if err != nil {
 				t.Fatalf("Prompt() error = %v", err)
@@ -237,10 +249,10 @@ func TestCLI_Prompt_CostCarriesItsBasis(t *testing.T) {
 	}
 }
 
-// Verbose mode is for the operator watching the run, so the assistant's text still
+// A streamed transcript is for the operator watching the run, so the assistant's text still
 // reaches the terminal as it is generated while the accounting is read off the last
 // line of the same stream.
-func TestCLI_Prompt_VerboseStreamsTextAndCapturesUsage(t *testing.T) {
+func TestCLI_Prompt_StreamsTextAndCapturesUsage(t *testing.T) {
 	stream := strings.Join([]string{
 		`{"type":"system","subtype":"init","model":"claude-opus-5-20260101"}`,
 		`{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"secret reasoning"}}}`,
@@ -253,7 +265,7 @@ func TestCLI_Prompt_VerboseStreamsTextAndCapturesUsage(t *testing.T) {
 	cli := scriptedClaude(t, "cat <<'EOF'\n"+stream+"\nEOF")
 
 	restore := captureStdout(t)
-	result, err := cli.WithUsageCapture(true).WithVerbose(true).Prompt(context.Background(), "go")
+	result, err := cli.WithUsageCapture(true).WithStreamLevel(slog.LevelInfo).Prompt(context.Background(), "go")
 	printed := restore()
 	if err != nil {
 		t.Fatalf("Prompt() error = %v", err)
@@ -331,7 +343,7 @@ func TestCLI_Prompt_UnparseableUsageIsRecordedNotFailed(t *testing.T) {
 		cli := scriptedClaude(t, `printf 'Error: something went wrong\n'; exit 1`)
 
 		restore := captureStdout(t)
-		result, _ := cli.WithUsageCapture(true).WithVerbose(true).Prompt(context.Background(), "go")
+		result, _ := cli.WithUsageCapture(true).WithStreamLevel(slog.LevelInfo).Prompt(context.Background(), "go")
 		printed := restore()
 
 		if !strings.Contains(printed, "something went wrong") {

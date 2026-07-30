@@ -112,7 +112,10 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 	// before the first work item starts and nothing below recomputes it, which is
 	// what makes "no code path raises effort on failure" a property of the
 	// structure rather than a convention.
-	cli := internal.NewCLI().WithVerbose(true).WithAuth(auth, filepath.Join(projectDir, ".utopia")).WithPrinter(out)
+	// The executor's transcript is an info-level diagnostic: watching claude work
+	// is what `utopia execute` is for, so it appears at the default level and
+	// falls silent only when the run is asked to be quieter than info.
+	cli := internal.NewCLI().WithStreamLevel(slog.LevelInfo).WithAuth(auth, filepath.Join(projectDir, ".utopia")).WithPrinter(out)
 	efforts := resolveRoleEfforts(config.Effort, over.Effort)
 	cli = cli.WithEffort(efforts.executor)
 	defaultExecutorModel := ""

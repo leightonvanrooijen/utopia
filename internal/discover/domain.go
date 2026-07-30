@@ -77,8 +77,6 @@ type DomainOptions struct {
 	ProjectDir string
 	// Scope restricts which files are scanned
 	Scope Scope
-	// Verbose enables detailed file-by-file progress output
-	Verbose bool
 	// Model is an optional Claude model override
 	Model string
 	// Effort is an optional reasoning effort override for the analysis. The empty
@@ -114,7 +112,7 @@ type DomainResult struct {
 // carry forward; callers inspect the result to frame the outcome.
 func Domain(ctx context.Context, store *internal.YAMLStore, opts DomainOptions) (*DomainResult, error) {
 	out := ui.OrDefault(opts.Out)
-	prog := newProgress(out, 4, opts.Verbose)
+	prog := newProgress(out, 4)
 
 	prog.StartPhase(1, "Scanning files")
 	codebaseContext, filesAnalyzed, err := collectDomainContextIncremental(opts.ProjectDir, opts.LastRun, opts.Incremental, opts.Scope, prog)
@@ -123,7 +121,9 @@ func Domain(ctx context.Context, store *internal.YAMLStore, opts DomainOptions) 
 	}
 	result := &DomainResult{FilesAnalyzed: filesAnalyzed}
 	if len(filesAnalyzed) == 0 {
-		out.Printf(" done (no new files)\n")
+		// See Specs: an early return completes its phase line through the renderer,
+		// so the tail cannot outlive the level that suppressed the line.
+		prog.EndPhase("no new files")
 		return result, nil
 	}
 	prog.EndPhase(fmt.Sprintf("%d files found", len(filesAnalyzed)))
@@ -132,7 +132,7 @@ func Domain(ctx context.Context, store *internal.YAMLStore, opts DomainOptions) 
 	systemPrompt := fmt.Sprintf(domainSystemPrompt, codebaseContext, domainDocsSummary)
 
 	prog.StartPhase(2, "Analyzing codebase with Claude")
-	cli := internal.NewCLI().WithVerbose(true).WithAuth(opts.Auth, utopiaDirOf(opts.ProjectDir)).WithPrinter(out)
+	cli := internal.NewCLI().WithAuth(opts.Auth, utopiaDirOf(opts.ProjectDir)).WithPrinter(out)
 	if opts.Model != "" {
 		cli = cli.WithModel(opts.Model)
 	}
@@ -152,7 +152,7 @@ func Domain(ctx context.Context, store *internal.YAMLStore, opts DomainOptions) 
 	}
 	result.Drafts = drafts
 	if len(drafts) == 0 {
-		out.Printf(" done (no drafts found)\n")
+		prog.EndPhase("no drafts found")
 		return result, nil
 	}
 	prog.EndPhase(fmt.Sprintf("%d drafts parsed", len(drafts)))

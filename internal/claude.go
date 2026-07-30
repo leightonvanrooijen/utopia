@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -62,13 +63,13 @@ type CLI struct {
 	binaryPath     string
 	permissionMode PermissionMode
 	allowedTools   []string
-	verbose        bool
 	model          string          // model override: alias (e.g. "opus") or full model identifier
 	effort         string          // reasoning effort per turn; empty leaves the CLI on its own default
 	maxTurns       int             // per-invocation turn ceiling; zero leaves the CLI unbounded
 	authMode       domain.AuthMode // credential selection; empty inherits the ambient environment
 	utopiaDir      string          // project .utopia dir, where api-key mode looks for .env
 	captureUsage   bool            // ask for structured output and read the usage it reports
+	streamLevel    slog.Level      // severity of this invocation's live transcript; see WithStreamLevel
 	// out receives the subprocess's streamed output. Nil means the process's own
 	// streams, which is what an unwired caller always got.
 	out *ui.Printer
@@ -79,6 +80,11 @@ func NewCLI() *CLI {
 	return &CLI{
 		binaryPath:     "claude",
 		permissionMode: PermissionBypass, // Default to no permission prompts
+		// A subprocess transcript is deep detail by default: a role invoked in
+		// passing - a validator, a sizer, a refinement agent - is watched only by
+		// an operator who asked for debug. WithStreamLevel raises it for the one
+		// invocation whose transcript is the point of the command.
+		streamLevel: slog.LevelDebug,
 	}
 }
 
@@ -105,11 +111,30 @@ func (c *CLI) WithAllowedTools(tools []string) *CLI {
 	return c
 }
 
-// WithVerbose enables verbose output streaming
-func (c *CLI) WithVerbose(verbose bool) *CLI {
-	c.verbose = verbose
+// WithStreamLevel classifies how severe this invocation's live transcript is -
+// how loud a run has to be before the operator is shown claude working, rather
+// than handed the finished output.
+//
+// It is a severity, not a gate. Whether the transcript is written is the
+// process-wide diagnostic level's decision like every other diagnostic's, so
+// there is one threshold and no mechanism gates itself: raising the level to
+// debug turns every transcript on, and lowering it to warn turns every
+// transcript off, including the execution loop's. What a call site chooses here
+// is only where its own transcript sits on that scale - the execution loop's is
+// info, because watching the loop work is what `utopia execute` is for, while
+// the default (debug) suits a role invoked in passing.
+func (c *CLI) WithStreamLevel(level slog.Level) *CLI {
+	c.streamLevel = level
 	return c
 }
+
+// streamsDetail reports whether this invocation streams claude's own output to
+// the terminal as it is produced, rather than capturing it and returning it.
+//
+// Only the stream is gated. The invocation still runs and its output is still
+// returned to the caller, so nothing downstream - rate-limit detection, turn
+// exhaustion, usage accounting - depends on the level.
+func (c *CLI) streamsDetail() bool { return ui.Enabled(c.streamLevel) }
 
 // WithModel sets the model to use for this CLI instance. The value is passed to
 // the claude binary's --model flag unchanged: either an alias the CLI resolves to
@@ -229,8 +254,8 @@ func (c *CLI) baseArgs() []string {
 // prose output - the pre-capture behaviour every role outside the execution loop
 // keeps.
 //
-// A verbose run asks for stream-json rather than dropping to the non-streaming
-// object, because the operator watching the run is the point of verbose mode: the
+// A streaming run asks for stream-json rather than dropping to the non-streaming
+// object, because the operator watching the run is the point of streaming: the
 // accounting arrives on the last line of the stream rather than in place of the text.
 //
 // The claude binary refuses stream-json under --print without --verbose
@@ -241,7 +266,7 @@ func (c *CLI) outputFormatArgs() []string {
 	if !c.captureUsage {
 		return nil
 	}
-	if c.verbose {
+	if c.streamsDetail() {
 		return []string{"--output-format", "stream-json", "--include-partial-messages", "--verbose"}
 	}
 	return []string{"--output-format", "json"}
@@ -249,7 +274,8 @@ func (c *CLI) outputFormatArgs() []string {
 
 // Prompt sends a one-shot prompt to Claude and returns the response.
 // Uses --print flag for non-interactive output.
-// If verbose mode is enabled, streams output in real-time while capturing.
+// When the active diagnostic level admits this invocation's stream level,
+// streams output in real-time while capturing.
 // Returns PromptResult containing both stdout and stderr for rate limit detection,
 // and the invocation's usage when the caller asked for it with WithUsageCapture.
 func (c *CLI) Prompt(ctx context.Context, prompt string) (*PromptResult, error) {
@@ -257,8 +283,9 @@ func (c *CLI) Prompt(ctx context.Context, prompt string) (*PromptResult, error) 
 	args = append(args, c.outputFormatArgs()...)
 	args = append(args, "--print", prompt)
 
-	// If verbose, use streaming approach
-	if c.verbose {
+	// A run loud enough for this transcript watches the invocation happen;
+	// anything quieter waits for it and reads the result.
+	if c.streamsDetail() {
 		return c.streamingPrompt(ctx, args)
 	}
 

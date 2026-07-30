@@ -119,6 +119,44 @@ func TestApplyVerbose(t *testing.T) {
 	}
 }
 
+// --verbose is kept as a spelling of --log-level debug rather than as a second
+// mechanism, so both commands that offer it still take it, still take -v, and
+// say in their help text which level it is the same as.
+func TestDiscoverVerboseIsDocumentedAsDebug(t *testing.T) {
+	for _, cmd := range []*cobra.Command{discoverCmd, discoverDomainCmd} {
+		t.Run(cmd.Name(), func(t *testing.T) {
+			flag := cmd.Flags().Lookup("verbose")
+			if flag == nil {
+				t.Fatalf("%s has no --verbose flag", cmd.Name())
+			}
+			if flag.Shorthand != "v" {
+				t.Errorf("--verbose shorthand = %q, want %q", flag.Shorthand, "v")
+			}
+			if !strings.Contains(flag.Usage, "--log-level debug") {
+				t.Errorf("--verbose usage %q does not name the level it is equivalent to", flag.Usage)
+			}
+		})
+	}
+}
+
+// Both spellings are one request, so they have to land on the same level - the
+// flag raises the level rather than switching on anything of its own.
+func TestVerboseAndLogLevelDebugAgree(t *testing.T) {
+	t.Cleanup(func() { ui.SetLevel(ui.DefaultLevel) })
+
+	if err := applyLogLevel(levelCmd(t, "debug", true), nil); err != nil {
+		t.Fatalf("applyLogLevel() error = %v", err)
+	}
+	viaFlag := ui.Level()
+
+	ui.SetLevel(ui.DefaultLevel)
+	applyVerbose(true)
+
+	if got := ui.Level(); got != viaFlag {
+		t.Errorf("--verbose level = %v, --log-level debug level = %v, want them equal", got, viaFlag)
+	}
+}
+
 // The flag has to be persistent and resolved before any handler runs, or a
 // subcommand's first diagnostic escapes the level the invocation asked for.
 func TestRootRegistersLogLevel(t *testing.T) {

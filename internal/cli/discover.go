@@ -113,7 +113,6 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 	result, err := discover.Specs(context.Background(), store, discover.SpecsOptions{
 		ProjectDir:    absPath,
 		Scope:         scope,
-		Verbose:       discoverVerboseFlag,
 		Model:         modelID,
 		Effort:        effort,
 		Auth:          authMode,
@@ -284,7 +283,6 @@ func runDiscoverDomain(cmd *cobra.Command, args []string) error {
 	result, err := discover.Domain(context.Background(), store, discover.DomainOptions{
 		ProjectDir:   absPath,
 		Scope:        scope,
-		Verbose:      discoverDomainVerboseFlag,
 		Model:        modelID,
 		Effort:       effort,
 		Auth:         authMode,

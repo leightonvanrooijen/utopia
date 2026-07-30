@@ -2,13 +2,14 @@ package ui
 
 import (
 	"bytes"
+	"log/slog"
 	"regexp"
 	"testing"
 )
 
 func TestProgressPhaseLifecycle(t *testing.T) {
 	var buf bytes.Buffer
-	prog := NewProgress(&buf, 4, false)
+	prog := NewProgress(&buf, 4)
 
 	prog.StartPhase(1, "Scanning files")
 	prog.EndPhase("12 files found")
@@ -21,7 +22,7 @@ func TestProgressPhaseLifecycle(t *testing.T) {
 
 func TestProgressEndPhaseWithoutDetail(t *testing.T) {
 	var buf bytes.Buffer
-	prog := NewProgress(&buf, 2, false)
+	prog := NewProgress(&buf, 2)
 
 	prog.StartPhase(2, "Saving drafts")
 	prog.EndPhase("")
@@ -34,7 +35,7 @@ func TestProgressEndPhaseWithoutDetail(t *testing.T) {
 
 func TestVerbosefIsSilentWhenNotVerbose(t *testing.T) {
 	var buf bytes.Buffer
-	prog := NewProgress(&buf, 1, false)
+	prog := NewProgress(&buf, 1)
 
 	prog.Verbosef("  Collected: %s", "main.go")
 
@@ -47,8 +48,11 @@ func TestVerbosefIsSilentWhenNotVerbose(t *testing.T) {
 }
 
 func TestVerbosefWritesWhenVerbose(t *testing.T) {
+	t.Cleanup(func() { SetLevel(DefaultLevel) })
+	SetLevel(slog.LevelDebug)
+
 	var buf bytes.Buffer
-	prog := NewProgress(&buf, 1, true)
+	prog := NewProgress(&buf, 1)
 
 	prog.Verbosef("  Collected: %s", "main.go")
 

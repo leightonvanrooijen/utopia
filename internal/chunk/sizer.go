@@ -44,8 +44,6 @@ type SizerOptions struct {
 	// UtopiaDir is the project's .utopia directory, where api-key auth looks for
 	// the key.
 	UtopiaDir string
-	// Verbose streams the sizer's exploration to the terminal.
-	Verbose bool
 	// Prompt overrides how the invocation is made. Nil uses the read-only CLI.
 	Prompt Prompter
 }
@@ -136,7 +134,6 @@ func claudePrompter(opts SizerOptions) Prompter {
 		cli := internal.NewCLI().
 			WithPermissionMode(internal.PermissionDefault).
 			WithAllowedTools(SizerTools).
-			WithVerbose(opts.Verbose).
 			WithAuth(opts.Auth, opts.UtopiaDir)
 		if opts.Model != "" {
 			cli = cli.WithModel(opts.Model)

@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"maps"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/leightonvanrooijen/utopia/internal/domain"
+	"github.com/leightonvanrooijen/utopia/internal/ui"
 )
 
 func TestNewCLI(t *testing.T) {
@@ -27,8 +29,8 @@ func TestNewCLI(t *testing.T) {
 		t.Errorf("permissionMode = %q, want %q", cli.permissionMode, PermissionBypass)
 	}
 
-	if cli.verbose {
-		t.Error("verbose should default to false")
+	if cli.streamLevel != slog.LevelDebug {
+		t.Errorf("streamLevel = %v, want debug so a passing invocation is not streamed by default", cli.streamLevel)
 	}
 }
 
@@ -47,17 +49,33 @@ func TestCLI_WithAllowedTools(t *testing.T) {
 	}
 }
 
-func TestCLI_WithVerbose(t *testing.T) {
-	cli := NewCLI().WithVerbose(true)
+// The transcript's severity is a call site's only say in the matter; whether it
+// is written is the process-wide level's decision, which is what makes one
+// threshold govern every diagnostic.
+func TestCLI_StreamLevelIsDecidedByTheActiveLevel(t *testing.T) {
+	t.Cleanup(func() { ui.SetLevel(ui.DefaultLevel) })
 
-	if !cli.verbose {
-		t.Error("verbose should be true")
+	tests := []struct {
+		name        string
+		streamLevel slog.Level
+		active      slog.Level
+		want        bool
+	}{
+		{name: "info transcript at the default level streams", streamLevel: slog.LevelInfo, active: slog.LevelInfo, want: true},
+		{name: "info transcript is silenced by a quieter run", streamLevel: slog.LevelInfo, active: slog.LevelWarn},
+		{name: "debug transcript is silent at the default level", streamLevel: slog.LevelDebug, active: slog.LevelInfo},
+		{name: "debug transcript streams once the level admits debug", streamLevel: slog.LevelDebug, active: slog.LevelDebug, want: true},
+		{name: "error silences every transcript", streamLevel: slog.LevelInfo, active: slog.LevelError},
 	}
 
-	cli = cli.WithVerbose(false)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ui.SetLevel(tt.active)
 
-	if cli.verbose {
-		t.Error("verbose should be false")
+			if got := NewCLI().WithStreamLevel(tt.streamLevel).streamsDetail(); got != tt.want {
+				t.Errorf("streamsDetail() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -100,15 +118,15 @@ func TestCLI_WithAuth_Default(t *testing.T) {
 func TestCLI_Chaining(t *testing.T) {
 	cli := NewCLI().
 		WithAllowedTools([]string{"Read"}).
-		WithVerbose(true).
+		WithStreamLevel(slog.LevelInfo).
 		WithModel("opus")
 
 	if len(cli.allowedTools) != 1 || cli.allowedTools[0] != "Read" {
 		t.Error("allowedTools not set correctly")
 	}
 
-	if !cli.verbose {
-		t.Error("verbose should be true")
+	if cli.streamLevel != slog.LevelInfo {
+		t.Errorf("streamLevel = %v, want info", cli.streamLevel)
 	}
 
 	if cli.model != "opus" {
@@ -363,29 +381,6 @@ func TestPermissionMode_Constants(t *testing.T) {
 
 // Integration-style tests that verify command construction
 // These don't actually run Claude but verify args are built correctly
-
-func TestCLI_Prompt_VerboseFlag(t *testing.T) {
-	// We can't easily test the actual execution without mocking,
-	// but we can verify the verbose flag affects behavior by checking
-	// that the CLI is configured correctly
-
-	cli := NewCLI().WithVerbose(true)
-
-	if !cli.verbose {
-		t.Error("CLI should have verbose enabled")
-	}
-
-	// The Prompt method will use streamingPrompt when verbose is true
-	// This is tested by the method structure, not execution
-}
-
-func TestCLI_Prompt_NonVerbose(t *testing.T) {
-	cli := NewCLI().WithVerbose(false)
-
-	if cli.verbose {
-		t.Error("CLI should have verbose disabled")
-	}
-}
 
 // Test context cancellation handling
 func TestCLI_Prompt_ContextCancellation(t *testing.T) {
@@ -721,8 +716,8 @@ func TestCLI_SpawnSitesApplyCredentialEnv(t *testing.T) {
 		{
 			name: "streamingPrompt",
 			spawn: func(t *testing.T, cli *CLI) {
-				if _, err := cli.WithVerbose(true).Prompt(context.Background(), "hello"); err != nil {
-					t.Fatalf("verbose Prompt failed: %v", err)
+				if _, err := cli.WithStreamLevel(slog.LevelInfo).Prompt(context.Background(), "hello"); err != nil {
+					t.Fatalf("streamed Prompt failed: %v", err)
 				}
 			},
 		},
