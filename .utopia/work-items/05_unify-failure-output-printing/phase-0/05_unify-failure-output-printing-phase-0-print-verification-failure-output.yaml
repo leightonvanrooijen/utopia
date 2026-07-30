@@ -21,7 +21,7 @@ title: |
 
     This phase deliberately takes the narrow fix. Phase 2 removes the duplication
     it introduces.
-status: pending
+status: in_progress
 prompt: |-
     ## TASK
 
@@ -122,3 +122,4 @@ constraints:
     - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
 order: 0
 estimated_complexity: medium
+iteration_count: 1

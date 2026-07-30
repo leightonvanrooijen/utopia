@@ -589,6 +589,13 @@ func executeWorkItem(
 			// completion claim did not hold so the engine cancels the
 			// speculative validators; their feedback is discarded.
 			fmt.Printf("  Iteration %d: verification failed, will retry with failure output (verification %s)\n", item.IterationCount, ui.Duration(verifyElapsed))
+			// The human running the loop sees exactly what the runner is about to be
+			// handed. verifyOutput is already truncated by verifier.Run, so this block
+			// is byte-identical to what lands in item.LastFailureOutput below and in
+			// the retry prompt. Empty output prints nothing rather than an empty frame.
+			if verifyOutput != "" {
+				fmt.Printf("\n--- Verification Failure Output ---\n%s\n--- End Verification Output ---\n\n", verifyOutput)
+			}
 			failedPayload := itemPayload
 			failedPayload.IterationCount = item.IterationCount
 			dispatcher.Dispatch(Event{Name: EventWorkItemVerificationFailed, Payload: failedPayload})
