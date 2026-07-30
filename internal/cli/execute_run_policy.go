@@ -6,8 +6,8 @@ package cli
 // easy to find and change.
 
 import (
-	"github.com/leightonvanrooijen/utopia/internal/ui"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
+	"github.com/leightonvanrooijen/utopia/internal/ui"
 )
 
 // handleWatchFailure decides what the daemon does when a ready CR fails to

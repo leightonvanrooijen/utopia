@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/leightonvanrooijen/utopia/internal/analysis"
-	"github.com/leightonvanrooijen/utopia/internal/ui"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
+	"github.com/leightonvanrooijen/utopia/internal/ui"
 )
 
 // printModelReport renders the model comparison: a header saying what was read,

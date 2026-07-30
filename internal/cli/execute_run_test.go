@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/leightonvanrooijen/utopia/internal/ui"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 	"github.com/leightonvanrooijen/utopia/internal/ralph"
+	"github.com/leightonvanrooijen/utopia/internal/ui"
 )
 
 // A run with halted items did not fail, but the phase is incomplete: reporting

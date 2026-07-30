@@ -15,8 +15,8 @@ import (
 	"strings"
 
 	"github.com/leightonvanrooijen/utopia/internal"
-	"github.com/leightonvanrooijen/utopia/internal/ui"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
+	"github.com/leightonvanrooijen/utopia/internal/ui"
 )
 
 // Options configures a harvest session.

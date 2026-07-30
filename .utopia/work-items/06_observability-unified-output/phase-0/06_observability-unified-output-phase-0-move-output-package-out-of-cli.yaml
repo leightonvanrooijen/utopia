@@ -12,7 +12,7 @@ title: |
     any layer may import, and leave everything else alone. Pure relocation -
     no new methods, no behaviour change, no call-site rewrites beyond the
     import path.
-status: in_progress
+status: completed
 prompt: |-
     ## TASK
 
@@ -91,3 +91,11 @@ constraints:
 order: 0
 estimated_complexity: medium
 iteration_count: 1
+selected_validators:
+    - spec-intent
+executor_attempts:
+    - iteration: 1
+      role: default-executor
+      model: ""
+      effort: medium
+validators_routed: true

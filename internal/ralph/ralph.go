@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/leightonvanrooijen/utopia/internal"
-	"github.com/leightonvanrooijen/utopia/internal/ui"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 	"github.com/leightonvanrooijen/utopia/internal/git"
+	"github.com/leightonvanrooijen/utopia/internal/ui"
 	"github.com/leightonvanrooijen/utopia/internal/validators"
 	"github.com/leightonvanrooijen/utopia/internal/verification"
 )

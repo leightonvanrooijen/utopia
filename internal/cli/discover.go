@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/leightonvanrooijen/utopia/internal/ui"
 	"github.com/leightonvanrooijen/utopia/internal/discover"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
+	"github.com/leightonvanrooijen/utopia/internal/ui"
 	"github.com/spf13/cobra"
 )
 
