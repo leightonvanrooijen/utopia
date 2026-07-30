@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -119,10 +118,11 @@ func escalateScoping(
 	esc *ScopingEscalationError,
 	caps EscalationCaps,
 	transcript *strings.Builder,
+	finalDiff string,
 ) error {
 	appendScopingEscalation(transcript, esc)
 
-	rewritten, err := s.rewrite(ctx, item, crID, esc)
+	rewritten, err := s.rewrite(ctx, item, crID, esc, finalDiff)
 	if err == nil {
 		err = resumeAgainst(item, rewritten, specID, s.store, s.standards)
 	}
@@ -181,12 +181,15 @@ func appendScopingEscalation(transcript *strings.Builder, esc *ScopingEscalation
 }
 
 // rewrite sends the change request, the diagnoses and the surrounding spec and
-// ADR excerpts to the scoper, and reads back what it wrote.
+// ADR excerpts to the scoper, and reads back what it wrote. The evidence it is
+// given is the same escalation context an escalated execution attempt gets, built
+// by the same rules: conclusions and evidence, never the failed attempts.
 func (s *scoper) rewrite(
 	ctx context.Context,
 	item *domain.WorkItem,
 	crID string,
 	esc *ScopingEscalationError,
+	finalDiff string,
 ) (*domain.ChangeRequest, error) {
 	cr, err := s.store.LoadChangeRequest(crID)
 	if err != nil {
@@ -196,7 +199,7 @@ func (s *scoper) rewrite(
 	base := rewrittenCRBase(crID, item.ScopingEscalationCount)
 	abs := filepath.Join(s.store.ChangeRequestsDir(), base+".yaml")
 
-	prompt, err := s.buildPrompt(item, cr, crID, abs, esc)
+	prompt, err := s.buildPrompt(item, cr, crID, abs, esc, finalDiff)
 	if err != nil {
 		return nil, err
 	}
@@ -303,6 +306,10 @@ func resumeAgainst(item *domain.WorkItem, rewritten *domain.ChangeRequest, specI
 		item.MechanicalRetryCount = 0
 		item.LastFailureOutput = ""
 		item.LastValidatorFeedback = ""
+		// The conclusions were reached about a text that no longer exists, so they
+		// are dropped with the counters that measured it. They survive on the
+		// rewrite's provenance, which is where a reader looks for why it was written.
+		item.FailureConclusions = nil
 		item.Status = domain.WorkItemPending
 		return store.SaveWorkItemForSpec(specID, item)
 	}
@@ -340,16 +347,17 @@ func chunkRewritten(rewritten *domain.ChangeRequest, specID string, store *inter
 	return items, nil
 }
 
-// buildPrompt composes what the scoper is sent: the change request as it stands,
-// the specification the executor actually read, the diagnoses that say how it was
-// misread, and the spec and ADR excerpts that describe the ground the rewrite has
-// to stay on.
+// buildPrompt composes what the scoper is sent: the work item that failed, and
+// then the same escalation context an escalated execution attempt is built - the
+// change request as it stands, the spec and ADR excerpts, each failure's
+// conclusion, and the evidence of what broke. A scoping escalation is an
+// escalation, so it is built by the same rules: no prior-attempt transcript.
 //
 // The instruction is the load-bearing part. A model handed a failing work item
 // and a diagnosis will write code unless told not to; the whole point of this
 // path is that the code is not what is wrong.
-func (s *scoper) buildPrompt(item *domain.WorkItem, cr *domain.ChangeRequest, crID, abs string, esc *ScopingEscalationError) (string, error) {
-	source, err := s.changeRequestSource(crID)
+func (s *scoper) buildPrompt(item *domain.WorkItem, cr *domain.ChangeRequest, crID, abs string, esc *ScopingEscalationError, finalDiff string) (string, error) {
+	ec, err := buildEscalationContext(s.store, item, cr, crID, finalDiff, esc.Diagnoses)
 	if err != nil {
 		return "", err
 	}
@@ -372,10 +380,6 @@ change request file.
 You must not write to .utopia/specs/. Specs are only ever updated when a change
 request merges, and a scoper that edits them directly breaks that invariant.
 
-## THE CHANGE REQUEST AS IT STANDS
-
-`+"```yaml\n%s\n```"+`
-
 ## THE WORK ITEM THAT FAILED
 
 - id: %s
@@ -391,14 +395,9 @@ after chunking:
 
 %s
 `,
-		item.ID, source, item.ID, featureIDOf(item), strings.TrimSpace(item.Title), strings.TrimSpace(item.Prompt), diagnosisSection(esc))
+		item.ID, item.ID, featureIDOf(item), strings.TrimSpace(item.Title), strings.TrimSpace(item.Prompt), escalationReason(esc))
 
-	if excerpt := s.specExcerpt(cr, item, phaseOf(item)); excerpt != "" {
-		fmt.Fprintf(&b, "\n## THE SPEC THIS LANDS IN\n\n%s\n", excerpt)
-	}
-	if excerpt := s.adrExcerpt(item, esc); excerpt != "" {
-		fmt.Fprintf(&b, "\n## RELEVANT DECISIONS ALREADY MADE\n\n%s\n", excerpt)
-	}
+	ec.render(&b)
 
 	fmt.Fprintf(&b, `
 ## WHAT TO WRITE
@@ -433,102 +432,15 @@ summary of what you changed and why when you are done.
 	return b.String(), nil
 }
 
-// changeRequestSource reads the change request exactly as it sits on disk. The
-// file is quoted rather than the parsed struct re-marshalled so the scoper sees
-// the comments and formatting a person wrote, which is often where the intent
-// that never made it into a criterion actually lives.
-func (s *scoper) changeRequestSource(crID string) (string, error) {
-	path, err := s.store.ChangeRequestPath(crID)
-	if err != nil {
-		return "", fmt.Errorf("failed to locate change request %s: %w", crID, err)
-	}
-	source, err := os.ReadFile(path)
-	if err != nil {
-		return "", fmt.Errorf("failed to read change request %s: %w", path, err)
-	}
-	return strings.TrimSpace(string(source)), nil
-}
-
-// specExcerpt renders the spec the failing feature lands in, so the scoper can
-// see the language the rest of that spec already uses. A change request that
-// creates a new spec has nothing to quote, which is not an error - it is the
-// case where there is no established language to match yet.
-func (s *scoper) specExcerpt(cr *domain.ChangeRequest, item *domain.WorkItem, phase int) string {
-	specID := chunk.SpecForFeature(changesForPhase(cr, phase), tasksForPhase(cr, phase), featureIDOf(item))
-	if specID == "" {
-		return ""
-	}
-	spec, err := s.store.LoadSpec(specID)
-	if err != nil {
-		return ""
-	}
-
-	var b strings.Builder
-	fmt.Fprintf(&b, "Spec %s (%s):\n", spec.ID, spec.Title)
-	for _, dk := range spec.DomainKnowledge {
-		fmt.Fprintf(&b, "- domain knowledge: %s\n", strings.TrimSpace(dk))
-	}
-	for _, f := range spec.Features {
-		fmt.Fprintf(&b, "\n### %s\n%s\n", f.ID, strings.TrimSpace(f.Description))
-		for _, c := range f.AcceptanceCriteria {
-			fmt.Fprintf(&b, "- %s\n", c)
-		}
-	}
-	return strings.TrimSpace(b.String())
-}
-
-// adrExcerpt quotes the ADRs most likely to bear on the rewrite, ranked by how
-// much vocabulary they share with the work item and the diagnoses. It is a
-// starting point rather than a search: the scoper has Read and can open any
-// other ADR the excerpt makes it want to see.
-func (s *scoper) adrExcerpt(item *domain.WorkItem, esc *ScopingEscalationError) string {
-	adrs, err := s.store.ListADRs()
-	if err != nil || len(adrs) == 0 {
-		return ""
-	}
-
-	terms := termsOf(item.Title + " " + strings.Join(esc.Diagnoses, " "))
-	type scored struct {
-		adr   *domain.ADR
-		score int
-	}
-	ranked := make([]scored, 0, len(adrs))
-	for _, adr := range adrs {
-		ranked = append(ranked, scored{adr: adr, score: overlap(terms, termsOf(adr.Title+" "+adr.Context+" "+adr.Decision))})
-	}
-	sort.SliceStable(ranked, func(i, j int) bool { return ranked[i].score > ranked[j].score })
-
-	var b strings.Builder
-	quoted := 0
-	for _, r := range ranked {
-		if r.score == 0 || quoted >= maxScoperADRs {
-			break
-		}
-		fmt.Fprintf(&b, "### %s - %s\n%s\n\n", r.adr.ID, r.adr.Title, strings.TrimSpace(r.adr.Decision))
-		quoted++
-	}
-	return strings.TrimSpace(b.String())
-}
-
-// diagnosisSection renders the evidence the rewrite is built from: what each
-// failing validator said was wrong, and - for a comprehension failure - what it
-// says the work item should have been understood to mean. The corrected intent
-// is the closest thing to a rewrite anyone has already written down.
-func diagnosisSection(esc *ScopingEscalationError) string {
-	var b strings.Builder
+// escalationReason states why this work item reached the scoping path at all. The
+// diagnoses behind it are rendered by the shared escalation context, so this is
+// the framing rather than the evidence: whether a validator doubted the
+// specification outright, or the executor simply kept misreading it.
+func escalationReason(esc *ScopingEscalationError) string {
 	if esc.SpecDefectSuspected {
-		b.WriteString("A validator suspects the specification itself is wrong, not the implementation.\n\n")
-	} else {
-		fmt.Fprintf(&b, "The work item has failed comprehension validation %d time(s).\n\n", esc.ComprehensionCount)
+		return "A validator suspects the specification itself is wrong, not the implementation."
 	}
-	if len(esc.Diagnoses) == 0 {
-		b.WriteString("No validator diagnosis was recorded.\n")
-		return b.String()
-	}
-	for _, d := range esc.Diagnoses {
-		fmt.Fprintf(&b, "- %s\n", d)
-	}
-	return b.String()
+	return fmt.Sprintf("The work item has failed comprehension validation %d time(s).", esc.ComprehensionCount)
 }
 
 // rewrittenCRBase names a rewrite after what it supersedes: the change request's

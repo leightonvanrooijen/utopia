@@ -123,7 +123,7 @@ func TestScoperPrompt_CarriesTheChangeRequestDiagnosesSpecAndADR(t *testing.T) {
 	s := &scoper{store: store, model: "opus"}
 	item := scopingItem()
 
-	prompt, err := s.buildPrompt(item, cr, cr.ID, "/tmp/rewrite.yaml", scopingError())
+	prompt, err := s.buildPrompt(item, cr, cr.ID, "/tmp/rewrite.yaml", scopingError(), "")
 	if err != nil {
 		t.Fatalf("buildPrompt: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestScoperPrompt_InstructsARewriteRatherThanCode(t *testing.T) {
 	store, cr := scopingFixture(t)
 	s := &scoper{store: store, model: "opus"}
 
-	prompt, err := s.buildPrompt(scopingItem(), cr, cr.ID, "/tmp/rewrite.yaml", scopingError())
+	prompt, err := s.buildPrompt(scopingItem(), cr, cr.ID, "/tmp/rewrite.yaml", scopingError(), "")
 	if err != nil {
 		t.Fatalf("buildPrompt: %v", err)
 	}

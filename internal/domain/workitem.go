@@ -62,6 +62,16 @@ type WorkItem struct {
 	// Kept separate from LastFailureOutput to allow distinct prompt sections.
 	LastValidatorFeedback string `yaml:"last_validator_feedback,omitempty"`
 
+	// FailureConclusions accumulates what each failed validation attempt
+	// concluded: the failing validator's diagnosis and, on a comprehension
+	// failure, the corrected intent. It is the one thing that survives a failed
+	// attempt into an escalated one, because an escalated attempt is built a fresh
+	// context from the evidence rather than handed the transcript that produced it
+	// - replaying that transcript would anchor the escalated model to the mental
+	// model that just failed. It is cleared when the change request is rewritten,
+	// since the diagnoses were about a text that no longer exists.
+	FailureConclusions []FailureConclusion `yaml:"failure_conclusions,omitempty"`
+
 	// SelectedValidators holds the validator IDs the relevance router chose for
 	// this work item. It is populated once, when the item first reaches the
 	// validation gate, and reused across retries and resumes so the routing model
@@ -97,6 +107,24 @@ type WorkItem struct {
 	// this work item. Once true, SelectedValidators is authoritative even when
 	// empty, so routing is not repeated on retries or after a resume.
 	ValidatorsRouted bool `yaml:"validators_routed,omitempty"`
+}
+
+// FailureConclusion is one failing validator's conclusion about one attempt. It
+// holds conclusions only - never the attempt's reasoning, its partial diffs or
+// its tool calls - so carrying it into a later prompt cannot smuggle the failed
+// attempt's transcript along with it.
+type FailureConclusion struct {
+	// Iteration is the attempt the conclusion was reached about.
+	Iteration int `yaml:"iteration"`
+	// ValidatorID names the validator that reached it.
+	ValidatorID string `yaml:"validator_id"`
+	// FailureClass is the class that validator reported, after normalization.
+	FailureClass string `yaml:"failure_class,omitempty"`
+	// Diagnosis is why the check failed.
+	Diagnosis string `yaml:"diagnosis"`
+	// CorrectedIntent is what the executor should have understood the work item to
+	// mean, present on a comprehension failure and empty otherwise.
+	CorrectedIntent string `yaml:"corrected_intent,omitempty"`
 }
 
 // NewWorkItem creates a work item from a spec feature.

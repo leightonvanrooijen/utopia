@@ -342,7 +342,7 @@ func executeWorkItem(
 			// produces nothing has still been made.
 			item.ScopingEscalationCount++
 			esc := &ScopingEscalationError{WorkItemID: item.ID, ComprehensionCount: item.ComprehensionCount}
-			if err := escalateScoping(ctx, sc, item, specID, crID, esc, caps, &transcript); err != nil {
+			if err := escalateScoping(ctx, sc, item, specID, crID, esc, caps, &transcript, escalationDiff(ctx, validatorRunner)); err != nil {
 				return nil, err
 			}
 			continue
@@ -367,8 +367,25 @@ func executeWorkItem(
 			return nil, fmt.Errorf("failed to save work item state: %w", err)
 		}
 
-		// Build the prompt (includes failure injection if applicable)
+		// Build the prompt. A mechanical retry gets the failure-injection prompt
+		// unchanged - the intent was right and the last diff is what it is fixing.
+		// An escalated attempt gets a freshly constructed context instead: the
+		// specification, the failures' conclusions and the evidence, without the
+		// attempts that produced them. Handing the escalated model the transcript of
+		// the attempts that just failed would anchor it to the reading that failed,
+		// which is the one thing escalation exists to escape.
+		//
+		// Escalation is read from the item's persisted comprehension counter, the
+		// same source the model resolution and the cap charge below read, so all
+		// three agree on whether this attempt is escalated.
 		prompt := buildPrompt(item)
+		if item.ComprehensionCount > 0 {
+			escalated, err := buildEscalatedPrompt(store, item, crID, escalationDiff(ctx, validatorRunner))
+			if err != nil {
+				return nil, err
+			}
+			prompt = escalated
+		}
 
 		// Which executor this attempt runs on is derived from the item's persisted
 		// escalation state rather than from an in-memory flag, so a resumed item
@@ -549,6 +566,11 @@ func executeWorkItem(
 			fmt.Printf("  %s\n", decision.logLine(item.IterationCount, maxIterations, caps))
 			item.LastFailureOutput = ""
 			item.LastValidatorFeedback = gateFeedback(gateErr)
+			// What this attempt concluded is kept, persisted with the item, so a later
+			// escalated attempt can be handed the conclusions without the attempt. The
+			// verbatim feedback above is still only the previous iteration's, which is
+			// what a mechanical retry is given.
+			recordFailureConclusions(item, aggregate)
 			if err := store.SaveWorkItemForSpec(specID, item); err != nil {
 				return nil, fmt.Errorf("failed to save work item state: %w", err)
 			}
@@ -566,7 +588,7 @@ func executeWorkItem(
 				// The change request, not the code, is what gets rewritten here. A
 				// rewrite the loop can resume against returns nil and execution carries
 				// on against the new specification; anything else stops the item.
-				if err := escalateScoping(ctx, sc, item, specID, crID, scopingEscalationError(item, aggregate, decision), caps, &transcript); err != nil {
+				if err := escalateScoping(ctx, sc, item, specID, crID, scopingEscalationError(item, aggregate, decision), caps, &transcript, escalationDiff(ctx, validatorRunner)); err != nil {
 					return nil, err
 				}
 			}
