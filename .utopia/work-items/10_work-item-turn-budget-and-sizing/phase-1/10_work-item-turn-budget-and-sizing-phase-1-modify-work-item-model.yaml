@@ -1,7 +1,7 @@
 id: 10_work-item-turn-budget-and-sizing-phase-1-modify-work-item-model
 spec_ref: 10_work-item-turn-budget-and-sizing-phase-1.modify-work-item-model
 title: Modify the work-item-model feature
-status: pending
+status: in_progress
 prompt: |-
     ## TASK
 
@@ -50,3 +50,4 @@ constraints:
     - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
 order: 1
 estimated_complexity: medium
+iteration_count: 1

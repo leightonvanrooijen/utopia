@@ -9,6 +9,24 @@ const (
 	ComplexityHigh   Complexity = "high"
 )
 
+// CriteriaOrigin records where a split work item's acceptance criteria came
+// from. It is empty for a work item that was not split, because the question
+// only arises once a feature is divided: an unsplit item carries the feature's
+// criteria verbatim, so there is nothing to attribute.
+type CriteriaOrigin string
+
+const (
+	// CriteriaOriginPartitioned means the criteria were taken from the feature's
+	// own acceptance criteria, each assigned to exactly one work item. Every
+	// criterion stays traceable to the reviewed change request.
+	CriteriaOriginPartitioned CriteriaOrigin = "partitioned"
+	// CriteriaOriginAuthored means the sizer wrote the criteria itself, which it
+	// may only do when a single criterion is too large to partition further. It is
+	// recorded because criteria that no human reviewed should be visible rather
+	// than silent.
+	CriteriaOriginAuthored CriteriaOrigin = "authored"
+)
+
 // WorkItemStatus tracks execution state
 type WorkItemStatus string
 
@@ -43,6 +61,17 @@ type WorkItem struct {
 
 	// Sequential execution order (0-indexed position from spec)
 	Order int `yaml:"order"`
+
+	// SourceFeatureID names the feature this work item was derived from. It equals
+	// the feature ID for an unsplit item, and stays the parent feature's ID for
+	// every slice of a split one, whose own ID is suffixed to keep it unique. It is
+	// what makes a split traceable: the item's ID identifies the slice, this
+	// identifies the change request feature the slice belongs to.
+	SourceFeatureID string `yaml:"source_feature_id,omitempty"`
+
+	// CriteriaOrigin records whether a split item's criteria were partitioned from
+	// the feature or authored by the sizer. Empty when the item was not split.
+	CriteriaOrigin CriteriaOrigin `yaml:"criteria_origin,omitempty"`
 
 	// Work items that must complete before this one
 	Dependencies []string `yaml:"dependencies,omitempty"`
@@ -183,13 +212,18 @@ type FailureConclusion struct {
 
 // NewWorkItem creates a work item from a spec feature.
 // The prompt and constraints are set separately by the chunking strategy.
+//
+// SourceFeatureID defaults to featureID and CriteriaOrigin is left empty, which
+// is the unsplit case. A caller generating slices of a split feature overwrites
+// both: the parent feature's ID and how the slice's criteria were arrived at.
 func NewWorkItem(id string, specID string, featureID string, feature Feature, order int) *WorkItem {
 	return &WorkItem{
-		ID:         id,
-		SpecRef:    specID + "." + featureID,
-		Title:      feature.Description,
-		Status:     WorkItemPending,
-		Order:      order,
-		Complexity: ComplexityMedium,
+		ID:              id,
+		SpecRef:         specID + "." + featureID,
+		Title:           feature.Description,
+		Status:          WorkItemPending,
+		Order:           order,
+		Complexity:      ComplexityMedium,
+		SourceFeatureID: featureID,
 	}
 }

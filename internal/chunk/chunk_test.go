@@ -1306,6 +1306,15 @@ func TestChunk_SplitFeatureOrderIsContiguousAndAdjacent(t *testing.T) {
 	if items[1].Title != "Oversized feature, part 1" {
 		t.Errorf("items[1].Title = %q, want the sizer's slice description", items[1].Title)
 	}
+
+	// Every item names the feature it came from, so a split slice stays traceable
+	// to the change request feature rather than only to its own generated ID.
+	wantSources := []string{"feature-1", "feature-2", "feature-2", "feature-3"}
+	for i, item := range items {
+		if item.SourceFeatureID != wantSources[i] {
+			t.Errorf("items[%d].SourceFeatureID = %q, want %q", i, item.SourceFeatureID, wantSources[i])
+		}
+	}
 }
 
 func TestChunkPhase_SplitFeatureOrderIsContiguousAndAdjacent(t *testing.T) {
@@ -1377,6 +1386,14 @@ func TestChunk_UnsplitFeaturesAreUnchangedBySizing(t *testing.T) {
 			}
 			if items[0].Order != 0 {
 				t.Errorf("items[0].Order = %d, want 0", items[0].Order)
+			}
+			// Not split: source is the feature itself and there is no criteria
+			// attribution to make.
+			if items[0].SourceFeatureID != "feature-1" {
+				t.Errorf("items[0].SourceFeatureID = %q, want %q", items[0].SourceFeatureID, "feature-1")
+			}
+			if items[0].CriteriaOrigin != "" {
+				t.Errorf("items[0].CriteriaOrigin = %q, want empty", items[0].CriteriaOrigin)
 			}
 		})
 	}

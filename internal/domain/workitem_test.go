@@ -70,6 +70,65 @@ func TestNewWorkItem(t *testing.T) {
 	if item.LastFailureOutput != "" {
 		t.Errorf("LastFailureOutput = %q, want empty string", item.LastFailureOutput)
 	}
+
+	// An item built straight from a feature was not split: it is derived from that
+	// feature, and there is no criteria attribution to make.
+	if item.SourceFeatureID != "signup" {
+		t.Errorf("SourceFeatureID = %q, want %q", item.SourceFeatureID, "signup")
+	}
+
+	if item.CriteriaOrigin != "" {
+		t.Errorf("CriteriaOrigin = %q, want empty string", item.CriteriaOrigin)
+	}
+}
+
+func TestCriteriaOrigin_Constants(t *testing.T) {
+	if CriteriaOriginPartitioned != "partitioned" {
+		t.Errorf("CriteriaOriginPartitioned = %q, want %q", CriteriaOriginPartitioned, "partitioned")
+	}
+	if CriteriaOriginAuthored != "authored" {
+		t.Errorf("CriteriaOriginAuthored = %q, want %q", CriteriaOriginAuthored, "authored")
+	}
+}
+
+// Provenance has to survive the round trip work items take through disk, or a
+// resumed run cannot say which feature a slice came from or who wrote its
+// criteria. Both are omitted when unset so unsplit items stay unchanged on disk.
+func TestWorkItem_ProvenanceRoundTrip(t *testing.T) {
+	out, err := yaml.Marshal(&WorkItem{
+		ID:              "item-2",
+		Status:          WorkItemPending,
+		SourceFeatureID: "migrate-call-sites",
+		CriteriaOrigin:  CriteriaOriginPartitioned,
+	})
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	if !strings.Contains(string(out), "source_feature_id: migrate-call-sites") {
+		t.Errorf("marshalled work item missing source_feature_id:\n%s", out)
+	}
+	if !strings.Contains(string(out), "criteria_origin: partitioned") {
+		t.Errorf("marshalled work item missing criteria_origin:\n%s", out)
+	}
+
+	var loaded WorkItem
+	if err := yaml.Unmarshal(out, &loaded); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	if loaded.SourceFeatureID != "migrate-call-sites" {
+		t.Errorf("SourceFeatureID = %q, want migrate-call-sites", loaded.SourceFeatureID)
+	}
+	if loaded.CriteriaOrigin != CriteriaOriginPartitioned {
+		t.Errorf("CriteriaOrigin = %q, want %q", loaded.CriteriaOrigin, CriteriaOriginPartitioned)
+	}
+
+	bare, err := yaml.Marshal(&WorkItem{ID: "item", Status: WorkItemPending})
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	if strings.Contains(string(bare), "source_feature_id") || strings.Contains(string(bare), "criteria_origin") {
+		t.Errorf("unsplit work item should omit provenance keys:\n%s", bare)
+	}
 }
 
 func TestWorkItem_IterationTracking(t *testing.T) {

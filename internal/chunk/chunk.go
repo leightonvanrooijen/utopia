@@ -171,6 +171,10 @@ func generateWorkItems(units []workUnit, idPrefix string, isRefactor, isBugfix b
 			i, // Order is the position in the expanded unit list
 		)
 
+		// A split unit's ID is the slice's, so the source feature has to be restated
+		// here; for an unsplit unit the two are the same and this is a no-op.
+		workItem.SourceFeatureID = unit.sourceFeature
+
 		// Apply constraints (defaults + type-specific constraints)
 		workItem.Constraints = mergeConstraintsForCRType(isRefactor, isBugfix)
 
