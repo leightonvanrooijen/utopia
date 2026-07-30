@@ -1,7 +1,7 @@
 id: escalation-routing
 title: escalation-routing
 created: "2026-07-30T10:28:20.565885+10:00"
-updated: "2026-07-30T10:28:20.566173+10:00"
+updated: "2026-07-30T19:57:07.646855+10:00"
 description: ""
 features:
     - id: failure-class-routing
@@ -119,5 +119,7 @@ features:
         - The record is written when a change request aborts, not only when it completes
         - Escalation rate can be derived per spec and per cr_type from the persisted records without re-reading run transcripts
         - The ratio of mechanical to comprehension failures can be derived per spec from the persisted records
-        - The record notes that token counts and monetary cost are not captured, so a reader does not mistake their absence for zero
+        - The record notes when token counts or cost were unavailable for an attempt, so a reader does not mistake their absence for zero
         - Failure to write the record logs a warning and does not block the execution loop
+        - Each attempt's token usage and cost are read from the persisted run record rather than re-derived from attempt counts
+        - Cost per change request outcome is reported as measured under api-key auth and as a list-price estimate under subscription auth
