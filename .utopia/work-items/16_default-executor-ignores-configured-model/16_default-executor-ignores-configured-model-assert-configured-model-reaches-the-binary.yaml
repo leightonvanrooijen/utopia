@@ -1,0 +1,109 @@
+id: 16_default-executor-ignores-configured-model-assert-configured-model-reaches-the-binary
+spec_ref: 16_default-executor-ignores-configured-model.assert-configured-model-reaches-the-binary
+title: |
+    Fix the gap that let this defect ship: no test asserted that a configured
+    default-executor model reaches the claude binary.
+
+    The existing criterion "If no model specified, claude CLI uses its default"
+    is correct and must stay - it covers a project with no models section. What
+    was missing is the counterpart: when a model IS configured, --model must be
+    on the argv. The defect satisfied every existing test by taking the
+    no-model-specified branch for a project that had in fact specified one.
+status: pending
+prompt: |-
+    ## TASK
+
+    Fix the gap that let this defect ship: no test asserted that a configured
+    default-executor model reaches the claude binary.
+
+    The existing criterion "If no model specified, claude CLI uses its default"
+    is correct and must stay - it covers a project with no models section. What
+    was missing is the counterpart: when a model IS configured, --model must be
+    on the argv. The defect satisfied every existing test by taking the
+    no-model-specified branch for a project that had in fact specified one.
+
+
+    Acceptance criteria:
+    - A test asserts that with models.execute configured and no --model flag, the claude binary is invoked with --model set to the configured value
+    - A test asserts that with no models section at all, no --model flag is passed and the claude CLI default applies, per feature backward-compatibility
+    - A test asserts that a --model flag overrides a configured models.execute for that invocation
+    - The assertions cover a default-executor attempt specifically, not only the roles that already resolved their model correctly
+
+
+    ## REFERENCE
+
+    The following spec feature defines the correct behavior:
+
+    Pass the resolved model and effort to the Claude CLI wrapper.
+
+    Effort travels the same path as model - resolved by the caller from
+    the role, threaded through the wrapper, appended as a flag. It is a
+    second parameter on an existing route rather than a new mechanism.
+
+
+    Acceptance criteria:
+    - CLI struct accepts optional model and effort parameters
+    - Model is passed to claude binary via --model flag
+    - If no model specified, claude CLI uses its default
+    - Model and effort flow through Prompt and SessionWithCapture methods
+    - Effort is passed to claude binary via --effort flag
+    - If no effort is specified, the flag is omitted and the claude CLI default applies
+
+
+
+    ## HINTS
+
+    - internal/claude.go:238 is the guarded append; internal/claude_usage_test.go shows the existing pattern for asserting on constructed argv
+    - A regression test that only exercises the escalated executor or a validator would have passed against the defect - the default executor is the path that needs covering
+
+
+
+    ## STANDARDS
+
+    This project defines coding standards in .utopia/standards/. Before implementing, read the standards docs relevant to the files this task touches:
+
+    - id: cli-organization
+      description: How to structure cobra commands in internal/cli: thin handlers that own the CLI frame and delegate the algorithm to domain packages.
+      tags: go, cli, cobra, architecture
+      path: .utopia/standards/cli-organization.md
+    - id: error-handling
+      description: How errors are created, wrapped, matched, and surfaced: typed domain errors for branching, %w wrapping for infrastructure, one exit point in root.go.
+      tags: go, errors, cli
+      path: .utopia/standards/error-handling.md
+    - id: terminal-output
+      description: One shared output vocabulary (glyphs, banners, progress) routed through cobra's injectable writers so command output is consistent and testable.
+      tags: go, cli, ux, output
+      path: .utopia/standards/terminal-output.md
+
+
+    ## CONSTRAINTS
+
+    - This is a bugfix. The implementation must be corrected to match the spec.
+    - The acceptance criteria below are the source of truth for correct behavior.
+    - Fix only the behavior that deviates from the spec
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+    - You are running autonomously and non-interactively; never ask for, or wait on, human input
+    - When a genuine design choice arises, choose the best-justified option and implement it rather than deferring the decision to a human
+    - Record any non-obvious decision - rationale and the alternatives considered - in the commit or PR body, so PR review is the human checkpoint
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - This is a bugfix. The implementation must be corrected to match the spec.
+    - The acceptance criteria below are the source of truth for correct behavior.
+    - Fix only the behavior that deviates from the spec
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+    - You are running autonomously and non-interactively; never ask for, or wait on, human input
+    - When a genuine design choice arises, choose the best-justified option and implement it rather than deferring the decision to a human
+    - Record any non-obvious decision - rationale and the alternatives considered - in the commit or PR body, so PR review is the human checkpoint
+order: 1
+source_feature_id: assert-configured-model-reaches-the-binary
+estimated_complexity: medium

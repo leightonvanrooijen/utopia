@@ -1,0 +1,131 @@
+id: 16_default-executor-ignores-configured-model-resolve-default-executor-model-from-config
+spec_ref: 16_default-executor-ignores-configured-model.resolve-default-executor-model-from-config
+title: |
+    Fix the default executor's model resolution to match spec
+    model-configuration, feature config-structure.
+
+    Current behavior: internal/ralph/ralph.go:121-124 leaves
+    defaultExecutorModel empty unless the --model CLI flag is set, so
+    config.Models.Execute is never read. With no flag, no --model reaches the
+    claude binary and the CLI's own default model runs the attempt.
+
+    Expected behavior per the spec: the per-command execute key overrides
+    models.default, and a missing execute key falls back to models.default -
+    the same fallback chain every other role already gets. The --model flag
+    keeps overriding the resolved value for a single invocation rather than
+    being the only way to set it.
+status: pending
+prompt: |-
+    ## TASK
+
+    Fix the default executor's model resolution to match spec
+    model-configuration, feature config-structure.
+
+    Current behavior: internal/ralph/ralph.go:121-124 leaves
+    defaultExecutorModel empty unless the --model CLI flag is set, so
+    config.Models.Execute is never read. With no flag, no --model reaches the
+    claude binary and the CLI's own default model runs the attempt.
+
+    Expected behavior per the spec: the per-command execute key overrides
+    models.default, and a missing execute key falls back to models.default -
+    the same fallback chain every other role already gets. The --model flag
+    keeps overriding the resolved value for a single invocation rather than
+    being the only way to set it.
+
+
+    Acceptance criteria:
+    - The default executor resolves its model from models.execute, falling back to models.default when models.execute is absent, matching spec model-configuration feature config-structure
+    - A --model flag still overrides the resolved model for that invocation, and the resolved config value applies when the flag is absent
+    - The resolved default executor model is passed to the claude binary via --model on every default-executor attempt, including mechanical retries
+    - The escalated executor, validators, validator router and scoper resolve their models exactly as they do today - this change touches the default executor only
+    - Escalation still resolves from the persisted comprehension counter rather than by comparing model strings, so a project configuring models.execute and models.execute_escalated to the same model still escalates
+    - Effort resolution is unchanged, and no code path raises the default executor's effort in response to a failure
+
+
+    ## REFERENCE
+
+    The following spec feature defines the correct behavior:
+
+    Define the models section in .utopia/config.yaml with default and
+    per-command overrides.
+
+    Execution is no longer one role. The default executor, the
+    escalated executor, the validators and the scoper are four roles
+    with different cost profiles and different failure consequences, so
+    each resolves its own model with a fallback chain rather than
+    sharing one key.
+
+
+    Acceptance criteria:
+    - Config supports optional models section
+    - models.default specifies fallback model for all commands
+    - Per-command keys override the default (cr, harvest, execute, execute_escalated, scoper, validators, validator_router, discover, standards, refactor, shape, validator_create, validator_edit)
+    - If models section is missing, sonnet is used as implicit default
+    - If a command key is missing, models.default is used
+    - Invalid model name in config produces clear error at load time
+    - models.execute_escalated specifies the model used once execution escalates after a comprehension failure
+    - models.scoper specifies the model used to rewrite a change request during scoping escalation
+    - If models.execute_escalated is missing, opus is used
+    - If models.scoper is missing, models.execute_escalated is used
+    - models.execute_escalated and models.scoper resolve to a model at least as capable as models.execute, and a configuration that escalates downward produces a clear error at load time
+
+
+
+    ## HINTS
+
+    - internal/ralph/ralph.go:119-124 is the defect; line 120 shows the shape the model resolution should have had
+    - ModelConfig.ExecutorModel() at internal/domain/discovery.go:245 already implements the fallback chain and is currently only called from internal/domain/model.go:145
+    - resolveEscalatedExecutorModel at internal/ralph/escalation.go:392 is the working precedent for reading a role's model off config
+    - defaultExecutorModel is threaded through executeWorkItem (ralph.go:222, :287) and compared at ralph.go:477 to decide whether an attempt overrides the base CLI - check that comparison still behaves when the base value is no longer empty
+
+
+
+    ## STANDARDS
+
+    This project defines coding standards in .utopia/standards/. Before implementing, read the standards docs relevant to the files this task touches:
+
+    - id: cli-organization
+      description: How to structure cobra commands in internal/cli: thin handlers that own the CLI frame and delegate the algorithm to domain packages.
+      tags: go, cli, cobra, architecture
+      path: .utopia/standards/cli-organization.md
+    - id: error-handling
+      description: How errors are created, wrapped, matched, and surfaced: typed domain errors for branching, %w wrapping for infrastructure, one exit point in root.go.
+      tags: go, errors, cli
+      path: .utopia/standards/error-handling.md
+    - id: terminal-output
+      description: One shared output vocabulary (glyphs, banners, progress) routed through cobra's injectable writers so command output is consistent and testable.
+      tags: go, cli, ux, output
+      path: .utopia/standards/terminal-output.md
+
+
+    ## CONSTRAINTS
+
+    - This is a bugfix. The implementation must be corrected to match the spec.
+    - The acceptance criteria below are the source of truth for correct behavior.
+    - Fix only the behavior that deviates from the spec
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+    - You are running autonomously and non-interactively; never ask for, or wait on, human input
+    - When a genuine design choice arises, choose the best-justified option and implement it rather than deferring the decision to a human
+    - Record any non-obvious decision - rationale and the alternatives considered - in the commit or PR body, so PR review is the human checkpoint
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - This is a bugfix. The implementation must be corrected to match the spec.
+    - The acceptance criteria below are the source of truth for correct behavior.
+    - Fix only the behavior that deviates from the spec
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+    - You are running autonomously and non-interactively; never ask for, or wait on, human input
+    - When a genuine design choice arises, choose the best-justified option and implement it rather than deferring the decision to a human
+    - Record any non-obvious decision - rationale and the alternatives considered - in the commit or PR body, so PR review is the human checkpoint
+order: 0
+source_feature_id: resolve-default-executor-model-from-config
+estimated_complexity: medium
