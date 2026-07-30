@@ -15,7 +15,7 @@ title: |
     `execute` are separate commands; a flag on `execute` would be
     invisible to the chunker. It is named after work items rather than
     after either command because it belongs to neither.
-status: in_progress
+status: completed
 prompt: |-
     ## TASK
 
@@ -88,3 +88,8 @@ constraints:
 order: 0
 estimated_complexity: medium
 iteration_count: 1
+executor_attempts:
+    - iteration: 1
+      role: default-executor
+      model: ""
+      effort: medium
