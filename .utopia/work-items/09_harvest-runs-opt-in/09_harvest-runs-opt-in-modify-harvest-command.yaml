@@ -12,7 +12,7 @@ title: |
     Runs are therefore included only when the operator asks for them via
     --runs, and harvest prints a cheap filesystem-derived count hint so
     accumulated runs stay discoverable without being paid for.
-status: in_progress
+status: completed
 prompt: |-
     ## TASK
 
@@ -81,23 +81,6 @@ constraints:
 order: 0
 estimated_complexity: medium
 iteration_count: 3
-last_validator_feedback: |
-    Gating connector validators:after-workitem blocked workitem-verified:
-    Validator spec-intent failed:
-    All 12 acceptance criteria satisfied: flag default false (`internal/cli/harvest.go:51`), no run transcripts without `--runs` (`sourceRuns = nil` at `internal/harvest/harvest.go:618-620`), run priority preserved with `--runs`, session gating hinges on conversations alone without the flag (`harvest.go:626`), runs left unprocessed and re-harvestable, count hint filesystem-derived only (`ListUnprocessedExecutionRuns` + `formatRunsExcludedHint`), no hint at zero runs or when opted in. Prompt no longer instructs marking runs it was never shown (`buildMarkProcessedInstructions`). Spec files correctly left untouched per constraint. Tests exercise the behaviours, not just the strings.
-
-    One standards violation:
-
-    - `internal/harvest/harvest.go:623` - [B] new user-facing output line emitted with package-level `fmt.Println(hint)` instead of cobra's injectable writer, so the criterion-mandated hint is unredirectable and unassertable - no test verifies `Run` actually prints it, only that `formatRunsExcludedHint` returns it. Route it through a writer supplied by the caller (e.g. an `io.Writer`/`ui.Printer` on `harvest.Options`, populated from `cmd.OutOrStdout()` at `internal/cli/harvest.go:58`), keeping the hint before the early return. Standard `terminal-output.md:41`: "every new or touched line of output must go through `cmd.OutOrStdout()` / `cmd.ErrOrStderr()` (usually via a `ui.Printer`)"; anti-pattern table `terminal-output.md:151`: "Package-level `fmt.Print*` for command output | `ui.Printer` over `cmd.OutOrStdout()` / `cmd.ErrOrStderr()` | Error". Emitting from the handler instead is acceptable only if the hint still prints before the session starts.
-
-    <VERDICT>
-    {
-      "verdict": "fail",
-      "failure_class": "mechanical",
-      "diagnosis": "Intent is correct: every acceptance criterion is satisfied in substance, runs are genuinely excluded from the prompt rather than accepted-and-ignored, the marking instructions were narrowed so the session is never told to touch files it was not shown, and spec files were left for the CR merge as constrained. The single defect is a documented terminal-output rule missed on one new print line; the author understood the task and can fix it from this list without re-deriving anything.",
-      "confidence": "high"
-    }
-    </VERDICT>
 failure_conclusions:
     - iteration: 1
       validator_id: spec-intent
@@ -111,7 +94,7 @@ selected_validators:
     - spec-intent
 mechanical_retry_count: 1
 comprehension_count: 1
-opus_execution_attempts: 1
+opus_execution_attempts: 2
 mechanical_failures_total: 1
 comprehension_failures_total: 1
 executor_attempts:
@@ -120,6 +103,10 @@ executor_attempts:
       model: ""
       effort: medium
     - iteration: 2
+      role: escalated-executor
+      model: fable
+      effort: high
+    - iteration: 3
       role: escalated-executor
       model: fable
       effort: high
