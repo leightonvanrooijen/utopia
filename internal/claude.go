@@ -61,6 +61,15 @@ func NewCLI() *CLI {
 	}
 }
 
+// WithPermissionMode selects how this CLI answers permission prompts. The
+// constructor defaults to bypassing them, which is what an executor needs; a
+// read-only role sets the default mode instead, so a tool outside its allowlist
+// is denied rather than waved through by the bypass.
+func (c *CLI) WithPermissionMode(mode PermissionMode) *CLI {
+	c.permissionMode = mode
+	return c
+}
+
 // WithAllowedTools sets a whitelist of allowed tools
 func (c *CLI) WithAllowedTools(tools []string) *CLI {
 	c.allowedTools = tools

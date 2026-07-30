@@ -57,8 +57,9 @@ type FeatureSplits map[string][]domain.Feature
 // workUnit is one work item's worth of a feature: the feature itself when it fit
 // the turn budget, or one slice of a feature the sizer split.
 type workUnit struct {
-	feature       domain.Feature // description and criteria this work item covers
-	sourceFeature string         // ID of the feature the unit was derived from
+	feature        domain.Feature        // description and criteria this work item covers
+	sourceFeature  string                // ID of the feature the unit was derived from
+	criteriaOrigin domain.CriteriaOrigin // where a split unit's criteria came from; empty when unsplit
 }
 
 // Chunk transforms a change request into work items.
@@ -144,12 +145,21 @@ func expandFeatures(features []domain.Feature, splits FeatureSplits) []workUnit 
 			continue
 		}
 
+		// Criteria attribution is derived from the slices rather than declared
+		// alongside them, so the label and the criteria it describes cannot
+		// disagree: a split whose slices account for every criterion of the feature
+		// exactly once is a partition, and anything else is the sizer's own writing.
+		origin := domain.CriteriaOriginAuthored
+		if isPartitionOf(feature.AcceptanceCriteria, slices) {
+			origin = domain.CriteriaOriginPartitioned
+		}
+
 		for n, slice := range slices {
 			slice.ID = fmt.Sprintf("%s-%d", feature.ID, n+1)
 			if len(slice.Hints) == 0 {
 				slice.Hints = feature.Hints
 			}
-			units = append(units, workUnit{feature: slice, sourceFeature: feature.ID})
+			units = append(units, workUnit{feature: slice, sourceFeature: feature.ID, criteriaOrigin: origin})
 		}
 	}
 
@@ -174,6 +184,7 @@ func generateWorkItems(units []workUnit, idPrefix string, isRefactor, isBugfix b
 		// A split unit's ID is the slice's, so the source feature has to be restated
 		// here; for an unsplit unit the two are the same and this is a no-op.
 		workItem.SourceFeatureID = unit.sourceFeature
+		workItem.CriteriaOrigin = unit.criteriaOrigin
 
 		// Apply constraints (defaults + type-specific constraints)
 		workItem.Constraints = mergeConstraintsForCRType(isRefactor, isBugfix)

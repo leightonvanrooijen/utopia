@@ -151,7 +151,7 @@ func runExecute(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load work items: %w", err)
 	}
 	if len(items) == 0 {
-		items, err = chunkCR(out, cr, crID, store, config, absPath)
+		items, err = chunkCR(cmd.Context(), out, cr, crID, store, config, absPath, utopiaDir, over, authMode)
 		if err != nil {
 			return err
 		}
@@ -364,7 +364,7 @@ func executeSingleCR(ctx context.Context, out *ui.Printer, cr *domain.ChangeRequ
 		return fmt.Errorf("failed to load work items: %w", err)
 	}
 	if len(items) == 0 {
-		items, err = chunkCR(out, cr, crID, store, config, projectDir)
+		items, err = chunkCR(ctx, out, cr, crID, store, config, projectDir, utopiaDir, over, authMode)
 		if err != nil {
 			return err
 		}
@@ -483,7 +483,7 @@ func executeInitiativeCore(
 			if err := store.SaveChangeRequest(cr); err != nil {
 				return fmt.Errorf("failed to update CR status: %w", err)
 			}
-			items, err = chunkPhase(out, cr.ID, phaseIndex, &phase, store, config, projectDir)
+			items, err = chunkPhase(ctx, out, cr.ID, phaseIndex, &phase, store, config, projectDir, utopiaDir, over, authMode)
 			if err != nil {
 				return err
 			}
@@ -595,7 +595,53 @@ func reportNeedsHuman(out *ui.Printer, result *ralph.Result) bool {
 // CHUNKING
 // ============================================================================
 
-func chunkCR(out *ui.Printer, cr *domain.ChangeRequest, crID string, store *internal.YAMLStore, config *domain.Config, projectDir string) ([]*domain.WorkItem, error) {
+// sizerOptions builds the configuration for the sizing pass that runs before
+// work items are generated. The sizer follows the run's --model override when
+// there is one, and otherwise resolves models.chunk_sizer.
+func sizerOptions(config *domain.Config, utopiaDir string, over ralph.Overrides, authMode domain.AuthMode) chunk.SizerOptions {
+	model := config.Models.ChunkSizerModel()
+	if over.Model != "" {
+		model = over.Model
+	}
+	return chunk.SizerOptions{
+		TurnBudget: config.WorkItems.TurnBudgetOr(),
+		Model:      model,
+		Auth:       authMode,
+		UtopiaDir:  utopiaDir,
+	}
+}
+
+// reportSizing prints what the sizer concluded about each feature and how many
+// work items that produced, so a split is visible at chunk time rather than only
+// inferable from the work items it left behind. A pass that could not be used is
+// reported as the fallback it is.
+func reportSizing(out *ui.Printer, sizing *chunk.Sizing, turnBudget int) {
+	if len(sizing.Verdicts) == 0 {
+		return
+	}
+
+	if sizing.Fallback != "" {
+		out.Warnf("Sizing unavailable (%s) - falling back to one work item per feature", sizing.Fallback)
+	}
+
+	out.Progressf("Sizing against a %d-turn budget:\n", turnBudget)
+	for _, v := range sizing.Verdicts {
+		glyph, assessment := ui.Success, "fits the budget"
+		switch {
+		case !v.Assessed:
+			glyph, assessment = ui.Warning, "not assessed"
+		case !v.FitsBudget:
+			glyph, assessment = ui.Warning, "exceeds the budget"
+		}
+		out.Progressf("  %s %s: %s, %d work item(s)\n", glyph, v.FeatureID, assessment, v.WorkItems)
+		if v.Reason != "" {
+			out.Progressf("      %s\n", v.Reason)
+		}
+	}
+	out.Progressf("\n")
+}
+
+func chunkCR(ctx context.Context, out *ui.Printer, cr *domain.ChangeRequest, crID string, store *internal.YAMLStore, config *domain.Config, projectDir, utopiaDir string, over ralph.Overrides, authMode domain.AuthMode) ([]*domain.WorkItem, error) {
 	out.Progressf("Chunking change request: %s\n", cr.Title)
 
 	cr.Status = domain.ChangeRequestInProgress
@@ -603,7 +649,11 @@ func chunkCR(out *ui.Printer, cr *domain.ChangeRequest, crID string, store *inte
 		return nil, fmt.Errorf("failed to update CR status: %w", err)
 	}
 
-	workItems, err := chunk.Chunk(cr, store.LoadSpec, store.LoadStandardsIndex(), nil)
+	opts := sizerOptions(config, utopiaDir, over, authMode)
+	sizing := chunk.SizeChangeRequest(ctx, cr, opts)
+	reportSizing(out, sizing, opts.TurnBudget)
+
+	workItems, err := chunk.Chunk(cr, store.LoadSpec, store.LoadStandardsIndex(), sizing.Splits)
 	if err != nil {
 		return nil, fmt.Errorf("chunking failed: %w", err)
 	}
@@ -629,10 +679,14 @@ func chunkCR(out *ui.Printer, cr *domain.ChangeRequest, crID string, store *inte
 	return workItems, nil
 }
 
-func chunkPhase(out *ui.Printer, crID string, phaseIndex int, phase *domain.Phase, store *internal.YAMLStore, config *domain.Config, projectDir string) ([]*domain.WorkItem, error) {
+func chunkPhase(ctx context.Context, out *ui.Printer, crID string, phaseIndex int, phase *domain.Phase, store *internal.YAMLStore, config *domain.Config, projectDir, utopiaDir string, over ralph.Overrides, authMode domain.AuthMode) ([]*domain.WorkItem, error) {
 	out.Progressf("Chunking phase %d (type: %s)\n", phaseIndex+1, phase.Type)
 
-	workItems, err := chunk.ChunkPhase(crID, phaseIndex, phase, store.LoadSpec, store.LoadStandardsIndex(), nil)
+	opts := sizerOptions(config, utopiaDir, over, authMode)
+	sizing := chunk.SizePhase(ctx, phase, opts)
+	reportSizing(out, sizing, opts.TurnBudget)
+
+	workItems, err := chunk.ChunkPhase(crID, phaseIndex, phase, store.LoadSpec, store.LoadStandardsIndex(), sizing.Splits)
 	if err != nil {
 		return nil, fmt.Errorf("chunking failed: %w", err)
 	}

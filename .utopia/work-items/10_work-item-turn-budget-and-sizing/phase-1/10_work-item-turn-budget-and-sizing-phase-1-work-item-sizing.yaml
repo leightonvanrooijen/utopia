@@ -21,7 +21,7 @@ title: |
 
     The sizer is read-only. It must reason about the change, never make
     it.
-status: pending
+status: in_progress
 prompt: |-
     ## TASK
 
@@ -110,3 +110,4 @@ constraints:
     - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
 order: 3
 estimated_complexity: medium
+iteration_count: 1
