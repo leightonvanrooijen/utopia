@@ -6,7 +6,7 @@ title: |
     channel is not routed through slog - a "Created 3 drafts" line is not an
     INFO record, it is the command's answer, and it stays rendered for humans
     on stdout.
-status: in_progress
+status: completed
 prompt: |-
     ## TASK
 
@@ -74,3 +74,11 @@ constraints:
 order: 0
 estimated_complexity: medium
 iteration_count: 1
+selected_validators:
+    - spec-intent
+executor_attempts:
+    - iteration: 1
+      role: default-executor
+      model: ""
+      effort: medium
+validators_routed: true

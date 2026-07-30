@@ -1,0 +1,41 @@
+workitem_id: 06_observability-unified-output-phase-2-structured-diagnostics
+cr_id: 06_observability-unified-output
+spec_ref: 06_observability-unified-output-phase-2.structured-diagnostics
+iterations: 1
+completed_at: 2026-07-30T20:48:43.447985+10:00
+outcome: completed
+status: unprocessed
+transcript: |
+    --- iteration 1 ---
+    Done. Diagnostics through `log/slog`, results untouched.
+
+    What landed:
+    - `internal/ui/diagnostics.go`: `TextHandler` (human form: `⚠`/`✗` glyphs, bare message for info/debug, `key=value` trailer for structured records), `DefaultLevel = info`, and a context marker distinguishing pre-rendered lines from structured records.
+    - `internal/ui/ui.go`: `Printer` holds an `*slog.Logger` over `err`. `Progressf` = info, `Warnf` = warn, plus new `Debugf`/`Errorf`; new attribute methods `Debug/Info/Warn/Error(msg, ...slog.Attr)`; `WithAttrs`, `WithHandler`, `Logger`. `Printf`/`Successf`/`Banner`/`Rule`/`Summary` still write direct to stdout.
+    - `internal/ralph/ralph.go`: `cr_id` attached once at `Execute` entry (before printer reaches CLI/engine/loop), `work_item_id` per item; one debug diagnostic at item entry.
+
+    Compatibility: formatted messages are treated as whole lines - no newline or attr trailer appended - so all ~172 call sites, including the partial-line stderr streaming at `internal/claude.go:374`, stay byte-identical. Printer-level attrs (cr_id) are deliberately not rendered for those lines.
+
+    Tests: `internal/ui/diagnostics_test.go` asserts by attribute via a recording handler (typed `int64` attr, inherited run context, severity per method, results produce zero records, verbatim rendering, level filtering); `internal/ralph/execute_diagnostics_test.go` runs `Execute` with a JSON handler and asserts `cr_id`/`work_item_id` as record fields.
+
+    `go test ./...`: 1351 passed, 14 packages. `go.mod`/`go.sum` unchanged.
+
+    <COMPLETE>
+routing:
+    cr_type: feature
+    attempts:
+        - iteration: 1
+          role: default-executor
+          model: ""
+          effort: medium
+    sonnet_attempts: 1
+    opus_execution_attempts: 0
+    mechanical_failures: 0
+    comprehension_failures: 0
+    reclassified_failures: 0
+    scoping_escalations: 0
+    spec_rewritten: false
+    outcome: passed
+    duration_seconds: 565.655431584
+    duration: 9m26s
+    cost_note: Token counts, cache hits and monetary cost are not captured - not zero, not observable. Utopia drives the claude CLI, which reports none of them (ADR-005). Cost is approximated from attempts, sonnet_attempts and opus_execution_attempts together with the model each attempt ran on.
