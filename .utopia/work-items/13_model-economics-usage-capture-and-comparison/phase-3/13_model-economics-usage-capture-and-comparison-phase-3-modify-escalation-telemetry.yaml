@@ -1,0 +1,52 @@
+id: 13_model-economics-usage-capture-and-comparison-phase-3-modify-escalation-telemetry
+spec_ref: 13_model-economics-usage-capture-and-comparison-phase-3.modify-escalation-telemetry
+title: Modify the escalation-telemetry feature
+status: pending
+prompt: |-
+    ## TASK
+
+    Modify the escalation-telemetry feature
+
+    Acceptance criteria:
+    - Each attempt's token usage and cost are read from the persisted run record rather than re-derived from attempt counts
+    - Cost per change request outcome is reported as measured under api-key auth and as a list-price estimate under subscription auth
+    - Change from "The record notes that token counts and monetary cost are not captured, so a reader does not mistake their absence for zero" to: The record notes when token counts or cost were unavailable for an attempt, so a reader does not mistake their absence for zero
+
+
+
+    ## STANDARDS
+
+    This project defines coding standards in .utopia/standards/. Before implementing, read the standards docs relevant to the files this task touches:
+
+    - id: cli-organization
+      description: How to structure cobra commands in internal/cli: thin handlers that own the CLI frame and delegate the algorithm to domain packages.
+      tags: go, cli, cobra, architecture
+      path: .utopia/standards/cli-organization.md
+    - id: error-handling
+      description: How errors are created, wrapped, matched, and surfaced: typed domain errors for branching, %w wrapping for infrastructure, one exit point in root.go.
+      tags: go, errors, cli
+      path: .utopia/standards/error-handling.md
+    - id: terminal-output
+      description: One shared output vocabulary (glyphs, banners, progress) routed through cobra's injectable writers so command output is consistent and testable.
+      tags: go, cli, ux, output
+      path: .utopia/standards/terminal-output.md
+
+
+    ## CONSTRAINTS
+
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+order: 0
+estimated_complexity: medium
