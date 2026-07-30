@@ -27,7 +27,7 @@ title: |
 
     Behaviour must be preserved: the same content, in the same order relative to
     prompt injection, for all three paths.
-status: in_progress
+status: completed
 prompt: |-
     ## TASK
 
@@ -126,3 +126,11 @@ constraints:
 order: 0
 estimated_complexity: medium
 iteration_count: 1
+selected_validators:
+    - spec-intent
+executor_attempts:
+    - iteration: 1
+      role: default-executor
+      model: ""
+      effort: medium
+validators_routed: true
