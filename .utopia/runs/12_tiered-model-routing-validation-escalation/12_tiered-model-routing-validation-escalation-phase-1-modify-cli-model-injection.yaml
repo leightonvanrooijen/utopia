@@ -1,0 +1,23 @@
+workitem_id: 12_tiered-model-routing-validation-escalation-phase-1-modify-cli-model-injection
+cr_id: 12_tiered-model-routing-validation-escalation
+spec_ref: 12_tiered-model-routing-validation-escalation-phase-1.modify-cli-model-injection
+iterations: 1
+completed_at: 2026-07-30T10:02:18.799112+10:00
+outcome: completed
+status: unprocessed
+transcript: |
+    --- iteration 1 ---
+    Done. Wrapper already accepted `model` + `effort` and appended `--effort` via `baseArgs` (prior commit); gap was callers.
+
+    What changed:
+    - `internal/cli/root.go`: shared `effortFlagUsage` help text
+    - `--effort` flag + `ResolveEffortFlag` + `WithEffort` at every claude-spawning command: cr, refactor, standards generate, shape, shape domain, validator create/edit, discover, discover domain
+    - `harvest.Options.Effort`, `discover.SpecsOptions.Effort`, `discover.DomainOptions.Effort`, plus effort threaded into parallel refinement CLI
+    - `validators.Creator.WithEffort` / `Editor.WithEffort`
+    - Tests: subprocess-level check that `Prompt` and `SessionWithCapture` pass `--model`/`--effort` to the binary and omit `--effort` when unset; flag-registration parity test over `claudeCommandPaths`
+
+    `go build`, `go vet`, `gofmt` clean; `go test ./internal/...` 1129 pass.
+
+    Left out deliberately: `effort.validator_router` stays unread - the router resolves its own model from `modelConfig`, and giving it an effort needs an `effortConfig` on `Runner`, which belongs to the validator-role wiring, not this item.
+
+    <COMPLETE>
