@@ -1,0 +1,38 @@
+workitem_id: 10_work-item-turn-budget-and-sizing-phase-1-chunk-sizer-model
+cr_id: 10_work-item-turn-budget-and-sizing
+spec_ref: 10_work-item-turn-budget-and-sizing-phase-1.chunk-sizer-model
+iterations: 1
+completed_at: 2026-07-30T11:05:48.531332+10:00
+outcome: completed
+status: unprocessed
+transcript: |
+    --- iteration 1 ---
+    Done. Changes:
+
+    - `internal/domain/discovery.go`: `ChunkSizer string \`yaml:"chunk_sizer,omitempty"\`` on `ModelConfig`, `"chunk_sizer"` case in `ModelForCommand`, and `ChunkSizerModel()` resolving `models.chunk_sizer > models.default > sonnet` (no independent cheap tier, unlike `ValidatorRouter`).
+    - `internal/domain/model.go`: `models.chunk_sizer` validated by `ValidateModelConfig`.
+    - `internal/domain/model_test.go`: cases for the new command key and for fallback/override.
+
+    Full suite green (1215 tests).
+
+    One acceptance criterion not met: "The chunk command resolves and applies the chunk_sizer model when invoking the sizer." No sizer invocation exists yet - `chunkCR`/`chunkPhase` (`internal/cli/execute.go:598,632`) pass `nil` splits to `chunk.Chunk`. The sizer agent lands in the sibling work item `...-phase-1-work-item-sizing` (order 3, still `pending`); the `WithModel(config.Models.ChunkSizerModel())` call belongs at that invocation site. Adding a model parameter now would be dead code.
+
+    <COMPLETE>
+routing:
+    cr_type: feature
+    attempts:
+        - iteration: 1
+          role: default-executor
+          model: ""
+          effort: medium
+    sonnet_attempts: 1
+    opus_execution_attempts: 0
+    mechanical_failures: 0
+    comprehension_failures: 0
+    reclassified_failures: 0
+    scoping_escalations: 0
+    spec_rewritten: false
+    outcome: passed
+    duration_seconds: 186.840913334
+    duration: 3m07s
+    cost_note: Token counts, cache hits and monetary cost are not captured - not zero, not observable. Utopia drives the claude CLI, which reports none of them (ADR-005). Cost is approximated from attempts, sonnet_attempts and opus_execution_attempts together with the model each attempt ran on.
