@@ -32,7 +32,7 @@ phases:
             - Suggested destination is internal/output, but any location outside internal/cli that expresses "results and diagnostics" is acceptable
             - This should be close to a git mv plus an import rewrite - resist the urge to improve the API in this phase
     - type: refactor
-      status: in-progress
+      status: complete
       tasks:
         - id: route-all-output-through-one-printer
           description: |
@@ -63,6 +63,7 @@ phases:
             - Do not touch the failure-output printing paths in internal/ralph/ralph.go around lines 332-343, 355-359 and 570-575; change request 05_unify-failure-output-printing owns those and will land its own shared helper there
             - Interactive prompts in internal/validators/create.go and edit.go are a result, not a diagnostic - route them through the result channel
     - type: feature
+      status: in-progress
       changes:
         - operation: add
           spec: observability
@@ -150,4 +151,4 @@ phases:
             only the command's result. Timing is captured in the loop itself (start
             marker before the step, elapsed after it), so the Claude and validator
             agents are timed as black-box calls without changing their APIs.
-current_phase: 1
+current_phase: 2
