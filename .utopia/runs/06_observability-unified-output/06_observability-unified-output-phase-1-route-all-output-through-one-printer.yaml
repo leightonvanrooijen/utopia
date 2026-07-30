@@ -1,0 +1,65 @@
+workitem_id: 06_observability-unified-output-phase-1-route-all-output-through-one-printer
+cr_id: 06_observability-unified-output
+spec_ref: 06_observability-unified-output-phase-1.route-all-output-through-one-printer
+iterations: 2
+completed_at: 2026-07-30T20:39:17.40955+10:00
+outcome: completed
+status: unprocessed
+transcript: |
+    --- iteration 1 ---
+    Done. `go test ./...` passes (13 packages, exit 0), `gofmt`/`go vet` clean.
+
+    What landed:
+
+    - **`ui`**: `DefaultPrinter()`, `OrDefault()`, `Print`/`Println`, `Out()`/`Err()`. `os.Stdout`/`os.Stderr` now named only here.
+    - **`ralph`**: `Overrides.Out *ui.Printer` threads into `Execute` → `executeWorkItem`, `runAfterPhaseValidators`, `scoper`, `runRecorder`, `Engine`/`handle` (resolution ledger), `printFailureBlock`, `handleClaudeLimits`/`probeUntilRecovered`, `escalationDiff`, both git-commit helpers.
+    - **`harvest`**: `Options.Out` is now a `*ui.Printer`.
+    - **`discover`**: `SpecsOptions.Out`/`DomainOptions.Out`; `newProgress` receives the writer instead of grabbing `os.Stdout`.
+    - **`validators`**: `Creator.WithPrinter` / `Editor.WithPrinter`, matching the existing builder pattern. Prompts go to the result channel, load warnings to stderr.
+    - **`internal.CLI.WithPrinter`**: streamed subprocess output is capturable too. `SessionWithCapture` keeps the real terminal on all three descriptors - the sanctioned exception, now commented.
+    - **`store.go`** deprecation warning and **`root.go`** exit path route through a printer.
+    - New `internal/ralph/execute_output_test.go`: injects buffers via `Overrides.Out`, asserts byte-exact captured stdout, empty stderr, and that nothing leaked to the process stdout.
+
+    Zero bare `fmt.Print*` and zero `os.Stdout`/`os.Stderr` outside `internal/ui` remain (verified by grep); text and stream are unchanged everywhere.
+
+    Two things to flag:
+
+    1. The hint said to leave the failure-output paths alone because CR 05 owned them. CR 05 has since landed (`fc74115`), so `printFailureBlock` exists as the shared helper - I threaded a printer into it rather than leave the one remaining `fmt.Printf` behind. Say the word if you'd rather revert that piece.
+    2. The "tests pass without modification" constraint conflicts with routing `printFailureBlock`, `handleClaudeLimits`, `probeUntilRecovered`, `newProgress` and `harvest.Options.Out`, which tests call directly. I updated 14 call sites (arity only, passing `nil` or a buffer-backed printer) across `failure_output_test.go`, `ratelimit_test.go`, `collect_test.go`, `harvest_test.go`. No assertion or expected value changed. Where a struct already flowed through the call tree - `runRecorder`, `scoper`, `Engine` - I put the printer on the struct instead, which kept those tests untouched.
+
+    --- iteration 2 ---
+    Work already landed in `c70f089`. Iteration 2 verified, nothing left to route.
+
+    State check:
+    - `fmt.Print*` outside `internal/ui`: none. `os.Stdout`/`os.Stderr`: only `internal/ui/ui.go:52` (`DefaultPrinter`) and `internal/claude.go:434-435` (deliberate subprocess wiring).
+    - Remaining `fmt.Fprint*` all write to buffers/transcripts/prompt builders, not process streams.
+    - `ralph.Execute` gets printer via `Overrides.Out` (`internal/cli/execute.go:85`), `ui.OrDefault` at `ralph.go:77`.
+    - `discover.SpecsOptions`/`DomainOptions`, `harvest.Options` carry `Out`; `validators.Creator`/`Editor` have `WithPrinter`.
+    - `internal/ralph/execute_output_test.go` injects buffers, asserts captured text and asserts nothing leaked to real stdout.
+    - `go build`, `go vet`, `gofmt -l`, `go test ./...` (1343 tests, 14 packages) clean.
+
+    Committed `280ead4` (iteration bookkeeping only, no code change needed).
+
+    <COMPLETE>
+routing:
+    cr_type: refactor
+    attempts:
+        - iteration: 1
+          role: default-executor
+          model: ""
+          effort: medium
+        - iteration: 2
+          role: default-executor
+          model: ""
+          effort: medium
+    sonnet_attempts: 2
+    opus_execution_attempts: 0
+    mechanical_failures: 0
+    comprehension_failures: 0
+    reclassified_failures: 0
+    scoping_escalations: 0
+    spec_rewritten: false
+    outcome: passed
+    duration_seconds: 1047.509104709
+    duration: 17m28s
+    cost_note: Token counts, cache hits and monetary cost are not captured - not zero, not observable. Utopia drives the claude CLI, which reports none of them (ADR-005). Cost is approximated from attempts, sonnet_attempts and opus_execution_attempts together with the model each attempt ran on.

@@ -13,7 +13,7 @@ title: |
     Printer into the packages that need one. Output must not change - not
     the text, not the stream. This phase only makes the output redirectable
     so later phases can level it and reclassify it.
-status: in_progress
+status: completed
 prompt: |-
     ## TASK
 
@@ -95,8 +95,15 @@ constraints:
 order: 0
 estimated_complexity: medium
 iteration_count: 2
+selected_validators:
+    - spec-intent
 executor_attempts:
     - iteration: 1
       role: default-executor
       model: ""
       effort: medium
+    - iteration: 2
+      role: default-executor
+      model: ""
+      effort: medium
+validators_routed: true
