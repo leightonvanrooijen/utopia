@@ -1,7 +1,7 @@
 id: 02_chunking-ralph-sequential-autonomous-decide-and-document-modify-default-constraints
 spec_ref: 02_chunking-ralph-sequential-autonomous-decide-and-document.modify-default-constraints
 title: Modify the default-constraints feature
-status: pending
+status: completed
 prompt: |-
     ## TASK
 
@@ -51,9 +51,16 @@ constraints:
     - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
 order: 0
 estimated_complexity: medium
-iteration_count: 1
+iteration_count: 2
+selected_validators:
+    - spec-intent
 executor_attempts:
     - iteration: 1
       role: default-executor
       model: ""
       effort: medium
+    - iteration: 2
+      role: default-executor
+      model: ""
+      effort: medium
+validators_routed: true

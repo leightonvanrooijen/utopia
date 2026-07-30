@@ -23,7 +23,7 @@ verification:
 models:
   default: sonnet
   execute: sonnet
-  execute_escalated: fable
+  execute_escalated: opus
   scoper: fable
   validators: opus
   # Decides which validators are relevant to a diff. High-volume, and a wrong
