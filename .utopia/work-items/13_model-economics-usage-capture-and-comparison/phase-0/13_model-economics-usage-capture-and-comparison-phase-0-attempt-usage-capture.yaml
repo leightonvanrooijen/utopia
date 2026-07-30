@@ -14,7 +14,7 @@ title: |
     dollar figure is a list-price equivalent rather than money spent. Tokens
     are real under both auth modes; dollars are only real under
     auth-mode-api-key.
-status: pending
+status: in_progress
 prompt: |-
     ## TASK
 
@@ -92,3 +92,4 @@ constraints:
     - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
 order: 0
 estimated_complexity: medium
+iteration_count: 1

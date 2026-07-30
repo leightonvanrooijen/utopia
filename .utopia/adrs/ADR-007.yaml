@@ -1,0 +1,132 @@
+id: ADR-007
+title: "Record Tokens as Fact and Subscription Dollars as Estimate - Two Numbers That Cannot Be Pooled"
+status: accepted
+date: 2026-07-30
+context: |
+  The execution loop now asks the claude CLI for structured output and reads the
+  terminal result object it prints, so every attempt records what it spent instead
+  of discarding the accounting with the prose. That object carries token counts,
+  a turn count, a wall clock and a `total_cost_usd`.
+
+  The dollar figure means different things depending on which credential the
+  attempt authenticated with, and the CLI reports it identically either way.
+  Under auth-mode-api-key the tokens are billed and the number will appear on an
+  invoice. Under auth-mode-subscription no per-token charge is incurred at all -
+  the subscription was already paid - so the same field is a list-price
+  equivalent: what those tokens would have cost had they been billed.
+
+  Tokens do not have this problem. A model read 30k tokens and wrote 900
+  regardless of how the run was paid for. The two kinds of number therefore have
+  different standing, and the temptation is to leave the distinction to whoever
+  reads the report later. That does not survive contact with a spreadsheet: a
+  single "total cost" column summing a subscription run's list price with an
+  api-key run's charges produces a figure that is neither an amount spent nor an
+  amount avoided, and nothing downstream can take it apart again.
+
+  A third state exists and matters as much. An attempt's usage can fail to
+  arrive - the CLI errored before producing a result object, hit the turn
+  ceiling, or printed prose the reader could not parse. The spend happened. A
+  missing number that reads as zero understates every total derived from the
+  record, and it does so silently.
+
+decision: |
+  Tokens are recorded as fact. Dollars are recorded with the basis that says what
+  they are. Absence is recorded as absence.
+
+  1. Every attempt's usage carries `cost_basis`: `charged` under api-key auth,
+     `list-price-estimate` under subscription auth, `unknown` when the invocation
+     inherited the ambient environment and Utopia did not resolve the credential.
+  2. Costs of different bases are never summed into one figure. A report shows
+     them as separate quantities or not at all - see the model-economics
+     comparison, which is required to keep the columns apart.
+  3. Token totals may be summed across auth modes freely, because they are the
+     same kind of thing under both.
+  4. `AttemptUsage.Available` is serialised unconditionally, so the record
+     distinguishes three states: no usage captured at all (a nil usage - an
+     attempt that predates capture, or one made by a validator or by discovery),
+     usage asked for and unreadable (`available: false`), and usage read as zero
+     (`available: true` with zero counts). Only the third is zero spend.
+  5. An attempt whose usage could not be read is recorded as unavailable and does
+     not fail the work item. The code changes it made stand; the accounting is
+     what is missing, and the record says so with a reason.
+  6. The recorded model is the id the CLI resolved, read from the result object's
+     `modelUsage` keys or the stream's init message - never the alias passed to
+     `--model`. Model aliases are remapped over time, so a comparison keyed on
+     "opus" would pool two different models under one row and read as noise.
+
+options_considered:
+  - option: "Record the basis alongside every cost and refuse to pool them (chosen)"
+    pros:
+      - The caveat lives in the data, so a reader cannot lose it
+      - Tokens stay comparable across auth modes, which is the comparison that
+        actually holds
+      - A run that switches auth mode mid-history remains readable, because each
+        attempt carries its own basis
+    cons:
+      - Every consumer has to handle two cost quantities rather than one
+      - A repository that only ever runs one auth mode pays for a distinction it
+        does not need
+
+  - option: "Record only tokens and drop the dollar figure"
+    pros:
+      - No ambiguity at all - one kind of number, one meaning
+      - Immune to the CLI's pricing table drifting
+    cons:
+      - Discards the one figure an operator asks for first
+      - Reconstructing dollars later needs a price table per model per date, which
+        is a second source of truth and worse than the one the CLI already has
+
+  - option: "Record the dollar figure bare and note the subscription caveat in the report's prose"
+    pros:
+      - Simplest record; the CLI's number goes in unchanged
+    cons:
+      - The caveat is attached to the reader rather than the data, so any export,
+        query or copy loses it
+      - Two runs under different auth modes become indistinguishable in the
+        record, and nothing can separate them afterwards
+
+  - option: "Treat unreadable usage as zero"
+    pros:
+      - Every attempt has a number, so totals need no special cases
+    cons:
+      - Silently understates spend, and the understatement grows with how often
+        the CLI fails
+      - Destroys the distinction between a cheap attempt and an unmeasured one,
+        which is the one thing a cost comparison must not confuse
+
+consequences:
+  positive:
+    - A cost figure in any Utopia record is interpretable on its own, without
+      knowing how the run was authenticated
+    - Token-based comparisons work across a history that mixes auth modes
+    - Attempts with missing accounting are countable, so a report can say how much
+      of its own coverage is unknown
+  negative:
+    - Reports carry two cost columns and an unavailable count, which is more
+      surface than a single total
+    - Subscription list prices track the CLI's pricing table, so a historical
+      estimate reflects the price at the time of the run and cannot be restated
+  neutral:
+    - The `unknown` basis exists for the ambient-credential case and will appear in
+      any repository that never configures auth
+    - Nothing here changes what the loop does; it changes only what it writes down
+
+advice:
+  - internal/domain/usage.go is the recorded form - AttemptUsage, CostBasis and
+    CostBasisForAuth, which is the only place the auth-mode-to-basis mapping lives
+  - internal/claude_usage.go reads the terminal result object, including why the
+    resolved model comes off modelUsage rather than off the --model alias
+  - ADR-005 is the predecessor this supersedes in practice: it recorded that cost
+    was not captured and that comparisons had to be made in attempts at a tier
+  - ADR-004 is why effort is recorded alongside the model - it is a property of the
+    role, so a row keyed on model alone would pool two different roles
+
+principles:
+  - A caveat belongs in the data, not in the reader
+  - Absence is a value; a missing measurement is never zero
+  - Record what resolved, not what was requested - aliases are remapped, ids are not
+  - Numbers of different kinds are not summed just because they share a unit
+
+related_domain:
+  - execution  # Terms: attempt, execution loop, escalated executor
+  - adrs

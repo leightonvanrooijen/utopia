@@ -24,6 +24,21 @@ type PromptResult struct {
 	Stdout string
 	// Stderr contains the standard error output from Claude (for rate limit detection, etc.)
 	Stderr string
+	// Usage is what the invocation spent, read off the claude CLI's terminal result
+	// object. It is nil when the caller did not ask for structured output with
+	// WithUsageCapture - the roles outside the execution loop - and non-nil with
+	// Available false when it was asked for and could not be read.
+	Usage *domain.AttemptUsage
+}
+
+// GetUsage returns the invocation's usage, nil-safe on the result itself: an
+// invocation that failed before producing anything returns no result at all, and
+// its caller still has an attempt to record.
+func (r *PromptResult) GetUsage() *domain.AttemptUsage {
+	if r == nil {
+		return nil
+	}
+	return r.Usage
 }
 
 // PermissionMode controls how Claude handles permission prompts
@@ -51,6 +66,7 @@ type CLI struct {
 	maxTurns       int             // per-invocation turn ceiling; zero leaves the CLI unbounded
 	authMode       domain.AuthMode // credential selection; empty inherits the ambient environment
 	utopiaDir      string          // project .utopia dir, where api-key mode looks for .env
+	captureUsage   bool            // ask for structured output and read the usage it reports
 }
 
 // NewCLI creates a new Claude CLI wrapper with sensible defaults for Utopia
@@ -114,6 +130,19 @@ func (c *CLI) WithEffort(effort string) *CLI {
 // ralph.DetectTurnExhaustion.
 func (c *CLI) WithMaxTurns(maxTurns int) *CLI {
 	c.maxTurns = maxTurns
+	return c
+}
+
+// WithUsageCapture asks the claude binary for structured output so the
+// invocation's accounting can be read off its terminal result object instead of
+// being discarded with the prose. PromptResult.Usage is nil without it.
+//
+// It is opt-in rather than always-on because only the execution loop's attempts
+// are compared against each other. A validator or a discovery call reports no
+// usage, and nothing downstream treats that absence as an error - see
+// domain.AttemptUsage on the three states a reader has to tell apart.
+func (c *CLI) WithUsageCapture(capture bool) *CLI {
+	c.captureUsage = capture
 	return c
 }
 
@@ -182,12 +211,32 @@ func (c *CLI) baseArgs() []string {
 	return args
 }
 
+// outputFormatArgs selects the output format for a one-shot prompt. Nothing is
+// added without usage capture, which leaves the invocation on the CLI's default
+// prose output - the pre-capture behaviour every role outside the execution loop
+// keeps.
+//
+// A verbose run asks for stream-json rather than dropping to the non-streaming
+// object, because the operator watching the run is the point of verbose mode: the
+// accounting arrives on the last line of the stream rather than in place of the text.
+func (c *CLI) outputFormatArgs() []string {
+	if !c.captureUsage {
+		return nil
+	}
+	if c.verbose {
+		return []string{"--output-format", "stream-json", "--include-partial-messages"}
+	}
+	return []string{"--output-format", "json"}
+}
+
 // Prompt sends a one-shot prompt to Claude and returns the response.
 // Uses --print flag for non-interactive output.
 // If verbose mode is enabled, streams output in real-time while capturing.
-// Returns PromptResult containing both stdout and stderr for rate limit detection.
+// Returns PromptResult containing both stdout and stderr for rate limit detection,
+// and the invocation's usage when the caller asked for it with WithUsageCapture.
 func (c *CLI) Prompt(ctx context.Context, prompt string) (*PromptResult, error) {
 	args := c.baseArgs()
+	args = append(args, c.outputFormatArgs()...)
 	args = append(args, "--print", prompt)
 
 	// If verbose, use streaming approach
@@ -212,6 +261,14 @@ func (c *CLI) Prompt(ctx context.Context, prompt string) (*PromptResult, error) 
 		Stdout: string(output),
 		Stderr: stderr.String(),
 	}
+
+	// Read the accounting before the error branch below: an invocation that exited
+	// non-zero still spent tokens, and an invocation whose result object could not
+	// be parsed is recorded as usage unavailable rather than as a failure.
+	if c.captureUsage {
+		c.applyJSONUsage(result)
+	}
+
 	if err != nil {
 		return result, fmt.Errorf("claude prompt failed: %w", err)
 	}
@@ -251,22 +308,33 @@ func (c *CLI) streamingPrompt(ctx context.Context, args []string) (*PromptResult
 	// Capture output while streaming to terminal
 	var stdoutBuilder strings.Builder
 	var stderrBuilder strings.Builder
+	var collector streamCollector
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 
 	wg.Add(2)
 
-	// Stream stdout
+	// Stream stdout. With usage capture the stream is stream-json, so each line is
+	// handed to the collector, which returns the assistant text to print and keeps
+	// the accounting - the operator still sees prose appear as it is generated, one
+	// delta at a time, rather than waiting for the invocation to finish.
 	go func() {
 		defer wg.Done()
 		reader := bufio.NewReader(stdout)
 		for {
 			line, err := reader.ReadString('\n')
 			if len(line) > 0 {
-				fmt.Print(line) // Stream to terminal
 				mu.Lock()
-				stdoutBuilder.WriteString(line)
+				display := line
+				if c.captureUsage {
+					display = collector.consume(line)
+				} else {
+					stdoutBuilder.WriteString(line)
+				}
 				mu.Unlock()
+				if display != "" {
+					fmt.Print(display) // Stream to terminal
+				}
 			}
 			if err != nil {
 				break
@@ -299,6 +367,9 @@ func (c *CLI) streamingPrompt(ctx context.Context, args []string) (*PromptResult
 	result := &PromptResult{
 		Stdout: stdoutBuilder.String(),
 		Stderr: stderrBuilder.String(),
+	}
+	if c.captureUsage {
+		collector.apply(c, result)
 	}
 	err = cmd.Wait()
 	if err != nil {

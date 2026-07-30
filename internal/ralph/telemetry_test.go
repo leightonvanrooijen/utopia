@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
@@ -196,6 +197,74 @@ func TestRecordExecutorAttempt_RoleFollowsTheEscalationState(t *testing.T) {
 	if item.ExecutorAttempts[1].Role != domain.ExecutorRoleEscalated {
 		t.Errorf("escalated attempt role = %q, want %q", item.ExecutorAttempts[1].Role, domain.ExecutorRoleEscalated)
 	}
+}
+
+// The attempt the loop just made is the one the usage lands on, keyed on the model
+// the CLI resolved rather than the alias routing configured.
+func TestRecordAttemptUsage_LandsOnTheAttemptJustMade(t *testing.T) {
+	item := &domain.WorkItem{IterationCount: 1}
+	recordExecutorAttempt(item, "opus", "high")
+
+	recordAttemptUsage(item, &internal.PromptResult{Usage: &domain.AttemptUsage{
+		Available:    true,
+		Model:        "claude-opus-5-20260101",
+		OutputTokens: 900,
+		Turns:        4,
+		DurationMS:   5000,
+		CostUSD:      2.5,
+		CostBasis:    domain.CostBasisListPriceEstimate,
+	}}, 7*time.Second)
+
+	usage := item.ExecutorAttempts[0].Usage
+	if !usage.IsAvailable() {
+		t.Fatalf("usage = %+v, want available", usage)
+	}
+	if usage.Model != "claude-opus-5-20260101" {
+		t.Errorf("usage.Model = %q, want the resolved id, not the configured alias %q",
+			usage.Model, item.ExecutorAttempts[0].Model)
+	}
+	if usage.Effort != "high" {
+		t.Errorf("usage.Effort = %q, want the attempt's effort", usage.Effort)
+	}
+	if usage.DurationMS != 5000 {
+		t.Errorf("usage.DurationMS = %d, want the CLI's own duration", usage.DurationMS)
+	}
+	if usage.CostIsCharged() {
+		t.Error("a subscription cost reports as charged, want it kept as a list-price estimate")
+	}
+}
+
+// An attempt whose accounting could not be read is recorded as unavailable, and
+// nothing about it fails the work item: the invocation may have failed outright and
+// the loop still has an attempt to account for.
+func TestRecordAttemptUsage_MissingUsageIsRecordedNotDropped(t *testing.T) {
+	item := &domain.WorkItem{IterationCount: 1}
+	recordExecutorAttempt(item, "sonnet", "medium")
+
+	recordAttemptUsage(item, nil, 3*time.Second)
+
+	usage := item.ExecutorAttempts[0].Usage
+	if usage == nil {
+		t.Fatal("usage = nil, want a record marked unavailable rather than an absent one")
+	}
+	if usage.Available {
+		t.Errorf("usage = %+v, want available false", usage)
+	}
+	if usage.UnavailableReason == "" {
+		t.Error("usage.UnavailableReason is empty, want the reason the gap exists")
+	}
+	// The loop times the invocation from the outside, so the wall clock survives even
+	// when the agent accounted for nothing.
+	if usage.DurationMS != 3000 {
+		t.Errorf("usage.DurationMS = %d, want the measured 3000", usage.DurationMS)
+	}
+	if usage.InputTokens != 0 || usage.CostUSD != 0 {
+		t.Errorf("usage = %+v, want no counts invented", usage)
+	}
+
+	// Nothing to record against must not panic: a validator or discovery call reports
+	// no usage and has no attempt on the item either.
+	recordAttemptUsage(&domain.WorkItem{}, nil, time.Second)
 }
 
 // An attempt refunded for a usage limit produced no work, so it is not evidence

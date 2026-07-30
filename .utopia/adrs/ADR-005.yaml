@@ -1,8 +1,17 @@
 id: ADR-005
 title: "Utopia Sits Above the Anthropic API, So Tokens, Cache Hits and Cost Are Not Observable"
-status: accepted
+status: superseded
+superseded_by: ADR-007
 date: 2026-07-30
 context: |
+  Superseded by ADR-007. The premise below - that the CLI boundary reports no
+  usage - held only for the --print prose path. `--print --output-format json`
+  prints a terminal result object carrying token counts, cache reads and writes,
+  a turn count and total_cost_usd, all at the same boundary and without moving to
+  the API. The escapes this record rejected turned out not to be the only two.
+  What survives it is the caution about the dollar figure, which ADR-007 answers
+  by recording what the number means rather than by refusing to record it.
+
   Utopia executes work by shelling out to the claude CLI with a single --print
   prompt. It is a caller of a terminal program, not a client of the Anthropic
   API. Everything Utopia knows about an attempt it learned from stdout, an exit

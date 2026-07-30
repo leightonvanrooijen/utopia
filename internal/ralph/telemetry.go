@@ -89,6 +89,38 @@ func recordExecutorAttempt(item *domain.WorkItem, model, effort string) {
 	})
 }
 
+// recordAttemptUsage attaches what the attempt just made spent to that attempt's
+// routing record. It is called after the usage-limit refund has had its say, so a
+// refunded attempt - one that never ran - is never the one written to.
+//
+// An attempt whose accounting could not be read is recorded as unavailable rather
+// than dropped or defaulted to zero: the tokens were spent either way, and a
+// missing number that reads as zero would understate every total derived from these
+// records. Nothing here can fail the work item.
+//
+// The measured wall clock stands in when the CLI reported no duration, which is the
+// unparseable case. The loop times the invocation from the outside anyway, so that
+// number exists whether or not the agent accounted for itself.
+func recordAttemptUsage(item *domain.WorkItem, result *internal.PromptResult, elapsed time.Duration) {
+	n := len(item.ExecutorAttempts)
+	if n == 0 {
+		return
+	}
+	attempt := &item.ExecutorAttempts[n-1]
+
+	usage := result.GetUsage()
+	if usage == nil {
+		usage = domain.UnavailableUsage("the invocation reported no usage")
+	}
+	if usage.Effort == "" {
+		usage.Effort = attempt.Effort
+	}
+	if usage.DurationMS == 0 {
+		usage.DurationMS = elapsed.Milliseconds()
+	}
+	attempt.Usage = usage
+}
+
 // refundExecutorAttempt drops the last recorded attempt, for an attempt that never
 // ran. It is the record's half of the usage-limit refund: the iteration and the
 // escalation charge are both undone there, and an attempt that produced no work

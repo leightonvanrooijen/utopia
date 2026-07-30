@@ -190,6 +190,16 @@ type ExecutorAttempt struct {
 	// Effort is the resolved effort level, empty when none was configured and the
 	// claude CLI default applied.
 	Effort string `yaml:"effort,omitempty"`
+
+	// Usage is what the attempt spent, as the claude CLI reported it. Model above is
+	// the value routing configured - an alias like "opus" for most projects - while
+	// Usage.Model is the model id the CLI resolved that alias to, which is what a
+	// comparison across runs has to key on.
+	//
+	// Nil means no usage was captured for the attempt at all, which is every attempt
+	// recorded before capture existed. Non-nil with Available false means the attempt
+	// ran and its accounting could not be read. Neither is zero spend.
+	Usage *AttemptUsage `yaml:"usage,omitempty"`
 }
 
 // FailureConclusion is one failing validator's conclusion about one attempt. It

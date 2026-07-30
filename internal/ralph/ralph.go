@@ -436,7 +436,10 @@ func executeWorkItem(
 		// iteration. The clone is what keeps the ceiling off the loop's shared CLI,
 		// which the scoper also borrows - a rewrite is not an execution iteration and
 		// is not budgeted as one.
-		attemptCLI := cli.Clone().WithMaxTurns(turnBudget)
+		// Usage capture is asked for on every execution attempt, escalated or not: the
+		// comparison the records exist to support is between the tiers, so an attempt
+		// missing its accounting is a hole in exactly the row that matters.
+		attemptCLI := cli.Clone().WithMaxTurns(turnBudget).WithUsageCapture(true)
 		if attemptModel != defaultExecutorModel || attemptEffort != efforts.executor {
 			attemptCLI = attemptCLI.WithModel(attemptModel).WithEffort(attemptEffort)
 			fmt.Printf("  Iteration %d: invoking Claude on the escalated executor (%s, effort %s)...\n", item.IterationCount, attemptModel, attemptEffort)
@@ -474,6 +477,11 @@ func executeWorkItem(
 			refundExecutorAttempt(item)
 			continue
 		}
+
+		// Book what the attempt spent onto its routing record. This runs before the
+		// paths below leave the iteration - a turn-capped attempt, a failed invocation
+		// and a successful one all spent tokens, and all three are recorded.
+		recordAttemptUsage(item, claudeResult, claudeElapsed)
 
 		// Keep this iteration's output on the run transcript before any of the
 		// paths below take the loop elsewhere. A limit-handled attempt is
@@ -884,9 +892,12 @@ func runAfterPhaseValidators(
 
 		fmt.Printf("  After-phase iteration %d: invoking Claude to fix standards issues...\n", iteration)
 
-		// Invoke Claude, timed from the outside as in the work-item loop.
+		// Invoke Claude, timed from the outside as in the work-item loop, and asking for
+		// the same structured output: an after-phase fix is an execution attempt and its
+		// spend is part of what the phase cost. It has no work item to book against, so
+		// the usage rides on the result until the run record carries it.
 		claudeStart := time.Now()
-		claudeResult, err := cli.Prompt(ctx, prompt)
+		claudeResult, err := cli.Clone().WithUsageCapture(true).Prompt(ctx, prompt)
 		claudeElapsed := time.Since(claudeStart)
 
 		// Detect and handle Claude usage limits without counting the attempt
