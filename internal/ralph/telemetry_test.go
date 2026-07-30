@@ -3,6 +3,7 @@ package ralph
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -88,9 +89,14 @@ func TestWriteRunTranscript_CarriesTheRoutingRecord(t *testing.T) {
 		t.Errorf("wall clock = %v (%q), want a measured duration", r.DurationSeconds, r.Duration)
 	}
 	// What these counters do and do not say about spend must not be left to whoever
-	// finds this file to guess at.
-	if r.CostNote != domain.CostApproximationNote {
-		t.Errorf("cost_note = %q, want the approximation note", r.CostNote)
+	// finds this file to guess at. None of these attempts captured usage, so the note
+	// has to name every one of them as a gap rather than let the missing tokens read
+	// as zero.
+	if r.CostNote != domain.CostNoteFor(item.ExecutorAttempts) {
+		t.Errorf("cost_note = %q, want the note for these attempts", r.CostNote)
+	}
+	if !strings.Contains(r.CostNote, "unavailable for attempt(s) 1, 2, 3, 4") {
+		t.Errorf("cost_note = %q, want it to name the attempts with no usage", r.CostNote)
 	}
 }
 

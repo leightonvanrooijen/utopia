@@ -237,10 +237,41 @@ func TestReportEscalationsRowsAndAggregate(t *testing.T) {
 	}
 }
 
+// What an outcome cost is two figures, not one: dollars charged under api-key auth
+// and the list-price estimate of tokens spent under subscription auth. The report
+// prints them in their own columns and never adds them together.
+func TestReportOutcomesCostByAuthMode(t *testing.T) {
+	out := runReport(t, reportProject(t, reportRuns()...), "outcomes")
+
+	if !strings.Contains(out, "2 run record(s) read across 2 change request(s)") {
+		t.Fatalf("output does not say what it read:\n%s", out)
+	}
+	row := rowFor(t, out, "completed")
+	// 01_alpha spent $0.50 charged, 02_beta $0.50 charged plus a $4.00 list-price
+	// estimate, over two change requests that both completed.
+	if !strings.Contains(row, "$1.0000") || !strings.Contains(row, "$4.0000") {
+		t.Errorf("row %q does not carry the charged dollars and the list-price estimate apart", row)
+	}
+	if !strings.Contains(row, "$0.5000") || !strings.Contains(row, "$2.0000") {
+		t.Errorf("row %q does not carry either cost per change request", row)
+	}
+	if strings.Contains(row, "$5.0000") {
+		t.Errorf("row %q sums charged dollars with a list-price estimate into one figure", row)
+	}
+	// The escalated change request's second attempt reported no usage, so it is
+	// counted and excluded rather than folded in as zero.
+	if !strings.Contains(row, "6,000") {
+		t.Errorf("row %q does not carry the measured token total", row)
+	}
+	if !strings.Contains(out, "CHARGED") || !strings.Contains(out, "LIST-EST") {
+		t.Errorf("output has no column per cost basis:\n%s", out)
+	}
+}
+
 func TestBothReportsPrintTheObservationalCaveat(t *testing.T) {
 	projectDir := reportProject(t, reportRuns()...)
 
-	for _, args := range [][]string{{"models"}, {"escalations"}} {
+	for _, args := range [][]string{{"models"}, {"escalations"}, {"outcomes"}} {
 		out := runReport(t, projectDir, args...)
 		if !strings.Contains(out, analysis.ObservationalCaveat) {
 			t.Errorf("report %v does not print the observational caveat:\n%s", args, out)
@@ -254,7 +285,7 @@ func TestBothReportsPrintTheObservationalCaveat(t *testing.T) {
 func TestReportsOnEmptyRepositorySaySoAndExitZero(t *testing.T) {
 	projectDir := reportProject(t)
 
-	for _, args := range [][]string{{"models"}, {"escalations"}} {
+	for _, args := range [][]string{{"models"}, {"escalations"}, {"outcomes"}} {
 		// runReport fails the test on a non-nil error, which is the exit-zero assertion.
 		out := runReport(t, projectDir, args...)
 		if !strings.Contains(out, "No run records yet") {

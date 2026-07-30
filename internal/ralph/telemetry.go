@@ -198,7 +198,7 @@ func routingRecordFor(item *domain.WorkItem, crType domain.CRType, outcome domai
 		Outcome:               outcome,
 		DurationSeconds:       elapsed.Seconds(),
 		Duration:              ui.Duration(elapsed),
-		CostNote:              domain.CostApproximationNote,
+		CostNote:              domain.CostNoteFor(item.ExecutorAttempts),
 	}
 }
 

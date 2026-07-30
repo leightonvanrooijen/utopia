@@ -28,7 +28,7 @@ func NewReportCmd() *cobra.Command {
 Reports read only what execution already wrote - no Claude call is made, and no
 transcript is re-read.`,
 	}
-	cmd.AddCommand(newReportModelsCmd(), newReportEscalationsCmd())
+	cmd.AddCommand(newReportModelsCmd(), newReportEscalationsCmd(), newReportOutcomesCmd())
 	return cmd
 }
 
@@ -88,6 +88,34 @@ marginal cost and marginal completion rate of escalating.`,
 
 			out := ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr())
 			printEscalationReport(out, analysis.Escalations(runs))
+			return nil
+		},
+	}
+}
+
+func newReportOutcomesCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "outcomes",
+		Short: "Report what each change request outcome cost",
+		Long: `Print one row per way a change request ended - completed, needs_human, abandoned -
+carrying how many ended that way, how many escalated, and what they spent per
+change request.
+
+Cost is read from the usage each attempt recorded, not approximated from attempt
+counts. Dollars charged under api-key auth and the list-price estimate of tokens
+spent under subscription auth are shown in separate columns and never summed.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			_, _, store, err := ResolveProject(cmd)
+			if err != nil {
+				return err
+			}
+			runs, err := store.ListExecutionRuns()
+			if err != nil {
+				return fmt.Errorf("failed to read run records: %w", err)
+			}
+
+			out := ui.NewPrinter(cmd.OutOrStdout(), cmd.ErrOrStderr())
+			printOutcomeReport(out, analysis.OutcomeCosts(runs))
 			return nil
 		},
 	}
@@ -207,6 +235,77 @@ func printEscalationReport(out *ui.Printer, report analysis.EscalationReport) {
 		report.BaselineCompleted, report.BaselineCRs, formatRate(report.BaselineCompletionRate(), report.BaselineCRs > 0))
 
 	printCaveats(out, hasUnknownBasis(report))
+}
+
+// printOutcomeReport renders cost per change request outcome. Charged dollars and
+// list-price estimates get a column each rather than a joined cell: the whole point
+// of the view is that the reader can see what an outcome cost under each auth mode
+// without the two ever being added up.
+func printOutcomeReport(out *ui.Printer, report analysis.OutcomeReport) {
+	out.Printf("COST PER OUTCOME\n")
+	out.Printf("================\n")
+	if report.Empty() {
+		out.Printf("  %s\n", noRunRecords)
+		return
+	}
+	out.Printf("  %d run record(s) read across %d change request(s)\n\n", report.Records, report.ChangeRequests)
+
+	out.Table(ui.Table{
+		Headers: []string{
+			"OUTCOME", "CRS", "ITEMS", "ESC", "ATTEMPTS", "UNAVAIL", "TOKENS",
+			"CHARGED", "LIST-EST", "CHARGED/CR", "LIST-EST/CR",
+		},
+		Rows: outcomeRows(report.Rows),
+	})
+	out.Printf("\n")
+
+	for _, row := range report.Rows {
+		if row.RecordsWithoutUsage > 0 {
+			out.Printf("  %s %s: %d run record(s) carry no usage entries (written before usage was captured),\n",
+				ui.Bullet, row.Outcome, row.RecordsWithoutUsage)
+			out.Printf("    so that outcome's spend is a floor - unknown, not zero.\n")
+		}
+		if row.Usage.UnknownBasisCostUSD != 0 {
+			out.Printf("  %s %s: $%.4f of spend has no resolved auth mode, so it is in neither column above.\n",
+				ui.Bullet, row.Outcome, row.Usage.UnknownBasisCostUSD)
+		}
+	}
+	out.Printf("\n")
+
+	printCaveats(out, report.HasUnknownBasisCost())
+}
+
+func outcomeRows(rows []analysis.OutcomeRow) [][]string {
+	cells := make([][]string, 0, len(rows))
+	for _, row := range rows {
+		charged, listPrice, _ := row.CostPerChangeRequest()
+		measured := row.Usage.Available > 0
+		cells = append(cells, []string{
+			row.Outcome,
+			strconv.Itoa(row.ChangeRequests),
+			strconv.Itoa(row.WorkItems),
+			strconv.Itoa(row.Escalated),
+			strconv.Itoa(row.Attempts),
+			strconv.Itoa(row.Unavailable),
+			formatTokenTotal(row.Usage),
+			formatBasisCost(row.Usage.ChargedCostUSD, measured),
+			formatBasisCost(row.Usage.ListPriceCostUSD, measured),
+			formatBasisCost(charged, measured),
+			formatBasisCost(listPrice, measured),
+		})
+	}
+	return cells
+}
+
+// formatBasisCost renders one basis's dollars on its own, or "-" when no attempt
+// behind the figure carried readable accounting or the basis saw no spend: a zero
+// printed in a cost column says the work was free, which is not what an
+// unmeasured attempt means.
+func formatBasisCost(amount float64, measured bool) string {
+	if !measured || amount == 0 {
+		return "-"
+	}
+	return fmt.Sprintf("$%.4f", amount)
 }
 
 func escalationRows(rows []analysis.EscalationRow) [][]string {

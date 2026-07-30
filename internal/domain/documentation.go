@@ -2,6 +2,7 @@ package domain
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -188,18 +189,49 @@ const (
 	RoutingAbandoned RoutingOutcome = "abandoned"
 )
 
-// CostApproximationNote is recorded verbatim on every routing record so a reader
-// knows what the counters here do and do not say about spend: they approximate it
-// by tier, from attempt counts and the model each attempt ran on.
+// costNotePreamble opens every routing record's cost note: spend is read off each
+// attempt's recorded usage, not approximated from the attempt counters beside it
+// (ADR-007 supersedes ADR-005, whose premise was that the claude CLI reports none
+// of it).
+const costNotePreamble = "Cost here is measured, not approximated by tier: each attempt carries the token counts and the " +
+	"dollar figure the claude CLI reported for it, with the basis that says what the dollars mean (ADR-007). The counters beside " +
+	"them - attempts, sonnet_attempts, opus_execution_attempts - count routing, not spend."
+
+// CostNoteFor is the cost note written onto one work item's routing record. It
+// names the attempts whose token counts or cost could not be read, by iteration,
+// so a reader who finds a gap in the usage knows it is a gap: the tokens were
+// spent either way, and an absent number that reads as zero understates every
+// total derived from these records.
 //
-// The record's usage list is the measured spend where it is present (ADR-007
-// supersedes ADR-005, whose premise was that the claude CLI reports none of it).
-// Where it is absent - a run written before capture, or an attempt whose
-// accounting could not be read - the spend is unknown rather than zero, and these
-// counters are the only approximation of it there is.
-const CostApproximationNote = "The counters here approximate cost by tier: attempts, sonnet_attempts and opus_execution_attempts " +
-	"together with the model each attempt ran on. Measured token counts and dollar figures are on the record's usage list (ADR-007). " +
-	"An attempt with no usage entry, or an entry marked unavailable, is unknown spend - not zero."
+// The two gaps are reported apart because they are different failures. An attempt
+// with no usage at all was never accounted for; an attempt with tokens but no cost
+// basis was accounted for by a CLI that reported no dollar figure, and its tokens
+// still count.
+func CostNoteFor(attempts []ExecutorAttempt) string {
+	var noUsage, noCost []string
+	for _, a := range attempts {
+		switch {
+		case !a.Usage.IsAvailable():
+			noUsage = append(noUsage, strconv.Itoa(a.Iteration))
+		case a.Usage.CostBasis == "":
+			noCost = append(noCost, strconv.Itoa(a.Iteration))
+		}
+	}
+
+	note := costNotePreamble
+	if len(noUsage) > 0 {
+		note += fmt.Sprintf(" Token counts and cost were unavailable for attempt(s) %s: that spend happened and is unknown, not zero.",
+			strings.Join(noUsage, ", "))
+	}
+	if len(noCost) > 0 {
+		note += fmt.Sprintf(" Attempt(s) %s reported token counts but no cost, so their dollars are unknown, not zero.",
+			strings.Join(noCost, ", "))
+	}
+	if len(noUsage) == 0 && len(noCost) == 0 && len(attempts) > 0 {
+		note += " Every attempt's token counts and cost were read."
+	}
+	return note
+}
 
 // RoutingRecord is the persisted evidence for how one work item was routed. It
 // exists so the escalation caps, and the premise behind them, can be argued from
@@ -222,8 +254,8 @@ type RoutingRecord struct {
 
 	// SonnetAttempts and OpusExecutionAttempts count attempts on the default and
 	// escalated executors. They are named for the roles' usual models because that
-	// is the vocabulary the caps are configured in, and they are the cost
-	// approximation: attempts at a tier, not tokens.
+	// is the vocabulary the caps are configured in. They count routing only - spend
+	// is read from each attempt's usage (UsageTotals), never derived from these.
 	SonnetAttempts        int `yaml:"sonnet_attempts"`
 	OpusExecutionAttempts int `yaml:"opus_execution_attempts"`
 
@@ -251,9 +283,20 @@ type RoutingRecord struct {
 	DurationSeconds float64 `yaml:"duration_seconds"`
 	Duration        string  `yaml:"duration"`
 
-	// CostNote is CostApproximationNote, written into every record rather than left
-	// to documentation, because the reader who needs it is reading the record.
+	// CostNote is CostNoteFor(Attempts), written into every record rather than left
+	// to documentation, because the reader who needs it is reading the record. It
+	// names the attempts whose token counts or cost were unavailable, so a gap in
+	// the usage does not read as zero spend.
 	CostNote string `yaml:"cost_note"`
+}
+
+// UsageTotals is what this work item's attempts spent, summed from the usage each
+// attempt recorded. It is the record's own read path for spend, so no consumer has
+// to approximate cost from SonnetAttempts and OpusExecutionAttempts: attempts
+// whose accounting could not be read are counted as unavailable and contribute
+// nothing, which is what keeps the total a floor rather than a fabrication.
+func (r *RoutingRecord) UsageTotals() UsageTotals {
+	return TotalUsage(UsageEntriesFor(r.Attempts))
 }
 
 // Escalated reports whether this item left the default executor at all - either

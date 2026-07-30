@@ -328,6 +328,179 @@ func groupKeyOf(run *domain.ExecutionRun, by GroupBy) string {
 	}
 }
 
+// OutcomeRow is what the change requests that ended one way spent: how many there
+// were, what their attempts cost, and what one of those outcomes cost on average.
+//
+// The spend is read from the usage each attempt recorded on the run record, never
+// from the routing counters beside it: attempts at a tier are not tokens, and the
+// records carry the measured figure (see domain.RoutingRecord.UsageTotals).
+type OutcomeRow struct {
+	// Outcome is how the change request ended, in the routing vocabulary widened by
+	// one: completed, needs_human, abandoned, or failed when no run record said which.
+	Outcome string
+
+	// ChangeRequests is how many change requests ended this way, and WorkItems how
+	// many run records they have between them. Escalated is the subset of those change
+	// requests that left the default executor at all.
+	ChangeRequests int
+	WorkItems      int
+	Escalated      int
+
+	// Attempts is every usage entry behind this row and Unavailable the subset whose
+	// accounting could not be read, which is why the figures below are a floor.
+	Attempts    int
+	Unavailable int
+
+	// RecordsWithoutUsage is how many of the run records behind this row carry no
+	// usage list at all, so a row whose spend is partial says so.
+	RecordsWithoutUsage int
+
+	// Usage is the spend, with charged dollars, list-price equivalents and
+	// unresolved-basis dollars in separate columns (see domain.CostBasis).
+	Usage domain.UsageTotals
+}
+
+// CostPerChangeRequest divides this outcome's spend by the change requests that
+// ended in it, keeping the bases apart: a charged dollar is never averaged
+// together with a list-price equivalent of subscription tokens.
+func (r OutcomeRow) CostPerChangeRequest() (charged, listPrice, unknownBasis float64) {
+	if r.ChangeRequests == 0 {
+		return 0, 0, 0
+	}
+	n := float64(r.ChangeRequests)
+	return r.Usage.ChargedCostUSD / n, r.Usage.ListPriceCostUSD / n, r.Usage.UnknownBasisCostUSD / n
+}
+
+// TokensPerChangeRequest is the measured tokens per change request that ended this
+// way, or 0 when none did.
+func (r OutcomeRow) TokensPerChangeRequest() float64 {
+	if r.ChangeRequests == 0 {
+		return 0
+	}
+	return float64(r.Usage.TotalTokens()) / float64(r.ChangeRequests)
+}
+
+// OutcomeReport is cost per change request outcome: one row per way a change
+// request ended.
+type OutcomeReport struct {
+	// Rows are ordered by outcomeOrder, so two runs of the report over the same
+	// records print identically and the outcomes read best-to-worst.
+	Rows []OutcomeRow
+
+	// Records is every run record read and ChangeRequests how many change requests
+	// they belong to, so an empty repository is distinguishable from one whose records
+	// carry no usage.
+	Records        int
+	ChangeRequests int
+}
+
+// Empty reports whether there were no run records at all.
+func (r OutcomeReport) Empty() bool { return r.Records == 0 }
+
+// HasUnknownBasisCost reports whether any row carries dollars whose auth mode was
+// not resolved, so the report can say what that column is instead of dropping it.
+func (r OutcomeReport) HasUnknownBasisCost() bool {
+	for _, row := range r.Rows {
+		if row.Usage.UnknownBasisCostUSD != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// OutcomeCosts aggregates persisted run records into what each change request
+// outcome cost, measured under api-key auth and estimated at list price under
+// subscription auth - the two kept in their own columns, because a figure summing
+// charged money with the list-price equivalent of subscription tokens is neither
+// (ADR-007).
+//
+// A change request's outcome is its work items' outcomes taken together: it
+// completed only if every one of them did, and it is reported as needs_human when
+// any work item exhausted every escalation path, that being the stronger statement
+// about what a further attempt could have achieved.
+func OutcomeCosts(runs []*domain.ExecutionRun) OutcomeReport {
+	var report OutcomeReport
+
+	type crAccumulator struct {
+		workItems           int
+		escalated           bool
+		completed           bool
+		needsHuman          bool
+		abandoned           bool
+		recordsWithoutUsage int
+		entries             []domain.UsageEntry
+	}
+	byCR := map[string]*crAccumulator{}
+
+	for _, run := range runs {
+		if run == nil {
+			continue
+		}
+		report.Records++
+
+		a, ok := byCR[run.CRID]
+		if !ok {
+			a = &crAccumulator{completed: true}
+			byCR[run.CRID] = a
+		}
+
+		a.workItems++
+		if run.Outcome != domain.RunCompleted {
+			a.completed = false
+		}
+		if len(run.Usage) == 0 {
+			a.recordsWithoutUsage++
+		}
+		a.entries = append(a.entries, run.Usage...)
+		if run.Routing != nil {
+			if run.Routing.Escalated() {
+				a.escalated = true
+			}
+			switch run.Routing.Outcome {
+			case domain.RoutingNeedsHuman:
+				a.needsHuman = true
+			case domain.RoutingAbandoned:
+				a.abandoned = true
+			}
+		}
+	}
+	report.ChangeRequests = len(byCR)
+
+	type outcomeAccumulator struct {
+		row     OutcomeRow
+		entries []domain.UsageEntry
+	}
+	byOutcome := map[string]*outcomeAccumulator{}
+	for _, a := range byCR {
+		outcome := outcomeOf(a.completed, a.needsHuman, a.abandoned)
+		o, ok := byOutcome[outcome]
+		if !ok {
+			o = &outcomeAccumulator{row: OutcomeRow{Outcome: outcome}}
+			byOutcome[outcome] = o
+		}
+		o.row.ChangeRequests++
+		o.row.WorkItems += a.workItems
+		if a.escalated {
+			o.row.Escalated++
+		}
+		o.row.RecordsWithoutUsage += a.recordsWithoutUsage
+		o.entries = append(o.entries, a.entries...)
+	}
+
+	for _, outcome := range outcomeOrder {
+		o, ok := byOutcome[outcome]
+		if !ok {
+			continue
+		}
+		o.row.Usage = domain.TotalUsage(o.entries)
+		o.row.Attempts = o.row.Usage.Entries
+		o.row.Unavailable = o.row.Usage.Unavailable
+		report.Rows = append(report.Rows, o.row)
+	}
+
+	return report
+}
+
 // EscalationSide is what one tier of a change request's execution spent and which
 // models spent it - the before or the after of an escalation.
 type EscalationSide struct {
@@ -552,6 +725,16 @@ func sideOf(entries []domain.UsageEntry, models map[string]struct{}) EscalationS
 	}
 	sort.Strings(side.Models)
 	return side
+}
+
+// outcomeOrder is the order outcomes are reported in - what the routing achieved,
+// then what it gave up on - so a report over the same records always prints the
+// same rows in the same places.
+var outcomeOrder = []string{
+	"completed",
+	string(domain.RoutingNeedsHuman),
+	string(domain.RoutingAbandoned),
+	string(domain.RunFailed),
 }
 
 // outcomeOf names how a change request ended across its work items. needs_human

@@ -1,6 +1,105 @@
 package domain
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
+
+// The note is the record's own statement about its gaps, so it has to name them.
+// A reader who cannot tell an unmeasured attempt from a free one will read the
+// missing tokens as zero, which understates every total built on these records.
+func TestCostNoteFor_NamesTheAttemptsWithNoTokensOrCost(t *testing.T) {
+	charged := func(iteration int) ExecutorAttempt {
+		return ExecutorAttempt{Iteration: iteration, Usage: &AttemptUsage{
+			Available: true, InputTokens: 100, CostUSD: 0.5, CostBasis: CostBasisCharged,
+		}}
+	}
+
+	tests := []struct {
+		name     string
+		attempts []ExecutorAttempt
+		want     []string
+		notWant  []string
+	}{
+		{
+			name:     "every attempt accounted for",
+			attempts: []ExecutorAttempt{charged(1), charged(2)},
+			want:     []string{"Every attempt's token counts and cost were read"},
+			notWant:  []string{"unavailable for attempt(s)", "no cost"},
+		},
+		{
+			name: "an attempt whose usage could not be read",
+			attempts: []ExecutorAttempt{
+				charged(1),
+				{Iteration: 2, Usage: UnavailableUsage("the invocation reported no usage")},
+				{Iteration: 3},
+			},
+			want:    []string{"Token counts and cost were unavailable for attempt(s) 2, 3", "unknown, not zero"},
+			notWant: []string{"Every attempt's"},
+		},
+		{
+			name: "tokens read but no cost reported",
+			attempts: []ExecutorAttempt{
+				charged(1),
+				{Iteration: 2, Usage: &AttemptUsage{Available: true, InputTokens: 50}},
+			},
+			want:    []string{"Attempt(s) 2 reported token counts but no cost"},
+			notWant: []string{"Every attempt's", "unavailable for attempt(s)"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			note := CostNoteFor(tt.attempts)
+
+			if !strings.Contains(note, costNotePreamble) {
+				t.Errorf("note = %q, want it to open by saying cost is measured rather than approximated", note)
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(note, want) {
+					t.Errorf("note = %q, want it to contain %q", note, want)
+				}
+			}
+			for _, notWant := range tt.notWant {
+				if strings.Contains(note, notWant) {
+					t.Errorf("note = %q, want it not to contain %q", note, notWant)
+				}
+			}
+		})
+	}
+}
+
+// The record's spend is a read of what each attempt recorded, never a function of
+// how many attempts ran at which tier.
+func TestRoutingRecord_UsageTotalsReadFromTheAttemptsNotTheCounters(t *testing.T) {
+	record := &RoutingRecord{
+		SonnetAttempts:        2,
+		OpusExecutionAttempts: 1,
+		Attempts: []ExecutorAttempt{
+			{Iteration: 1, Role: ExecutorRoleDefault, Usage: &AttemptUsage{
+				Available: true, InputTokens: 100, OutputTokens: 20, CostUSD: 0.5, CostBasis: CostBasisCharged,
+			}},
+			{Iteration: 2, Role: ExecutorRoleDefault, Usage: UnavailableUsage("no usage")},
+			{Iteration: 3, Role: ExecutorRoleEscalated, Usage: &AttemptUsage{
+				Available: true, InputTokens: 400, CostUSD: 4.0, CostBasis: CostBasisListPriceEstimate,
+			}},
+		},
+	}
+
+	totals := record.UsageTotals()
+
+	if totals.Entries != 3 || totals.Available != 2 || totals.Unavailable != 1 {
+		t.Errorf("totals = %+v, want 3 attempts, 2 readable and 1 unavailable", totals)
+	}
+	if got := totals.TotalTokens(); got != 520 {
+		t.Errorf("tokens = %d, want only the readable attempts' 520", got)
+	}
+	if totals.ChargedCostUSD != 0.5 || totals.ListPriceCostUSD != 4.0 {
+		t.Errorf("cost = %v charged / %v list-price, want them kept apart", totals.ChargedCostUSD, totals.ListPriceCostUSD)
+	}
+	if totals.Complete() {
+		t.Error("a record with an unavailable attempt reports complete totals; it must report a floor")
+	}
+}
 
 func TestSourceType_IsSystemTruth(t *testing.T) {
 	tests := []struct {

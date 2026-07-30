@@ -392,3 +392,115 @@ func TestEscalations_NoRunRecordsIsEmpty(t *testing.T) {
 		t.Errorf("report = %+v, want no rows and no rate", report)
 	}
 }
+
+// Cost per outcome is the question "what did a completion cost, and what did
+// giving up cost" - read from the usage entries, not from how many attempts ran.
+func TestOutcomeCosts_OneRowPerChangeRequestOutcome(t *testing.T) {
+	report := OutcomeCosts(escalatedRuns())
+
+	if report.Records != 3 || report.ChangeRequests != 3 {
+		t.Fatalf("read = %d record(s) over %d change request(s), want 3 and 3", report.Records, report.ChangeRequests)
+	}
+	if len(report.Rows) != 2 {
+		t.Fatalf("rows = %+v, want one for completed and one for needs_human", report.Rows)
+	}
+	if report.Rows[0].Outcome != "completed" || report.Rows[1].Outcome != string(domain.RoutingNeedsHuman) {
+		t.Fatalf("rows = %q, %q, want completed before needs_human", report.Rows[0].Outcome, report.Rows[1].Outcome)
+	}
+
+	completed := report.Rows[0]
+	if completed.ChangeRequests != 2 || completed.WorkItems != 2 || completed.Escalated != 1 {
+		t.Errorf("completed row = %+v, want 2 change requests over 2 work items, 1 of them escalated", completed)
+	}
+	if completed.Attempts != 4 || completed.Unavailable != 1 {
+		t.Errorf("completed row attempts = %d unavailable = %d, want 4 and 1", completed.Attempts, completed.Unavailable)
+	}
+	if got := completed.Usage.TotalTokens(); got != 600 {
+		t.Errorf("completed tokens = %d, want only the readable attempts' 600", got)
+	}
+	if charged, _, _ := completed.CostPerChangeRequest(); charged != 2.5 {
+		t.Errorf("completed charged cost per change request = %v, want 5.0 over 2 change requests", charged)
+	}
+	if got := completed.TokensPerChangeRequest(); got != 300 {
+		t.Errorf("completed tokens per change request = %v, want 300", got)
+	}
+
+	stuck := report.Rows[1]
+	if stuck.ChangeRequests != 1 || stuck.Usage.ChargedCostUSD != 2.5 {
+		t.Errorf("needs_human row = %+v, want 1 change request having spent 2.5 charged", stuck)
+	}
+}
+
+// The two cost bases answer different questions - what was billed, and what the
+// tokens would have been billed at - and a row that added them would answer
+// neither (ADR-007).
+func TestOutcomeCosts_ChargedAndListPriceKeptApart(t *testing.T) {
+	report := OutcomeCosts([]*domain.ExecutionRun{
+		{
+			CRID: "cr-api-key", WorkItemID: "wi-1", Iterations: 1, Outcome: domain.RunCompleted,
+			Routing: &domain.RoutingRecord{Outcome: domain.RoutingPassed},
+			Usage: []domain.UsageEntry{
+				available(1, domain.ExecutorRoleDefault, "sonnet-x", "high", domain.AttemptPassed, 100, 1.0, domain.CostBasisCharged),
+			},
+		},
+		{
+			CRID: "cr-subscription", WorkItemID: "wi-2", Iterations: 1, Outcome: domain.RunCompleted,
+			Routing: &domain.RoutingRecord{Outcome: domain.RoutingPassed},
+			Usage: []domain.UsageEntry{
+				available(1, domain.ExecutorRoleDefault, "opus-x", "high", domain.AttemptPassed, 200, 4.0, domain.CostBasisListPriceEstimate),
+			},
+		},
+		{
+			CRID: "cr-ambient", WorkItemID: "wi-3", Iterations: 1, Outcome: domain.RunCompleted,
+			Routing: &domain.RoutingRecord{Outcome: domain.RoutingPassed},
+			Usage: []domain.UsageEntry{
+				available(1, domain.ExecutorRoleDefault, "opus-x", "high", domain.AttemptPassed, 200, 2.0, domain.CostBasisUnknown),
+			},
+		},
+	})
+
+	row := report.Rows[0]
+	if row.Usage.ChargedCostUSD != 1.0 || row.Usage.ListPriceCostUSD != 4.0 || row.Usage.UnknownBasisCostUSD != 2.0 {
+		t.Fatalf("costs = %v charged / %v list-price / %v unknown, want each in its own column",
+			row.Usage.ChargedCostUSD, row.Usage.ListPriceCostUSD, row.Usage.UnknownBasisCostUSD)
+	}
+	charged, listPrice, unknownBasis := row.CostPerChangeRequest()
+	if charged != 1.0/3 || listPrice != 4.0/3 || unknownBasis != 2.0/3 {
+		t.Errorf("per-change-request costs = %v/%v/%v, want each basis divided by the 3 change requests separately",
+			charged, listPrice, unknownBasis)
+	}
+	if !report.HasUnknownBasisCost() {
+		t.Error("report does not report the unresolved-basis spend, so it would vanish from both columns silently")
+	}
+}
+
+// A run written before usage capture spent tokens nobody counted. The row it
+// belongs to says so rather than publishing a total that quietly excludes it.
+func TestOutcomeCosts_RecordWithoutUsageIsUnknownNotZero(t *testing.T) {
+	report := OutcomeCosts([]*domain.ExecutionRun{{
+		CRID: "cr-old", WorkItemID: "wi-1", Iterations: 2, Outcome: domain.RunFailed,
+		Routing: &domain.RoutingRecord{Outcome: domain.RoutingAbandoned},
+	}})
+
+	row := report.Rows[0]
+	if row.Outcome != string(domain.RoutingAbandoned) {
+		t.Fatalf("outcome = %q, want abandoned", row.Outcome)
+	}
+	if row.RecordsWithoutUsage != 1 {
+		t.Errorf("records without usage = %d, want 1", row.RecordsWithoutUsage)
+	}
+	if row.Attempts != 0 || row.Usage.Available != 0 || row.Usage.TotalTokens() != 0 {
+		t.Errorf("row = %+v, want no measured spend rather than a fabricated one", row)
+	}
+	if charged, listPrice, _ := row.CostPerChangeRequest(); charged != 0 || listPrice != 0 {
+		t.Errorf("cost per change request = %v/%v, want nothing: the spend is unknown", charged, listPrice)
+	}
+}
+
+func TestOutcomeCosts_NoRunRecordsIsEmpty(t *testing.T) {
+	report := OutcomeCosts(nil)
+
+	if !report.Empty() || len(report.Rows) != 0 {
+		t.Errorf("report over no records = %+v, want empty", report)
+	}
+}
