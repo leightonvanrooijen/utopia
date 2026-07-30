@@ -1,0 +1,94 @@
+id: 13_model-economics-usage-capture-and-comparison-phase-0-attempt-usage-capture
+spec_ref: 13_model-economics-usage-capture-and-comparison-phase-0.attempt-usage-capture
+title: |
+    Claude invocations from the execution loop ask the CLI for structured
+    output and read the usage it reports, instead of taking prose and
+    discarding the accounting.
+
+    The resolved model id is recorded rather than the alias passed to --model,
+    because model-mapping remaps aliases over time and a comparison keyed on
+    "opus" would silently pool two different models.
+
+    Cost needs a caveat baked into the data, not the reader. Under
+    auth-mode-subscription no per-token charge is incurred, so the CLI's
+    dollar figure is a list-price equivalent rather than money spent. Tokens
+    are real under both auth modes; dollars are only real under
+    auth-mode-api-key.
+status: pending
+prompt: |-
+    ## TASK
+
+    Claude invocations from the execution loop ask the CLI for structured
+    output and read the usage it reports, instead of taking prose and
+    discarding the accounting.
+
+    The resolved model id is recorded rather than the alias passed to --model,
+    because model-mapping remaps aliases over time and a comparison keyed on
+    "opus" would silently pool two different models.
+
+    Cost needs a caveat baked into the data, not the reader. Under
+    auth-mode-subscription no per-token charge is incurred, so the CLI's
+    dollar figure is a list-price equivalent rather than money spent. Tokens
+    are real under both auth modes; dollars are only real under
+    auth-mode-api-key.
+
+
+    Acceptance criteria:
+    - Every Claude invocation the execution loop makes requests structured output from the claude CLI and parses the terminal result object for usage
+    - Each attempt records resolved model id, effort, input tokens, output tokens, cache-read tokens, cache-creation tokens, turn count, wall-clock duration and reported cost
+    - The recorded model id is the model the CLI resolved to, not the alias passed to --model
+    - A recorded cost carries whether it was produced under api-key auth or subscription auth, and subscription costs are marked as list-price estimates rather than amounts charged
+    - Verbose mode still streams assistant text to the operator in real time while usage is captured
+    - An attempt whose usage cannot be parsed is recorded with usage marked unavailable and does not fail the work item
+    - Unavailable usage is distinguishable from zero usage in the recorded form, asserted by a test
+    - Attempts made by validators and by discovery are out of scope for this feature, and the loop does not error when they report no usage
+
+
+
+    ## HINTS
+
+    - The invocation to change is CLI.Prompt in internal/claude.go around line 188, which appends --print and returns prose - `claude --print --output-format json` returns a terminal result object carrying usage, total_cost_usd, num_turns and session_id
+    - streamingPrompt is the verbose path - keep live output by using --output-format stream-json with --include-partial-messages rather than dropping to non-streaming when verbose
+    - baseArgs at internal/claude.go:159 is where --model and --effort are already assembled, so the output-format flag belongs there or beside it
+    - The resolved model id arrives in the stream-json init/result payload - prefer it over c.model, which holds the alias from cli-model-injection
+    - Auth mode is already resolved by ResolveAuth in internal/credentials.go and reachable from the CLI struct via c.authMode
+    - Capture the decision to record tokens as fact and subscription dollars as estimate in an ADR, including the reason the two cannot be pooled
+
+
+
+    ## STANDARDS
+
+    This project defines coding standards in .utopia/standards/. Before implementing, read the standards docs relevant to the files this task touches:
+
+    - id: cli-organization
+      description: How to structure cobra commands in internal/cli: thin handlers that own the CLI frame and delegate the algorithm to domain packages.
+      tags: go, cli, cobra, architecture
+      path: .utopia/standards/cli-organization.md
+    - id: error-handling
+      description: How errors are created, wrapped, matched, and surfaced: typed domain errors for branching, %w wrapping for infrastructure, one exit point in root.go.
+      tags: go, errors, cli
+      path: .utopia/standards/error-handling.md
+    - id: terminal-output
+      description: One shared output vocabulary (glyphs, banners, progress) routed through cobra's injectable writers so command output is consistent and testable.
+      tags: go, cli, ux, output
+      path: .utopia/standards/terminal-output.md
+
+
+    ## CONSTRAINTS
+
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+order: 0
+estimated_complexity: medium
