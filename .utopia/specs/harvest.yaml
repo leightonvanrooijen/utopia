@@ -1,7 +1,7 @@
 id: harvest
 title: harvest
 created: "2026-02-22T15:04:31.861654+10:00"
-updated: "2026-07-29T16:47:03.908757+10:00"
+updated: "2026-07-30T13:01:52.778839+10:00"
 description: ""
 features:
     - id: harvest-command
@@ -9,6 +9,14 @@ features:
         /harvest command that performs single-pass analysis of unprocessed
         conversations, detecting signals for all documentation types and
         guiding creation with context flowing between doc types.
+
+        Conversations are always scanned. Execution runs are a second,
+        opt-in source: each unprocessed run adds another source block (with
+        an embedded transcript) to the harvest prompt, so a project with many
+        executed work items inflates prompt size and token cost substantially.
+        Runs are therefore included only when the operator asks for them via
+        --runs, and harvest prints a cheap filesystem-derived count hint so
+        accumulated runs stay discoverable without being paid for.
       acceptance_criteria:
         - /harvest command scans .utopia/conversations/ for unprocessed conversations
         - Single pass detects ADR signals, Concept signals, and Domain signals
@@ -23,8 +31,17 @@ features:
         - README signals included in harvest output alongside ADR/Concept/Domain signals
         - Shows count of README signals found (e.g., "1 README signal")
         - README signals grouped separately in results display
-        - /harvest scans .utopia/runs/ for unprocessed execution runs alongside .utopia/conversations/
-        - Execution runs are marked processed only after the user completes or exits harvest, consistent with conversations
+        - /harvest scans .utopia/conversations/ always, and scans .utopia/runs/ for unprocessed execution runs only when the --runs flag is passed
+        - When --runs is passed, execution runs are marked processed only after the user completes or exits harvest, consistent with conversations
+        - harvest accepts a --runs boolean flag that defaults to false
+        - A harvest invocation without --runs embeds no execution run transcripts in the prompt
+        - A harvest invocation with --runs includes unprocessed execution runs as a source, prioritized ahead of conversations as before
+        - Without --runs, harvest starts a session when unprocessed conversations exist, regardless of how many unprocessed execution runs exist
+        - Without --runs, harvest exits without starting a session when there are no unprocessed conversations, even if unprocessed execution runs exist
+        - Without --runs, when one or more unprocessed execution runs exist, harvest prints a single-line hint stating the count and naming the --runs flag
+        - The count hint is derived from the filesystem only and embeds no run transcripts in the prompt
+        - Without --runs, when zero unprocessed execution runs exist, no hint is printed
+        - Execution runs not scanned because --runs was omitted remain unprocessed and are eligible for a later --runs harvest
 
     - id: signal-detection
       description: |
