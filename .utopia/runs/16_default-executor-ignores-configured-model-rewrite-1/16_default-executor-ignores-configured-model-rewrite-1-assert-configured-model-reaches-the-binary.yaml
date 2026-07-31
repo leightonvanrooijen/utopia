@@ -1,0 +1,128 @@
+workitem_id: 16_default-executor-ignores-configured-model-rewrite-1-assert-configured-model-reaches-the-binary
+cr_id: 16_default-executor-ignores-configured-model-rewrite-1
+spec_ref: 16_default-executor-ignores-configured-model-rewrite-1.assert-configured-model-reaches-the-binary
+iterations: 2
+completed_at: 2026-07-31T14:04:13.368817+10:00
+outcome: completed
+status: unprocessed
+transcript: |-
+  --- iteration 1 ---
+  I'll look at the existing test patterns and the executor code.Verification pass. All six criteria already covered in HEAD; no code or test change needed.
+
+  **Executor layer** - `internal/ralph/execute_model_test.go:24` `TestExecute_DefaultExecutorModelReachesTheBinary` drives real `Execute` attempts against stand-in claude on PATH, asserts recorded argv, one spawn per case:
+  - `models.execute` = sonnet reaches binary
+  - `models.default` = haiku reaches binary when execute absent
+  - `models` nil yields `--model sonnet` (backward-compat)
+  - `--model fable` overrides configured `models.execute`, `notWant` proves replacement
+
+  **Wrapper layer** - `internal/claude_test.go:352` `no model omits the flag` asserts empty model parameter puts no `--model` on argv, covering "claude CLI uses its default" where an empty model can actually occur (`internal/claude.go:238` guarded append).
+
+  **Sixth criterion negative** - grep `--model` across `internal/ralph/*_test.go`: only the four positive cases plus comment prose. No absent-flag assertion at executor layer, so nothing contradicts the sibling task.
+
+  Rejected alternative (recorded in commit): fifth executor case with `models` nil expecting no flag - unreachable state, would fail against correct behavior.
+
+  `go build ./... && go test ./internal/...` green, 1466 tests.
+
+  <COMPLETE>
+  --- iteration 2 ---
+  I'll start by reading the relevant files to understand the current state.Now I'll rewrite the test cases so each fixture value is distinguishable from every other branch of the resolution chain.Now I'll mutation-test: temporarily break the resolution to confirm each case actually fails.Case 1 now catches the exact defect. Now the original defect shape:Root cause of prior failure: case 1 fixture `Execute: "sonnet"` collided with the chain's terminal fallback, so the assertion could not fail for the behaviour it named.
+
+  Fix - each case pins a value no other branch can produce:
+
+  | case | fixture | want | notWant |
+  |---|---|---|---|
+  | models.execute | `Execute: "opus", Default: "haiku"` | `--model opus` | `--model haiku`, `--model sonnet` |
+  | models.default | `Default: "haiku"` | `--model haiku` | `--model sonnet` |
+  | no models section | `nil` | `--model sonnet` | - |
+  | `--model` override | `Execute: "opus"`, override `fable` | `--model fable` | `--model opus`, `--model sonnet` |
+
+  `notWant` widened to `[]string`. Entries match `--model <value>` not bare name - recorded argv includes prompt text, bare `sonnet` risks false match.
+
+  Verified by mutation, not inspection:
+  - `return override` (original defect) - cases 1, 2, 3 fail
+  - skip `models.execute`, read only `models.default` - case 1 fails, the exact gap the previous version missed
+
+  Criterion 5 already held at `internal/claude_test.go:353` (`no model omits the flag`). Criterion 6 holds - no default-executor case asserts an absent `--model`; grep for bare `"--model"` in `internal/ralph/` returns nothing.
+
+  Full suite: 1466 passed, 15 packages.
+
+  <COMPLETE>
+routing:
+  cr_type: bugfix
+  attempts:
+    - iteration: 1
+      role: default-executor
+      model: ""
+      effort: medium
+      usage:
+        available: true
+        model: claude-opus-5[1m]
+        effort: medium
+        input_tokens: 23
+        output_tokens: 3267
+        cache_read_tokens: 432175
+        cache_creation_tokens: 26864
+        turns: 13
+        duration_ms: 68214
+        cost_usd: 0.5665175
+        cost_basis: unknown
+      outcome: failed
+      failure_class: comprehension
+    - iteration: 2
+      role: escalated-executor
+      model: opus
+      effort: high
+      usage:
+        available: true
+        model: claude-opus-5
+        effort: high
+        input_tokens: 25
+        output_tokens: 7298
+        cache_read_tokens: 586148
+        cache_creation_tokens: 37617
+        turns: 15
+        duration_ms: 118438
+        cost_usd: 0.851819
+        cost_basis: unknown
+      outcome: passed
+  sonnet_attempts: 1
+  opus_execution_attempts: 1
+  mechanical_failures: 0
+  comprehension_failures: 1
+  reclassified_failures: 0
+  scoping_escalations: 0
+  spec_rewritten: false
+  outcome: passed
+  duration_seconds: 330.158376375
+  duration: 5m30s
+  cost_note: 'Cost here is measured, not approximated by tier: each attempt carries the token counts and the dollar figure the claude CLI reported for it, with the basis that says what the dollars mean (ADR-007). The counters beside them - attempts, sonnet_attempts, opus_execution_attempts - count routing, not spend. Every attempt''s token counts and cost were read.'
+usage:
+  - iteration: 1
+    role: default-executor
+    outcome: failed
+    failure_class: comprehension
+    available: true
+    model: claude-opus-5[1m]
+    effort: medium
+    input_tokens: 23
+    output_tokens: 3267
+    cache_read_tokens: 432175
+    cache_creation_tokens: 26864
+    turns: 13
+    duration_ms: 68214
+    cost_usd: 0.5665175
+    cost_basis: unknown
+  - iteration: 2
+    role: escalated-executor
+    outcome: passed
+    available: true
+    model: claude-opus-5
+    effort: high
+    input_tokens: 25
+    output_tokens: 7298
+    cache_read_tokens: 586148
+    cache_creation_tokens: 37617
+    turns: 15
+    duration_ms: 118438
+    cost_usd: 0.851819
+    cost_basis: unknown
