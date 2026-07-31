@@ -1,72 +1,72 @@
 id: 07_observability-execution-spans
 type: initiative
 title: Replace hand-rolled step timing with the OpenTelemetry trace model and persist spans per run
-status: draft
+status: in-progress
 phases:
     - type: refactor
+      status: in-progress
       tasks:
-          - id: adopt-otel-trace-model
-            description: |
-              internal/ralph/timing.go hand-rolls a span tree. stepTimings holds the
-              Claude, verification and validator durations and carries a comment
-              explaining that the total is measured rather than summed, because
-              validator runs overlap verification - a subtlety that parent and child
-              spans handle natively. internal/ralph/engine.go logResolution prints a
-              completed connector handle with its name, duration, exit code and error,
-              then discards it. Both are spans, written by hand, with no sink.
+        - id: adopt-otel-trace-model
+          description: |
+            internal/ralph/timing.go hand-rolls a span tree. stepTimings holds the
+            Claude, verification and validator durations and carries a comment
+            explaining that the total is measured rather than summed, because
+            validator runs overlap verification - a subtlety that parent and child
+            spans handle natively. internal/ralph/engine.go logResolution prints a
+            completed connector handle with its name, duration, exit code and error,
+            then discards it. Both are spans, written by hand, with no sink.
 
-              Replace the bespoke timing types with the OpenTelemetry trace API and
-              SDK. Adopt the data model only: an in-process span processor collects
-              spans so a later phase can persist them, and nothing is shipped over the
-              network. Because the model is standard, adding an OTLP exporter later is
-              an exporter registration rather than a re-modelling.
+            Replace the bespoke timing types with the OpenTelemetry trace API and
+            SDK. Adopt the data model only: an in-process span processor collects
+            spans so a later phase can persist them, and nothing is shipped over the
+            network. Because the model is standard, adding an OTLP exporter later is
+            an exporter registration rather than a re-modelling.
 
-              Every printed line stays byte-identical. This phase changes how timing is
-              represented internally, not what an operator sees.
-            acceptance_criteria:
-                - The go.opentelemetry.io/otel trace API and SDK are dependencies of the module
-                - The execution run is recorded as a root span, and each work item is a child span of it
-                - The Claude invocation, the verification command and each validator run are recorded as child spans of their work item span
-                - Validator runs that overlap verification are represented as concurrent sibling spans, not as summed durations
-                - Span attributes carry cr_id, spec_ref, work_item_id, iteration count and outcome
-                - Connector handle resolution is recorded as a span carrying the connector name, exit code, resolution state and error
-                - stepTimings is deleted and no hand-rolled duration aggregation remains in internal/ralph
-                - The step-timing summary line is byte-identical to before the change
-                - The handle resolution ledger lines are byte-identical to before the change
-                - No span data leaves the process - no OTLP endpoint, collector, or network call is configured
-                - go test ./... passes
-            hints:
-                - The types to replace are stepTimings and its summary() renderer in internal/ralph/timing.go, and logResolution at internal/ralph/engine.go:190
-                - Instrumentation points already exist and are correctly bracketed - Claude at internal/ralph/ralph.go:264-266, verification at 343-345, validator join at 385-387, after-phase validators at 592-594 and 618-620
-                - Keep Duration() as the renderer so the printed form stays 1.2s and 3m04s
-                - internal/ralph/events.go already defines the lifecycle vocabulary (execution-started, workitem-started, workitem-verified, workitem-committed, phase-verified, execution-completed) with canonical constants in internal/domain - reuse those as span names rather than inventing new ones
-                - Register the in-process collector as a sdktrace.SpanProcessor so a second exporter can be added later without touching any call site
-                - The span total must stay measured rather than summed - the existing comment in timing.go explains why, and the parent span duration preserves that property for free
-                - Capture the decision to adopt the OpenTelemetry data model without OTLP transport as an ADR, including the reasoning that a short-lived CLI gains little from a collector
-
+            Every printed line stays byte-identical. This phase changes how timing is
+            represented internally, not what an operator sees.
+          acceptance_criteria:
+            - The go.opentelemetry.io/otel trace API and SDK are dependencies of the module
+            - The execution run is recorded as a root span, and each work item is a child span of it
+            - The Claude invocation, the verification command and each validator run are recorded as child spans of their work item span
+            - Validator runs that overlap verification are represented as concurrent sibling spans, not as summed durations
+            - Span attributes carry cr_id, spec_ref, work_item_id, iteration count and outcome
+            - Connector handle resolution is recorded as a span carrying the connector name, exit code, resolution state and error
+            - stepTimings is deleted and no hand-rolled duration aggregation remains in internal/ralph
+            - The step-timing summary line is byte-identical to before the change
+            - The handle resolution ledger lines are byte-identical to before the change
+            - No span data leaves the process - no OTLP endpoint, collector, or network call is configured
+            - go test ./... passes
+          hints:
+            - The types to replace are stepTimings and its summary() renderer in internal/ralph/timing.go, and logResolution at internal/ralph/engine.go:190
+            - Instrumentation points already exist and are correctly bracketed - Claude at internal/ralph/ralph.go:264-266, verification at 343-345, validator join at 385-387, after-phase validators at 592-594 and 618-620
+            - Keep Duration() as the renderer so the printed form stays 1.2s and 3m04s
+            - internal/ralph/events.go already defines the lifecycle vocabulary (execution-started, workitem-started, workitem-verified, workitem-committed, phase-verified, execution-completed) with canonical constants in internal/domain - reuse those as span names rather than inventing new ones
+            - Register the in-process collector as a sdktrace.SpanProcessor so a second exporter can be added later without touching any call site
+            - The span total must stay measured rather than summed - the existing comment in timing.go explains why, and the parent span duration preserves that property for free
+            - Capture the decision to adopt the OpenTelemetry data model without OTLP transport as an ADR, including the reasoning that a short-lived CLI gains little from a collector
     - type: feature
       changes:
-          - operation: add
-            spec: observability
-            feature:
-                id: run-span-persistence
-                description: |
-                  Collected spans are serialised into the run record, so timing survives
-                  the process and can be compared across runs. Because run records are
-                  committed to git, git history becomes the time series: questions like "why
-                  was that run slow" and "is this getting worse" are answerable with a query
-                  over the repository, with no collector or telemetry backend involved.
-                acceptance_criteria:
-                    - Each work item's spans are written into its run record at .utopia/runs/<cr-id>/<workitem-id>.yaml
-                    - The persisted form records span name, start time, duration, parent relationship and attributes
-                    - Total, Claude, verification and validator durations are readable directly from the record without re-deriving them from raw output
-                    - A yq query can extract the Claude duration for every run in the repository
-                    - Spans are persisted in the same commit as their work item, matching workitem-commit behaviour
-                    - A run that fails persists the spans collected before the failure
-                    - Failure to persist spans logs a warning on the diagnostic channel and does not block the execution loop
-                hints:
-                    - This phase depends on change request 03_harvest-execution-runs phase 1, which creates the .utopia/runs/<cr-id>/<workitem-id>.yaml record - extend that record rather than adding a parallel file
-                    - This phase also depends on change request 06_observability-unified-output, which creates the observability spec and the diagnostic channel
-                    - Mirror the non-blocking, warn-on-failure behaviour of the existing workitem-commit feature
-                    - Reuse the yaml-formatting package so the record stays consistent with other Utopia YAML
-                    - Keep the persisted shape close to the OpenTelemetry span model so an OTLP exporter added later serialises the same data
+        - operation: add
+          spec: observability
+          feature:
+            id: run-span-persistence
+            description: |
+                Collected spans are serialised into the run record, so timing survives
+                the process and can be compared across runs. Because run records are
+                committed to git, git history becomes the time series: questions like "why
+                was that run slow" and "is this getting worse" are answerable with a query
+                over the repository, with no collector or telemetry backend involved.
+            acceptance_criteria:
+                - Each work item's spans are written into its run record at .utopia/runs/<cr-id>/<workitem-id>.yaml
+                - The persisted form records span name, start time, duration, parent relationship and attributes
+                - Total, Claude, verification and validator durations are readable directly from the record without re-deriving them from raw output
+                - A yq query can extract the Claude duration for every run in the repository
+                - Spans are persisted in the same commit as their work item, matching workitem-commit behaviour
+                - A run that fails persists the spans collected before the failure
+                - Failure to persist spans logs a warning on the diagnostic channel and does not block the execution loop
+            hints:
+                - This phase depends on change request 03_harvest-execution-runs phase 1, which creates the .utopia/runs/<cr-id>/<workitem-id>.yaml record - extend that record rather than adding a parallel file
+                - This phase also depends on change request 06_observability-unified-output, which creates the observability spec and the diagnostic channel
+                - Mirror the non-blocking, warn-on-failure behaviour of the existing workitem-commit feature
+                - Reuse the yaml-formatting package so the record stays consistent with other Utopia YAML
+                - Keep the persisted shape close to the OpenTelemetry span model so an OTLP exporter added later serialises the same data

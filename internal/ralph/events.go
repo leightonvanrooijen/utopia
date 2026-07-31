@@ -1,6 +1,10 @@
 package ralph
 
-import "github.com/leightonvanrooijen/utopia/internal/domain"
+import (
+	"go.opentelemetry.io/otel/trace"
+
+	"github.com/leightonvanrooijen/utopia/internal/domain"
+)
 
 // Lifecycle event names emitted by the execution loop, in loop order.
 // The canonical definitions live in the domain package so config validation
@@ -42,6 +46,16 @@ type EventPayload struct {
 	// false the validators action falls back to running every applicable validator.
 	SelectedValidatorIDs []string `json:"selected_validator_ids,omitempty"`
 	ValidatorsRouted     bool     `json:"validators_routed,omitempty"`
+
+	// parentSpanCtx is the span context a subscription action launched by this
+	// event should record its own span as a child of - a work item's span for
+	// work-item-scoped events, the execution span for run-scoped ones. It rides
+	// on the payload rather than on the dispatch's context because the
+	// dispatcher's subscriber closures are wired to the run's own context once,
+	// at Subscribe time, and never see a per-event one. Unexported: it is
+	// routing plumbing for this package's own spans, not part of the payload
+	// contract anything outside it observes.
+	parentSpanCtx trace.SpanContext
 }
 
 // Event is a named lifecycle event emitted by the execution loop.

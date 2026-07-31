@@ -6,6 +6,9 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 	"github.com/leightonvanrooijen/utopia/internal/ui"
@@ -75,9 +78,21 @@ type workItemRun struct {
 	// rec is the run record written to .utopia/runs/ when the item finishes,
 	// however it finishes.
 	rec *runRecorder
-	// timings is where each expensive step's wall clock is charged, so a
-	// completed item can report where its time went.
-	timings *stepTimings
+
+	// tracer starts the spans this item's stages record: its own span, and a
+	// child span for each Claude invocation, verification run, and validator
+	// join. collector is where those spans land once ended, so the item's
+	// completion line can read their durations back rather than accumulating
+	// them by hand as the loop runs.
+	tracer    trace.Tracer
+	collector *spanCollector
+	// itemSpan is this work item's span, started in newWorkItemRun and ended
+	// exactly once by endItemSpan. Every stage's own span - Claude, verification,
+	// the validator join - is a child of it, so it is what makes those children
+	// siblings of each other and gives the item a single measured total: its own
+	// duration, not a sum of theirs.
+	itemSpan     trace.Span
+	itemSpanDone bool
 }
 
 // newWorkItemRun resolves everything one work item's loop runs against: the
@@ -100,6 +115,8 @@ func newWorkItemRun(
 	basePayload EventPayload,
 	validatorRunner *validators.Runner,
 	validatorList []*domain.Validator,
+	tracer trace.Tracer,
+	collector *spanCollector,
 ) *workItemRun {
 	r := &workItemRun{
 		ctx:                    ctx,
@@ -137,10 +154,22 @@ func newWorkItemRun(
 			effort:    efforts.scoper,
 			standards: store.LoadStandardsIndex(),
 		},
-		// Time every expensive step this loop brackets so the item can report
-		// where its wall clock went when it completes.
-		timings: newStepTimings(),
 	}
+
+	// The item's own span, a child of the execution run's span carried on ctx.
+	// Every stage's span - Claude, verification, the validator join - is
+	// started against r.ctx below, so it nests as this span's child and the
+	// item's completion line can read the durations back from the collector
+	// rather than accumulating them by hand as the loop runs.
+	itemCtx, itemSpan := tracer.Start(ctx, EventWorkItemStarted, trace.WithAttributes(
+		attribute.String(attrCRID, r.crID),
+		attribute.String(attrSpecRef, specID),
+		attribute.String(attrWorkItemID, item.ID),
+	))
+	r.ctx = itemCtx
+	r.tracer = tracer
+	r.collector = collector
+	r.itemSpan = itemSpan
 
 	// The type the item's routing is recorded against, so escalation rate per
 	// cr_type is a query over the run records. Left empty when the CR cannot be
@@ -161,8 +190,60 @@ func newWorkItemRun(
 	r.itemPayload = basePayload
 	r.itemPayload.WorkItemID = item.ID
 	r.itemPayload.IterationCount = item.IterationCount
+	// Item-scoped events (workitem-completion-claimed, workitem-verified, ...)
+	// dispatch through a Dispatcher wired once to the run's own context, so a
+	// subscription action launched by one of them cannot see r.ctx's span.
+	// Carrying the item span's context on the payload instead is what parents
+	// its connector handles - a validator run, a gating connector - on the
+	// item span rather than the execution run's.
+	r.itemPayload.parentSpanCtx = itemSpan.SpanContext()
 
 	return r
+}
+
+// endItemSpan ends the item's own span exactly once, carrying the final
+// iteration count and how the item's run concluded. It is safe to call from
+// both a deferred catch-all and a deliberate completion path: the second call
+// is a no-op, guarded by itemSpanDone.
+//
+// The outcome favours the item's persisted status - completed, needs_human -
+// over the bare presence of err, because a halted-needs-human item returns an
+// error to stop the loop even though its own status already says what
+// happened. Cancellation is called out on its own since it is neither a
+// completion nor a status transition the item recorded.
+func (r *workItemRun) endItemSpan(err error) {
+	if r.itemSpanDone {
+		return
+	}
+	r.itemSpanDone = true
+
+	outcome := string(r.item.Status)
+	switch {
+	case r.ctx.Err() != nil:
+		outcome = "cancelled"
+	case err != nil && r.item.Status != domain.WorkItemNeedsHuman:
+		outcome = "failed"
+	}
+
+	r.itemSpan.SetAttributes(
+		attribute.Int(attrIterationCount, r.item.IterationCount),
+		attribute.String(attrOutcome, outcome),
+	)
+	r.itemSpan.End()
+}
+
+// timingSummary renders the item's step-timing breakdown once its span has
+// ended: the total is read back as the item span's own measured duration
+// rather than summed from its children, so a validator run that overlapped
+// verification is not double counted.
+func (r *workItemRun) timingSummary() string {
+	id := r.itemSpan.SpanContext().SpanID()
+	return renderTimingSummary(
+		r.collector.durationOf(id),
+		r.collector.sumChildDurations(id, "claude"),
+		r.collector.sumChildDurations(id, "verification"),
+		r.collector.sumChildDurations(id, "validators"),
+	)
 }
 
 // iterationPayload is the item's event payload stamped with the iteration
@@ -337,10 +418,11 @@ func (r *workItemRun) invokeExecutor(prompt string, attempt executorAttempt) inv
 		r.out.Progressf("  Iteration %d: invoking Claude...\n", r.item.IterationCount)
 	}
 
+	spanCtx, span := r.tracer.Start(r.ctx, "claude")
 	start := time.Now()
-	result, err := attemptCLI.Prompt(r.ctx, prompt)
+	result, err := attemptCLI.Prompt(spanCtx, prompt)
 	elapsed := time.Since(start)
-	r.timings.claude += elapsed
+	span.End()
 
 	return invocation{result: result, elapsed: elapsed, err: err}
 }
@@ -530,10 +612,11 @@ func (r *workItemRun) runVerification() (verificationOutcome, error) {
 		return verificationOutcome{passed: true}, nil
 	}
 
+	spanCtx, span := r.tracer.Start(r.ctx, "verification")
 	start := time.Now()
-	result, err := r.verifier.Run(r.ctx, r.verifyCommand)
+	result, err := r.verifier.Run(spanCtx, r.verifyCommand)
 	elapsed := time.Since(start)
-	r.timings.verification += elapsed
+	span.End()
 	if err != nil {
 		return verificationOutcome{}, fmt.Errorf("verification command failed to execute: %w", err)
 	}
@@ -584,10 +667,11 @@ type gateJoin struct {
 // categories a breakdown of real wall clock; the engine's resolution ledger
 // reports each run's full duration.
 func (r *workItemRun) joinValidationGate() gateJoin {
+	_, span := r.tracer.Start(r.ctx, "validators")
 	start := time.Now()
 	err := r.dispatcher.Dispatch(Event{Name: EventWorkItemVerified, Payload: r.iterationPayload()})
 	elapsed := time.Since(start)
-	r.timings.validators += elapsed
+	span.End()
 	return gateJoin{err: err, elapsed: elapsed}
 }
 

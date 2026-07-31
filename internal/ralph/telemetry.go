@@ -25,9 +25,9 @@ type runRecorder struct {
 	// transcript accumulates each iteration's streamed Claude output.
 	transcript strings.Builder
 	// start is when the item began, the baseline for the record's wall clock. It is
-	// the recorder's own marker rather than a borrowed reference to stepTimings,
-	// because the routing record must keep reporting wall clock when that type is
-	// replaced by the OpenTelemetry model.
+	// the recorder's own marker rather than a borrowed reference to the item's
+	// OpenTelemetry span, because the routing record's wall clock is independent
+	// of whatever the tracer is wired to.
 	start time.Time
 	// crType is the change request's type, resolved once when the item starts.
 	crType domain.CRType

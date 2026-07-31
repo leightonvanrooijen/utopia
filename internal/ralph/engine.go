@@ -9,6 +9,9 @@ import (
 	"syscall"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/leightonvanrooijen/utopia/internal/ui"
 )
 
@@ -75,6 +78,11 @@ type handle struct {
 	// copied from the engine at launch so every door - join, cancel, drain -
 	// reports to the same printer; nil means the process's own streams.
 	out *ui.Printer
+	// span records this handle's run as a child of the work item span (or the
+	// execution span, for run-scoped connectors) that launched it. It carries
+	// the connector name from its start and is closed with the exit code,
+	// resolution state, and error once the handle resolves.
+	span trace.Span
 }
 
 // join blocks until the work exits, collects its outcome, and marks the
@@ -133,11 +141,15 @@ type Engine struct {
 	// execution loop sets it to the printer the run was handed; nil means the
 	// process's own streams.
 	out *ui.Printer
+	// tracer starts each launched handle's span. The execution loop sets it to
+	// the run's real tracer; a noop tracer is the default so an engine built
+	// directly, as every existing test does, still runs without one wired in.
+	tracer trace.Tracer
 }
 
 // NewEngine creates an engine over a fixed set of subscriptions.
 func NewEngine(subs []Subscription) *Engine {
-	return &Engine{subs: subs}
+	return &Engine{subs: subs, tracer: noopTracer}
 }
 
 // Emit processes subscriptions for the event in fixed pass order: cancel
@@ -161,7 +173,7 @@ func (en *Engine) Emit(ctx context.Context, e Event) error {
 	// Pass 2: launch.
 	for i := range en.subs {
 		if en.subs[i].Launch == e.Name {
-			en.handles = append(en.handles, launchHandle(ctx, &en.subs[i], e, en.out))
+			en.handles = append(en.handles, launchHandle(ctx, &en.subs[i], e, en.out, en.tracer))
 		}
 	}
 
@@ -235,6 +247,18 @@ func (en *Engine) reapCompleted() {
 // a validators subscription is how long the validator agents actually took,
 // however much of it overlapped verification.
 func logResolution(h *handle) {
+	if h.span != nil {
+		h.span.SetAttributes(
+			attribute.String(attrConnector, h.sub.Name),
+			attribute.Int(attrExitCode, h.result.ExitCode),
+			attribute.String(attrResolution, h.state),
+		)
+		if h.result.Err != nil {
+			h.span.SetAttributes(attribute.String(attrError, h.result.Err.Error()))
+		}
+		h.span.End()
+	}
+
 	p := ui.OrDefault(h.out)
 	line := fmt.Sprintf("  connector %s %s in %s (exit %d)",
 		h.sub.Name, h.state, ui.Duration(time.Since(h.launchedAt)), h.result.ExitCode)
@@ -258,7 +282,13 @@ func logResolution(h *handle) {
 // launchHandle starts the subscription's action under a per-handle context
 // carrying the subscription timeout, and spawns the collector goroutine that
 // records the outcome and releases the context once the work exits.
-func launchHandle(ctx context.Context, sub *Subscription, e Event, out *ui.Printer) *handle {
+//
+// The handle's span is parented on the event payload's span context when the
+// dispatch that launched it carries one - a work item's span for
+// work-item-scoped events, the execution span otherwise - rather than on
+// whatever span happens to be live on ctx, since ctx here is the run's own
+// context and carries no per-item span of its own.
+func launchHandle(ctx context.Context, sub *Subscription, e Event, out *ui.Printer, tracer trace.Tracer) *handle {
 	runCtx, cancel := context.WithCancel(ctx)
 	if sub.Timeout > 0 {
 		timeoutCtx, timeoutCancel := context.WithTimeout(runCtx, sub.Timeout)
@@ -267,8 +297,14 @@ func launchHandle(ctx context.Context, sub *Subscription, e Event, out *ui.Print
 		cancel = func() { timeoutCancel(); runCancel() }
 	}
 
-	h := &handle{sub: sub, cancel: cancel, done: make(chan struct{}), state: handleRunning, launchedAt: time.Now(), out: out}
-	wait := sub.Action(runCtx, e)
+	spanParentCtx := runCtx
+	if sc := e.Payload.parentSpanCtx; sc.IsValid() {
+		spanParentCtx = trace.ContextWithSpanContext(runCtx, sc)
+	}
+	spanCtx, span := tracer.Start(spanParentCtx, sub.Name)
+
+	h := &handle{sub: sub, cancel: cancel, done: make(chan struct{}), state: handleRunning, launchedAt: time.Now(), out: out, span: span}
+	wait := sub.Action(spanCtx, e)
 	go func() {
 		h.result = wait()
 		h.cancel()

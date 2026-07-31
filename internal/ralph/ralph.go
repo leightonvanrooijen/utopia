@@ -9,6 +9,9 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 	"github.com/leightonvanrooijen/utopia/internal/git"
@@ -74,12 +77,37 @@ type Overrides struct {
 // subprocesses, so a mode that reached only some of them would split a single
 // run's usage across two accounts. The empty mode inherits the ambient
 // environment, which is the pre-auth behaviour.
-func Execute(ctx context.Context, specID string, store *internal.YAMLStore, config *domain.Config, projectDir string, auth domain.AuthMode, over Overrides) (*Result, error) {
+func Execute(ctx context.Context, specID string, store *internal.YAMLStore, config *domain.Config, projectDir string, auth domain.AuthMode, over Overrides) (result *Result, err error) {
 	// Every diagnostic this run emits carries the change request it belongs to, so
 	// no call site below has to interpolate the ID into its message. Attached here,
 	// before the printer reaches the claude subprocesses, the engine or the
 	// work-item loop, so a run has no path that emits a diagnostic without it.
 	out := ui.OrDefault(over.Out).WithAttrs(slog.String("cr_id", extractCRID(specID)))
+
+	// The run's own span tree: an in-process collector receives every span this
+	// run produces and nothing else - no exporter, no collector process, no
+	// network call - so adding one later is registering it alongside this
+	// processor rather than re-modelling how the loop reports timing.
+	tp, collector := newTracerProvider()
+	tracer := tp.Tracer(tracerName)
+	execCtx, execSpan := tracer.Start(ctx, EventExecutionStarted, trace.WithAttributes(
+		attribute.String(attrCRID, extractCRID(specID)),
+		attribute.String(attrSpecRef, specID),
+	))
+	ctx = execCtx
+	defer func() {
+		outcome := "completed"
+		switch {
+		case err != nil:
+			outcome = "failed"
+		case result != nil && len(result.NeedsHuman) > 0:
+			outcome = "needs_human"
+		case result != nil && result.Reason != "":
+			outcome = "failed"
+		}
+		execSpan.SetAttributes(attribute.String(attrOutcome, outcome))
+		execSpan.End()
+	}()
 
 	// Load work items for this spec
 	items, err := store.ListWorkItemsForSpec(specID)
@@ -100,7 +128,7 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 		return items[i].Order < items[j].Order
 	})
 
-	result := &Result{
+	result = &Result{
 		Total: len(items),
 	}
 
@@ -160,6 +188,7 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 	if len(subs) > 0 {
 		engine := NewEngine(subs)
 		engine.out = out
+		engine.tracer = tracer
 		runner := &ConnectorRunner{engine: engine}
 		dispatcher.Subscribe(func(e Event) error {
 			return runner.Handle(ctx, e)
@@ -168,6 +197,12 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 	basePayload := EventPayload{
 		CRID:   extractCRID(specID),
 		SpecID: specID,
+		// Run-scoped events (execution-started, phase-verified, execution-completed)
+		// dispatch through a Dispatcher wired once to this ctx, so a subscription
+		// action they launch cannot see whatever span ctx carries at dispatch time.
+		// Carrying the execution span's context on the payload is what parents
+		// those connector handles on the run's own span.
+		parentSpanCtx: execSpan.SpanContext(),
 	}
 	if cr, err := store.LoadChangeRequest(basePayload.CRID); err == nil {
 		basePayload.CRTitle = cr.Title
@@ -222,7 +257,7 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 		itemOut.Progressf("[%d/%d] %s - starting execution\n", i+1, len(items), item.ID)
 
 		// Execute this work item with the Ralph loop
-		timings, err := executeWorkItem(ctx, itemOut, item, specID, store, cli, defaultExecutorModel, efforts, verifier, config, projectDir, auth, dispatcher, basePayload, validatorRunner, validatorList)
+		timingLine, err := executeWorkItem(ctx, itemOut, item, specID, store, cli, defaultExecutorModel, efforts, verifier, config, projectDir, auth, dispatcher, basePayload, validatorRunner, validatorList, tracer, collector)
 		if err != nil {
 			// A halted item is skipped, not fatal. Batch execution runs every draft
 			// change request in order, so aborting the run on one ambiguous change
@@ -246,9 +281,9 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 		result.Completed++
 		itemOut.Progressf("[%d/%d] %s - completed in %d iteration(s)\n", i+1, len(items), item.ID, item.IterationCount)
 		// Where the item's wall clock went, under the line that announced it
-		// finished. Only a completed item carries timings.
-		if timings != nil {
-			itemOut.Progressf("  timing: %s\n", timings.summary())
+		// finished. Only a completed item carries a timing line.
+		if timingLine != "" {
+			itemOut.Progressf("  timing: %s\n", timingLine)
 		}
 	}
 
@@ -256,7 +291,7 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 	// fires phase-verified and phase-completed (and their gating connectors)
 	// even when no validators are configured.
 	if result.Completed == result.Total {
-		if err := runAfterPhaseValidators(ctx, out, cli, config, projectDir, auth, dispatcher, basePayload, validatorRunner, validatorList); err != nil {
+		if err := runAfterPhaseValidators(ctx, out, cli, config, projectDir, auth, dispatcher, basePayload, validatorRunner, validatorList, tracer); err != nil {
 			result.Reason = err.Error()
 			failPayload := basePayload
 			failPayload.Reason = err.Error()
@@ -277,9 +312,9 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 }
 
 // executeWorkItem runs the Ralph loop for a single work item until completion.
-// A completed item returns the wall-clock time it spent in each step it
-// bracketed, so the caller can report the breakdown alongside the item's
-// completion line; an item that stops early returns nil timings.
+// A completed item returns the rendered step-timing line, so the caller can
+// report the breakdown alongside the item's completion line; an item that
+// stops early returns an empty line.
 //
 // The body is the loop's stage list: every iteration builds a prompt, invokes
 // the executor, accounts for what it spent, gates it, and either routes the
@@ -302,53 +337,59 @@ func executeWorkItem(
 	basePayload EventPayload,
 	validatorRunner *validators.Runner,
 	validatorList []*domain.Validator,
-) (timings *stepTimings, err error) {
+	tracer trace.Tracer,
+	collector *spanCollector,
+) (timingLine string, err error) {
 	r := newWorkItemRun(ctx, out, item, specID, store, cli, defaultExecutorModel, efforts,
-		verifier, config, projectDir, auth, dispatcher, basePayload, validatorRunner, validatorList)
+		verifier, config, projectDir, auth, dispatcher, basePayload, validatorRunner, validatorList, tracer, collector)
 
 	// Every way out of this loop leaves a record, not only the outcomes the loop
 	// routed to. An item that aborted on an error nobody anticipated is exactly the
 	// item worth having a record of, and no record at all reads like a change
 	// request that was never attempted.
 	defer func() { recordAbort(ctx, store, r.crID, item, r.rec, err) }()
+	// The item's span closes on every way out of this loop, carrying the final
+	// iteration count and outcome; a deliberate completion below ends it early
+	// so the collector has the item's total by the time the summary is read.
+	defer func() { r.endItemSpan(err) }()
 
 	// A gate blocking workitem-started aborts the run before the item runs.
 	if gateErr := dispatcher.Dispatch(Event{Name: EventWorkItemStarted, Payload: r.itemPayload}); gateErr != nil {
-		return nil, gateErr
+		return "", gateErr
 	}
 
 	for {
 		if err := r.abortIfCancelled(); err != nil {
-			return nil, err
+			return "", err
 		}
 
 		escalated, err := r.chargeAndEscalateScoping()
 		if err != nil {
-			return nil, err
+			return "", err
 		}
 		if escalated {
 			continue
 		}
 
 		if err := r.startIteration(); err != nil {
-			return nil, err
+			return "", err
 		}
 
 		prompt, err := r.buildAttemptPrompt()
 		if err != nil {
-			return nil, err
+			return "", err
 		}
 
 		attempt, err := r.chargeExecutorAttempt()
 		if err != nil {
-			return nil, err
+			return "", err
 		}
 
 		inv := r.invokeExecutor(prompt, attempt)
 
 		refunded, err := r.refundAttemptOnUsageLimit(attempt, inv)
 		if err != nil {
-			return nil, err
+			return "", err
 		}
 		if refunded {
 			continue
@@ -363,7 +404,7 @@ func executeWorkItem(
 
 		invocationFailed, err := r.chargeInvocationFailure(attempt, inv)
 		if err != nil {
-			return nil, err
+			return "", err
 		}
 		if invocationFailed {
 			continue
@@ -381,7 +422,7 @@ func executeWorkItem(
 
 		verified, err := r.runVerification()
 		if err != nil {
-			return nil, err
+			return "", err
 		}
 		if !verified.passed {
 			r.recordVerificationFailure(verified)
@@ -390,17 +431,18 @@ func executeWorkItem(
 
 		if join := r.joinValidationGate(); join.err != nil {
 			if err := r.routeGateFailure(join); err != nil {
-				return nil, err
+				return "", err
 			}
 			continue
 		}
 
 		if err := r.markWorkItemCompleted(); err != nil {
-			return nil, err
+			return "", err
 		}
 		r.recordCompletedRun()
 		r.commitWorkItem()
-		return r.timings, nil
+		r.endItemSpan(nil)
+		return r.timingSummary(), nil
 	}
 }
 
@@ -562,6 +604,7 @@ func runAfterPhaseValidators(
 	basePayload EventPayload,
 	validatorRunner *validators.Runner,
 	validatorList []*domain.Validator,
+	tracer trace.Tracer,
 ) error {
 	maxIterations := config.Verification.MaxIterations
 	iteration := 0
@@ -605,9 +648,11 @@ func runAfterPhaseValidators(
 		// carrying their aggregated feedback if any fail. No after-phase
 		// validators configured means the phase is trivially verified; gating
 		// connectors on phase-verified still run.
+		_, joinSpan := tracer.Start(ctx, "validators")
 		joinStart := time.Now()
 		gateErr := dispatcher.Dispatch(Event{Name: EventPhaseVerified, Payload: basePayload})
 		joinElapsed := time.Since(joinStart)
+		joinSpan.End()
 		if gateErr == nil {
 			p := basePayload
 			// Create commit for a successful fix if this wasn't the first iteration
@@ -636,9 +681,11 @@ func runAfterPhaseValidators(
 		// the same structured output: an after-phase fix is an execution attempt and its
 		// spend is part of what the phase cost. It has no work item to book against, so
 		// the usage rides on the result until the run record carries it.
+		spanCtx, claudeSpan := tracer.Start(ctx, "claude")
 		claudeStart := time.Now()
-		claudeResult, err := cli.Clone().WithUsageCapture(true).Prompt(ctx, prompt)
+		claudeResult, err := cli.Clone().WithUsageCapture(true).Prompt(spanCtx, prompt)
 		claudeElapsed := time.Since(claudeStart)
+		claudeSpan.End()
 
 		// Detect and handle Claude usage limits without counting the attempt
 		// against max iterations. A limit error means ctx was cancelled while

@@ -10,15 +10,13 @@ import (
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 )
 
-func TestStepTimings_SummaryReportsTotalAndPerCategoryBreakdown(t *testing.T) {
-	timings := &stepTimings{
-		start:        time.Now().Add(-(14*time.Minute + 22*time.Second)),
-		claude:       11*time.Minute + 30*time.Second,
-		verification: 2*time.Minute + 10*time.Second,
-		validators:   2100 * time.Millisecond,
-	}
-
-	got := timings.summary()
+func TestRenderTimingSummary_ReportsTotalAndPerCategoryBreakdown(t *testing.T) {
+	got := renderTimingSummary(
+		14*time.Minute+22*time.Second,
+		11*time.Minute+30*time.Second,
+		2*time.Minute+10*time.Second,
+		2100*time.Millisecond,
+	)
 
 	for _, want := range []string{"total 14m22s", "claude 11m30s", "verification 2m10s", "validators 2.1s"} {
 		if !strings.Contains(got, want) {
@@ -27,11 +25,11 @@ func TestStepTimings_SummaryReportsTotalAndPerCategoryBreakdown(t *testing.T) {
 	}
 }
 
-func TestStepTimings_SummaryReportsUntimedStepsAsZero(t *testing.T) {
+func TestRenderTimingSummary_ReportsUntimedStepsAsZero(t *testing.T) {
 	// A work item that completed with no verification command and no
 	// validators configured still reports every category, so the breakdown
 	// has a fixed shape across runs.
-	got := newStepTimings().summary()
+	got := renderTimingSummary(0, 0, 0, 0)
 
 	for _, want := range []string{"verification 0.0s", "validators 0.0s"} {
 		if !strings.Contains(got, want) {

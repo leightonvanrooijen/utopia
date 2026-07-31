@@ -1,0 +1,164 @@
+id: ADR-009
+title: "Execution Timing Adopts the OpenTelemetry Trace Data Model, No OTLP Transport"
+status: accepted
+date: 2026-07-31
+context: |
+  internal/ralph/timing.go hand-rolled a span tree. `stepTimings` held the
+  Claude, verification and validator durations for one work item, with a
+  comment explaining that its total was measured from a wall-clock start
+  rather than summed from the three categories, because validators launch
+  speculatively and run alongside verification - summing them would double
+  count the overlap. `internal/ralph/engine.go`'s `logResolution` printed a
+  completed connector handle's name, duration, exit code and error, then
+  discarded the handle. Both were spans in everything but name: a start
+  time, an end time, a set of attributes, a parent-child relationship to the
+  work item that launched them, and a rule for combining children into a
+  parent's total that the code had to re-derive by hand.
+
+  A later phase of this change request adds run-span persistence: collected
+  spans serialised into the run record so timing survives the process and
+  git history becomes the time series. That phase needs an actual span tree
+  to serialise, not two bespoke structs shaped like one.
+
+decision: |
+  Replace `stepTimings` and the ad hoc duration bookkeeping in
+  `internal/ralph/engine.go` with the standard `go.opentelemetry.io/otel`
+  trace API and SDK, and adopt only its data model.
+
+  1. `internal/ralph/tracing.go` builds a `sdktrace.TracerProvider` wired to
+     one `sdktrace.SpanProcessor` - an in-process `spanCollector` that
+     appends every ended span to a slice and never exports anywhere.
+     `newSpanCollector`'s `OnEnd` is its only real method; `Shutdown` and
+     `ForceFlush` are no-ops because there is nothing to flush - a span is
+     resident in the collector the moment it ends.
+  2. `Execute` in `internal/ralph/ralph.go` starts the execution-started
+     event as the root span. Each work item's span
+     (`internal/ralph/execute_stages.go`, `newWorkItemRun`) is a child of it.
+     The Claude invocation, the verification command, and each validator
+     join are child spans of the work item span, started at the same
+     bracketing points the old manual timers used.
+  3. Validator runs that overlap verification are literal concurrent
+     sibling spans now, not a subtracted or estimated duration. The parent
+     work item span's own `EndTime - StartTime` is its measured total,
+     which preserves "total is measured, not summed" for free - it is a
+     property of reading the parent span's own duration rather than
+     summing children, so there is nothing left to get wrong by hand.
+  4. `renderTimingSummary` (`tracing.go`) is the direct successor to
+     `stepTimings.summary()`: same signature shape, same output shape,
+     still calling `ui.Duration` for the `1.2s` / `3m04s` rendering. It
+     reads the parent's total from `spanCollector.durationOf` and each
+     category's sum from `spanCollector.sumChildDurations`, rather than
+     fields accumulated during the loop.
+  5. `logResolution` sets the connector name, exit code, and resolution
+     state as span attributes and ends the handle's span, in addition to
+     the printed ledger line it already produced. The line's text is
+     unchanged.
+  6. No OTLP exporter, collector process, or network call is configured
+     anywhere. `spanCollector` is registered as a plain
+     `sdktrace.SpanProcessor`, so adding a second processor later - an OTLP
+     exporter, or the run-span-persistence phase's own writer - is a
+     registration at that one call site, not a change to any span's start
+     or end call.
+
+options_considered:
+  - option: "Adopt the OTel trace API and SDK, in-process collector only, no exporter (chosen)"
+    pros:
+      - Parent-child span nesting and concurrent siblings are handled by
+        the data model itself; the "measured, not summed" property falls
+        out of reading a span's own duration instead of being a rule the
+        code has to remember to apply
+      - Standard shape means adding OTLP later - or the persistence phase's
+        writer - is registering a second SpanProcessor, not re-modelling
+        anything upstream of it
+      - `go test ./...` and byte-identical printed output are both
+        achievable because the collector is purely additive: every existing
+        call site keeps its own timing logic (`time.Now()`, `elapsed`) for
+        what it prints, and only the summary renderer's inputs move from
+        hand-summed fields to collector queries
+    cons:
+      - Pulls in the OTel SDK as a real dependency for a CLI that ships no
+        telemetry anywhere, which is more machinery than the bespoke
+        structs it replaces
+      - The collector's `sumChildDurations` linear-scans every span by
+        name and parent ID, cheaper alternatives (a map keyed by parent)
+        were available but unnecessary at this run's span volume
+
+  - option: "Keep stepTimings, add a second bespoke struct for connector-handle spans"
+    pros:
+      - No new dependency
+      - Marginally less code for this phase alone
+    cons:
+      - Does not solve the actual problem: the next phase (run-span
+        persistence) would still need to invent a serialisable span
+        shape, parent-child linking, and a concurrent-sibling
+        representation from scratch - exactly the modelling this ADR
+        exists to avoid redoing
+      - Two bespoke span-shaped structs instead of one is more surface
+        area, not less
+
+  - option: "Adopt OTel with an OTLP exporter configured against a local collector"
+    pros:
+      - Spans are visible in a trace UI immediately
+    cons:
+      - `utopia execute` is a short-lived CLI process; standing up or
+        depending on a collector for a single invocation's spans is
+        infrastructure disproportionate to the payoff
+      - Explicitly out of scope for this phase - the change request's own
+        acceptance criteria require no network call and no OTLP endpoint,
+        precisely so the exporter question is deferred to whenever
+        persistence or a real backend is worth the operational cost
+
+consequences:
+  positive:
+    - The span tree the run-span-persistence phase needs to serialise
+      already exists, in the standard shape a persistence library or a
+      future OTLP exporter also expects
+    - "Measured, not summed" is now a property of the parent span's own
+      duration rather than a convention documented in a comment
+      (previously in timing.go) that every new duration source had to
+      remember to honour
+    - Connector handle resolution carries the same data (name, exit code,
+      resolution state, error) as a span, not only as a printed line, so a
+      later reader of the collected spans has it without re-parsing ledger
+      output
+  negative:
+    - The OTel SDK is now a real module dependency, with the version and
+      transitive-dependency churn that implies, for a CLI that exports
+      nothing
+    - `spanCollector`'s linear scans over all collected spans are O(n) per
+      summary line; fine at today's span counts per run, a growth
+      constraint worth revisiting only if a run's item count grows by
+      orders of magnitude
+  neutral:
+    - Every printed line - the step-timing summary, the handle resolution
+      ledger - stays byte-identical; this phase changes how timing is
+      represented internally, not what an operator sees
+    - No exporter is configured; adding one later is a registration at
+      `newTracerProvider`, not a change to any instrumentation call site
+
+advice:
+  - internal/ralph/tracing.go is where the TracerProvider, the in-process
+    spanCollector, and renderTimingSummary live - the seam a later
+    exporter or the persistence phase registers against
+  - internal/ralph/execute_stages.go - newWorkItemRun starts the work item
+    span as a child of the execution span carried on ctx; endItemSpan ends
+    it exactly once and is what timingSummary reads its total back from
+  - internal/ralph/engine.go - logResolution is where a connector handle's
+    span is closed with its exit code, resolution state and error
+    attributes, alongside the printed ledger line
+  - internal/ralph/ralph.go - Execute starts the execution-started event as
+    the root span and ends it in a deferred outcome-setting closure
+
+principles:
+  - Adopt a standard data model before the next phase needs one, rather
+    than inventing a second bespoke shape it would otherwise have to
+    reverse-engineer
+  - A property that must hold ("measured, not summed") is more durable as
+    a structural fact of the data model than as a comment asking every
+    future author to remember it
+  - Adopting a model is not the same as adopting its transport; take the
+    shape now, defer the network call until something actually needs it
+
+related_domain:
+  - execution  # Terms: execution loop, work item span, resolution ledger
+  - adrs
