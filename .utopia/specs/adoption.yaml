@@ -1,7 +1,7 @@
 id: adoption
 title: adoption
 created: "2026-03-04T19:32:20.781903+11:00"
-updated: "2026-03-08T21:33:23.86116+11:00"
+updated: "2026-07-31T20:11:35.6314+10:00"
 description: ""
 features:
     - id: discover-command
@@ -135,6 +135,9 @@ features:
         - Verbose mode shows which files are skipped during incremental filtering
         - Verbose mode shows each draft filename as it's saved
         - Total elapsed time displayed at end of discovery
+        - Domain discovery applies the domain-knowledge-boundary criteria from knowledge-artifacts when evaluating candidates
+        - Candidates that are spec-local implementation invariants are excluded from domain drafts
+        - Excluded invariant candidates are logged with the spec they likely belong to (for transparency)
 
     - id: domain-drafts-storage
       description: |

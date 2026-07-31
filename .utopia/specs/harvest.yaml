@@ -1,7 +1,7 @@
 id: harvest
 title: harvest
 created: "2026-02-22T15:04:31.861654+10:00"
-updated: "2026-07-30T13:01:52.778839+10:00"
+updated: "2026-07-31T20:11:35.6314+10:00"
 description: ""
 features:
     - id: harvest-command
@@ -54,6 +54,9 @@ features:
         - Each signal includes source location (conversation ID, approximate message range)
         - Signals tagged with confidence level (high/medium/low)
         - Related signals linked (e.g., decision + its explanation + new terms it introduces)
+        - Domain signals are classified as vocabulary (terms, definitions, entity relationships) or implementation invariant (spec-local constraints and assumptions)
+        - Vocabulary signals suggest Domain doc creation or update
+        - Implementation invariant signals suggest adding to the relevant spec's domain_knowledge (via a change request), never direct spec edits
 
     - id: duplicate-detection
       description: |
