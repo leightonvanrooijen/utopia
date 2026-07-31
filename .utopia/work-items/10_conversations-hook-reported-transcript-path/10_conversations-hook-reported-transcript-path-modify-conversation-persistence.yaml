@@ -14,7 +14,7 @@ title: |
 
     Reconstructing the path by encoding the working directory is retained
     only as a fallback for sessions where no payload was produced.
-status: in_progress
+status: completed
 prompt: |-
     ## TASK
 
@@ -92,3 +92,24 @@ order: 0
 source_feature_id: modify-conversation-persistence
 estimated_complexity: medium
 iteration_count: 1
+selected_validators:
+    - spec-intent
+executor_attempts:
+    - iteration: 1
+      role: default-executor
+      model: sonnet
+      effort: medium
+      usage:
+        available: true
+        model: claude-sonnet-5
+        effort: medium
+        input_tokens: 80
+        output_tokens: 26331
+        cache_read_tokens: 3161214
+        cache_creation_tokens: 85720
+        turns: 40
+        duration_ms: 458196
+        cost_usd: 1.8578892
+        cost_basis: unknown
+      outcome: passed
+validators_routed: true
