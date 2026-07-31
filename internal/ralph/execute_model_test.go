@@ -21,39 +21,57 @@ import (
 // a test that stopped at resolveDefaultExecutorModel, or that exercised the
 // escalated executor or a validator, would have passed against the defect.
 func TestExecute_DefaultExecutorModelReachesTheBinary(t *testing.T) {
+	// The resolution chain is override > models.execute > models.default > sonnet,
+	// so each case has to pin a value no other branch of that chain could have
+	// produced. A fixture that reuses the terminal fallback still passes when the
+	// branch it names is skipped entirely, which makes the assertion insensitive to
+	// the exact behaviour the case exists to cover; notWant names the values the
+	// branches this case is meant to beat would have put on the argv.
 	tests := []struct {
 		name     string
 		models   *domain.ModelConfig
 		override string
 		want     string
-		notWant  string
+		notWant  []string
 	}{
 		{
-			name:   "models.execute reaches the binary when no --model override is given",
-			models: &domain.ModelConfig{Execute: "sonnet"},
-			want:   "--model sonnet",
+			// Execute and Default hold different models, and neither is the terminal
+			// sonnet, so this fails if models.execute is skipped for models.default,
+			// for the fallback, or for nothing at all.
+			name:    "models.execute reaches the binary when no --model override is given",
+			models:  &domain.ModelConfig{Execute: "opus", Default: "haiku"},
+			want:    "--model opus",
+			notWant: []string{"--model haiku", "--model sonnet"},
 		},
 		{
-			name:   "models.default reaches the binary when execute is absent",
-			models: &domain.ModelConfig{Default: "haiku"},
-			want:   "--model haiku",
+			// Not sonnet, so a chain that ignored models.default and fell through to
+			// the executor default would fail here rather than coincide with it.
+			name:    "models.default reaches the binary when execute is absent",
+			models:  &domain.ModelConfig{Default: "haiku"},
+			want:    "--model haiku",
+			notWant: []string{"--model sonnet"},
 		},
 		{
 			// A project with no models section gets the executor default explicitly
 			// rather than the claude binary's ambient one, which is the point of the
 			// fix: what ran an attempt has to be a property of the project, not of the
-			// machine. The wrapper's "no model configured means no flag" guarantee is
-			// asserted where it is true - TestCLI_ModelAndEffortReachTheBinary.
+			// machine. Sonnet is the only value the chain can produce here, so this is
+			// the one case whose fixture is legitimately the terminal fallback. The
+			// wrapper's "no model configured means no flag" guarantee is asserted
+			// where it is true - TestCLI_ModelAndEffortReachTheBinary.
 			name:   "no models section falls back to the executor default",
 			models: nil,
 			want:   "--model sonnet",
 		},
 		{
+			// models.execute is set to a model the override is not, so this fails if
+			// the flag stops winning over the configured execute key specifically,
+			// rather than merely over an empty config.
 			name:     "--model overrides models.execute for that invocation",
-			models:   &domain.ModelConfig{Execute: "sonnet"},
+			models:   &domain.ModelConfig{Execute: "opus"},
 			override: "fable",
 			want:     "--model fable",
-			notWant:  "sonnet",
+			notWant:  []string{"--model opus", "--model sonnet"},
 		},
 	}
 
@@ -97,8 +115,10 @@ func TestExecute_DefaultExecutorModelReachesTheBinary(t *testing.T) {
 			if !strings.Contains(args, tt.want) {
 				t.Errorf("claude args = %q, want %q", args, tt.want)
 			}
-			if tt.notWant != "" && strings.Contains(args, tt.notWant) {
-				t.Errorf("claude args = %q, want the flag to have replaced %q", args, tt.notWant)
+			for _, notWant := range tt.notWant {
+				if strings.Contains(args, notWant) {
+					t.Errorf("claude args = %q, want %q rather than %q", args, tt.want, notWant)
+				}
 			}
 		})
 	}
