@@ -1,0 +1,93 @@
+workitem_id: 08_sharpen-domain-knowledge-boundary-modify-discover-domain-command
+cr_id: 08_sharpen-domain-knowledge-boundary
+spec_ref: 08_sharpen-domain-knowledge-boundary.modify-discover-domain-command
+iterations: 2
+completed_at: 2026-07-31T20:05:48.214664+10:00
+outcome: completed
+status: unprocessed
+transcript: |-
+  --- iteration 1 ---
+  Now implementing. First add the domain type.Now update the prompt and parsing.Now update `DomainResult` and `Domain()` logic:Now add parsing helpers in parse.go:Now update CLI to surface excluded candidates in the final summary too:Build and test.Add a quick test for the new parse helper to match repo test conventions.All pass. Now update work item status and commit.Leave status field alone (unrelated pattern in prior commits kept status as-is in yaml, only the workitem commit changed it via harness). Check git diff so far.The workitem yaml diff is preexisting (uncommitted from before session). Let's check it's just the iteration_count bump, not something I need to touch.That's harness-managed state, part of this run. Fine to include as-is. Commit now.Committed. Build/tests green, all three acceptance criteria met.
+
+  <COMPLETE>
+  --- iteration 2 ---
+  Fix both spots.Now `discover.go:310` bullet fix.Build+tests pass. Commit.<COMPLETE>
+routing:
+  cr_type: enhancement
+  attempts:
+    - iteration: 1
+      role: default-executor
+      model: sonnet
+      effort: medium
+      usage:
+        available: true
+        model: claude-sonnet-5
+        effort: medium
+        input_tokens: 54
+        output_tokens: 11274
+        cache_read_tokens: 1737351
+        cache_creation_tokens: 54480
+        turns: 33
+        duration_ms: 149466
+        cost_usd: 1.0173573000000002
+        cost_basis: unknown
+      outcome: failed
+      failure_class: mechanical
+    - iteration: 2
+      role: default-executor
+      model: sonnet
+      effort: medium
+      usage:
+        available: true
+        model: claude-sonnet-5
+        effort: medium
+        input_tokens: 12
+        output_tokens: 1344
+        cache_read_tokens: 236367
+        cache_creation_tokens: 20639
+        turns: 7
+        duration_ms: 31586
+        cost_usd: 0.2149401
+        cost_basis: unknown
+      outcome: passed
+  sonnet_attempts: 2
+  opus_execution_attempts: 0
+  mechanical_failures: 1
+  comprehension_failures: 0
+  reclassified_failures: 0
+  scoping_escalations: 0
+  spec_rewritten: false
+  outcome: passed
+  duration_seconds: 373.513193333
+  duration: 6m14s
+  cost_note: 'Cost here is measured, not approximated by tier: each attempt carries the token counts and the dollar figure the claude CLI reported for it, with the basis that says what the dollars mean (ADR-007). The counters beside them - attempts, sonnet_attempts, opus_execution_attempts - count routing, not spend. Every attempt''s token counts and cost were read.'
+usage:
+  - iteration: 1
+    role: default-executor
+    outcome: failed
+    failure_class: mechanical
+    available: true
+    model: claude-sonnet-5
+    effort: medium
+    input_tokens: 54
+    output_tokens: 11274
+    cache_read_tokens: 1737351
+    cache_creation_tokens: 54480
+    turns: 33
+    duration_ms: 149466
+    cost_usd: 1.0173573000000002
+    cost_basis: unknown
+  - iteration: 2
+    role: default-executor
+    outcome: passed
+    available: true
+    model: claude-sonnet-5
+    effort: medium
+    input_tokens: 12
+    output_tokens: 1344
+    cache_read_tokens: 236367
+    cache_creation_tokens: 20639
+    turns: 7
+    duration_ms: 31586
+    cost_usd: 0.2149401
+    cost_basis: unknown

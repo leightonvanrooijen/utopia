@@ -1,7 +1,7 @@
 id: 08_sharpen-domain-knowledge-boundary-modify-discover-domain-command
 spec_ref: 08_sharpen-domain-knowledge-boundary.modify-discover-domain-command
 title: Modify the discover-domain-command feature
-status: in_progress
+status: completed
 prompt: |-
     ## TASK
 
@@ -58,27 +58,6 @@ order: 3
 source_feature_id: modify-discover-domain-command
 estimated_complexity: medium
 iteration_count: 2
-last_validator_feedback: |
-    Gating connector validators:after-workitem blocked workitem-verified:
-    Validator spec-intent failed:
-    Diff supplied contained only work-item metadata; substantive change is executor commit `4049ae9`, reviewed that.
-
-    Criteria check: all three satisfied. Boundary criteria reach prompt via `domain.DomainKnowledgeBoundary{}.FormatForAgent()` (`internal/discover/domain.go:149`); prompt orders invariant candidates out of every draft's terms/entities (`domain.go:29-33`); excluded candidates parsed, logged with `likely_spec`, surfaced in CLI. Prompt-level enforcement is the right home - discovery has no non-agent candidate list to filter. No ADR contradiction, no scope invention.
-
-    Standards violations:
-
-    internal/discover/domain.go:175 - [B] `out.Progressf` for each excluded candidate fires between `prog.StartPhase(3, ...)` and `prog.EndPhase(...)`, so it lands mid-line on the unterminated `[3/4] Parsing draft domain documents...` prefix and the ` done (0.1s, N drafts parsed)` tail then attaches to the last excluded line. Breaks the `[n/N] ... done (X.Xs)` phase-progress format terminal-output codifies (`ui.Progress` row of the glyph table); sibling detail lines in the same function open with `\n` for exactly this reason (`prog.Verbosef("\n  Saving %s.yaml", ...)`, domain.go:186). Emit through `prog.Verbosef` with a leading newline, or move the loop after `prog.EndPhase`.
-
-    internal/cli/discover.go:310 - [B] Routing line uses a `-` bullet. terminal-output anti-pattern table: "Mixed bullets (`•` vs `-`) across commands | `ui.Bullet` everywhere". Use `ui.Bullet`.
-
-    <VERDICT>
-    {
-      "verdict": "fail",
-      "failure_class": "mechanical",
-      "diagnosis": "Intent is correct: the boundary criteria are applied where discovery decides (the agent prompt), invariant candidates are kept out of drafts, and exclusions are surfaced with their likely spec rather than dropped. Both findings are documented output-vocabulary rules the author missed, fixable from this list without re-deriving the task.",
-      "confidence": "high"
-    }
-    </VERDICT>
 failure_conclusions:
     - iteration: 1
       validator_id: spec-intent
@@ -107,4 +86,21 @@ executor_attempts:
         cost_basis: unknown
       outcome: failed
       failure_class: mechanical
+    - iteration: 2
+      role: default-executor
+      model: sonnet
+      effort: medium
+      usage:
+        available: true
+        model: claude-sonnet-5
+        effort: medium
+        input_tokens: 12
+        output_tokens: 1344
+        cache_read_tokens: 236367
+        cache_creation_tokens: 20639
+        turns: 7
+        duration_ms: 31586
+        cost_usd: 0.2149401
+        cost_basis: unknown
+      outcome: passed
 validators_routed: true
