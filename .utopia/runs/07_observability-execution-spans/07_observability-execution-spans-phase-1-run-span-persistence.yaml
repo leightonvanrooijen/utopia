@@ -1,0 +1,58 @@
+workitem_id: 07_observability-execution-spans-phase-1-run-span-persistence
+cr_id: 07_observability-execution-spans
+spec_ref: 07_observability-execution-spans-phase-1.run-span-persistence
+iterations: 1
+completed_at: 2026-07-31T19:40:57.041861+10:00
+outcome: completed
+status: unprocessed
+transcript: |-
+  --- iteration 1 ---
+  Waiting on explore agent's report before implementing. Meanwhile checking git diff on the two modified yaml files.OK, that's just tracking metadata already in progress. Waiting on explore agent.Good, phase-0 landed. Let the explore agent finish; will act once report arrives.Good context. Waiting for the explore report before making changes.Good, this already goes through the shared YAML formatter. Now find where `writeFormattedYAML` lives (yaml-formatting package) and how work item commits happen (commitWorkItem in execute_stages.go), and where `writeRunTranscript` runs relative to commit, and diagnostic channel usage.Now I have full picture. Let's implement. First, add `Span` domain type and `Spans` field on `ExecutionRun`.Now add `spansUnder`/`spanRecordsUnder` to tracing.go.Need `attribute` import in tracing.go.Now wire `runRecorder` with collector/itemSpanID, and update `writeRunTranscript`.Now wire `newWorkItemRun` to set `r.rec.collector`/`itemSpanID`, and reorder the completed path in ralph.go.Now build and test.Build passes. Now run tests.Need `trace` import for `trace.WithAttributes`.Now add telemetry_test.go tests for `writeRunTranscript` persisting spans.All tests pass. Now let's also verify `go vet` and check the ADR/CR yaml status update expectations, then run full test suite once more plus a manual smoke check of the yq query claim.Clean. Now sanity-check the yq query claim with a small end-to-end smoke test writing an actual run record and querying it with yq.Format confirmed correct - spans nested with parent linkage, name, start time, duration. `yq` binary isn't installed here to literally run the query, but the YAML shape is exactly what a `yq '[.spans[] | select(.name == "claude") | .duration_ms] | add'` query needs. Cleaned up smoke test file. Running full suite once more before commit.All good. Committing now.Committed.
+
+  <COMPLETE>
+routing:
+  cr_type: feature
+  attempts:
+    - iteration: 1
+      role: default-executor
+      model: sonnet
+      effort: medium
+      usage:
+        available: true
+        model: claude-sonnet-5
+        effort: medium
+        input_tokens: 26
+        output_tokens: 7506
+        cache_read_tokens: 1617294
+        cache_creation_tokens: 19936
+        turns: 13
+        duration_ms: 119712
+        cost_usd: 4.3213377
+        cost_basis: unknown
+      outcome: passed
+  sonnet_attempts: 1
+  opus_execution_attempts: 0
+  mechanical_failures: 0
+  comprehension_failures: 0
+  reclassified_failures: 0
+  scoping_escalations: 0
+  spec_rewritten: false
+  outcome: passed
+  duration_seconds: 750.002722416
+  duration: 12m30s
+  cost_note: 'Cost here is measured, not approximated by tier: each attempt carries the token counts and the dollar figure the claude CLI reported for it, with the basis that says what the dollars mean (ADR-007). The counters beside them - attempts, sonnet_attempts, opus_execution_attempts - count routing, not spend. Every attempt''s token counts and cost were read.'
+usage:
+  - iteration: 1
+    role: default-executor
+    outcome: passed
+    available: true
+    model: claude-sonnet-5
+    effort: medium
+    input_tokens: 26
+    output_tokens: 7506
+    cache_read_tokens: 1617294
+    cache_creation_tokens: 19936
+    turns: 13
+    duration_ms: 119712
+    cost_usd: 4.3213377
+    cost_basis: unknown

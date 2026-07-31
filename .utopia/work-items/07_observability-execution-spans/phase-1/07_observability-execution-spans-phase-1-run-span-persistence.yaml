@@ -6,7 +6,7 @@ title: |
     committed to git, git history becomes the time series: questions like "why
     was that run slow" and "is this getting worse" are answerable with a query
     over the repository, with no collector or telemetry backend involved.
-status: in_progress
+status: completed
 prompt: |-
     ## TASK
 
@@ -82,3 +82,24 @@ order: 0
 source_feature_id: run-span-persistence
 estimated_complexity: medium
 iteration_count: 1
+selected_validators:
+    - spec-intent
+executor_attempts:
+    - iteration: 1
+      role: default-executor
+      model: sonnet
+      effort: medium
+      usage:
+        available: true
+        model: claude-sonnet-5
+        effort: medium
+        input_tokens: 26
+        output_tokens: 7506
+        cache_read_tokens: 1617294
+        cache_creation_tokens: 19936
+        turns: 13
+        duration_ms: 119712
+        cost_usd: 4.3213377
+        cost_basis: unknown
+      outcome: passed
+validators_routed: true
