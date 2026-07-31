@@ -1046,31 +1046,20 @@ func (s *YAMLStore) LoadConceptDoc(id string) (*domain.ConceptDoc, error) {
 		return nil, fmt.Errorf("failed to read concept file %s: %w", path, err)
 	}
 
-	content := string(bytes)
-
 	// Parse frontmatter (between --- markers)
-	if !strings.HasPrefix(content, "---\n") {
+	frontmatterStr, body, err := splitFrontmatter(string(bytes))
+	if errors.Is(err, errNoFrontmatter) {
 		return nil, fmt.Errorf("concept file %s missing YAML frontmatter", path)
 	}
-
-	// Find the closing ---
-	endMarker := strings.Index(content[4:], "\n---")
-	if endMarker == -1 {
+	if errors.Is(err, errUnclosedFrontmatter) {
 		return nil, fmt.Errorf("concept file %s has unclosed YAML frontmatter", path)
 	}
-
-	frontmatterStr := content[4 : 4+endMarker]
-	bodyStart := 4 + endMarker + 4 // Skip past "\n---"
 
 	var doc domain.ConceptDoc
 	if err := yaml.Unmarshal([]byte(frontmatterStr), &doc); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal concept frontmatter from %s: %w", path, err)
 	}
-
-	// Extract body content (skip leading newlines)
-	if bodyStart < len(content) {
-		doc.Content = strings.TrimPrefix(content[bodyStart:], "\n")
-	}
+	doc.Content = body
 
 	return &doc, nil
 }
@@ -1127,17 +1116,13 @@ func (s *YAMLStore) LoadStandardsIndex() []domain.StandardsDocMeta {
 			continue
 		}
 
-		content := string(bytes)
-		if !strings.HasPrefix(content, "---\n") {
-			continue
-		}
-		endMarker := strings.Index(content[4:], "\n---")
-		if endMarker == -1 {
+		frontmatterStr, _, err := splitFrontmatter(string(bytes))
+		if err != nil {
 			continue
 		}
 
 		var meta domain.StandardsDocMeta
-		if err := yaml.Unmarshal([]byte(content[4:4+endMarker]), &meta); err != nil {
+		if err := yaml.Unmarshal([]byte(frontmatterStr), &meta); err != nil {
 			continue
 		}
 		if meta.ID == "" {
@@ -1287,21 +1272,14 @@ func (s *YAMLStore) LoadValidator(path string) (*domain.Validator, error) {
 		return nil, fmt.Errorf("failed to read validator file %s: %w", path, err)
 	}
 
-	content := string(bytes)
-
 	// Parse frontmatter (between --- markers)
-	if !strings.HasPrefix(content, "---\n") {
+	frontmatterStr, body, err := splitFrontmatter(string(bytes))
+	if errors.Is(err, errNoFrontmatter) {
 		return nil, fmt.Errorf("validator file %s missing YAML frontmatter", path)
 	}
-
-	// Find the closing ---
-	endMarker := strings.Index(content[4:], "\n---")
-	if endMarker == -1 {
+	if errors.Is(err, errUnclosedFrontmatter) {
 		return nil, fmt.Errorf("validator file %s has unclosed YAML frontmatter", path)
 	}
-
-	frontmatterStr := content[4 : 4+endMarker]
-	bodyStart := 4 + endMarker + 4 // Skip past "\n---"
 
 	var fm validatorFrontmatter
 	if err := yaml.Unmarshal([]byte(frontmatterStr), &fm); err != nil {
@@ -1325,10 +1303,7 @@ func (s *YAMLStore) LoadValidator(path string) (*domain.Validator, error) {
 		AllowedTools: fm.AllowedTools,
 	}
 
-	// Extract body content (skip leading newlines)
-	if bodyStart < len(content) {
-		validator.Prompt = strings.TrimPrefix(content[bodyStart:], "\n")
-	}
+	validator.Prompt = body
 
 	return validator, nil
 }
