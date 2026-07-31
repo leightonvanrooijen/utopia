@@ -26,7 +26,7 @@ title: |
     section". The wrapper omits --model when handed an empty model, and that
     omission is asserted at the internal.CLI layer, the only layer where an
     empty model can occur.
-status: pending
+status: in_progress
 prompt: |-
     ## TASK
 
@@ -144,3 +144,4 @@ constraints:
 order: 1
 source_feature_id: assert-configured-model-reaches-the-binary
 estimated_complexity: medium
+iteration_count: 1
