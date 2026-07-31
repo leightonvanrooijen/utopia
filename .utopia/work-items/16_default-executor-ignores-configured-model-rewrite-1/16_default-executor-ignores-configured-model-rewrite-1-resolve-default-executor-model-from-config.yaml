@@ -14,7 +14,7 @@ title: |
     the same fallback chain every other role already gets. The --model flag
     keeps overriding the resolved value for a single invocation rather than
     being the only way to set it.
-status: pending
+status: in_progress
 prompt: |-
     ## TASK
 
@@ -129,3 +129,4 @@ constraints:
 order: 0
 source_feature_id: resolve-default-executor-model-from-config
 estimated_complexity: medium
+iteration_count: 1
