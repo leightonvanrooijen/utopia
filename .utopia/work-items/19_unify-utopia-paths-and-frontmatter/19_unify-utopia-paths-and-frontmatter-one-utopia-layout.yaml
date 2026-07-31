@@ -1,0 +1,118 @@
+id: 19_unify-utopia-paths-and-frontmatter-one-utopia-layout
+spec_ref: 19_unify-utopia-paths-and-frontmatter.one-utopia-layout
+title: |
+    The .utopia directory layout is rebuilt from string literals in 34
+    non-test files - 129 references in total. `filepath.Join(projectDir,
+    ".utopia")` alone is written out at internal/cli/init.go:278,
+    internal/cli/root.go:158 and :273, internal/validators/delete.go:19,
+    internal/validators/edit.go:115, internal/ralph/ralph.go:121,
+    internal/ralph/ratelimit.go:319 and more, and deeper paths such as
+    `filepath.Join(projectDir, ".utopia", "work-items", crID)`
+    (internal/cli/execute.go:758) are built inline wherever they are needed.
+
+    A helper already exists - internal/discover/discover.go:43 returns
+    exactly this path - and nothing outside its own package calls it.
+
+    Current behavior: the on-disk layout is knowledge held by 34 files. There
+    is no single place that answers "where do work items live", so moving or
+    renaming any subdirectory means finding every literal.
+
+    Expected behavior: one package owns the layout and exposes a function per
+    location. Every caller asks it. The resolved paths are identical, so no
+    file moves and no on-disk layout changes.
+status: pending
+prompt: |-
+    ## TASK
+
+    The .utopia directory layout is rebuilt from string literals in 34
+    non-test files - 129 references in total. `filepath.Join(projectDir,
+    ".utopia")` alone is written out at internal/cli/init.go:278,
+    internal/cli/root.go:158 and :273, internal/validators/delete.go:19,
+    internal/validators/edit.go:115, internal/ralph/ralph.go:121,
+    internal/ralph/ratelimit.go:319 and more, and deeper paths such as
+    `filepath.Join(projectDir, ".utopia", "work-items", crID)`
+    (internal/cli/execute.go:758) are built inline wherever they are needed.
+
+    A helper already exists - internal/discover/discover.go:43 returns
+    exactly this path - and nothing outside its own package calls it.
+
+    Current behavior: the on-disk layout is knowledge held by 34 files. There
+    is no single place that answers "where do work items live", so moving or
+    renaming any subdirectory means finding every literal.
+
+    Expected behavior: one package owns the layout and exposes a function per
+    location. Every caller asks it. The resolved paths are identical, so no
+    file moves and no on-disk layout changes.
+
+
+    Acceptance criteria:
+    - All existing tests pass unchanged, and no fixture or golden file moves on disk
+    - One package owns the .utopia layout and exposes a named accessor for each location currently built inline - the root, specs, change-requests, work-items, runs, validators, standards, concepts, domain, drafts, notes and conversations
+    - Every resolved path is byte-identical to the path the current code produces for the same inputs, including separator handling on the standards listing which uses filepath.ToSlash today
+    - The string literal ".utopia" appears only inside the owning package, except where it names a directory to skip during traversal
+    - internal/discover/discover.go:43 is replaced by a call to the shared accessor rather than left as a second definition
+    - The accessors take the project directory explicitly - no package-level mutable state holding the current project
+    - go build ./... and go vet ./... stay clean
+
+
+
+    ## HINTS
+
+    - Count before and after with `grep -rn "\.utopia" --include="*.go" internal cmd | grep -v _test.go` - 129 matches across 34 files today
+    - internal/discover/discover.go:43 is the existing unused helper and shows the intended shape
+    - Two traversal sites at internal/discover/collect.go:80 and :267 compare a directory name against ".utopia" to skip it - those are a name check, not a path build, and should keep using a shared constant rather than an accessor
+    - internal/store.go:1087 uses filepath.ToSlash on the standards path - that behavior is observable in the stored metadata and must be preserved exactly
+    - Several sites pass the .utopia directory to WithAuth (internal/ralph/ralph.go:121, internal/ralph/ratelimit.go:319, internal/validators/create.go:107, internal/validators/runner.go:107, internal/validators/edit.go:151) - these all want the same root accessor
+    - Do this change request before the internal-root package split - the split will move store.go and claude.go, and rebasing 129 call sites across that move is avoidable work
+
+
+
+    ## STANDARDS
+
+    This project defines coding standards in .utopia/standards/. Before implementing, read the standards docs relevant to the files this task touches:
+
+    - id: cli-organization
+      description: How to structure cobra commands in internal/cli: thin handlers that own the CLI frame and delegate the algorithm to domain packages.
+      tags: go, cli, cobra, architecture
+      path: .utopia/standards/cli-organization.md
+    - id: error-handling
+      description: How errors are created, wrapped, matched, and surfaced: typed domain errors for branching, %w wrapping for infrastructure, one exit point in root.go.
+      tags: go, errors, cli
+      path: .utopia/standards/error-handling.md
+    - id: terminal-output
+      description: One shared output vocabulary (glyphs, banners, progress) routed through cobra's injectable writers so command output is consistent and testable.
+      tags: go, cli, ux, output
+      path: .utopia/standards/terminal-output.md
+
+
+    ## CONSTRAINTS
+
+    - This is a refactor. Existing behavior MUST be preserved.
+    - All existing tests must pass without modification
+    - Do not introduce new abstractions, interfaces, or packages
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+    - You are running autonomously and non-interactively; never ask for, or wait on, human input
+    - When a genuine design choice arises, choose the best-justified option and implement it rather than deferring the decision to a human
+    - Record any non-obvious decision - rationale and the alternatives considered - in the commit or PR body, so PR review is the human checkpoint
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - This is a refactor. Existing behavior MUST be preserved.
+    - All existing tests must pass without modification
+    - Do not introduce new abstractions, interfaces, or packages
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+    - You are running autonomously and non-interactively; never ask for, or wait on, human input
+    - When a genuine design choice arises, choose the best-justified option and implement it rather than deferring the decision to a human
+    - Record any non-obvious decision - rationale and the alternatives considered - in the commit or PR body, so PR review is the human checkpoint
+order: 1
+source_feature_id: one-utopia-layout
+estimated_complexity: medium
