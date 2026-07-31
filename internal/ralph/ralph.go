@@ -280,6 +280,11 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 // A completed item returns the wall-clock time it spent in each step it
 // bracketed, so the caller can report the breakdown alongside the item's
 // completion line; an item that stops early returns nil timings.
+//
+// The body is the loop's stage list: every iteration builds a prompt, invokes
+// the executor, accounts for what it spent, gates it, and either routes the
+// failure or commits the work. Each stage is a method on workItemRun, and every
+// stage that writes to the item's status or counters says so in its name.
 func executeWorkItem(
 	ctx context.Context,
 	out *ui.Printer,
@@ -298,495 +303,104 @@ func executeWorkItem(
 	validatorRunner *validators.Runner,
 	validatorList []*domain.Validator,
 ) (timings *stepTimings, err error) {
-	maxIterations := config.Verification.MaxIterations
-	verifyCommand := config.Verification.Command
-
-	// The per-iteration turn ceiling. maxIterations above bounds how many
-	// iterations the item gets; this bounds what any one of them may spend, so the
-	// item's ceiling is turnBudget x maxIterations rather than unbounded.
-	turnBudget := config.WorkItems.TurnBudgetOr()
-
-	// The escalation caps are the inner bounds on the retry paths; maxIterations
-	// above is the outer bound on the item as a whole. Both appear on the routing
-	// log line so an operator can tell which one stopped the item.
-	caps := EscalationCapsFrom(config.Escalation)
-	escalatedExecutorModel := resolveEscalatedExecutorModel(config.Models)
-
-	// The scoper is the role that rewrites the change request when the executor
-	// keeps misreading it. It is built once per work item rather than per
-	// escalation because its dependencies do not change across one item's run.
-	sc := &scoper{
-		out:       out,
-		store:     store,
-		cli:       cli,
-		model:     resolveScoperModel(config.Models),
-		effort:    efforts.scoper,
-		standards: store.LoadStandardsIndex(),
-	}
-
-	// Load CR title for commit message and operation type for execution log
-	crID := extractCRID(specID)
-	crTitle := ""
-	operationType := "refactor" // default for refactor CRs
-	// The type the item's routing is recorded against, so escalation rate per
-	// cr_type is a query over the run records. Left empty when the CR cannot be
-	// loaded rather than defaulted to a type the item may not have.
-	var crType domain.CRType
-	if cr, err := store.LoadChangeRequest(crID); err == nil {
-		crTitle = cr.Title
-		operationType = deriveOperationType(cr, item.SpecRef)
-		crType = deriveCRType(cr, specID)
-	}
-
-	// Time every expensive step this loop brackets so the item can report where
-	// its wall clock went when it completes.
-	timings = newStepTimings()
-
-	// The run record: the transcript accumulated from the streamed Claude output
-	// each iteration already produces for completion-token detection, plus the wall
-	// clock and change request type its routing record needs. It is written to
-	// .utopia/runs/ when the item finishes, however it finishes.
-	rec := newRunRecorder(crType)
-	rec.out = out
+	r := newWorkItemRun(ctx, out, item, specID, store, cli, defaultExecutorModel, efforts,
+		verifier, config, projectDir, auth, dispatcher, basePayload, validatorRunner, validatorList)
 
 	// Every way out of this loop leaves a record, not only the outcomes the loop
 	// routed to. An item that aborted on an error nobody anticipated is exactly the
 	// item worth having a record of, and no record at all reads like a change
 	// request that was never attempted.
-	defer func() { recordAbort(ctx, store, crID, item, rec, err) }()
+	defer func() { recordAbort(ctx, store, r.crID, item, r.rec, err) }()
 
-	itemPayload := basePayload
-	itemPayload.WorkItemID = item.ID
-	itemPayload.IterationCount = item.IterationCount
 	// A gate blocking workitem-started aborts the run before the item runs.
-	if gateErr := dispatcher.Dispatch(Event{Name: EventWorkItemStarted, Payload: itemPayload}); gateErr != nil {
+	if gateErr := dispatcher.Dispatch(Event{Name: EventWorkItemStarted, Payload: r.itemPayload}); gateErr != nil {
 		return nil, gateErr
 	}
 
 	for {
-		// Check context cancellation (Ctrl+C)
-		select {
-		case <-ctx.Done():
-			// Save current state before exiting
-			_ = store.SaveWorkItemForSpec(specID, item)
-			return nil, ctx.Err()
-		default:
+		if err := r.abortIfCancelled(); err != nil {
+			return nil, err
 		}
 
-		// An item already at the comprehension cap routes to scoping escalation
-		// before another execution attempt is spent on it. This is the resume path:
-		// a decision made during this run is escalated at the gate below, so
-		// reaching here means the counter was carried in on the persisted work item.
-		if item.ComprehensionCount >= caps.ComprehensionEscalations {
-			// Unless the scoping cap is already spent, in which case there is no path
-			// left: the change request was already rewritten as many times as it is
-			// allowed to be and still does not execute. Halting here is what stops the
-			// rewrite-then-retry cycle from becoming the unbounded loop.
-			if item.ScopingEscalationCount >= caps.ScopingEscalations {
-				return nil, haltNeedsHuman(store, specID, crID, item, rec, &NeedsHumanError{
-					WorkItemID: item.ID,
-					Cap:        "escalation.scoping_escalations",
-					Limit:      caps.ScopingEscalations,
-					Detail: fmt.Sprintf("%d scoping escalation(s) did not produce a change request the executor could satisfy",
-						item.ScopingEscalationCount),
-				})
-			}
-			// Charged before the rewrite runs, for the same reason an escalated
-			// execution attempt is: the cap bounds attempts, and an attempt that
-			// produces nothing has still been made.
-			item.ScopingEscalationCount++
-			esc := &ScopingEscalationError{WorkItemID: item.ID, ComprehensionCount: item.ComprehensionCount}
-			if err := escalateScoping(ctx, sc, item, specID, crID, esc, caps, rec, escalationDiff(ctx, out, validatorRunner)); err != nil {
-				return nil, err
-			}
-			continue
-		}
-
-		// Increment iteration count
-		item.IterationCount++
-		item.Status = domain.WorkItemInProgress
-
-		// Check max iterations
-		if maxIterations > 0 && item.IterationCount > maxIterations {
-			item.Status = domain.WorkItemFailed
-			_ = store.SaveWorkItemForSpec(specID, item)
-			// A run that gave up is still worth harvesting - what was tried and
-			// why it never converged is a decision record too.
-			writeRunTranscript(store, crID, item, rec, domain.RunFailed)
-			return nil, fmt.Errorf("max iterations (%d) reached for work item %s", maxIterations, item.ID)
-		}
-
-		// Save current state
-		if err := store.SaveWorkItemForSpec(specID, item); err != nil {
-			return nil, fmt.Errorf("failed to save work item state: %w", err)
-		}
-
-		// Build the prompt. A mechanical retry gets the failure-injection prompt
-		// unchanged - the intent was right and the last diff is what it is fixing.
-		// An escalated attempt gets a freshly constructed context instead: the
-		// specification, the failures' conclusions and the evidence, without the
-		// attempts that produced them. Handing the escalated model the transcript of
-		// the attempts that just failed would anchor it to the reading that failed,
-		// which is the one thing escalation exists to escape.
-		//
-		// Escalation is read from the item's persisted comprehension counter, the
-		// same source the model resolution and the cap charge below read, so all
-		// three agree on whether this attempt is escalated.
-		prompt := buildPrompt(item)
-		if item.ComprehensionCount > 0 {
-			escalated, err := buildEscalatedPrompt(store, item, crID, escalationDiff(ctx, out, validatorRunner))
-			if err != nil {
-				return nil, err
-			}
-			prompt = escalated
-		}
-
-		// Which executor this attempt runs on is derived from the item's persisted
-		// escalation state rather than from an in-memory flag, so a resumed item
-		// that already escalated does not reset to the default executor. The CLI is
-		// cloned rather than mutated because it is shared with every other work
-		// item in this run, and escalation is per item.
-		attemptModel := executorModelFor(item, defaultExecutorModel, escalatedExecutorModel)
-		// The escalated executor's effort is its own role's level, not the default
-		// executor's raised: a mechanical retry stays on the default executor and so
-		// keeps that role's effort unchanged.
-		attemptEffort := executorEffortFor(item, efforts)
-
-		// An escalated attempt is booked against its cap before it runs, so the
-		// halt costs nothing when the cap is already spent. It is refunded below
-		// if the attempt never actually happened.
-		charged, capErr := chargeEscalatedAttempt(item, caps)
-		if capErr != nil {
-			item.IterationCount--
-			return nil, haltNeedsHuman(store, specID, crID, item, rec, capErr)
-		}
-
-		// Book the attempt onto the item's routing record alongside the cap charge
-		// above, and for the same reason: both are refunded together if the attempt
-		// never actually runs. Recording the model and effort here rather than
-		// reconstructing them later is what makes the record evidence - in particular
-		// the evidence that the default executor's effort was never raised.
-		recordExecutorAttempt(item, attemptModel, attemptEffort)
-
-		// Every execution attempt runs under the turn budget, escalated or not: the
-		// budget bounds one iteration's spend, and an escalated attempt is still one
-		// iteration. The clone is what keeps the ceiling off the loop's shared CLI,
-		// which the scoper also borrows - a rewrite is not an execution iteration and
-		// is not budgeted as one.
-		// Usage capture is asked for on every execution attempt, escalated or not: the
-		// comparison the records exist to support is between the tiers, so an attempt
-		// missing its accounting is a hole in exactly the row that matters.
-		attemptCLI := cli.Clone().WithMaxTurns(turnBudget).WithUsageCapture(true)
-		if attemptModel != defaultExecutorModel || attemptEffort != efforts.executor {
-			attemptCLI = attemptCLI.WithModel(attemptModel).WithEffort(attemptEffort)
-			out.Progressf("  Iteration %d: invoking Claude on the escalated executor (%s, effort %s)...\n", item.IterationCount, attemptModel, attemptEffort)
-		} else {
-			out.Progressf("  Iteration %d: invoking Claude...\n", item.IterationCount)
-		}
-
-		// Invoke Claude. The call is timed from the outside, so the duration
-		// covers whatever the agent did without the agent reporting anything;
-		// it is charged to the claude category on every path out, including the
-		// usage-limit retry below, because the wall clock was spent either way.
-		claudeStart := time.Now()
-		claudeResult, err := attemptCLI.Prompt(ctx, prompt)
-		claudeElapsed := time.Since(claudeStart)
-		timings.claude += claudeElapsed
-
-		// Detect and handle Claude usage limits (rolling rate limit or org
-		// monthly spend limit) before treating this as a failed iteration.
-		// A handled limit means this attempt must not count against max
-		// iterations, so we undo the increment and retry with a normally
-		// rebuilt prompt. A limit error means ctx was cancelled while
-		// waiting/probing (Ctrl+C or timeout) - take the graceful shutdown path.
-		if outcome, limitErr := handleClaudeLimits(ctx, out, claudeResult, auth, projectDir); limitErr != nil {
-			_ = store.SaveWorkItemForSpec(specID, item)
-			return nil, limitErr
-		} else if outcome == limitWaited {
-			out.Progressf("  Iteration %d: usage limit handled, re-running this iteration (claude %s)\n", item.IterationCount, ui.Duration(claudeElapsed))
-			item.IterationCount--
-			// The attempt produced no work, so it is refunded: the cap bounds spend on
-			// the escalated executor, and nothing was spent here. The routing record is
-			// refunded with it, so the attempt list stays a list of attempts that ran.
-			refundEscalatedAttempt(item, charged)
-			refundExecutorAttempt(item)
-			continue
-		}
-
-		// Book what the attempt spent onto its routing record. This runs before the
-		// paths below leave the iteration - a turn-capped attempt, a failed invocation
-		// and a successful one all spent tokens, and all three are recorded.
-		recordAttemptUsage(item, claudeResult, claudeElapsed)
-
-		// Keep this iteration's output on the run transcript before any of the
-		// paths below take the loop elsewhere. A limit-handled attempt is
-		// deliberately excluded above: it produced no work and does not count
-		// as an iteration, so it would only misnumber the transcript.
-		appendIterationOutput(&rec.transcript, item.IterationCount, claudeResult)
-
-		// The turn budget being spent is expected operation, so it is reported as
-		// such - before the branch below, which would otherwise report the non-zero
-		// exit as an invocation failure indistinguishable from a crash or an auth
-		// error. Nothing else about the iteration changes: it counts against max
-		// iterations, no verification runs, and LastFailureOutput is deliberately
-		// left standing, because a capped iteration ran no verification and so has
-		// produced nothing that supersedes the last verification result there is.
-		//
-		// Nothing about the cap reaches the next prompt either. A message about
-		// running out of turns is a scarcity signal - it says hurry, and it invites
-		// shortcuts. The partial work is uncommitted in the working tree and the next
-		// iteration rebuilds its state from git and the files, so the capped
-		// iteration is a ratchet rather than wasted spend.
-		if claudeResult != nil && DetectTurnExhaustion(claudeResult.Stdout, claudeResult.Stderr) {
-			out.Progressf("  Iteration %d: turn budget of %d reached, continuing in a fresh iteration (claude %s)\n", item.IterationCount, turnBudget, ui.Duration(claudeElapsed))
-			// A capped attempt claimed nothing, so nothing it produced was judged. Its
-			// spend is recorded either way: the ratchet cost what it cost.
-			recordAttemptOutcome(item, domain.AttemptIncomplete, "")
-			// The invocation ran - it exhausted its turns doing work - so it is not an
-			// infrastructure fault, and it clears the consecutive-error counter.
-			clearInvocationErrors(item)
-			continue
-		}
-
+		escalated, err := r.chargeAndEscalateScoping()
 		if err != nil {
-			out.Progressf("  Iteration %d: Claude invocation failed: %v (claude %s)\n", item.IterationCount, err, ui.Duration(claudeElapsed))
-			// The invocation produced no judgement about the work, so the escalated
-			// charge it was booked is returned: that cap bounds spend on evidence the
-			// executor got it wrong, and a crashed subprocess is not that evidence.
-			// Escalating on it would spend the expensive model on a fault the expensive
-			// model cannot fix.
-			//
-			// The attempt itself stays on the record, unlike the usage-limit refund
-			// above: this one ran and spent, so what it cost is still accounted for even
-			// though its verdict is that there is none. The iteration stands too, so an
-			// item cannot run unbounded on errors alone.
-			recordAttemptOutcome(item, domain.AttemptErrored, "")
-			refundEscalatedAttempt(item, charged)
-			// Bounded on its own counter rather than on the comprehension budget: a
-			// claude that fails every time must not loop forever, and it must not
-			// consume the item's routing budget before a person reads the error.
-			if haltErr := chargeInvocationError(item, caps, err); haltErr != nil {
-				return nil, haltNeedsHuman(store, specID, crID, item, rec, haltErr)
-			}
-			_ = store.SaveWorkItemForSpec(specID, item)
-			// Continue to next iteration - Claude may have hit an error
+			return nil, err
+		}
+		if escalated {
 			continue
 		}
 
+		if err := r.startIteration(); err != nil {
+			return nil, err
+		}
+
+		prompt, err := r.buildAttemptPrompt()
+		if err != nil {
+			return nil, err
+		}
+
+		attempt, err := r.chargeExecutorAttempt()
+		if err != nil {
+			return nil, err
+		}
+
+		inv := r.invokeExecutor(prompt, attempt)
+
+		refunded, err := r.refundAttemptOnUsageLimit(attempt, inv)
+		if err != nil {
+			return nil, err
+		}
+		if refunded {
+			continue
+		}
+
+		r.recordAttemptSpend(inv)
+		r.appendIterationTranscript(inv)
+
+		if r.recordTurnExhaustion(inv) {
+			continue
+		}
+
+		invocationFailed, err := r.chargeInvocationFailure(attempt, inv)
+		if err != nil {
+			return nil, err
+		}
+		if invocationFailed {
+			continue
+		}
 		// The invocation ran, so whatever comes of what it produced, the fault the
 		// error counter bounds is not currently happening.
 		clearInvocationErrors(item)
 
-		// Check for completion token
-		if !strings.Contains(claudeResult.Stdout, CompletionToken) {
-			out.Progressf("  Iteration %d: no %s token found, retrying... (claude %s)\n", item.IterationCount, CompletionToken, ui.Duration(claudeElapsed))
-			recordAttemptOutcome(item, domain.AttemptIncomplete, "")
-			// No completion token - Claude hit step limit or got stuck
-			// Clear any previous failure since this is a different failure mode
-			item.LastFailureOutput = ""
-			item.LastValidatorFeedback = ""
+		if !r.recordCompletionClaim(inv) {
 			continue
 		}
 
-		out.Progressf("  Iteration %d: %s token found, running verification... (claude %s)\n", item.IterationCount, CompletionToken, ui.Duration(claudeElapsed))
+		r.routeValidatorsOnce()
+		r.announceCompletionClaimed()
 
-		// Route validators once for this work item, the first time it reaches the
-		// gate. The cheap relevance router picks which validators apply to the
-		// change; the selection is persisted on the item so retries and resumes
-		// reuse the one decision rather than re-routing every iteration. A router
-		// failure returns "all applicable" (still recorded so we don't retry the
-		// failing call); a diff failure leaves the item unrouted so the gate falls
-		// back to running all applicable validators next dispatch.
-		if !item.ValidatorsRouted && len(validatorList) > 0 {
-			if diff, diffErr := validatorRunner.GetGitDiff(ctx); diffErr == nil {
-				selected, routeErr := validatorRunner.SelectApplicable(ctx, validatorList, diff)
-				if routeErr != nil {
-					out.Progressf("  Iteration %d: validator router failed, running all applicable: %v\n", item.IterationCount, routeErr)
-				}
-				item.SelectedValidators = selected
-				item.ValidatorsRouted = true
-				_ = store.SaveWorkItemForSpec(specID, item)
-			} else {
-				out.Progressf("  Iteration %d: could not compute diff for validator routing: %v\n", item.IterationCount, diffErr)
-			}
-		}
-
-		// Completion claimed but not yet verified. This launches speculative
-		// work: after-workitem validators start now (via the engine) and run
-		// concurrently with verification, to be joined at workitem-verified or
-		// abandoned at workitem-verification-failed. Notify connectors also
-		// start here. Fire-and-forget at this point: notify only. The router's
-		// selection rides on the payload so the validators action runs only the
-		// chosen subset.
-		claimedPayload := itemPayload
-		claimedPayload.IterationCount = item.IterationCount
-		claimedPayload.SelectedValidatorIDs = item.SelectedValidators
-		claimedPayload.ValidatorsRouted = item.ValidatorsRouted
-		dispatcher.Dispatch(Event{Name: EventWorkItemCompletionClaimed, Payload: claimedPayload})
-
-		// Run verification. Validators are already running speculatively; the
-		// engine joins them at workitem-verified below. An empty verification
-		// command is treated as trivially verified.
-		verifyPassed := true
-		verifyOutput := ""
-		var verifyElapsed time.Duration
-		if verifyCommand != "" {
-			verifyStart := time.Now()
-			verifyResult, err := verifier.Run(ctx, verifyCommand)
-			verifyElapsed = time.Since(verifyStart)
-			timings.verification += verifyElapsed
-			if err != nil {
-				return nil, fmt.Errorf("verification command failed to execute: %w", err)
-			}
-			verifyPassed = verifyResult.Passed
-			verifyOutput = verifyResult.Output
-		} else {
-			out.Progressf("  Iteration %d: no verification command configured, marking complete\n", item.IterationCount)
-		}
-
-		if !verifyPassed {
-			// Verification failed - inject failure and retry. Signal that the
-			// completion claim did not hold so the engine cancels the
-			// speculative validators; their feedback is discarded.
-			out.Progressf("  Iteration %d: verification failed, will retry with failure output (verification %s)\n", item.IterationCount, ui.Duration(verifyElapsed))
-			// The human running the loop sees exactly what the runner is about to be
-			// handed. verifyOutput is already truncated by verifier.Run, so this block
-			// is byte-identical to what lands in item.LastFailureOutput below and in
-			// the retry prompt. Verification does not resolve through the engine, so
-			// this is the one failure source that renders its own block; everything
-			// else reaches the same helper through the resolution ledger.
-			printFailureBlock(out, failureSourceVerification, verifyOutput)
-			failedPayload := itemPayload
-			failedPayload.IterationCount = item.IterationCount
-			dispatcher.Dispatch(Event{Name: EventWorkItemVerificationFailed, Payload: failedPayload})
-			// A failing verification command is a mechanical failure by the class
-			// vocabulary's own terms - the intent was right and the execution slipped -
-			// and it is the same default the routing applies to a failure no validator
-			// classified.
-			recordAttemptOutcome(item, domain.AttemptFailed, validators.FailureMechanical)
-			item.LastFailureOutput = verifyOutput
-			item.LastValidatorFeedback = "" // Clear any previous validator feedback
-			continue
-		}
-
-		if verifyCommand != "" {
-			out.Progressf("  Iteration %d: verification passed! (verification %s)\n", item.IterationCount, ui.Duration(verifyElapsed))
-		}
-
-		// Verification passed - join the speculative validators (and any gating
-		// connectors) at workitem-verified. A blocking gate - a failing
-		// validator or connector - injects its stdout as feedback into the next
-		// iteration and prevents the commit.
-		//
-		// The dispatch is the join point, so timing it measures what the loop
-		// still had to wait for the validators to finish - their run already
-		// overlapped verification. Charging the wait rather than the whole
-		// validator run keeps the categories a breakdown of real wall clock;
-		// the engine's resolution ledger reports each run's full duration.
-		p := itemPayload
-		p.IterationCount = item.IterationCount
-		joinStart := time.Now()
-		gateErr := dispatcher.Dispatch(Event{Name: EventWorkItemVerified, Payload: p})
-		joinElapsed := time.Since(joinStart)
-		timings.validators += joinElapsed
-		if gateErr != nil {
-			// Route on the failure class the validators reported rather than on the
-			// iteration count. A mechanical failure retries on the same executor; a
-			// comprehension failure escalates it; repeated comprehension failure, or
-			// a suspected spec defect, escalates the change request instead.
-			//
-			// The failing validators' feedback was already shown as a failure-output
-			// block by the engine's resolution ledger when this dispatch joined them,
-			// so the human sees it before the injection below and it is not printed
-			// again here.
-			aggregate := aggregateFromGate(gateErr)
-			if gateUnresolved(aggregate) {
-				// The gate blocked because the validators could not be run, not because
-				// they rejected the work. No statement was made about the code, so none of
-				// the routing state moves: routeValidationFailure is not consulted, the
-				// comprehension counter stands, the executor is not escalated and no
-				// conclusions are recorded - there are none to record.
-				//
-				// The verbatim feedback stands too. Overwriting it with the infrastructure
-				// fault would lose a genuine earlier verdict the next attempt still has to
-				// answer, and would tell the executor a validator disapproved when no
-				// validator spoke. LastFailureOutput is cleared as on any other path out of
-				// a passing verification: that output is superseded whatever the gate did.
-				//
-				// The escalated-execution charge is deliberately not refunded. That cap
-				// bounds spend on the expensive model, and this attempt ran and spent; the
-				// unresolved streak below is what bounds the retries.
-				out.Progressf("  Iteration %d: gate blocked workitem-verified: the validators could not run (validators %s)\n", item.IterationCount, ui.Duration(joinElapsed))
-				cause := unresolvedGateCause(aggregate)
-				haltErr := chargeUnresolvedGate(item, caps, cause)
-				out.Progressf("  %s\n", unresolvedGateLogLine(item, caps, item.IterationCount, maxIterations))
-				// The attempt reached no verdict, which is what AttemptErrored records; it
-				// carries no class, because a class is what a verdict would have said.
-				recordAttemptOutcome(item, domain.AttemptErrored, "")
-				item.LastFailureOutput = ""
-				if haltErr != nil {
-					return nil, haltNeedsHuman(store, specID, crID, item, rec, haltErr)
-				}
-				if err := store.SaveWorkItemForSpec(specID, item); err != nil {
-					return nil, fmt.Errorf("failed to save work item state: %w", err)
-				}
-				continue
-			}
-			// The gate reached a verdict, so the unresolved streak - if any - is over.
-			clearUnresolvedGates(item)
-			decision := routeValidationFailure(item, aggregate, caps, defaultExecutorModel, escalatedExecutorModel)
-			out.Progressf("  Iteration %d: gate blocked workitem-verified (validators %s)\n", item.IterationCount, ui.Duration(joinElapsed))
-			out.Progressf("  %s\n", decision.logLine(item.IterationCount, maxIterations, caps))
-			item.LastFailureOutput = ""
-			item.LastValidatorFeedback = gateFeedback(gateErr)
-			// What this attempt concluded is kept, persisted with the item, so a later
-			// escalated attempt can be handed the conclusions without the attempt. The
-			// verbatim feedback above is still only the previous iteration's, which is
-			// what a mechanical retry is given.
-			recordFailureConclusions(item, aggregate)
-			// The attempt is recorded as rejected under the class the validators
-			// reported, not the class the caps routed on: the attempt's own record says
-			// what was concluded about it, and decision.Class already says what the
-			// routing did next.
-			recordAttemptOutcome(item, domain.AttemptFailed, reportedFailureClass(aggregate))
-			if err := store.SaveWorkItemForSpec(specID, item); err != nil {
-				return nil, fmt.Errorf("failed to save work item state: %w", err)
-			}
-			if decision.Route == RouteNeedsHuman {
-				return nil, haltNeedsHuman(store, specID, crID, item, rec, &NeedsHumanError{
-					WorkItemID: item.ID,
-					Cap:        decision.CapExhausted,
-					Limit:      caps.ScopingEscalations,
-					Detail: fmt.Sprintf("%d scoping escalation(s) did not produce a change request the executor could satisfy",
-						caps.ScopingEscalations),
-					Cause: scopingEscalationError(item, aggregate, decision),
-				})
-			}
-			if decision.Route == RouteScopingEscalation {
-				// The change request, not the code, is what gets rewritten here. A
-				// rewrite the loop can resume against returns nil and execution carries
-				// on against the new specification; anything else stops the item.
-				if err := escalateScoping(ctx, sc, item, specID, crID, scopingEscalationError(item, aggregate, decision), caps, rec, escalationDiff(ctx, out, validatorRunner)); err != nil {
-					return nil, err
-				}
-			}
-			continue
-		}
-		item.Status = domain.WorkItemCompleted
-		clearUnresolvedGates(item)
-		recordAttemptOutcome(item, domain.AttemptPassed, "")
-		item.LastFailureOutput = ""
-		item.LastValidatorFeedback = ""
-		if err := store.SaveWorkItemForSpec(specID, item); err != nil {
+		verified, err := r.runVerification()
+		if err != nil {
 			return nil, err
 		}
-		logExecutionEntry(out, store, crID, item, operationType)
-		// Written before the commit so the transcript is picked up by the same
-		// `git add -A` and lands in the work item's own commit.
-		writeRunTranscript(store, crID, item, rec, domain.RunCompleted)
-		p.CommitSHA = gitCommitWorkItem(out, projectDir, item, crTitle)
-		dispatcher.Dispatch(Event{Name: EventWorkItemCommitted, Payload: p})
-		return timings, nil
+		if !verified.passed {
+			r.recordVerificationFailure(verified)
+			continue
+		}
+
+		if join := r.joinValidationGate(); join.err != nil {
+			if err := r.routeGateFailure(join); err != nil {
+				return nil, err
+			}
+			continue
+		}
+
+		if err := r.markWorkItemCompleted(); err != nil {
+			return nil, err
+		}
+		r.recordCompletedRun()
+		r.commitWorkItem()
+		return r.timings, nil
 	}
 }
 
