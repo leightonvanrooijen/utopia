@@ -1,7 +1,7 @@
 id: 08_sharpen-domain-knowledge-boundary-modify-signal-detection
 spec_ref: 08_sharpen-domain-knowledge-boundary.modify-signal-detection
 title: Modify the signal-detection feature
-status: pending
+status: in_progress
 prompt: |-
     ## TASK
 
@@ -57,3 +57,23 @@ constraints:
 order: 4
 source_feature_id: modify-signal-detection
 estimated_complexity: medium
+iteration_count: 2
+invocation_error_count: 1
+executor_attempts:
+    - iteration: 1
+      role: default-executor
+      model: sonnet
+      effort: medium
+      usage:
+        available: true
+        model: claude-sonnet-5
+        effort: medium
+        input_tokens: 80
+        output_tokens: 14145
+        cache_read_tokens: 3135489
+        cache_creation_tokens: 75682
+        turns: 41
+        duration_ms: 254785
+        cost_usd: 1.6071537000000002
+        cost_basis: unknown
+      outcome: errored

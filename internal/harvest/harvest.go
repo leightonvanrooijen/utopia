@@ -273,6 +273,14 @@ Instead of looking for definition phrases, apply a QUALIFICATION TEST based on D
      spec's features needs to respect? That is a spec-local implementation invariant,
      not vocabulary, and belongs in that spec's domain_knowledge instead
 
+Every domain-shaped signal you detect resolves to exactly one of two classifications:
+- **Vocabulary** - a term, definition, alias, or entity relationship. Passes the
+  Vocabulary Test above. Suggests Domain doc creation or update (below).
+- **Implementation invariant** - a constraint, assumption, or design rule scoped to
+  one spec's features. Fails the Vocabulary Test. Never a Domain doc candidate, and
+  never a direct edit to the spec - suggest adding it to that spec's domain_knowledge
+  via a change request (` + "`utopia cr`" + `) instead.
+
 6. **Disqualification Checks** - Reject if ANY of these apply:
    - **General programming term** - "function", "class", "API", "endpoint" (standard vocabulary)
    - **Standard industry term** - Used in its standard way without project-specific meaning
@@ -282,8 +290,10 @@ Instead of looking for definition phrases, apply a QUALIFICATION TEST based on D
    - **One-off explanation** - Not canonical vocabulary, just explaining something once
    - **Spec-local implementation invariant** - A constraint, assumption, or design rule
      that only an implementer of one spec's features needs to respect (belongs in that
-     spec's domain_knowledge instead). Do NOT silently drop this candidate - flag it
-     with the spec it belongs to so it can be routed there via a change request
+     spec's domain_knowledge instead). Do NOT silently drop this candidate - classify it
+     as an implementation invariant and surface it as an Implementation Invariant Signal
+     (see PHASE 2 below), naming the spec it belongs to. It is routed there via a change
+     request, never by editing the spec file directly
 
 **Litmus Tests:**
 - "Would ambiguity arise without this canonical definition?" YES = Document this term, NO = Don't clutter the domain vocabulary
@@ -322,7 +332,7 @@ does not.
 
 A candidate that reads as an implementation invariant rather than vocabulary does not
 qualify as a Domain doc candidate - it belongs in the relevant spec's domain_knowledge
-instead.
+instead, added there via a change request rather than a direct spec edit.
 
 For EACH qualified candidate, capture:
 - **ID**: Unique identifier (adr-1, concept-1, domain-1, etc.)
@@ -354,6 +364,16 @@ For EACH qualified candidate, capture:
 - **Related Candidates**: IDs of related candidates (e.g., adr-1 may link to concept-1)
 - **Potential Duplicate / Update**: If similar to existing doc, note which one AND whether this should UPDATE that doc instead of creating new
 
+For EACH implementation invariant signal (a domain-shaped candidate that failed the
+Vocabulary Test), capture instead:
+- **ID**: Unique identifier (invariant-1, invariant-2, etc.)
+- **Title**: Brief description (1 line)
+- **Description**: The constraint, assumption, or design rule itself
+- **Confidence**: high, medium, or low, on the same basis as a Domain candidate
+- **Likely Spec**: The spec whose domain_knowledge this belongs to
+- **Source Type**: execution, system-truth, or exploratory
+- **Location**: Source conversation or run ID + message range
+
 ### PHASE 2: PRESENT FINDINGS
 Present a STRUCTURED SUMMARY of all qualified candidates, grouped by type.
 
@@ -361,7 +381,7 @@ Present a STRUCTURED SUMMARY of all qualified candidates, grouped by type.
 ` + "```" + `
 ## Harvest Results
 
-**Summary: X ADR candidates, Y Concept candidates, Z Domain candidates, W README signals**
+**Summary: X ADR candidates, Y Concept candidates, Z Domain candidates, V Implementation Invariant signals, W README signals**
 **Sources: R execution runs, N system-truth conversations, M exploratory conversations**
 
 ### ADR Candidates (Qualified)
@@ -395,6 +415,21 @@ Present a STRUCTURED SUMMARY of all qualified candidates, grouped by type.
 **Origin** follows the same rule as the ADR table: required for every term whose source
 type is execution, "-" otherwise. A term coined at the code is traceable only through
 its run.
+
+### Implementation Invariant Signals (Route via Change Request)
+| ID | Confidence | Description | Likely Spec | Source | Source Type |
+|----|------------|--------------|-------------|--------|-------------|
+| invariant-1 | HIGH | Domain discovery must exclude spec-local invariants from drafts | adoption | cr-session-20260217 | system-truth |
+
+**These are never Domain doc candidates and are never applied as a direct edit to the
+named spec.** Each one is a constraint, assumption, or design rule scoped to one spec's
+features - the Implementation Invariant classification from the Domain Qualification
+checklist above. Suggest routing it into the named spec's domain_knowledge via a change
+request (` + "`utopia cr`" + `); do not create or update a Domain doc for it, and do not propose
+editing the spec file itself.
+
+**Note:** Only domain-shaped candidates that failed the Vocabulary Test appear here.
+Candidates that passed it are in the Domain Candidates table above instead.
 
 ### README Documentation Signals
 These are spec features that qualify for README documentation but aren't yet documented.
@@ -454,6 +489,10 @@ Ask the user which documents they want to create or update:
 
 **For updates**: Clearly state "This will UPDATE {existing-doc-id} at {file-path}"
 **For creates**: Clearly state "This will CREATE new {doc-type} at {file-path}"
+
+Implementation Invariant signals are never selected for creation here - harvest does
+not write spec files. Point the user at ` + "`utopia cr`" + ` to route the invariant into its
+named spec's domain_knowledge instead.
 
 Ask ONE question at a time. Wait for user input before proceeding.
 
