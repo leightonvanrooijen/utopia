@@ -9,6 +9,7 @@ import (
 
 	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
+	"github.com/leightonvanrooijen/utopia/internal/layout"
 	"github.com/leightonvanrooijen/utopia/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -155,7 +156,7 @@ func ResolveProject(cmd *cobra.Command) (projectDir, utopiaDir string, store *in
 		return "", "", nil, fmt.Errorf("failed to resolve project path: %w", err)
 	}
 
-	utopiaDir = filepath.Join(projectDir, ".utopia")
+	utopiaDir = layout.Root(projectDir)
 
 	// Check if initialized
 	if _, err := os.Stat(utopiaDir); os.IsNotExist(err) {
@@ -270,7 +271,7 @@ func projectAuthConfig(cmd *cobra.Command) (utopiaDir string, authConfig *domain
 	if err != nil {
 		return "", nil, err
 	}
-	utopiaDir = filepath.Join(projectDir, ".utopia")
+	utopiaDir = layout.Root(projectDir)
 
 	config, err := internal.NewYAMLStore(utopiaDir).LoadConfig()
 	if errors.Is(err, os.ErrNotExist) {

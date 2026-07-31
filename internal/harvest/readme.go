@@ -9,6 +9,7 @@ import (
 
 	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
+	"github.com/leightonvanrooijen/utopia/internal/layout"
 )
 
 // ============================================================================
@@ -325,7 +326,7 @@ func isCoreWorkflowChange(feature domain.Feature, documented *readmeDocumented) 
 
 func isNewTopLevelDirectory(desc, featureID string, documented *readmeDocumented) bool {
 	// Look for directory creation patterns
-	dirPattern := regexp.MustCompile(`\.utopia/(\w+)/?`)
+	dirPattern := regexp.MustCompile(regexp.QuoteMeta(layout.DirName) + `/(\w+)/?`)
 	matches := dirPattern.FindAllStringSubmatch(desc, -1)
 
 	for _, match := range matches {
@@ -371,9 +372,9 @@ func extractArtifactName(feature domain.Feature) string {
 
 func extractDirectoryName(feature domain.Feature) string {
 	desc := feature.Description
-	dirPattern := regexp.MustCompile(`\.utopia/(\w+)/?`)
+	dirPattern := regexp.MustCompile(regexp.QuoteMeta(layout.DirName) + `/(\w+)/?`)
 	if matches := dirPattern.FindStringSubmatch(desc); len(matches) > 1 {
-		return fmt.Sprintf(".utopia/%s/", matches[1])
+		return fmt.Sprintf("%s/%s/", layout.DirName, matches[1])
 	}
 	return feature.ID
 }

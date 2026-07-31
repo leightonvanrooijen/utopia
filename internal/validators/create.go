@@ -9,6 +9,7 @@ import (
 
 	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
+	"github.com/leightonvanrooijen/utopia/internal/layout"
 	"github.com/leightonvanrooijen/utopia/internal/ui"
 )
 
@@ -104,7 +105,7 @@ func (c *Creator) WithEffort(effort string) *Creator {
 // The empty mode inherits the ambient environment, so a caller that never
 // resolved a mode keeps the pre-auth behaviour.
 func (c *Creator) WithAuth(mode domain.AuthMode) *Creator {
-	c.cli = c.cli.WithAuth(mode, filepath.Join(c.projectDir, ".utopia"))
+	c.cli = c.cli.WithAuth(mode, layout.Root(c.projectDir))
 	return c
 }
 
@@ -113,7 +114,7 @@ func (c *Creator) WithAuth(mode domain.AuthMode) *Creator {
 func (c *Creator) Run(ctx context.Context) error {
 	// Ensure the validators directory exists
 	out := ui.OrDefault(c.out)
-	validatorsDir := filepath.Join(c.projectDir, ".utopia", "validators")
+	validatorsDir := layout.Validators(c.projectDir)
 	if err := os.MkdirAll(validatorsDir, 0755); err != nil {
 		return fmt.Errorf("failed to create validators directory: %w", err)
 	}
@@ -141,7 +142,7 @@ func (c *Creator) Run(ctx context.Context) error {
 		out.Println()
 		out.Println("  validators:")
 		for _, f := range files {
-			relPath := strings.TrimPrefix(f, filepath.Join(c.projectDir, ".utopia")+"/")
+			relPath := strings.TrimPrefix(f, layout.Root(c.projectDir)+"/")
 			out.Printf("    - %s\n", relPath)
 		}
 		out.Println()

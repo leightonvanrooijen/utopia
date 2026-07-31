@@ -5,13 +5,13 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
+	"github.com/leightonvanrooijen/utopia/internal/layout"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -132,7 +132,7 @@ func (r *Runner) WithModelConfig(mc *domain.ModelConfig) *Runner {
 func (r *Runner) WithAuth(mode domain.AuthMode) *Runner {
 	return &Runner{
 		workDir:           r.workDir,
-		cli:               r.cli.WithAuth(mode, filepath.Join(r.workDir, ".utopia")),
+		cli:               r.cli.WithAuth(mode, layout.Root(r.workDir)),
 		modelConfig:       r.modelConfig,
 		effort:            r.effort,
 		validatorTimeout:  r.validatorTimeout,

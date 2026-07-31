@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
+	"github.com/leightonvanrooijen/utopia/internal/layout"
 	"github.com/leightonvanrooijen/utopia/internal/ui"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -155,11 +155,11 @@ func runShape(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	_, utopiaDir, store, err := ResolveProject(cmd)
+	projectDir, utopiaDir, store, err := ResolveProject(cmd)
 	if err != nil {
 		return err
 	}
-	draftsDir := filepath.Join(utopiaDir, "drafts", "specs")
+	draftsDir := layout.DraftSpecs(projectDir)
 	if err := os.MkdirAll(draftsDir, 0755); err != nil {
 		return fmt.Errorf("failed to create drafts/specs directory: %w", err)
 	}
@@ -533,11 +533,11 @@ func runShapeDomain(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	_, utopiaDir, store, err := ResolveProject(cmd)
+	projectDir, utopiaDir, store, err := ResolveProject(cmd)
 	if err != nil {
 		return err
 	}
-	draftsDir := filepath.Join(utopiaDir, "drafts", "domain")
+	draftsDir := layout.DraftDomain(projectDir)
 	if err := os.MkdirAll(draftsDir, 0755); err != nil {
 		return fmt.Errorf("failed to create drafts/domain directory: %w", err)
 	}

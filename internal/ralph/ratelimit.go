@@ -3,7 +3,6 @@ package ralph
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
+	"github.com/leightonvanrooijen/utopia/internal/layout"
 	"github.com/leightonvanrooijen/utopia/internal/ui"
 )
 
@@ -316,7 +316,7 @@ func handleClaudeLimits(ctx context.Context, out *ui.Printer, result *internal.P
 
 	// Org monthly spend limit: no reset time exists, so probe until it lifts.
 	if DetectSpendLimit(result.Stdout, result.Stderr) {
-		probeCLI := internal.NewCLI().WithAuth(auth, filepath.Join(projectDir, ".utopia")).WithPrinter(out)
+		probeCLI := internal.NewCLI().WithAuth(auth, layout.Root(projectDir)).WithPrinter(out)
 		probe := func(pctx context.Context) (*internal.PromptResult, error) {
 			return probeCLI.Prompt(pctx, spendLimitProbePrompt)
 		}

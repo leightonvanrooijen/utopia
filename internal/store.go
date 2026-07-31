@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/leightonvanrooijen/utopia/internal/domain"
+	"github.com/leightonvanrooijen/utopia/internal/layout"
 	"github.com/leightonvanrooijen/utopia/internal/ui"
 	"gopkg.in/yaml.v3"
 )
@@ -32,10 +33,10 @@ type YAMLStore struct {
 func NewYAMLStore(baseDir string) *YAMLStore {
 	s := &YAMLStore{
 		baseDir:     baseDir,
-		specsDir:    filepath.Join(baseDir, "specs"),
-		adrsDir:     filepath.Join(baseDir, "adrs"),
-		conceptsDir: filepath.Join(baseDir, "concepts"),
-		domainDir:   filepath.Join(baseDir, "domain"),
+		specsDir:    filepath.Join(baseDir, layout.SpecsName),
+		adrsDir:     filepath.Join(baseDir, layout.ADRsName),
+		conceptsDir: filepath.Join(baseDir, layout.ConceptsName),
+		domainDir:   filepath.Join(baseDir, layout.DomainName),
 	}
 	s.applyConfiguredPaths()
 	return s
@@ -85,20 +86,20 @@ func (s *YAMLStore) DomainDir() string { return s.domainDir }
 // ConversationsDir returns the absolute directory where conversations are stored.
 // Unlike the artifact directories it is not configurable: harvest sources are
 // written by the tool itself and always live under the store's base directory.
-func (s *YAMLStore) ConversationsDir() string { return s.fullPath("conversations") }
+func (s *YAMLStore) ConversationsDir() string { return s.fullPath(layout.ConversationsName) }
 
 // ChangeRequestsDir returns the absolute directory where change requests are
 // stored. Like the conversations and runs directories it is not configurable:
 // change requests are the tool's own working artefacts. Scoping escalation needs
 // it resolved because it tells the scoper where to write, and the scoper's
 // working directory is not necessarily the project's.
-func (s *YAMLStore) ChangeRequestsDir() string { return s.fullPath("change-requests") }
+func (s *YAMLStore) ChangeRequestsDir() string { return s.fullPath(layout.ChangeRequestsName) }
 
 // RunsDir returns the absolute directory where execution runs are stored, one
 // subdirectory per CR. Harvest needs it resolved rather than assumed: the
 // session that marks runs processed does not necessarily run from the project
 // directory, so a relative .utopia/runs would resolve somewhere else entirely.
-func (s *YAMLStore) RunsDir() string { return s.fullPath("runs") }
+func (s *YAMLStore) RunsDir() string { return s.fullPath(layout.RunsName) }
 
 // fullPath resolves a path against the store's base directory.
 // Absolute paths (already-resolved artifact locations) are used as-is.
@@ -232,17 +233,17 @@ func (s *YAMLStore) ListSpecs() ([]*domain.Spec, error) {
 
 // SaveWorkItemForSpec writes a work item to .utopia/work-items/{specID}/{id}.yaml
 func (s *YAMLStore) SaveWorkItemForSpec(specID string, item *domain.WorkItem) error {
-	return Save(s, filepath.Join("work-items", specID, item.ID+".yaml"), item)
+	return Save(s, filepath.Join(layout.WorkItemsName, specID, item.ID+".yaml"), item)
 }
 
 // ListWorkItemsForSpec returns all work items for a specific spec
 func (s *YAMLStore) ListWorkItemsForSpec(specID string) ([]*domain.WorkItem, error) {
-	return List[domain.WorkItem](s, filepath.Join("work-items", specID))
+	return List[domain.WorkItem](s, filepath.Join(layout.WorkItemsName, specID))
 }
 
 // LoadWorkItem reads a work item from .utopia/work-items/{id}.yaml
 func (s *YAMLStore) LoadWorkItem(id string) (*domain.WorkItem, error) {
-	return Load[domain.WorkItem](s, filepath.Join("work-items", id+".yaml"))
+	return Load[domain.WorkItem](s, filepath.Join(layout.WorkItemsName, id+".yaml"))
 }
 
 // FindWorkItem locates a work item by ID without being told which spec owns it,
@@ -261,7 +262,7 @@ func (s *YAMLStore) LoadWorkItem(id string) (*domain.WorkItem, error) {
 //
 // It returns a *domain.NotFoundError when no directory holds that ID.
 func (s *YAMLStore) FindWorkItem(id string) (*domain.WorkItem, string, error) {
-	root := filepath.Join(s.baseDir, "work-items")
+	root := filepath.Join(s.baseDir, layout.WorkItemsName)
 	var found string
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -291,7 +292,7 @@ func (s *YAMLStore) FindWorkItem(id string) (*domain.WorkItem, string, error) {
 		specID = ""
 	}
 
-	item, err := Load[domain.WorkItem](s, filepath.Join("work-items", specID, id+".yaml"))
+	item, err := Load[domain.WorkItem](s, filepath.Join(layout.WorkItemsName, specID, id+".yaml"))
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to load work item %s: %w", id, err)
 	}
@@ -301,7 +302,7 @@ func (s *YAMLStore) FindWorkItem(id string) (*domain.WorkItem, string, error) {
 // ListWorkItems returns all work items from both flat and nested structures.
 // It searches .utopia/work-items/*.yaml (legacy) and .utopia/work-items/<spec-id>/*.yaml
 func (s *YAMLStore) ListWorkItems() ([]*domain.WorkItem, error) {
-	dir := filepath.Join(s.baseDir, "work-items")
+	dir := filepath.Join(s.baseDir, layout.WorkItemsName)
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -426,14 +427,14 @@ func (s *YAMLStore) SaveChangeRequest(cr *domain.ChangeRequest) error {
 			return err
 		}
 		// Not found is the new-CR case, not a failure: write the canonical name.
-		path = filepath.Join("change-requests", cr.ID+".yaml")
+		path = filepath.Join(layout.ChangeRequestsName, cr.ID+".yaml")
 	}
 	return Save(s, path, cr)
 }
 
 // LoadChangeRequest reads a change request from .utopia/change-requests/{id}.yaml
 func (s *YAMLStore) LoadChangeRequest(id string) (*domain.ChangeRequest, error) {
-	return Load[domain.ChangeRequest](s, filepath.Join("change-requests", id+".yaml"))
+	return Load[domain.ChangeRequest](s, filepath.Join(layout.ChangeRequestsName, id+".yaml"))
 }
 
 // ResolveChangeRequest loads the change request addressed by name, tolerating
@@ -454,7 +455,7 @@ func (s *YAMLStore) ResolveChangeRequest(name string) (*domain.ChangeRequest, er
 		return cr, nil
 	}
 
-	dir := filepath.Join(s.baseDir, "change-requests")
+	dir := filepath.Join(s.baseDir, layout.ChangeRequestsName)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -541,7 +542,7 @@ func stripNumericPrefix(base string) string {
 // reported as ambiguous rather than silently resolved, and a *domain.NotFoundError
 // is returned when no file matches.
 func (s *YAMLStore) ChangeRequestPath(id string) (string, error) {
-	dir := filepath.Join(s.baseDir, "change-requests")
+	dir := filepath.Join(s.baseDir, layout.ChangeRequestsName)
 
 	// A canonical filename always wins, so an un-prefixed CR resolves directly.
 	canonical := filepath.Join(dir, id+".yaml")
@@ -611,7 +612,7 @@ type ChangeRequestFile struct {
 // callers that care about execution sequence must apply the numeric-prefix
 // ordering rule themselves.
 func (s *YAMLStore) ListChangeRequestFiles() ([]ChangeRequestFile, error) {
-	dir := filepath.Join(s.baseDir, "change-requests")
+	dir := filepath.Join(s.baseDir, layout.ChangeRequestsName)
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -858,7 +859,7 @@ func (s *YAMLStore) readYAML(path string, dest interface{}) error {
 
 // SaveConversation writes a conversation to .utopia/conversations/{id}.yaml
 func (s *YAMLStore) SaveConversation(conv *domain.Conversation) error {
-	return Save(s, filepath.Join("conversations", conv.ID+".yaml"), conv)
+	return Save(s, filepath.Join(layout.ConversationsName, conv.ID+".yaml"), conv)
 }
 
 // SaveExecutionRun writes a run transcript to .utopia/runs/{cr_id}/{workitem_id}.yaml.
@@ -869,7 +870,7 @@ func (s *YAMLStore) SaveConversation(conv *domain.Conversation) error {
 // read as history - the routing and usage entries in particular - so they are
 // formatted like the rest of the project's YAML rather than like marshal output.
 func (s *YAMLStore) SaveExecutionRun(run *domain.ExecutionRun) error {
-	path := filepath.Join("runs", run.CRID, run.WorkItemID+".yaml")
+	path := filepath.Join(layout.RunsName, run.CRID, run.WorkItemID+".yaml")
 	fullPath := s.fullPath(path)
 	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
 		return fmt.Errorf("failed to create directory %s: %w", filepath.Dir(fullPath), err)
@@ -881,7 +882,7 @@ func (s *YAMLStore) SaveExecutionRun(run *domain.ExecutionRun) error {
 // Runs are grouped one directory per CR, so this walks the per-CR directories
 // rather than calling List directly, which only reads a flat directory.
 func (s *YAMLStore) ListExecutionRuns() ([]*domain.ExecutionRun, error) {
-	entries, err := os.ReadDir(s.fullPath("runs"))
+	entries, err := os.ReadDir(s.fullPath(layout.RunsName))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return []*domain.ExecutionRun{}, nil
@@ -895,7 +896,7 @@ func (s *YAMLStore) ListExecutionRuns() ([]*domain.ExecutionRun, error) {
 			continue
 		}
 
-		crRuns, err := List[domain.ExecutionRun](s, filepath.Join("runs", entry.Name()))
+		crRuns, err := List[domain.ExecutionRun](s, filepath.Join(layout.RunsName, entry.Name()))
 		if err != nil {
 			return nil, err
 		}
@@ -926,7 +927,7 @@ func (s *YAMLStore) ListUnprocessedExecutionRuns() ([]*domain.ExecutionRun, erro
 
 // ListConversations returns all conversations in the conversations directory
 func (s *YAMLStore) ListConversations() ([]*domain.Conversation, error) {
-	return List[domain.Conversation](s, "conversations")
+	return List[domain.Conversation](s, layout.ConversationsName)
 }
 
 // ListUnprocessedConversations returns conversations with status "unprocessed"
@@ -1098,7 +1099,7 @@ func (s *YAMLStore) ListConceptDocs() ([]*domain.ConceptDoc, error) {
 // skipped so a single bad doc never fails chunking. Returns an empty index
 // when the directory is missing or empty.
 func (s *YAMLStore) LoadStandardsIndex() []domain.StandardsDocMeta {
-	dir := filepath.Join(s.baseDir, "standards")
+	dir := filepath.Join(s.baseDir, layout.StandardsName)
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -1129,7 +1130,7 @@ func (s *YAMLStore) LoadStandardsIndex() []domain.StandardsDocMeta {
 			continue
 		}
 
-		meta.Path = filepath.ToSlash(filepath.Join(".utopia", "standards", entry.Name()))
+		meta.Path = layout.StandardRelPath(entry.Name())
 		docs = append(docs, meta)
 	}
 
@@ -1138,38 +1139,38 @@ func (s *YAMLStore) LoadStandardsIndex() []domain.StandardsDocMeta {
 
 // SaveDraft writes a draft spec to .utopia/drafts/specs/{id}.yaml
 func (s *YAMLStore) SaveDraft(draft *domain.DraftSpec) error {
-	return Save(s, filepath.Join("drafts", "specs", draft.ID+".yaml"), draft)
+	return Save(s, filepath.Join(layout.DraftsName, layout.SpecsName, draft.ID+".yaml"), draft)
 }
 
 // LoadDraft reads a draft spec from .utopia/drafts/specs/{id}.yaml
 func (s *YAMLStore) LoadDraft(id string) (*domain.DraftSpec, error) {
-	return Load[domain.DraftSpec](s, filepath.Join("drafts", "specs", id+".yaml"))
+	return Load[domain.DraftSpec](s, filepath.Join(layout.DraftsName, layout.SpecsName, id+".yaml"))
 }
 
 // ListDrafts returns all draft specs in the drafts/specs directory
 func (s *YAMLStore) ListDrafts() ([]*domain.DraftSpec, error) {
-	return List[domain.DraftSpec](s, filepath.Join("drafts", "specs"))
+	return List[domain.DraftSpec](s, filepath.Join(layout.DraftsName, layout.SpecsName))
 }
 
 // DeleteDraft removes a draft spec file from .utopia/drafts/specs/{id}.yaml
 func (s *YAMLStore) DeleteDraft(id string) error {
-	return Delete(s, filepath.Join("drafts", "specs", id+".yaml"), "draft", id)
+	return Delete(s, filepath.Join(layout.DraftsName, layout.SpecsName, id+".yaml"), "draft", id)
 }
 
 // SaveDraftDomainDoc writes a draft domain doc to .utopia/drafts/domain/{id}.yaml
 func (s *YAMLStore) SaveDraftDomainDoc(draft *domain.DraftDomainDoc) error {
-	return Save(s, filepath.Join("drafts", "domain", draft.ID+".yaml"), draft)
+	return Save(s, filepath.Join(layout.DraftsName, layout.DomainName, draft.ID+".yaml"), draft)
 }
 
 // LoadDraftDomainDoc reads a draft domain doc from .utopia/drafts/domain/{id}.yaml
 func (s *YAMLStore) LoadDraftDomainDoc(id string) (*domain.DraftDomainDoc, error) {
-	return Load[domain.DraftDomainDoc](s, filepath.Join("drafts", "domain", id+".yaml"))
+	return Load[domain.DraftDomainDoc](s, filepath.Join(layout.DraftsName, layout.DomainName, id+".yaml"))
 }
 
 // ListDraftDomainDocs returns all draft domain docs in the drafts/domain directory.
 // Skips the .discovery-state file.
 func (s *YAMLStore) ListDraftDomainDocs() ([]*domain.DraftDomainDoc, error) {
-	dir := filepath.Join(s.baseDir, "drafts", "domain")
+	dir := filepath.Join(s.baseDir, layout.DraftsName, layout.DomainName)
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -1202,13 +1203,13 @@ func (s *YAMLStore) ListDraftDomainDocs() ([]*domain.DraftDomainDoc, error) {
 
 // DeleteDraftDomainDoc removes a draft domain doc file from .utopia/drafts/domain/{id}.yaml
 func (s *YAMLStore) DeleteDraftDomainDoc(id string) error {
-	return Delete(s, filepath.Join("drafts", "domain", id+".yaml"), "draft domain doc", id)
+	return Delete(s, filepath.Join(layout.DraftsName, layout.DomainName, id+".yaml"), "draft domain doc", id)
 }
 
 // LoadDomainDiscoveryState reads domain discovery state from .utopia/drafts/domain/.discovery-state
 // Returns nil (no error) if no previous state exists.
 func (s *YAMLStore) LoadDomainDiscoveryState() (*domain.DomainDiscoveryState, error) {
-	state, err := Load[domain.DomainDiscoveryState](s, filepath.Join("drafts", "domain", ".discovery-state"))
+	state, err := Load[domain.DomainDiscoveryState](s, filepath.Join(layout.DraftsName, layout.DomainName, ".discovery-state"))
 	if err != nil && errors.Is(err, os.ErrNotExist) {
 		return nil, nil // No previous state exists
 	}
@@ -1217,7 +1218,7 @@ func (s *YAMLStore) LoadDomainDiscoveryState() (*domain.DomainDiscoveryState, er
 
 // SaveDomainDiscoveryState writes domain discovery state to .utopia/drafts/domain/.discovery-state
 func (s *YAMLStore) SaveDomainDiscoveryState(state *domain.DomainDiscoveryState) error {
-	return Save(s, filepath.Join("drafts", "domain", ".discovery-state"), state)
+	return Save(s, filepath.Join(layout.DraftsName, layout.DomainName, ".discovery-state"), state)
 }
 
 // ValidateValidatorPaths checks that all configured validator file paths exist.

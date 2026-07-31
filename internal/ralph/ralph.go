@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -13,6 +12,7 @@ import (
 	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 	"github.com/leightonvanrooijen/utopia/internal/git"
+	"github.com/leightonvanrooijen/utopia/internal/layout"
 	"github.com/leightonvanrooijen/utopia/internal/ui"
 	"github.com/leightonvanrooijen/utopia/internal/validators"
 	"github.com/leightonvanrooijen/utopia/internal/verification"
@@ -118,7 +118,7 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 	// The executor's transcript is an info-level diagnostic: watching claude work
 	// is what `utopia execute` is for, so it appears at the default level and
 	// falls silent only when the run is asked to be quieter than info.
-	cli := internal.NewCLI().WithStreamLevel(slog.LevelInfo).WithAuth(auth, filepath.Join(projectDir, ".utopia")).WithPrinter(out)
+	cli := internal.NewCLI().WithStreamLevel(slog.LevelInfo).WithAuth(auth, layout.Root(projectDir)).WithPrinter(out)
 	efforts := resolveRoleEfforts(config.Effort, over.Effort)
 	cli = cli.WithEffort(efforts.executor)
 	defaultExecutorModel := resolveDefaultExecutorModel(config.Models, over.Model)

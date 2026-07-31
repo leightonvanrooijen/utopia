@@ -7,12 +7,12 @@ package discover
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"sync"
 
 	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
+	"github.com/leightonvanrooijen/utopia/internal/layout"
 	"github.com/leightonvanrooijen/utopia/internal/ui"
 )
 
@@ -33,14 +33,6 @@ type Scope struct {
 // business, not this pipeline's.
 func newProgress(out *ui.Printer, totalPhases int) *ui.Progress {
 	return ui.NewProgress(ui.OrDefault(out).Err(), totalPhases)
-}
-
-// utopiaDirOf returns the .utopia directory of a project, which is where
-// api-key mode looks for the .env holding the key. Both discovery pipelines are
-// handed a project directory rather than a .utopia one, so the one place that
-// needs the latter derives it.
-func utopiaDirOf(projectDir string) string {
-	return filepath.Join(projectDir, ".utopia")
 }
 
 // SpecsOptions configures the spec discovery pipeline.
@@ -102,7 +94,7 @@ func Specs(ctx context.Context, store *internal.YAMLStore, opts SpecsOptions) (*
 	prog.EndPhase(fmt.Sprintf("%d files found", len(filesAnalyzed)))
 
 	specsSummary := buildExistingSpecsSummary(opts.ExistingSpecs)
-	cli := internal.NewCLI().WithAuth(opts.Auth, utopiaDirOf(opts.ProjectDir)).WithPrinter(out)
+	cli := internal.NewCLI().WithAuth(opts.Auth, layout.Root(opts.ProjectDir)).WithPrinter(out)
 	if opts.Model != "" {
 		cli = cli.WithModel(opts.Model)
 	}
@@ -252,7 +244,7 @@ func runParallelRefinement(ctx context.Context, out *ui.Printer, candidates []qu
 	)
 
 	refinementCLI := internal.NewCLI().WithAllowedTools([]string{"Read", "Grep", "Glob"}).
-		WithAuth(auth, utopiaDirOf(projectDir)).WithPrinter(out)
+		WithAuth(auth, layout.Root(projectDir)).WithPrinter(out)
 	if modelID != "" {
 		refinementCLI = refinementCLI.WithModel(modelID)
 	}

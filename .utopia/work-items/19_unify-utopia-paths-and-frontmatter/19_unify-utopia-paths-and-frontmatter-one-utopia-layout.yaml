@@ -20,7 +20,7 @@ title: |
     Expected behavior: one package owns the layout and exposes a function per
     location. Every caller asks it. The resolved paths are identical, so no
     file moves and no on-disk layout changes.
-status: pending
+status: in_progress
 prompt: |-
     ## TASK
 
@@ -116,3 +116,4 @@ constraints:
 order: 1
 source_feature_id: one-utopia-layout
 estimated_complexity: medium
+iteration_count: 1

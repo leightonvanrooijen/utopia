@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 	"github.com/leightonvanrooijen/utopia/internal/git"
+	"github.com/leightonvanrooijen/utopia/internal/layout"
 	"github.com/leightonvanrooijen/utopia/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -214,7 +214,7 @@ func runRefactor(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create change requests directory if it doesn't exist
-	changeRequestsDir := filepath.Join(utopiaDir, "change-requests")
+	changeRequestsDir := layout.ChangeRequests(absPath)
 	if err := os.MkdirAll(changeRequestsDir, 0755); err != nil {
 		return fmt.Errorf("failed to create change requests directory: %w", err)
 	}

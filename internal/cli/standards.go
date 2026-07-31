@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/leightonvanrooijen/utopia/internal"
+	"github.com/leightonvanrooijen/utopia/internal/layout"
 	"github.com/leightonvanrooijen/utopia/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -223,13 +223,13 @@ func runStandardsGenerate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	_, utopiaDir, _, err := ResolveProject(cmd)
+	projectDir, utopiaDir, _, err := ResolveProject(cmd)
 	if err != nil {
 		return err
 	}
 
 	// Create standards directory if it doesn't exist
-	standardsDir := filepath.Join(utopiaDir, "standards")
+	standardsDir := layout.Standards(projectDir)
 	if err := os.MkdirAll(standardsDir, 0755); err != nil {
 		return fmt.Errorf("failed to create standards directory: %w", err)
 	}

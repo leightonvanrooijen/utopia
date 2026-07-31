@@ -8,6 +8,7 @@ import (
 
 	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
+	"github.com/leightonvanrooijen/utopia/internal/layout"
 	"github.com/leightonvanrooijen/utopia/internal/ui"
 )
 
@@ -112,7 +113,7 @@ type Editor struct {
 
 // NewEditor creates a new validator editor for the given project directory.
 func NewEditor(projectDir string) *Editor {
-	utopiaDir := filepath.Join(projectDir, ".utopia")
+	utopiaDir := layout.Root(projectDir)
 	return &Editor{
 		projectDir: projectDir,
 		cli:        internal.NewCLI(),
@@ -148,7 +149,7 @@ func (e *Editor) WithEffort(effort string) *Editor {
 // The empty mode inherits the ambient environment, so a caller that never
 // resolved a mode keeps the pre-auth behaviour.
 func (e *Editor) WithAuth(mode domain.AuthMode) *Editor {
-	e.cli = e.cli.WithAuth(mode, filepath.Join(e.projectDir, ".utopia"))
+	e.cli = e.cli.WithAuth(mode, layout.Root(e.projectDir))
 	return e
 }
 
@@ -200,7 +201,7 @@ func (e *Editor) Run(ctx context.Context, validatorPath string) error {
 		return fmt.Errorf("failed to load validator: %w", err)
 	}
 
-	fullPath := filepath.Join(e.projectDir, ".utopia", validatorPath)
+	fullPath := filepath.Join(layout.Root(e.projectDir), validatorPath)
 
 	out := ui.OrDefault(e.out)
 	out.Printf("Editing validator: %s\n", validator.ID)

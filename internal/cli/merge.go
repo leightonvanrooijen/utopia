@@ -7,6 +7,7 @@ import (
 
 	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
+	"github.com/leightonvanrooijen/utopia/internal/layout"
 	"github.com/leightonvanrooijen/utopia/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -239,7 +240,7 @@ func runMerge(cmd *cobra.Command, args []string, dryRun bool) error {
 	out.Successf("Deleted change request: %s", changeRequestID)
 
 	// Delete work items directory if it exists
-	workItemsDir := filepath.Join(utopiaDir, "work-items", changeRequestID)
+	workItemsDir := filepath.Join(utopiaDir, layout.WorkItemsName, changeRequestID)
 	if _, err := os.Stat(workItemsDir); err == nil {
 		if err := os.RemoveAll(workItemsDir); err != nil {
 			return fmt.Errorf("failed to delete work items: %w", err)
@@ -458,7 +459,7 @@ func mergeInitiative(out *ui.Printer, cr *domain.ChangeRequest, changeRequestID,
 
 	// Delete work items for all phases
 	for i := range cr.Phases {
-		phaseWorkDir := filepath.Join(utopiaDir, "work-items", changeRequestID, fmt.Sprintf("phase-%d", i))
+		phaseWorkDir := filepath.Join(utopiaDir, layout.WorkItemsName, changeRequestID, fmt.Sprintf("phase-%d", i))
 		if _, err := os.Stat(phaseWorkDir); err == nil {
 			if err := os.RemoveAll(phaseWorkDir); err != nil {
 				return fmt.Errorf("failed to delete work items for phase %d: %w", i+1, err)
@@ -468,7 +469,7 @@ func mergeInitiative(out *ui.Printer, cr *domain.ChangeRequest, changeRequestID,
 	}
 
 	// Also delete the parent work-items directory for this CR if it's empty
-	crWorkDir := filepath.Join(utopiaDir, "work-items", changeRequestID)
+	crWorkDir := filepath.Join(utopiaDir, layout.WorkItemsName, changeRequestID)
 	if entries, err := os.ReadDir(crWorkDir); err == nil && len(entries) == 0 {
 		os.Remove(crWorkDir)
 	}
@@ -510,7 +511,7 @@ func mergeRefactor(out *ui.Printer, cr *domain.ChangeRequest, changeRequestID, u
 	out.Successf("Deleted change request: %s", changeRequestID)
 
 	// Delete work items directory if it exists
-	workItemsDir := filepath.Join(utopiaDir, "work-items", changeRequestID)
+	workItemsDir := filepath.Join(utopiaDir, layout.WorkItemsName, changeRequestID)
 	if _, err := os.Stat(workItemsDir); err == nil {
 		if err := os.RemoveAll(workItemsDir); err != nil {
 			return fmt.Errorf("failed to delete work items: %w", err)
@@ -749,7 +750,7 @@ func CleanupAfterMerge(cr *domain.ChangeRequest, crID, utopiaDir string, store *
 	if cr.Type == domain.CRTypeInitiative {
 		// Delete work items for all phases
 		for i := range cr.Phases {
-			phaseWorkDir := filepath.Join(utopiaDir, "work-items", crID, fmt.Sprintf("phase-%d", i))
+			phaseWorkDir := filepath.Join(utopiaDir, layout.WorkItemsName, crID, fmt.Sprintf("phase-%d", i))
 			if _, err := os.Stat(phaseWorkDir); err == nil {
 				if err := os.RemoveAll(phaseWorkDir); err != nil {
 					return fmt.Errorf("failed to delete work items for phase %d: %w", i+1, err)
@@ -757,13 +758,13 @@ func CleanupAfterMerge(cr *domain.ChangeRequest, crID, utopiaDir string, store *
 			}
 		}
 		// Remove parent directory if empty
-		crWorkDir := filepath.Join(utopiaDir, "work-items", crID)
+		crWorkDir := filepath.Join(utopiaDir, layout.WorkItemsName, crID)
 		if entries, err := os.ReadDir(crWorkDir); err == nil && len(entries) == 0 {
 			os.Remove(crWorkDir)
 		}
 	} else {
 		// Delete work items directory for regular CRs
-		workItemsDir := filepath.Join(utopiaDir, "work-items", crID)
+		workItemsDir := filepath.Join(utopiaDir, layout.WorkItemsName, crID)
 		if _, err := os.Stat(workItemsDir); err == nil {
 			if err := os.RemoveAll(workItemsDir); err != nil {
 				return fmt.Errorf("failed to delete work items: %w", err)

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/leightonvanrooijen/utopia/internal/layout"
 )
 
 // Environment variables the claude CLI reads its Anthropic credential from.
@@ -97,7 +99,7 @@ type CredentialSource string
 
 const (
 	// CredentialSourceEnvFile is the gitignored per-project credential file.
-	CredentialSourceEnvFile CredentialSource = ".utopia/.env"
+	CredentialSourceEnvFile CredentialSource = layout.DirName + "/.env"
 	// CredentialSourceEnvironment is the environment utopia itself inherited.
 	CredentialSourceEnvironment CredentialSource = "the environment"
 )

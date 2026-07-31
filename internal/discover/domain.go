@@ -8,6 +8,7 @@ import (
 
 	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
+	"github.com/leightonvanrooijen/utopia/internal/layout"
 	"github.com/leightonvanrooijen/utopia/internal/ui"
 )
 
@@ -132,7 +133,7 @@ func Domain(ctx context.Context, store *internal.YAMLStore, opts DomainOptions) 
 	systemPrompt := fmt.Sprintf(domainSystemPrompt, codebaseContext, domainDocsSummary)
 
 	prog.StartPhase(2, "Analyzing codebase with Claude")
-	cli := internal.NewCLI().WithAuth(opts.Auth, utopiaDirOf(opts.ProjectDir)).WithPrinter(out)
+	cli := internal.NewCLI().WithAuth(opts.Auth, layout.Root(opts.ProjectDir)).WithPrinter(out)
 	if opts.Model != "" {
 		cli = cli.WithModel(opts.Model)
 	}

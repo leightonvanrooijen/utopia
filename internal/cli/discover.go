@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/leightonvanrooijen/utopia/internal/discover"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
+	"github.com/leightonvanrooijen/utopia/internal/layout"
 	"github.com/leightonvanrooijen/utopia/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -84,13 +84,13 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	absPath, utopiaDir, store, err := ResolveProject(cmd)
+	absPath, _, store, err := ResolveProject(cmd)
 	if err != nil {
 		return err
 	}
 	existingSpecs, _ := store.ListSpecs()
 	existingDrafts, _ := store.ListDrafts()
-	draftsDir := filepath.Join(utopiaDir, "drafts", "specs")
+	draftsDir := layout.DraftSpecs(absPath)
 	if err := os.MkdirAll(draftsDir, 0755); err != nil {
 		return fmt.Errorf("failed to create drafts/specs directory: %w", err)
 	}
@@ -238,7 +238,7 @@ func runDiscoverDomain(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	absPath, utopiaDir, store, err := ResolveProject(cmd)
+	absPath, _, store, err := ResolveProject(cmd)
 	if err != nil {
 		return err
 	}
@@ -255,7 +255,7 @@ func runDiscoverDomain(cmd *cobra.Command, args []string) error {
 		lastRunTime = previousState.LastRun
 	}
 
-	draftsDir := filepath.Join(utopiaDir, "drafts", "domain")
+	draftsDir := layout.DraftDomain(absPath)
 	if err := os.MkdirAll(draftsDir, 0755); err != nil {
 		return fmt.Errorf("failed to create drafts/domain directory: %w", err)
 	}

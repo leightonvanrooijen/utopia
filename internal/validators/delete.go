@@ -2,10 +2,10 @@ package validators
 
 import (
 	"fmt"
-	"path/filepath"
 
 	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
+	"github.com/leightonvanrooijen/utopia/internal/layout"
 )
 
 // Deleter handles the deletion of validators.
@@ -16,7 +16,7 @@ type Deleter struct {
 
 // NewDeleter creates a new validator deleter for the given project directory.
 func NewDeleter(projectDir string) *Deleter {
-	utopiaDir := filepath.Join(projectDir, ".utopia")
+	utopiaDir := layout.Root(projectDir)
 	return &Deleter{
 		projectDir: projectDir,
 		store:      internal.NewYAMLStore(utopiaDir),

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/leightonvanrooijen/utopia/internal/analysis/types"
+	"github.com/leightonvanrooijen/utopia/internal/layout"
 	"github.com/leightonvanrooijen/utopia/internal/ui"
 )
 
@@ -77,7 +78,7 @@ func collectAllTextFiles(root, projectDir string, maxTotalSize int64, excludePat
 		}
 		if info.IsDir() {
 			name := info.Name()
-			if name == ".git" || name == "vendor" || name == "node_modules" || name == ".utopia" {
+			if name == ".git" || name == "vendor" || name == "node_modules" || name == layout.DirName {
 				return filepath.SkipDir
 			}
 			return nil
@@ -264,7 +265,7 @@ func collectDomainFilesIncremental(root, projectDir, pattern string, maxTotalSiz
 		}
 		if info.IsDir() {
 			name := info.Name()
-			if name == ".git" || name == "vendor" || name == "node_modules" || name == ".utopia" {
+			if name == ".git" || name == "vendor" || name == "node_modules" || name == layout.DirName {
 				return filepath.SkipDir
 			}
 			return nil

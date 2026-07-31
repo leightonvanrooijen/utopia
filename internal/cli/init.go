@@ -11,6 +11,7 @@ import (
 
 	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
+	"github.com/leightonvanrooijen/utopia/internal/layout"
 	"github.com/leightonvanrooijen/utopia/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -275,7 +276,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	utopiaDir := filepath.Join(projectDir, ".utopia")
+	utopiaDir := layout.Root(projectDir)
 	store := internal.NewYAMLStore(utopiaDir)
 
 	// Check if config already exists
@@ -286,8 +287,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 	dirs := []string{
 		utopiaDir,
 		store.SpecsDir(),
-		filepath.Join(utopiaDir, "work-items"),
-		filepath.Join(utopiaDir, "validators"),
+		layout.WorkItems(projectDir),
+		layout.Validators(projectDir),
 	}
 
 	for _, dir := range dirs {
@@ -298,12 +299,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// Create validator files (idempotent - existing files are left untouched so a
 	// project's edits to either file survive a re-init)
-	templatePath := filepath.Join(utopiaDir, "validators", "_template.md")
+	templatePath := filepath.Join(layout.Validators(projectDir), "_template.md")
 	if err := writeFileIfMissing(templatePath, validatorTemplate); err != nil {
 		return fmt.Errorf("failed to create validator template: %w", err)
 	}
 
-	specIntentPath := filepath.Join(utopiaDir, "validators", "spec-intent.md")
+	specIntentPath := filepath.Join(layout.Validators(projectDir), "spec-intent.md")
 	if err := writeFileIfMissing(specIntentPath, specIntentValidator); err != nil {
 		return fmt.Errorf("failed to create spec-intent validator: %w", err)
 	}

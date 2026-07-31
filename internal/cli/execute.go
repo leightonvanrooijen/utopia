@@ -17,6 +17,7 @@ import (
 	"github.com/leightonvanrooijen/utopia/internal/chunk"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 	"github.com/leightonvanrooijen/utopia/internal/git"
+	"github.com/leightonvanrooijen/utopia/internal/layout"
 	"github.com/leightonvanrooijen/utopia/internal/ralph"
 	"github.com/leightonvanrooijen/utopia/internal/ui"
 	"github.com/spf13/cobra"
@@ -756,7 +757,7 @@ func selectChangeRequest(out *ui.Printer, store *internal.YAMLStore) (string, er
 // ============================================================================
 
 func gitCommitChunk(projectDir, crID string) error {
-	workItemsDir := filepath.Join(projectDir, ".utopia", "work-items", crID)
+	workItemsDir := filepath.Join(layout.WorkItems(projectDir), crID)
 	msg := fmt.Sprintf("chunk: %s", crID)
 	return git.CommitIfChanged(projectDir, msg, workItemsDir)
 }
@@ -770,7 +771,7 @@ func gitCommitChunk(projectDir, crID string) error {
 // Work items always live under the internal id, so that path is reconstructed.
 // The commit message stays keyed to the internal id.
 func gitCommitCleanup(projectDir, crFile, crID, utopiaDir string) error {
-	workItemsDir := filepath.Join(utopiaDir, "work-items", crID)
+	workItemsDir := filepath.Join(utopiaDir, layout.WorkItemsName, crID)
 	msg := fmt.Sprintf("cleanup: complete %s", crID)
 	return git.CommitIfChanged(projectDir, msg, workItemsDir, crFile)
 }
