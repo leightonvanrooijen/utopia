@@ -1,7 +1,7 @@
 id: 08_sharpen-domain-knowledge-boundary-modify-domain-qualification-criteria
 spec_ref: 08_sharpen-domain-knowledge-boundary.modify-domain-qualification-criteria
 title: Modify the domain-qualification-criteria feature
-status: in_progress
+status: completed
 prompt: |-
     ## TASK
 
@@ -57,3 +57,24 @@ order: 1
 source_feature_id: modify-domain-qualification-criteria
 estimated_complexity: medium
 iteration_count: 1
+selected_validators:
+    - spec-intent
+executor_attempts:
+    - iteration: 1
+      role: default-executor
+      model: sonnet
+      effort: medium
+      usage:
+        available: true
+        model: claude-sonnet-5
+        effort: medium
+        input_tokens: 62
+        output_tokens: 8999
+        cache_read_tokens: 1726655
+        cache_creation_tokens: 49638
+        turns: 35
+        duration_ms: 157005
+        cost_usd: 0.9509955000000001
+        cost_basis: unknown
+      outcome: passed
+validators_routed: true

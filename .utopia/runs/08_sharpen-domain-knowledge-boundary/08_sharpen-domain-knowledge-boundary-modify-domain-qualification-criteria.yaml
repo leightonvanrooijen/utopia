@@ -1,0 +1,56 @@
+workitem_id: 08_sharpen-domain-knowledge-boundary-modify-domain-qualification-criteria
+cr_id: 08_sharpen-domain-knowledge-boundary
+spec_ref: 08_sharpen-domain-knowledge-boundary.modify-domain-qualification-criteria
+iterations: 1
+completed_at: 2026-07-31T19:56:40.131963+10:00
+outcome: completed
+status: unprocessed
+transcript: |-
+  --- iteration 1 ---
+  Found actual code file. Let's inspect it.This is the exact feature to modify. Let's read it.Now check for tests referencing this prompt text that may need updates.No tests hardcode that prompt text. Let's build/vet.Build and tests pass. Now revert the incidental status-file diff (in_progress/iteration_count) isn't ours to touch beyond the task — leave it, it's tracker bookkeeping. Commit.<COMPLETE>
+routing:
+  cr_type: enhancement
+  attempts:
+    - iteration: 1
+      role: default-executor
+      model: sonnet
+      effort: medium
+      usage:
+        available: true
+        model: claude-sonnet-5
+        effort: medium
+        input_tokens: 62
+        output_tokens: 8999
+        cache_read_tokens: 1726655
+        cache_creation_tokens: 49638
+        turns: 35
+        duration_ms: 157005
+        cost_usd: 0.9509955000000001
+        cost_basis: unknown
+      outcome: passed
+  sonnet_attempts: 1
+  opus_execution_attempts: 0
+  mechanical_failures: 0
+  comprehension_failures: 0
+  reclassified_failures: 0
+  scoping_escalations: 0
+  spec_rewritten: false
+  outcome: passed
+  duration_seconds: 258.172239208
+  duration: 4m18s
+  cost_note: 'Cost here is measured, not approximated by tier: each attempt carries the token counts and the dollar figure the claude CLI reported for it, with the basis that says what the dollars mean (ADR-007). The counters beside them - attempts, sonnet_attempts, opus_execution_attempts - count routing, not spend. Every attempt''s token counts and cost were read.'
+usage:
+  - iteration: 1
+    role: default-executor
+    outcome: passed
+    available: true
+    model: claude-sonnet-5
+    effort: medium
+    input_tokens: 62
+    output_tokens: 8999
+    cache_read_tokens: 1726655
+    cache_creation_tokens: 49638
+    turns: 35
+    duration_ms: 157005
+    cost_usd: 0.9509955000000001
+    cost_basis: unknown
