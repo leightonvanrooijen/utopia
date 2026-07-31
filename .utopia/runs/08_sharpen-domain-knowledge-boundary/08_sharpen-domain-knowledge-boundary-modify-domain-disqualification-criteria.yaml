@@ -1,0 +1,58 @@
+workitem_id: 08_sharpen-domain-knowledge-boundary-modify-domain-disqualification-criteria
+cr_id: 08_sharpen-domain-knowledge-boundary
+spec_ref: 08_sharpen-domain-knowledge-boundary.modify-domain-disqualification-criteria
+iterations: 1
+completed_at: 2026-07-31T19:59:34.613979+10:00
+outcome: completed
+status: unprocessed
+transcript: |-
+  --- iteration 1 ---
+  Now check the qualification_test.go for existing test pattern to add coverage for this new criterion.Now update the work item status to completed, matching the sibling work item's pattern.Committed. Disqualification check added to harvest.go's Domain Qualification block, work item marked completed.
+
+  <COMPLETE>
+routing:
+  cr_type: enhancement
+  attempts:
+    - iteration: 1
+      role: default-executor
+      model: sonnet
+      effort: medium
+      usage:
+        available: true
+        model: claude-sonnet-5
+        effort: medium
+        input_tokens: 30
+        output_tokens: 4808
+        cache_read_tokens: 747266
+        cache_creation_tokens: 35283
+        turns: 17
+        duration_ms: 81578
+        cost_usd: 0.5080878
+        cost_basis: unknown
+      outcome: passed
+  sonnet_attempts: 1
+  opus_execution_attempts: 0
+  mechanical_failures: 0
+  comprehension_failures: 0
+  reclassified_failures: 0
+  scoping_escalations: 0
+  spec_rewritten: false
+  outcome: passed
+  duration_seconds: 174.294211667
+  duration: 2m54s
+  cost_note: 'Cost here is measured, not approximated by tier: each attempt carries the token counts and the dollar figure the claude CLI reported for it, with the basis that says what the dollars mean (ADR-007). The counters beside them - attempts, sonnet_attempts, opus_execution_attempts - count routing, not spend. Every attempt''s token counts and cost were read.'
+usage:
+  - iteration: 1
+    role: default-executor
+    outcome: passed
+    available: true
+    model: claude-sonnet-5
+    effort: medium
+    input_tokens: 30
+    output_tokens: 4808
+    cache_read_tokens: 747266
+    cache_creation_tokens: 35283
+    turns: 17
+    duration_ms: 81578
+    cost_usd: 0.5080878
+    cost_basis: unknown

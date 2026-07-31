@@ -57,3 +57,24 @@ order: 2
 source_feature_id: modify-domain-disqualification-criteria
 estimated_complexity: medium
 iteration_count: 1
+selected_validators:
+    - spec-intent
+executor_attempts:
+    - iteration: 1
+      role: default-executor
+      model: sonnet
+      effort: medium
+      usage:
+        available: true
+        model: claude-sonnet-5
+        effort: medium
+        input_tokens: 30
+        output_tokens: 4808
+        cache_read_tokens: 747266
+        cache_creation_tokens: 35283
+        turns: 17
+        duration_ms: 81578
+        cost_usd: 0.5080878
+        cost_basis: unknown
+      outcome: passed
+validators_routed: true
