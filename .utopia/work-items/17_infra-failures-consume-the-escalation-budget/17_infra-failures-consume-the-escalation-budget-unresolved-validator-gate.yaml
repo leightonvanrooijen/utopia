@@ -1,0 +1,128 @@
+id: 17_infra-failures-consume-the-escalation-budget-unresolved-validator-gate
+spec_ref: 17_infra-failures-consume-the-escalation-budget.unresolved-validator-gate
+title: |
+    A gate that blocked because a validator could not be run is not a verdict,
+    and the loop must not route it as one. It retries the gate; if the
+    validators still cannot run, the work item halts with the fault named
+    rather than being escalated through the comprehension path first.
+
+    Current behavior: the gate at ralph.go:666-712 routes an error-only
+    aggregate as a verdict about the work, so an item whose code is correct
+    and whose validator is unreachable escalates to the expensive executor,
+    rewrites its own change request, and halts - all without a single
+    statement having been made about the code.
+status: pending
+prompt: |-
+    ## TASK
+
+    A gate that blocked because a validator could not be run is not a verdict,
+    and the loop must not route it as one. It retries the gate; if the
+    validators still cannot run, the work item halts with the fault named
+    rather than being escalated through the comprehension path first.
+
+    Current behavior: the gate at ralph.go:666-712 routes an error-only
+    aggregate as a verdict about the work, so an item whose code is correct
+    and whose validator is unreachable escalates to the expensive executor,
+    rewrites its own change request, and halts - all without a single
+    statement having been made about the code.
+
+
+    Acceptance criteria:
+    - A gate failure carrying only validator invocation errors is routed as unresolved rather than as a validation failure
+    - An unresolved gate does not increment comprehension_count, does not escalate the executor, and does not trigger scoping escalation
+    - An unresolved gate does not overwrite the work item's last_validator_feedback with the infrastructure error, so a genuine earlier verdict is not lost
+    - Consecutive unresolved gates are bounded by the invocation-error cap and halt the item as needs_human naming the validator fault
+    - A gate failure carrying at least one real verdict routes on that verdict exactly as it does today
+    - The halt reason distinguishes "the validators could not run" from "the validators rejected the work"
+
+
+    ## REFERENCE
+
+    The following spec feature defines the correct behavior:
+
+    A failing validation gate routes on failure_class rather than on
+    iteration count.
+
+    A mechanical failure retries on the same executor and does not
+    count toward escalation, because the executor was not the
+    problem. A comprehension failure escalates the executor to the
+    higher tier, because the same executor re-reading the same
+    specification will re-derive the same wrong intent.
+
+    Mechanical retries are bounded separately. Enough of them in a
+    row is itself evidence of misunderstanding - a model that keeps
+    slipping in the same place is usually solving the wrong problem
+    - so the mechanical path reclassifies rather than retrying
+    indefinitely.
+
+
+    Acceptance criteria:
+    - A validation failure with failure_class mechanical retries on the default executor model
+    - A mechanical retry does not increment comprehension_count
+    - Exceeding the mechanical retry cap reclassifies the failure as comprehension and routes it accordingly
+    - A validation failure with failure_class comprehension increments comprehension_count
+    - When comprehension_count reaches 1, execution escalates to the escalated executor model
+    - When comprehension_count reaches 2, the work item routes to scoping escalation before execution is attempted again
+    - A verdict with spec_defect_suspected routes to scoping escalation regardless of comprehension_count
+    - Escalation state is persisted on the work item so it survives a resume rather than resetting to the default executor
+    - The routing decision for each iteration is logged with the failure class, the counter values, and the model selected
+
+
+
+    ## HINTS
+
+    - internal/ralph/ralph.go:666-712 is the gate-failure branch; routeValidationFailure is what must not see an error-only aggregate
+    - aggregateFromGate is internal/ralph/escalation.go:450
+    - recordFailureConclusions currently persists a `validator did not complete` line as a comprehension conclusion on the item - that is the artefact this task stops producing
+
+
+
+    ## STANDARDS
+
+    This project defines coding standards in .utopia/standards/. Before implementing, read the standards docs relevant to the files this task touches:
+
+    - id: cli-organization
+      description: How to structure cobra commands in internal/cli: thin handlers that own the CLI frame and delegate the algorithm to domain packages.
+      tags: go, cli, cobra, architecture
+      path: .utopia/standards/cli-organization.md
+    - id: error-handling
+      description: How errors are created, wrapped, matched, and surfaced: typed domain errors for branching, %w wrapping for infrastructure, one exit point in root.go.
+      tags: go, errors, cli
+      path: .utopia/standards/error-handling.md
+    - id: terminal-output
+      description: One shared output vocabulary (glyphs, banners, progress) routed through cobra's injectable writers so command output is consistent and testable.
+      tags: go, cli, ux, output
+      path: .utopia/standards/terminal-output.md
+
+
+    ## CONSTRAINTS
+
+    - This is a bugfix. The implementation must be corrected to match the spec.
+    - The acceptance criteria below are the source of truth for correct behavior.
+    - Fix only the behavior that deviates from the spec
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+    - You are running autonomously and non-interactively; never ask for, or wait on, human input
+    - When a genuine design choice arises, choose the best-justified option and implement it rather than deferring the decision to a human
+    - Record any non-obvious decision - rationale and the alternatives considered - in the commit or PR body, so PR review is the human checkpoint
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - This is a bugfix. The implementation must be corrected to match the spec.
+    - The acceptance criteria below are the source of truth for correct behavior.
+    - Fix only the behavior that deviates from the spec
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+    - You are running autonomously and non-interactively; never ask for, or wait on, human input
+    - When a genuine design choice arises, choose the best-justified option and implement it rather than deferring the decision to a human
+    - Record any non-obvious decision - rationale and the alternatives considered - in the commit or PR body, so PR review is the human checkpoint
+order: 2
+source_feature_id: unresolved-validator-gate
+estimated_complexity: medium

@@ -1,0 +1,136 @@
+id: 17_infra-failures-consume-the-escalation-budget-invocation-error-is-not-a-verdict
+spec_ref: 17_infra-failures-consume-the-escalation-budget.invocation-error-is-not-a-verdict
+title: |
+    An attempt whose claude invocation failed produced no judgement about the
+    work, so it must not be charged against the escalation budget. The caps
+    bound spend on evidence that the executor got it wrong; a crashed
+    subprocess is not that evidence, and letting it escalate spends the
+    expensive model on a fault the expensive model cannot fix.
+
+    Current behavior: chargeEscalatedAttempt (ralph.go:455) books the attempt
+    before it runs and the error path at ralph.go:547-551 records
+    AttemptErrored and continues without refunding, so two crashed
+    invocations exhausted the escalated executor's cap of 2 without either
+    producing a judgement about the code.
+
+    Expected behavior: infrastructure faults are still bounded, but on their
+    own counter. A claude binary that fails every time must not loop forever,
+    and it must also not be able to consume a work item's whole comprehension
+    budget before anyone reads the error.
+status: pending
+prompt: |-
+    ## TASK
+
+    An attempt whose claude invocation failed produced no judgement about the
+    work, so it must not be charged against the escalation budget. The caps
+    bound spend on evidence that the executor got it wrong; a crashed
+    subprocess is not that evidence, and letting it escalate spends the
+    expensive model on a fault the expensive model cannot fix.
+
+    Current behavior: chargeEscalatedAttempt (ralph.go:455) books the attempt
+    before it runs and the error path at ralph.go:547-551 records
+    AttemptErrored and continues without refunding, so two crashed
+    invocations exhausted the escalated executor's cap of 2 without either
+    producing a judgement about the code.
+
+    Expected behavior: infrastructure faults are still bounded, but on their
+    own counter. A claude binary that fails every time must not loop forever,
+    and it must also not be able to consume a work item's whole comprehension
+    budget before anyone reads the error.
+
+
+    Acceptance criteria:
+    - An attempt recorded as errored refunds the escalated-execution charge it was booked, on the same terms as an attempt skipped for a usage limit
+    - An errored attempt does not increment comprehension_count and does not escalate the executor
+    - Consecutive invocation errors are bounded by their own independently configurable cap, defaulting to 3
+    - A successful invocation resets the consecutive-error counter, so intermittent faults do not accumulate across an otherwise healthy run
+    - Exceeding the invocation-error cap halts the work item as needs_human with a reason that names the invocation failure rather than a comprehension failure
+    - The spend an errored attempt incurred is still recorded - the refund is of routing budget, not of accounting
+    - An errored attempt still counts toward max iterations, so a work item cannot run unbounded on errors alone
+    - The invocation-error cap is validated at load time on the same terms as the other caps
+    - An attempt that produced no verdict is not charged against the mechanical, comprehension or opus_execution_attempts caps
+
+
+    ## REFERENCE
+
+    The following spec feature defines the correct behavior:
+
+    Every escalation path is bounded, and exhausting a bound halts
+    the work item rather than looping.
+
+    The caps are set so that the worst case is roughly cost-neutral
+    against running the expensive model throughout, and the common
+    case is materially cheaper. They are independently configurable
+    because they are guesses, and the telemetry that would confirm
+    them does not exist yet.
+
+
+    Acceptance criteria:
+    - The mechanical retry cap, comprehension escalation cap, opus_execution_attempts cap and scoping_escalations cap are each independently configurable
+    - Default caps are 4 mechanical retries, 2 escalated execution attempts and 1 scoping escalation per change request
+    - Exceeding any cap marks the work item needs_human and halts it without further attempts
+    - A work item halted as needs_human is distinguishable from one that failed verification
+    - Halting one work item as needs_human does not abort the run - execution continues with the next change request
+    - A work item that fails on every available path terminates as needs_human rather than looping indefinitely
+    - Cap configuration is validated at load time, and a non-positive cap produces a clear error before execution starts
+
+
+
+    ## HINTS
+
+    - internal/ralph/ralph.go:547-551 is the error path that continues without refunding; ralph.go:505-512 is the working refund precedent for the usage-limit case
+    - chargeEscalatedAttempt and refundExecutorAttempt are the existing pair - reuse them rather than adding a second charging mechanism
+    - Caps live on the caps struct validated at load time per spec escalation-routing feature escalation-caps; the new cap belongs beside them and must be validated the same way
+    - domain.AttemptErrored (internal/domain/usage.go:135) already distinguishes the outcome; the routing side is what ignores it
+
+
+
+    ## STANDARDS
+
+    This project defines coding standards in .utopia/standards/. Before implementing, read the standards docs relevant to the files this task touches:
+
+    - id: cli-organization
+      description: How to structure cobra commands in internal/cli: thin handlers that own the CLI frame and delegate the algorithm to domain packages.
+      tags: go, cli, cobra, architecture
+      path: .utopia/standards/cli-organization.md
+    - id: error-handling
+      description: How errors are created, wrapped, matched, and surfaced: typed domain errors for branching, %w wrapping for infrastructure, one exit point in root.go.
+      tags: go, errors, cli
+      path: .utopia/standards/error-handling.md
+    - id: terminal-output
+      description: One shared output vocabulary (glyphs, banners, progress) routed through cobra's injectable writers so command output is consistent and testable.
+      tags: go, cli, ux, output
+      path: .utopia/standards/terminal-output.md
+
+
+    ## CONSTRAINTS
+
+    - This is a bugfix. The implementation must be corrected to match the spec.
+    - The acceptance criteria below are the source of truth for correct behavior.
+    - Fix only the behavior that deviates from the spec
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+    - You are running autonomously and non-interactively; never ask for, or wait on, human input
+    - When a genuine design choice arises, choose the best-justified option and implement it rather than deferring the decision to a human
+    - Record any non-obvious decision - rationale and the alternatives considered - in the commit or PR body, so PR review is the human checkpoint
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - This is a bugfix. The implementation must be corrected to match the spec.
+    - The acceptance criteria below are the source of truth for correct behavior.
+    - Fix only the behavior that deviates from the spec
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+    - You are running autonomously and non-interactively; never ask for, or wait on, human input
+    - When a genuine design choice arises, choose the best-justified option and implement it rather than deferring the decision to a human
+    - Record any non-obvious decision - rationale and the alternatives considered - in the commit or PR body, so PR review is the human checkpoint
+order: 0
+source_feature_id: invocation-error-is-not-a-verdict
+estimated_complexity: medium

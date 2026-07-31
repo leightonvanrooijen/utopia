@@ -1,0 +1,120 @@
+id: 17_infra-failures-consume-the-escalation-budget-halted-work-item-reset
+spec_ref: 17_infra-failures-consume-the-escalation-budget.halted-work-item-reset
+title: |
+    A work item halted as needs_human must be requeueable from the CLI.
+    Halting is a decision to stop and ask a human, not a decision to make the
+    item permanently unrunnable, and once the human has looked and acted the
+    item needs a supported way back into the queue.
+
+    Current behavior: sequential execution skips halted items
+    (ralph.go:210-215) and there is no command to requeue one, so resuming an
+    item means hand-editing six fields in its YAML - status, iteration_count,
+    comprehension_count, opus_execution_attempts,
+    comprehension_failures_total, and the stale feedback and conclusions.
+
+    Expected behavior: requeuing clears the routing state that caused the halt
+    and keeps the accounting that records what it cost - the counters exist to
+    bound the next attempt, the spend exists to describe the last one.
+status: pending
+prompt: |-
+    ## TASK
+
+    A work item halted as needs_human must be requeueable from the CLI.
+    Halting is a decision to stop and ask a human, not a decision to make the
+    item permanently unrunnable, and once the human has looked and acted the
+    item needs a supported way back into the queue.
+
+    Current behavior: sequential execution skips halted items
+    (ralph.go:210-215) and there is no command to requeue one, so resuming an
+    item means hand-editing six fields in its YAML - status, iteration_count,
+    comprehension_count, opus_execution_attempts,
+    comprehension_failures_total, and the stale feedback and conclusions.
+
+    Expected behavior: requeuing clears the routing state that caused the halt
+    and keeps the accounting that records what it cost - the counters exist to
+    bound the next attempt, the spend exists to describe the last one.
+
+
+    Acceptance criteria:
+    - A command requeues a halted work item by ID, setting it back to pending
+    - Requeuing clears iteration_count, comprehension_count, opus_execution_attempts, comprehension_failures_total and the consecutive-invocation-error counter
+    - Requeuing clears last_validator_feedback and failure_conclusions, so the next attempt is not handed a stale diagnosis
+    - The work item's recorded spend and the run record it belongs to are left intact
+    - Requeuing an item that is not halted is refused with a clear message rather than silently resetting a completed or in-progress item
+    - The command reports what it cleared, so the operator can see the item was reset rather than merely unblocked
+    - After requeuing, a normal execute run picks the item up in its usual order
+
+
+    ## REFERENCE
+
+    The following spec feature defines the correct behavior:
+
+    Track WorkItem status through execution.
+
+
+    Acceptance criteria:
+    - Status values are pending, in_progress, completed
+    - Status persisted to .utopia/work-items/<spec-id>/<item-id>.yaml
+    - Completed status includes iteration count
+    - In-progress status includes current iteration count
+
+
+
+    ## HINTS
+
+    - internal/ralph/ralph.go:210-215 is the skip that makes a halted item unrunnable
+    - domain.WorkItemNeedsHuman and WorkItemPending are internal/domain/workitem.go:34-37
+    - Per standard cli-organization the command is a thin handler in internal/cli delegating the reset to the domain package that owns WorkItem
+    - The store already round-trips work items - SaveWorkItemForSpec is the write side
+
+
+
+    ## STANDARDS
+
+    This project defines coding standards in .utopia/standards/. Before implementing, read the standards docs relevant to the files this task touches:
+
+    - id: cli-organization
+      description: How to structure cobra commands in internal/cli: thin handlers that own the CLI frame and delegate the algorithm to domain packages.
+      tags: go, cli, cobra, architecture
+      path: .utopia/standards/cli-organization.md
+    - id: error-handling
+      description: How errors are created, wrapped, matched, and surfaced: typed domain errors for branching, %w wrapping for infrastructure, one exit point in root.go.
+      tags: go, errors, cli
+      path: .utopia/standards/error-handling.md
+    - id: terminal-output
+      description: One shared output vocabulary (glyphs, banners, progress) routed through cobra's injectable writers so command output is consistent and testable.
+      tags: go, cli, ux, output
+      path: .utopia/standards/terminal-output.md
+
+
+    ## CONSTRAINTS
+
+    - This is a bugfix. The implementation must be corrected to match the spec.
+    - The acceptance criteria below are the source of truth for correct behavior.
+    - Fix only the behavior that deviates from the spec
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+    - You are running autonomously and non-interactively; never ask for, or wait on, human input
+    - When a genuine design choice arises, choose the best-justified option and implement it rather than deferring the decision to a human
+    - Record any non-obvious decision - rationale and the alternatives considered - in the commit or PR body, so PR review is the human checkpoint
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - This is a bugfix. The implementation must be corrected to match the spec.
+    - The acceptance criteria below are the source of truth for correct behavior.
+    - Fix only the behavior that deviates from the spec
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+    - You are running autonomously and non-interactively; never ask for, or wait on, human input
+    - When a genuine design choice arises, choose the best-justified option and implement it rather than deferring the decision to a human
+    - Record any non-obvious decision - rationale and the alternatives considered - in the commit or PR body, so PR review is the human checkpoint
+order: 3
+source_feature_id: halted-work-item-reset
+estimated_complexity: medium
