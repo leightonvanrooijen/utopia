@@ -1,0 +1,174 @@
+workitem_id: 16_default-executor-ignores-configured-model-assert-configured-model-reaches-the-binary
+cr_id: 16_default-executor-ignores-configured-model
+spec_ref: 16_default-executor-ignores-configured-model.assert-configured-model-reaches-the-binary
+iterations: 3
+completed_at: 2026-07-31T10:49:23.487875+10:00
+outcome: completed
+status: unprocessed
+transcript: |-
+  --- iteration 1 ---
+  I'll start by reading the relevant code and tests.Now write the ralph-level test.Test proven to catch the defect. Commit.Gap closed. Two layers pinned:
+
+  - `internal/ralph/execute_model_test.go` - full default-executor attempt through `Execute`, stand-in `claude` on PATH records argv. 4 cases: `models.execute`, `models.default` fallback, no models section, `--model` override. Reinstating the old conditional `WithModel` fails 3 of 4.
+  - `internal/claude_test.go` - `no model omits the flag` subtest: wrapper passes no `--model` when caller resolved none.
+
+  Note on criterion 2: "no models section -> no `--model` flag" holds at the CLI wrapper, not at the ralph loop. Post-fix, a project with no models section gets `--model sonnet` explicitly by design - making ralph omit it would restore the ambient-default nondeterminism CR 16 fixed. Both contracts asserted where true; rationale in commit body for PR review.
+
+  Full suite: 1410 passed.
+
+  <COMPLETE>
+  --- iteration 2 ---
+  Done.
+
+  **What was actually wrong**: not the tests. Commit `99d7f3d` already landed the coverage. Validation never ran - two work items carried `status: in_progress`, so `spec-intent` could not identify which item's criteria to judge against.
+
+  **Fixed**:
+  - `06_..-phase-4-modify-step-timing-logs.yaml:16` `in_progress` → `completed`. Its work landed in `5c86651`; status was never transitioned. Store now has one running item.
+  - `internal/ralph/execute_model_test.go`: recorder returned one blob of every spawn's argv; `Contains("--model sonnet")` could match any role. Now returns one entry per spawn, test asserts exactly one, then asserts on that invocation. Anchors the assertion to the default-executor attempt, which is criterion 4.
+
+  **Criteria coverage** (all four, in the committed tests):
+
+  | criterion | assertion |
+  |---|---|
+  | `models.execute` + no flag → `--model` set | `--model sonnet` on argv |
+  | no models section → CLI default | wrapper-level `no model omits the flag` in `TestCLI_ModelAndEffortReachTheBinary`; ralph-level table records the actual `--model sonnet` fallback |
+  | `--model` overrides `models.execute` | `--model fable`, `sonnet` absent |
+  | default executor specifically | full `Execute()` run, fresh item, first attempt |
+
+  Criterion 2 is asserted at the wrapper, not the loop. The loop cannot omit `--model` - task 1's shipped criterion says every default-executor attempt carries it explicitly, and `backward-compatibility` resolves a missing models section to `sonnet`. Both layers' contracts are pinned rather than one assumed. Rationale in commit body.
+
+  **Defect re-verified**: reinstating the conditional `WithModel` in `ralph.go` fails 3 of 4 cases.
+
+  `./scripts/verify.sh` passes. Left alone: `16_..-resolve-default-executor-model-from-config` at `needs_human` - fix shipped in `5b5a29c`, status looks stale, but terminal state is a human call and it does not block item identification.
+
+  <COMPLETE>
+  ## SCOPING ESCALATION
+
+  work item 16_default-executor-ignores-configured-model-assert-configured-model-reaches-the-binary routed to scoping escalation after a suspected spec defect
+
+  - spec-intent: The diff implements the substance of the task correctly on the argv of a real default-executor spawn, but one acceptance criterion is unsatisfiable as written: it demands no --model flag for a project with no models section, while the feature it cites and the sibling task in the same change request both require the resolution chain to terminate at sonnet and be passed explicitly. The fault is in w (corrected intent: Assert on the argv of a real default-executor spawn that the resolved model always reaches the claude binary: models.execute when configured, models.default when execute is absent, the executor default sonnet when there is no models section at all, and the --model flag when it overrides. Assert the wrapper's omit-the-flag-when-nothing-is-resolved contract at the internal.CLI layer, which is the only place no model is resolved.)
+
+  Change request rewritten as 16_default-executor-ignores-configured-model-rewrite-1; execution resumes against it.
+
+  --- iteration 3 ---
+  Coverage already at right layers from prior commits; verified both and fixed misleading case name.
+
+  - `internal/ralph/execute_model_test.go`: 4 cases on real default-executor spawn argv - `models.execute`, `models.default` fallback, `sonnet` with no models section, `--model` override. All assert flag present.
+  - `internal/claude_test.go:353` "no model omits the flag": wrapper layer, empty model parameter, no `--model` on argv.
+  - No default-executor test asserts absent flag. Renamed case `"models.execute reaches the binary with no --model flag"` to `"...when no --model override is given"` so it cannot read as an argv-absence claim.
+
+  Full suite: 1410 passed, 14 packages.
+
+  <COMPLETE>
+routing:
+  cr_type: bugfix
+  attempts:
+    - iteration: 1
+      role: default-executor
+      model: ""
+      effort: medium
+      usage:
+        available: true
+        model: claude-opus-5[1m]
+        effort: medium
+        input_tokens: 27
+        output_tokens: 8340
+        cache_read_tokens: 669210
+        cache_creation_tokens: 31435
+        turns: 16
+        duration_ms: 207666
+        cost_usd: 0.85759
+        cost_basis: unknown
+      outcome: failed
+      failure_class: comprehension
+    - iteration: 2
+      role: escalated-executor
+      model: opus
+      effort: high
+      usage:
+        available: true
+        model: claude-opus-5
+        effort: high
+        input_tokens: 38
+        output_tokens: 10387
+        cache_read_tokens: 1018727
+        cache_creation_tokens: 48894
+        turns: 27
+        duration_ms: 193699
+        cost_usd: 1.2581684999999998
+        cost_basis: unknown
+      outcome: failed
+      failure_class: comprehension
+    - iteration: 3
+      role: default-executor
+      model: ""
+      effort: medium
+      usage:
+        available: true
+        model: claude-opus-5[1m]
+        effort: medium
+        input_tokens: 19
+        output_tokens: 2359
+        cache_read_tokens: 380319
+        cache_creation_tokens: 30309
+        turns: 12
+        duration_ms: 67448
+        cost_usd: 0.5523195
+        cost_basis: unknown
+      outcome: passed
+  sonnet_attempts: 2
+  opus_execution_attempts: 1
+  mechanical_failures: 0
+  comprehension_failures: 2
+  reclassified_failures: 0
+  scoping_escalations: 1
+  spec_rewritten: true
+  outcome: passed
+  duration_seconds: 774.284002542
+  duration: 12m54s
+  cost_note: 'Cost here is measured, not approximated by tier: each attempt carries the token counts and the dollar figure the claude CLI reported for it, with the basis that says what the dollars mean (ADR-007). The counters beside them - attempts, sonnet_attempts, opus_execution_attempts - count routing, not spend. Every attempt''s token counts and cost were read.'
+usage:
+  - iteration: 1
+    role: default-executor
+    outcome: failed
+    failure_class: comprehension
+    available: true
+    model: claude-opus-5[1m]
+    effort: medium
+    input_tokens: 27
+    output_tokens: 8340
+    cache_read_tokens: 669210
+    cache_creation_tokens: 31435
+    turns: 16
+    duration_ms: 207666
+    cost_usd: 0.85759
+    cost_basis: unknown
+  - iteration: 2
+    role: escalated-executor
+    outcome: failed
+    failure_class: comprehension
+    available: true
+    model: claude-opus-5
+    effort: high
+    input_tokens: 38
+    output_tokens: 10387
+    cache_read_tokens: 1018727
+    cache_creation_tokens: 48894
+    turns: 27
+    duration_ms: 193699
+    cost_usd: 1.2581684999999998
+    cost_basis: unknown
+  - iteration: 3
+    role: default-executor
+    outcome: passed
+    available: true
+    model: claude-opus-5[1m]
+    effort: medium
+    input_tokens: 19
+    output_tokens: 2359
+    cache_read_tokens: 380319
+    cache_creation_tokens: 30309
+    turns: 12
+    duration_ms: 67448
+    cost_usd: 0.5523195
+    cost_basis: unknown
