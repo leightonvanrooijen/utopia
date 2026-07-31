@@ -6,7 +6,7 @@ title: |
     committed to git, git history becomes the time series: questions like "why
     was that run slow" and "is this getting worse" are answerable with a query
     over the repository, with no collector or telemetry backend involved.
-status: pending
+status: in_progress
 prompt: |-
     ## TASK
 
@@ -81,3 +81,4 @@ constraints:
 order: 0
 source_feature_id: run-span-persistence
 estimated_complexity: medium
+iteration_count: 1

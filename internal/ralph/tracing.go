@@ -3,13 +3,16 @@ package ralph
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
 
+	"github.com/leightonvanrooijen/utopia/internal/domain"
 	"github.com/leightonvanrooijen/utopia/internal/ui"
 )
 
@@ -92,6 +95,86 @@ func (c *spanCollector) sumChildDurations(parent trace.SpanID, name string) time
 		}
 	}
 	return total
+}
+
+// spansUnder returns every ended span that is the span identified by root, or
+// a transitive child of it. Membership is resolved by repeated passes over
+// c.spans rather than assuming parents were appended before their children,
+// since sibling spans - a work item's successive Claude invocations, a
+// validator run alongside verification - can end in either order.
+//
+// A span that has not ended yet is simply not in c.spans, so it is absent from
+// the result rather than reported with a zero duration. That is what lets a
+// run that fails before its own span ends still persist every child span that
+// finished before the failure.
+func (c *spanCollector) spansUnder(root trace.SpanID) []sdktrace.ReadOnlySpan {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	include := map[trace.SpanID]bool{root: true}
+	var result []sdktrace.ReadOnlySpan
+	for _, s := range c.spans {
+		if s.SpanContext().SpanID() == root {
+			result = append(result, s)
+		}
+	}
+	for {
+		added := false
+		for _, s := range c.spans {
+			id := s.SpanContext().SpanID()
+			if include[id] {
+				continue
+			}
+			if include[s.Parent().SpanID()] {
+				include[id] = true
+				result = append(result, s)
+				added = true
+			}
+		}
+		if !added {
+			break
+		}
+	}
+	return result
+}
+
+// spanRecordsUnder converts spansUnder(root) into the persisted domain.Span
+// shape, ordered by start time so the same run's record reads the same way on
+// every write.
+func (c *spanCollector) spanRecordsUnder(root trace.SpanID) []domain.Span {
+	spans := c.spansUnder(root)
+	sort.Slice(spans, func(i, j int) bool { return spans[i].StartTime().Before(spans[j].StartTime()) })
+
+	records := make([]domain.Span, 0, len(spans))
+	for _, s := range spans {
+		var parentID string
+		if p := s.Parent().SpanID(); p.IsValid() {
+			parentID = p.String()
+		}
+		records = append(records, domain.Span{
+			Name:         s.Name(),
+			SpanID:       s.SpanContext().SpanID().String(),
+			ParentSpanID: parentID,
+			StartTime:    s.StartTime(),
+			DurationMS:   s.EndTime().Sub(s.StartTime()).Milliseconds(),
+			Attributes:   attributesToMap(s.Attributes()),
+		})
+	}
+	return records
+}
+
+// attributesToMap renders a span's typed attributes as strings, so the
+// persisted record does not carry OpenTelemetry's attribute.KeyValue type into
+// domain, which stays free of tracing dependencies.
+func attributesToMap(attrs []attribute.KeyValue) map[string]string {
+	if len(attrs) == 0 {
+		return nil
+	}
+	m := make(map[string]string, len(attrs))
+	for _, a := range attrs {
+		m[string(a.Key)] = a.Value.Emit()
+	}
+	return m
 }
 
 // newTracerProvider creates a TracerProvider over an in-process collector and

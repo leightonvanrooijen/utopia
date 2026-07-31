@@ -186,6 +186,8 @@ func newWorkItemRun(
 	// wall clock and change request type its routing record needs.
 	r.rec = newRunRecorder(crType)
 	r.rec.out = out
+	r.rec.collector = collector
+	r.rec.itemSpanID = itemSpan.SpanContext().SpanID()
 
 	r.itemPayload = basePayload
 	r.itemPayload.WorkItemID = item.ID

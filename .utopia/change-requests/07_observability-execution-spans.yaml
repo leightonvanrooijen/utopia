@@ -4,7 +4,7 @@ title: Replace hand-rolled step timing with the OpenTelemetry trace model and pe
 status: in-progress
 phases:
     - type: refactor
-      status: in-progress
+      status: complete
       tasks:
         - id: adopt-otel-trace-model
           description: |
@@ -45,6 +45,7 @@ phases:
             - The span total must stay measured rather than summed - the existing comment in timing.go explains why, and the parent span duration preserves that property for free
             - Capture the decision to adopt the OpenTelemetry data model without OTLP transport as an ADR, including the reasoning that a short-lived CLI gains little from a collector
     - type: feature
+      status: in-progress
       changes:
         - operation: add
           spec: observability
@@ -70,3 +71,4 @@ phases:
                 - Mirror the non-blocking, warn-on-failure behaviour of the existing workitem-commit feature
                 - Reuse the yaml-formatting package so the record stays consistent with other Utopia YAML
                 - Keep the persisted shape close to the OpenTelemetry span model so an OTLP exporter added later serialises the same data
+current_phase: 1

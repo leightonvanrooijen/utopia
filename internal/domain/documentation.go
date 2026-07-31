@@ -169,6 +169,35 @@ type ExecutionRun struct {
 	// was persisted. Consumers go through UsageTotals rather than summing the slice
 	// directly, because that distinction is what UsageTotals keeps.
 	Usage []UsageEntry `yaml:"usage,omitempty"`
+
+	// Spans is the run's collected span tree: the work item's own span, when it
+	// had already ended at write time, and every claude, verification,
+	// validator, and connector span recorded beneath it. It rides on the run
+	// record rather than a parallel file for the same reason Routing and Usage
+	// do - one directory, one git history, one file per work item to read.
+	//
+	// The shape mirrors the OpenTelemetry span model (name, start time,
+	// duration, parent, attributes) rather than a bespoke summary, so an OTLP
+	// exporter added later serialises the same data, and a yq query over
+	// .spans[] selecting by name is how the claude/verification/validator
+	// totals are read back without re-deriving them from Transcript.
+	//
+	// A run that fails before its own span ends still has this populated with
+	// whatever child spans finished before the failure; only spans that had
+	// not yet ended when the record was written are absent.
+	Spans []Span `yaml:"spans,omitempty"`
+}
+
+// Span is one persisted span from a run's collected trace: a work item's own
+// span, or a child span for a Claude invocation, a verification run, a
+// validator join, or a connector handle resolution.
+type Span struct {
+	Name         string            `yaml:"name"`
+	SpanID       string            `yaml:"span_id"`
+	ParentSpanID string            `yaml:"parent_span_id,omitempty"`
+	StartTime    time.Time         `yaml:"start_time"`
+	DurationMS   int64             `yaml:"duration_ms"`
+	Attributes   map[string]string `yaml:"attributes,omitempty"`
 }
 
 // RoutingOutcome records how a work item's routing ended. It is a separate

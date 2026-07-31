@@ -100,6 +100,57 @@ func TestWriteRunTranscript_CarriesTheRoutingRecord(t *testing.T) {
 	}
 }
 
+// The run record's spans come from whatever the recorder's collector has
+// under its item span at write time, so a recorder wired to a real tracer
+// persists the item's span tree alongside the routing record it already
+// carried.
+func TestWriteRunTranscript_PersistsCollectedSpans(t *testing.T) {
+	store := internal.NewYAMLStore(t.TempDir())
+	item := routedItem()
+
+	tp, collector := newTracerProvider()
+	tracer := tp.Tracer(tracerName)
+	rootCtx, root := tracer.Start(context.Background(), "workitem-started")
+	_, claude := tracer.Start(rootCtx, "claude")
+	claude.End()
+	root.End()
+
+	rec := recorderWith(domain.CRTypeFeature, "out")
+	rec.collector = collector
+	rec.itemSpanID = root.SpanContext().SpanID()
+
+	writeRunTranscript(store, "cr-1", item, rec, domain.RunCompleted)
+
+	run, err := internal.Load[domain.ExecutionRun](store, "runs/cr-1/cr-1-phase-0-add-thing.yaml")
+	if err != nil {
+		t.Fatalf("run record should be written: %v", err)
+	}
+	if len(run.Spans) != 2 {
+		t.Fatalf("spans = %+v, want the item span and its claude child", run.Spans)
+	}
+	if run.Spans[0].Name != "workitem-started" || run.Spans[1].Name != "claude" {
+		t.Errorf("spans = %+v, want the root then its child", run.Spans)
+	}
+}
+
+// A recorder that was never wired to a tracer - every test that builds one
+// directly, and any call site that predates this feature - must not panic and
+// must leave the record with no spans rather than a nil-pointer dereference.
+func TestWriteRunTranscript_NoCollectorLeavesSpansEmpty(t *testing.T) {
+	store := internal.NewYAMLStore(t.TempDir())
+	item := routedItem()
+
+	writeRunTranscript(store, "cr-1", item, recorderWith(domain.CRTypeFeature, "out"), domain.RunCompleted)
+
+	run, err := internal.Load[domain.ExecutionRun](store, "runs/cr-1/cr-1-phase-0-add-thing.yaml")
+	if err != nil {
+		t.Fatalf("run record should be written: %v", err)
+	}
+	if len(run.Spans) != 0 {
+		t.Errorf("spans = %+v, want none when the recorder carries no collector", run.Spans)
+	}
+}
+
 // The record has to exist for the outcomes that are worth arguing about, which
 // are the ones where nothing was delivered.
 func TestWriteRunTranscript_WrittenOnEveryOutcome(t *testing.T) {

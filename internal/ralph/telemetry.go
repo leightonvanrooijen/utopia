@@ -5,6 +5,8 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
 	"github.com/leightonvanrooijen/utopia/internal/ui"
@@ -39,6 +41,14 @@ type runRecorder struct {
 	// every path that persists a record already carries one; nil means the
 	// process's own streams.
 	out *ui.Printer
+	// collector and itemSpanID let writeRunTranscript pull this item's span
+	// tree at write time. Both are set once, in newWorkItemRun, from the same
+	// tracer the item's stages start their spans against. collector is nil for
+	// a recorder built without one - every test that constructs a runRecorder
+	// directly - so the spans lookup is skipped rather than dereferencing a
+	// tracer that was never wired in.
+	collector  *spanCollector
+	itemSpanID trace.SpanID
 }
 
 // newRunRecorder starts a work item's run record.
@@ -271,6 +281,9 @@ func writeRunTranscript(store *internal.YAMLStore, crID string, item *domain.Wor
 		Transcript: rec.transcript.String(),
 		Routing:    routingRecordFor(item, rec.crType, routingOutcomeFor(item, outcome), rec.elapsed()),
 		Usage:      domain.UsageEntriesFor(item.ExecutorAttempts),
+	}
+	if rec.collector != nil {
+		run.Spans = rec.collector.spanRecordsUnder(rec.itemSpanID)
 	}
 	if err := store.SaveExecutionRun(run); err != nil {
 		ui.OrDefault(rec.out).Progressf("  warning: failed to write run record for %s: %v\n", item.ID, err)

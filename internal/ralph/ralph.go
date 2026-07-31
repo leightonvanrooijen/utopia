@@ -439,9 +439,12 @@ func executeWorkItem(
 		if err := r.markWorkItemCompleted(); err != nil {
 			return "", err
 		}
+		// The item's span ends here, before the record is written, so the
+		// persisted spans include the item's own total rather than only its
+		// children - the deferred catch-all above is a no-op once this runs.
+		r.endItemSpan(nil)
 		r.recordCompletedRun()
 		r.commitWorkItem()
-		r.endItemSpan(nil)
 		return r.timingSummary(), nil
 	}
 }
