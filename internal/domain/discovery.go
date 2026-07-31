@@ -421,6 +421,62 @@ func (c SpecQualificationCriteria) FormatForAgent() string {
 }
 
 // =============================================================================
+// Domain Knowledge Boundary
+// =============================================================================
+
+// DomainKnowledgeBoundary defines the line between a spec's domain_knowledge
+// and Domain documentation. Both capture domain understanding, but they own
+// different content: Domain docs own ubiquitous language (terms, canonical
+// definitions, aliases, entity relationships) that holds regardless of any
+// one spec's existence; a spec's domain_knowledge owns implementation
+// invariants (constraints, assumptions, design rules) that are only
+// meaningful in service of that spec's features and are not themselves
+// testable acceptance criteria.
+//
+// Domain discovery (adoption) and harvest signal detection (harvest) apply
+// this boundary to route candidates to the correct home instead of routing
+// everything domain-shaped into Domain docs.
+type DomainKnowledgeBoundary struct{}
+
+// BoundaryRules returns the rules that decide where a piece of domain
+// understanding belongs.
+func (b DomainKnowledgeBoundary) BoundaryRules() []string {
+	return []string{
+		"A noun or term used when talking about the system belongs in Domain docs",
+		"A relationship between entities belongs in Domain docs",
+		"A constraint or assumption an implementer of one spec must respect belongs in that spec's domain_knowledge",
+	}
+}
+
+// LitmusTests returns the questions that resolve cases the rules alone
+// don't settle.
+func (b DomainKnowledgeBoundary) LitmusTests() []string {
+	return []string{
+		"Would this still be true and useful if the spec were deleted? YES = Domain doc, NO = spec domain_knowledge",
+		"Is this only meaningful in the context of one spec's features? YES = spec domain_knowledge",
+	}
+}
+
+// FormatForAgent returns the boundary criteria formatted for inclusion in
+// agent prompts, positioned alongside the domain qualification and
+// disqualification criteria so a single read covers where domain-shaped
+// content belongs end to end.
+func (b DomainKnowledgeBoundary) FormatForAgent() string {
+	var sb strings.Builder
+
+	sb.WriteString("## Domain Knowledge Boundary (spec domain_knowledge vs. Domain docs)\n")
+	for _, r := range b.BoundaryRules() {
+		sb.WriteString(fmt.Sprintf("- %s\n", r))
+	}
+	sb.WriteString("\nLitmus tests:\n")
+	for _, l := range b.LitmusTests() {
+		sb.WriteString(fmt.Sprintf("- %s\n", l))
+	}
+
+	return strings.TrimSuffix(sb.String(), "\n")
+}
+
+// =============================================================================
 // Draft Spec Types
 // =============================================================================
 

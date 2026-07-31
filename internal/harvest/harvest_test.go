@@ -732,6 +732,7 @@ func composeTestPromptWithoutRuns() string { return composeTestPromptIncludingRu
 func composeTestPromptIncludingRuns(includeRuns bool) string {
 	return fmt.Sprintf(harvestSystemPrompt,
 		"CONVS", "ADRS", "CONCEPTS", "DOMAINDOCS", "READMESIGNALS", "REWRITES",
+		"BOUNDARY",
 		markedSourcesPhrase(includeRuns),
 		"/adrs-dir", "/concepts-dir", "/domain-dir",
 		buildMarkProcessedInstructions("/conversations-dir", "/runs-dir", includeRuns),

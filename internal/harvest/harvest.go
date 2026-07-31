@@ -307,6 +307,12 @@ does not.
 - Cross-reference every term surfaced from a run to its CR and its originating
   conversation, and record the run when creating or updating the document
 
+%s
+
+A candidate that reads as an implementation invariant rather than vocabulary does not
+qualify as a Domain doc candidate - it belongs in the relevant spec's domain_knowledge
+instead.
+
 For EACH qualified candidate, capture:
 - **ID**: Unique identifier (adr-1, concept-1, domain-1, etc.)
 - **Type**: adr, concept, or domain
@@ -709,6 +715,7 @@ func Run(ctx context.Context, store *internal.YAMLStore, opts Options) (*Result,
 		domainDocsSummary,
 		readmeSignalsSummary,
 		rewritesSummary,
+		domain.DomainKnowledgeBoundary{}.FormatForAgent(),
 		markedSourcesPhrase(opts.IncludeRuns),
 		adrsDir,
 		conceptsDir,

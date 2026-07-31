@@ -25,6 +25,11 @@ Analyze the provided codebase context and identify bounded contexts with their d
 ## Existing Domain Documents
 %s
 
+%s
+A candidate that is a spec-local constraint or assumption, rather than a term, definition,
+or entity relationship, does not belong in a Domain document - it belongs in that spec's
+domain_knowledge instead. Leave it out of the draft.
+
 ## Output Format
 Generate draft domain documents in this EXACT YAML format:
 
@@ -130,7 +135,7 @@ func Domain(ctx context.Context, store *internal.YAMLStore, opts DomainOptions) 
 	prog.EndPhase(fmt.Sprintf("%d files found", len(filesAnalyzed)))
 
 	domainDocsSummary := buildExistingDomainDocsSummary(opts.ExistingDocs)
-	systemPrompt := fmt.Sprintf(domainSystemPrompt, codebaseContext, domainDocsSummary)
+	systemPrompt := fmt.Sprintf(domainSystemPrompt, codebaseContext, domainDocsSummary, domain.DomainKnowledgeBoundary{}.FormatForAgent())
 
 	prog.StartPhase(2, "Analyzing codebase with Claude")
 	cli := internal.NewCLI().WithAuth(opts.Auth, layout.Root(opts.ProjectDir)).WithPrinter(out)
