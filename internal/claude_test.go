@@ -345,6 +345,23 @@ func TestCLI_ModelAndEffortReachTheBinary(t *testing.T) {
 		}
 	})
 
+	// No model resolved means no flag: a caller that has nothing configured to pass
+	// leaves the claude CLI on its own default rather than being handed one here.
+	// This is the wrapper's half of the contract - which model a role resolves is
+	// the caller's business, and the default executor's resolution is asserted on
+	// the spawned argv in TestExecute_DefaultExecutorModelReachesTheBinary.
+	t.Run("no model omits the flag", func(t *testing.T) {
+		cli, recorded := argRecordingClaude(t)
+
+		if _, err := cli.WithEffort("high").Prompt(context.Background(), "hello"); err != nil {
+			t.Fatalf("Prompt() error = %v", err)
+		}
+
+		if args := recorded(); strings.Contains(args, "--model") {
+			t.Errorf("claude args = %q, want no --model flag", args)
+		}
+	})
+
 	// No effort resolved means no flag, leaving the claude CLI on its own default.
 	t.Run("no effort omits the flag", func(t *testing.T) {
 		cli, recorded := argRecordingClaude(t)

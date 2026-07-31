@@ -9,7 +9,7 @@ title: |
     was missing is the counterpart: when a model IS configured, --model must be
     on the argv. The defect satisfied every existing test by taking the
     no-model-specified branch for a project that had in fact specified one.
-status: pending
+status: in_progress
 prompt: |-
     ## TASK
 
@@ -107,3 +107,4 @@ constraints:
 order: 1
 source_feature_id: assert-configured-model-reaches-the-binary
 estimated_complexity: medium
+iteration_count: 1
