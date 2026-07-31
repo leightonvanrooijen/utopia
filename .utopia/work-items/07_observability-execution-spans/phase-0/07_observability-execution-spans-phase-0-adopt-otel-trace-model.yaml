@@ -1,0 +1,117 @@
+id: 07_observability-execution-spans-phase-0-adopt-otel-trace-model
+spec_ref: 07_observability-execution-spans-phase-0.adopt-otel-trace-model
+title: |
+    internal/ralph/timing.go hand-rolls a span tree. stepTimings holds the
+    Claude, verification and validator durations and carries a comment
+    explaining that the total is measured rather than summed, because
+    validator runs overlap verification - a subtlety that parent and child
+    spans handle natively. internal/ralph/engine.go logResolution prints a
+    completed connector handle with its name, duration, exit code and error,
+    then discards it. Both are spans, written by hand, with no sink.
+
+    Replace the bespoke timing types with the OpenTelemetry trace API and
+    SDK. Adopt the data model only: an in-process span processor collects
+    spans so a later phase can persist them, and nothing is shipped over the
+    network. Because the model is standard, adding an OTLP exporter later is
+    an exporter registration rather than a re-modelling.
+
+    Every printed line stays byte-identical. This phase changes how timing is
+    represented internally, not what an operator sees.
+status: pending
+prompt: |-
+    ## TASK
+
+    internal/ralph/timing.go hand-rolls a span tree. stepTimings holds the
+    Claude, verification and validator durations and carries a comment
+    explaining that the total is measured rather than summed, because
+    validator runs overlap verification - a subtlety that parent and child
+    spans handle natively. internal/ralph/engine.go logResolution prints a
+    completed connector handle with its name, duration, exit code and error,
+    then discards it. Both are spans, written by hand, with no sink.
+
+    Replace the bespoke timing types with the OpenTelemetry trace API and
+    SDK. Adopt the data model only: an in-process span processor collects
+    spans so a later phase can persist them, and nothing is shipped over the
+    network. Because the model is standard, adding an OTLP exporter later is
+    an exporter registration rather than a re-modelling.
+
+    Every printed line stays byte-identical. This phase changes how timing is
+    represented internally, not what an operator sees.
+
+
+    Acceptance criteria:
+    - The go.opentelemetry.io/otel trace API and SDK are dependencies of the module
+    - The execution run is recorded as a root span, and each work item is a child span of it
+    - The Claude invocation, the verification command and each validator run are recorded as child spans of their work item span
+    - Validator runs that overlap verification are represented as concurrent sibling spans, not as summed durations
+    - Span attributes carry cr_id, spec_ref, work_item_id, iteration count and outcome
+    - Connector handle resolution is recorded as a span carrying the connector name, exit code, resolution state and error
+    - stepTimings is deleted and no hand-rolled duration aggregation remains in internal/ralph
+    - The step-timing summary line is byte-identical to before the change
+    - The handle resolution ledger lines are byte-identical to before the change
+    - No span data leaves the process - no OTLP endpoint, collector, or network call is configured
+    - go test ./... passes
+
+
+
+    ## HINTS
+
+    - The types to replace are stepTimings and its summary() renderer in internal/ralph/timing.go, and logResolution at internal/ralph/engine.go:190
+    - Instrumentation points already exist and are correctly bracketed - Claude at internal/ralph/ralph.go:264-266, verification at 343-345, validator join at 385-387, after-phase validators at 592-594 and 618-620
+    - Keep Duration() as the renderer so the printed form stays 1.2s and 3m04s
+    - internal/ralph/events.go already defines the lifecycle vocabulary (execution-started, workitem-started, workitem-verified, workitem-committed, phase-verified, execution-completed) with canonical constants in internal/domain - reuse those as span names rather than inventing new ones
+    - Register the in-process collector as a sdktrace.SpanProcessor so a second exporter can be added later without touching any call site
+    - The span total must stay measured rather than summed - the existing comment in timing.go explains why, and the parent span duration preserves that property for free
+    - Capture the decision to adopt the OpenTelemetry data model without OTLP transport as an ADR, including the reasoning that a short-lived CLI gains little from a collector
+
+
+
+    ## STANDARDS
+
+    This project defines coding standards in .utopia/standards/. Before implementing, read the standards docs relevant to the files this task touches:
+
+    - id: cli-organization
+      description: How to structure cobra commands in internal/cli: thin handlers that own the CLI frame and delegate the algorithm to domain packages.
+      tags: go, cli, cobra, architecture
+      path: .utopia/standards/cli-organization.md
+    - id: error-handling
+      description: How errors are created, wrapped, matched, and surfaced: typed domain errors for branching, %w wrapping for infrastructure, one exit point in root.go.
+      tags: go, errors, cli
+      path: .utopia/standards/error-handling.md
+    - id: terminal-output
+      description: One shared output vocabulary (glyphs, banners, progress) routed through cobra's injectable writers so command output is consistent and testable.
+      tags: go, cli, ux, output
+      path: .utopia/standards/terminal-output.md
+
+
+    ## CONSTRAINTS
+
+    - This is a refactor. Existing behavior MUST be preserved.
+    - All existing tests must pass without modification
+    - Do not introduce new abstractions, interfaces, or packages
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+    - You are running autonomously and non-interactively; never ask for, or wait on, human input
+    - When a genuine design choice arises, choose the best-justified option and implement it rather than deferring the decision to a human
+    - Record any non-obvious decision - rationale and the alternatives considered - in the commit or PR body, so PR review is the human checkpoint
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - This is a refactor. Existing behavior MUST be preserved.
+    - All existing tests must pass without modification
+    - Do not introduce new abstractions, interfaces, or packages
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+    - You are running autonomously and non-interactively; never ask for, or wait on, human input
+    - When a genuine design choice arises, choose the best-justified option and implement it rather than deferring the decision to a human
+    - Record any non-obvious decision - rationale and the alternatives considered - in the commit or PR body, so PR review is the human checkpoint
+order: 0
+source_feature_id: adopt-otel-trace-model
+estimated_complexity: medium
