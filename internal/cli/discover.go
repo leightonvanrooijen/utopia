@@ -307,7 +307,7 @@ func runDiscoverDomain(cmd *cobra.Command, args []string) error {
 	if len(result.ExcludedCandidates) > 0 {
 		out.Printf("\n%d candidate(s) excluded as spec-local implementation invariants:\n", len(result.ExcludedCandidates))
 		for _, c := range result.ExcludedCandidates {
-			out.Printf("  - %s -> route to spec %q via a change request\n", c.Name, c.LikelySpec)
+			out.Printf("  "+ui.Bullet+" %s -> route to spec %q via a change request\n", c.Name, c.LikelySpec)
 		}
 	}
 	out.Progressf("\nTotal elapsed time: %.1fs\n", time.Since(startTime).Seconds())

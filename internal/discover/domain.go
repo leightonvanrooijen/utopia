@@ -172,7 +172,7 @@ func Domain(ctx context.Context, store *internal.YAMLStore, opts DomainOptions) 
 	excluded := parseDomainExcludedCandidates(promptResult.Stdout)
 	result.ExcludedCandidates = convertExcludedCandidates(excluded)
 	for _, c := range result.ExcludedCandidates {
-		out.Progressf("  "+ui.Bullet+" excluded %q as a spec-local invariant - likely belongs to spec %q: %s\n", c.Name, c.LikelySpec, c.Description)
+		prog.Verbosef("\n  "+ui.Bullet+" excluded %q as a spec-local invariant - likely belongs to spec %q: %s", c.Name, c.LikelySpec, c.Description)
 	}
 
 	if len(drafts) == 0 {
