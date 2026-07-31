@@ -1,26 +1,46 @@
 id: conversations
 title: conversations
 created: "2026-02-25T21:51:25.164326+11:00"
-updated: "2026-07-29T16:47:03.908756+10:00"
+updated: "2026-07-31T20:20:53.754416+10:00"
 description: ""
 features:
     - id: conversation-persistence
       description: |
         Capture full transcript at session end from Claude's native session
         storage. Eliminates ANSI escape codes and terminal artifacts.
+
+        Utopia does not reconstruct the session file location. It injects a
+        SessionStart hook via inline --settings JSON; the hook writes its payload
+        to a Utopia-controlled file, and that payload's transcript_path field is
+        the authoritative location. Reading still happens at the Utopia level
+        after the session process exits, so an interrupted session is captured
+        just as reliably as a clean one - the hook only reports where to look,
+        it never performs the capture.
+
+        Reconstructing the path by encoding the working directory is retained
+        only as a fallback for sessions where no payload was produced.
       acceptance_criteria:
         - Utopia captures full transcript at session end
-        - Capture happens at Utopia level (not Claude hooks) for reliability
+        - Capture happens at Utopia level after the session process exits; Claude hooks only report where the transcript is stored and never perform the capture
         - Cannot be bypassed via Ctrl+C
         - Conversations stored in .utopia/conversations/
         - Metadata includes session timestamp and branch name
         - Metadata includes list of CRs created during session (with commit SHAs)
         - Metadata includes list of commits made during session
-        - Transcripts are read from Claude's session storage (~/.claude/projects/)
+        - Transcripts are read from the session file path Claude reports, rather than from a path Utopia derives from the working directory
         - ANSI escape codes are not present in saved transcripts
         - User and assistant messages are clearly separated
         - Tool calls are captured with their names
         - Full TUI experience is preserved during interactive sessions
+        - Utopia injects a SessionStart hook into interactive sessions via an inline --settings JSON argument
+        - The injected hook writes its stdin payload to a file path chosen by Utopia
+        - The transcript is read from the transcript_path field of the captured SessionStart payload
+        - Utopia does not write to .claude/settings.json or ~/.claude/settings.json to install the hook
+        - Hooks already configured by the user in their own settings files still fire during a Utopia session
+        - Transcript capture succeeds when the project directory is reached via a symbolic link
+        - When no SessionStart payload is available, capture falls back to the working-directory-encoded path
+        - A payload whose transcript_path is empty, or names a file that does not exist, is treated the same as a missing payload
+        - A fallback to the working-directory-encoded path is logged so silent capture loss is observable
 
     - id: conversation-lifecycle
       description: |
