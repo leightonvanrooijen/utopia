@@ -835,6 +835,17 @@ type DraftDomainEvidence struct {
 	Comments []string `yaml:"comments,omitempty"`
 }
 
+// ExcludedInvariantCandidate is a domain-discovery candidate that was left
+// out of every draft domain document because DomainKnowledgeBoundary
+// classifies it as a spec-local implementation invariant rather than
+// vocabulary. It is not silently dropped: LikelySpec records which spec's
+// domain_knowledge it should be routed to via a change request.
+type ExcludedInvariantCandidate struct {
+	Name        string `yaml:"name"`
+	Description string `yaml:"description"`
+	LikelySpec  string `yaml:"likely_spec"`
+}
+
 // HasTypeDefinitions returns true if the draft has type file evidence
 func (d *DraftDomainDoc) HasTypeDefinitions() bool {
 	return len(d.Evidence.TypeFiles) > 0

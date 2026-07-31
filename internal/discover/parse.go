@@ -178,6 +178,41 @@ type domainRelationshipOutput struct {
 	Type   string `yaml:"type"`
 	Target string `yaml:"target"`
 }
+type domainExcludedCandidateOutput struct {
+	Name        string `yaml:"name"`
+	Description string `yaml:"description"`
+	LikelySpec  string `yaml:"likely_spec"`
+}
+
+// parseDomainExcludedCandidates extracts the excluded_candidates block: domain-shaped
+// candidates the agent flagged as spec-local implementation invariants rather than
+// vocabulary, each tagged with the spec they likely belong to.
+func parseDomainExcludedCandidates(output string) []domainExcludedCandidateOutput {
+	yamlContent := internal.ExtractYAMLBlock(output)
+	if yamlContent == "" {
+		return nil
+	}
+	var excludedOut struct {
+		ExcludedCandidates []domainExcludedCandidateOutput `yaml:"excluded_candidates"`
+	}
+	if err := yaml.Unmarshal([]byte(yamlContent), &excludedOut); err != nil {
+		return nil
+	}
+	return excludedOut.ExcludedCandidates
+}
+
+func convertExcludedCandidates(cs []domainExcludedCandidateOutput) []*domain.ExcludedInvariantCandidate {
+	if len(cs) == 0 {
+		return nil
+	}
+	converted := make([]*domain.ExcludedInvariantCandidate, 0, len(cs))
+	for _, c := range cs {
+		converted = append(converted, &domain.ExcludedInvariantCandidate{
+			Name: c.Name, Description: c.Description, LikelySpec: c.LikelySpec,
+		})
+	}
+	return converted
+}
 
 func parseDomainDraftsFromOutput(output string) ([]*domain.DraftDomainDoc, error) {
 	yamlContent := internal.ExtractYAMLBlock(output)

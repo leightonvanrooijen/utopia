@@ -243,6 +243,32 @@ func TestParseDomainDraftsFromOutput_BareDraftsFallback(t *testing.T) {
 	}
 }
 
+func TestParseDomainExcludedCandidates(t *testing.T) {
+	output := "```yaml\n" + `drafts: []
+excluded_candidates:
+  - name: RetryBackoffCap
+    description: "Max retry backoff is capped at 30s for this spec's poller"
+    likely_spec: run-executor-retries
+` + "```"
+	excluded := parseDomainExcludedCandidates(output)
+	if len(excluded) != 1 {
+		t.Fatalf("expected 1 excluded candidate, got %d", len(excluded))
+	}
+	if excluded[0].Name != "RetryBackoffCap" || excluded[0].LikelySpec != "run-executor-retries" {
+		t.Errorf("unexpected excluded candidate: %+v", excluded[0])
+	}
+	converted := convertExcludedCandidates(excluded)
+	if len(converted) != 1 || converted[0].Description != excluded[0].Description {
+		t.Errorf("unexpected conversion: %+v", converted)
+	}
+}
+
+func TestParseDomainExcludedCandidates_NoYAML(t *testing.T) {
+	if got := parseDomainExcludedCandidates("nothing here"); got != nil {
+		t.Errorf("expected nil, got %+v", got)
+	}
+}
+
 func TestParseDomainDraftsFromOutput_NoYAML(t *testing.T) {
 	if _, err := parseDomainDraftsFromOutput("nothing here"); err == nil {
 		t.Error("expected error for output without YAML block")

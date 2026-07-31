@@ -1,7 +1,7 @@
 id: 08_sharpen-domain-knowledge-boundary-modify-discover-domain-command
 spec_ref: 08_sharpen-domain-knowledge-boundary.modify-discover-domain-command
 title: Modify the discover-domain-command feature
-status: pending
+status: in_progress
 prompt: |-
     ## TASK
 
@@ -57,3 +57,4 @@ constraints:
 order: 3
 source_feature_id: modify-discover-domain-command
 estimated_complexity: medium
+iteration_count: 1

@@ -28,7 +28,9 @@ Analyze the provided codebase context and identify bounded contexts with their d
 %s
 A candidate that is a spec-local constraint or assumption, rather than a term, definition,
 or entity relationship, does not belong in a Domain document - it belongs in that spec's
-domain_knowledge instead. Leave it out of the draft.
+domain_knowledge instead. Do NOT silently drop this candidate: leave it out of every draft's
+terms/entities, and instead record it under top-level excluded_candidates with the spec you
+believe it belongs to, so it can be routed there via a change request.
 
 ## Output Format
 Generate draft domain documents in this EXACT YAML format:
@@ -73,6 +75,10 @@ drafts:
         relationships:
           - type: contains
             target: OtherEntity
+excluded_candidates:
+  - name: CandidateName
+    description: "Why this looked domain-shaped"
+    likely_spec: spec-id-it-likely-belongs-to
 ` + "```" + `
 
 Now analyze the codebase and generate draft domain documents.`
@@ -109,6 +115,11 @@ type DomainResult struct {
 	FilesAnalyzed map[string]time.Time
 	// Drafts are the draft domain documents that were saved
 	Drafts []*domain.DraftDomainDoc
+	// ExcludedCandidates are domain-shaped candidates left out of every draft
+	// because they are spec-local implementation invariants (per
+	// domain.DomainKnowledgeBoundary), each tagged with the spec they likely
+	// belong to so they can be routed there instead of silently dropped.
+	ExcludedCandidates []*domain.ExcludedInvariantCandidate
 }
 
 // Domain runs the domain vocabulary discovery pipeline: scan type definitions
@@ -157,6 +168,13 @@ func Domain(ctx context.Context, store *internal.YAMLStore, opts DomainOptions) 
 		return nil, fmt.Errorf("failed to parse drafts: %w", err)
 	}
 	result.Drafts = drafts
+
+	excluded := parseDomainExcludedCandidates(promptResult.Stdout)
+	result.ExcludedCandidates = convertExcludedCandidates(excluded)
+	for _, c := range result.ExcludedCandidates {
+		out.Progressf("  "+ui.Bullet+" excluded %q as a spec-local invariant - likely belongs to spec %q: %s\n", c.Name, c.LikelySpec, c.Description)
+	}
+
 	if len(drafts) == 0 {
 		prog.EndPhase("no drafts found")
 		return result, nil
