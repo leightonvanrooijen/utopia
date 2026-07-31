@@ -29,7 +29,7 @@ func TestExecute_DefaultExecutorModelReachesTheBinary(t *testing.T) {
 		notWant  string
 	}{
 		{
-			name:   "models.execute reaches the binary with no --model flag",
+			name:   "models.execute reaches the binary when no --model override is given",
 			models: &domain.ModelConfig{Execute: "sonnet"},
 			want:   "--model sonnet",
 		},

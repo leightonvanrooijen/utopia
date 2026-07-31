@@ -4,11 +4,28 @@ title: |
     Fix the gap that let this defect ship: no test asserted that a configured
     default-executor model reaches the claude binary.
 
-    The existing criterion "If no model specified, claude CLI uses its default"
-    is correct and must stay - it covers a project with no models section. What
-    was missing is the counterpart: when a model IS configured, --model must be
-    on the argv. The defect satisfied every existing test by taking the
-    no-model-specified branch for a project that had in fact specified one.
+    Two different contracts live at two different layers, and the previous
+    wording conflated them. Keep them apart:
+
+    Layer 1, the default executor (internal/ralph): its model resolution
+    chain always terminates in a value - models.execute, else models.default,
+    else the executor default sonnet (spec model-configuration feature
+    backward-compatibility: "Config without models section uses sonnet for
+    all commands"). There is NO default-executor code path on which the
+    resolution produces nothing. Therefore --model is present on the argv of
+    every default-executor spawn, including when the project has no models
+    section at all - in that case it carries sonnet. Do not write a
+    default-executor test expecting the flag to be absent; such a state is
+    unreachable by design and a test demanding it contradicts the sibling
+    task in this change request.
+
+    Layer 2, the CLI wrapper (internal.CLI): the spec criterion "If no model
+    specified, claude CLI uses its default" is a contract of this wrapper,
+    not of the executor. "No model specified" means the wrapper's model
+    parameter is empty - it does not mean "the project has no models
+    section". The wrapper omits --model when handed an empty model, and that
+    omission is asserted at the internal.CLI layer, the only layer where an
+    empty model can occur.
 status: in_progress
 prompt: |-
     ## TASK
@@ -16,18 +33,37 @@ prompt: |-
     Fix the gap that let this defect ship: no test asserted that a configured
     default-executor model reaches the claude binary.
 
-    The existing criterion "If no model specified, claude CLI uses its default"
-    is correct and must stay - it covers a project with no models section. What
-    was missing is the counterpart: when a model IS configured, --model must be
-    on the argv. The defect satisfied every existing test by taking the
-    no-model-specified branch for a project that had in fact specified one.
+    Two different contracts live at two different layers, and the previous
+    wording conflated them. Keep them apart:
+
+    Layer 1, the default executor (internal/ralph): its model resolution
+    chain always terminates in a value - models.execute, else models.default,
+    else the executor default sonnet (spec model-configuration feature
+    backward-compatibility: "Config without models section uses sonnet for
+    all commands"). There is NO default-executor code path on which the
+    resolution produces nothing. Therefore --model is present on the argv of
+    every default-executor spawn, including when the project has no models
+    section at all - in that case it carries sonnet. Do not write a
+    default-executor test expecting the flag to be absent; such a state is
+    unreachable by design and a test demanding it contradicts the sibling
+    task in this change request.
+
+    Layer 2, the CLI wrapper (internal.CLI): the spec criterion "If no model
+    specified, claude CLI uses its default" is a contract of this wrapper,
+    not of the executor. "No model specified" means the wrapper's model
+    parameter is empty - it does not mean "the project has no models
+    section". The wrapper omits --model when handed an empty model, and that
+    omission is asserted at the internal.CLI layer, the only layer where an
+    empty model can occur.
 
 
     Acceptance criteria:
-    - A test asserts that with models.execute configured and no --model flag, the claude binary is invoked with --model set to the configured value
-    - A test asserts that with no models section at all, no --model flag is passed and the claude CLI default applies, per feature backward-compatibility
+    - A test asserts that with models.execute configured and no --model flag, a default-executor attempt invokes the claude binary with --model set to the configured value
+    - A test asserts that with models.execute absent but models.default present, a default-executor attempt invokes the claude binary with --model set to models.default
+    - A test asserts that with no models section at all, a default-executor attempt invokes the claude binary with --model sonnet, per feature backward-compatibility ("Config without models section uses sonnet for all commands")
     - A test asserts that a --model flag overrides a configured models.execute for that invocation
-    - The assertions cover a default-executor attempt specifically, not only the roles that already resolved their model correctly
+    - A test at the internal.CLI layer asserts that when the wrapper's model parameter is empty, no --model flag appears on the argv, satisfying the cli-model-injection criterion "If no model specified, claude CLI uses its default" at the only layer where an empty model occurs
+    - No test asserts an absent --model flag on a default-executor attempt; the default-executor assertions cover that role specifically, not only the roles that already resolved their model correctly
 
 
     ## REFERENCE
@@ -55,6 +91,7 @@ prompt: |-
 
     - internal/claude.go:238 is the guarded append; internal/claude_usage_test.go shows the existing pattern for asserting on constructed argv
     - A regression test that only exercises the escalated executor or a validator would have passed against the defect - the default executor is the path that needs covering
+    - The wrapper-layer omit-the-flag test and the executor-layer always-present tests are complementary, not contradictory; the empty-model case simply never reaches the wrapper from the default executor
 
 
 
@@ -107,38 +144,12 @@ constraints:
 order: 1
 source_feature_id: assert-configured-model-reaches-the-binary
 estimated_complexity: medium
-iteration_count: 2
-last_validator_feedback: |
-    Gating connector validators:after-workitem blocked workitem-verified:
-    Validator spec-intent failed:
-    Two work items carry top-level `status: in_progress`, not one:
-
-    - `.utopia/work-items/16_default-executor-ignores-configured-model/16_default-executor-ignores-configured-model-assert-configured-model-reaches-the-binary.yaml:12`
-    - `.utopia/work-items/06_observability-unified-output/phase-4/06_observability-unified-output-phase-4-modify-step-timing-logs.yaml:16`
-
-    Cannot resolve which item is under review from state alone. Diff touches item 16's YAML, but inferring the target from the diff is the circular path Step 1 forbids - the diff here is *only* executor bookkeeping (`executor_attempts`, `selected_validators`, `validators_routed`) on item 16 and contains zero source or test changes, so it carries no evidence about criteria satisfaction either way. Item 06's `in_progress` is stale leftover from commit `5c86651` ("test: lock step-timing lines onto the diagnostic channel"), which appears complete but was never transitioned.
-
-    Violations:
-
-    `.utopia/work-items/06_observability-unified-output/phase-4/06_observability-unified-output-phase-4-modify-step-timing-logs.yaml:16 - [A] Work-item state has two concurrent in_progress items, so the running item is not identifiable; this item's status was not transitioned out of in_progress when its work landed.`
-
-    <VERDICT>
-    {
-      "verdict": "fail",
-      "failure_class": "mechanical",
-      "diagnosis": "Validation could not run: the work-item store does not identify a unique running item, so there is no authoritative set of acceptance criteria to judge the diff against. This is a state-bookkeeping fault, not a misunderstanding of the task.",
-      "confidence": "low"
-    }
-    </VERDICT>
-failure_conclusions:
-    - iteration: 1
-      validator_id: spec-intent
-      failure_class: comprehension
-      diagnosis: 'Validation could not run: the work-item store does not identify a unique running item, so there is no authoritative set of acceptance criteria to judge the diff against. This is a state-bookkeeping fault, not a misunderstanding of the task.'
+iteration_count: 3
 selected_validators:
     - spec-intent
-comprehension_count: 1
-comprehension_failures_total: 1
+opus_execution_attempts: 1
+scoping_escalations: 1
+comprehension_failures_total: 2
 executor_attempts:
     - iteration: 1
       role: default-executor
@@ -158,4 +169,23 @@ executor_attempts:
         cost_basis: unknown
       outcome: failed
       failure_class: comprehension
+    - iteration: 2
+      role: escalated-executor
+      model: opus
+      effort: high
+      usage:
+        available: true
+        model: claude-opus-5
+        effort: high
+        input_tokens: 38
+        output_tokens: 10387
+        cache_read_tokens: 1018727
+        cache_creation_tokens: 48894
+        turns: 27
+        duration_ms: 193699
+        cost_usd: 1.2581684999999998
+        cost_basis: unknown
+      outcome: failed
+      failure_class: comprehension
+spec_rewritten: true
 validators_routed: true
