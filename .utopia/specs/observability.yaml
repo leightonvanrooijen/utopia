@@ -1,7 +1,7 @@
 id: observability
 title: observability
 created: "2026-07-31T18:58:33.263481+10:00"
-updated: "2026-07-31T18:58:33.263483+10:00"
+updated: "2026-07-31T19:40:57.236146+10:00"
 description: ""
 features:
     - id: structured-diagnostics
@@ -52,3 +52,19 @@ features:
         - The handle resolution ledger from internal/ralph/engine.go is still emitted, on the diagnostic channel
         - Interactive prompts in internal/validators remain on stdout
         - No acceptance criterion in any other spec that requires output on stdout is broken
+
+    - id: run-span-persistence
+      description: |
+        Collected spans are serialised into the run record, so timing survives
+        the process and can be compared across runs. Because run records are
+        committed to git, git history becomes the time series: questions like "why
+        was that run slow" and "is this getting worse" are answerable with a query
+        over the repository, with no collector or telemetry backend involved.
+      acceptance_criteria:
+        - Each work item's spans are written into its run record at .utopia/runs/<cr-id>/<workitem-id>.yaml
+        - The persisted form records span name, start time, duration, parent relationship and attributes
+        - Total, Claude, verification and validator durations are readable directly from the record without re-deriving them from raw output
+        - A yq query can extract the Claude duration for every run in the repository
+        - Spans are persisted in the same commit as their work item, matching workitem-commit behaviour
+        - A run that fails persists the spans collected before the failure
+        - Failure to persist spans logs a warning on the diagnostic channel and does not block the execution loop
