@@ -1,0 +1,174 @@
+id: 17_infra-failures-consume-the-escalation-budget
+type: bugfix
+title: Stop harness failures from spending the escalation budget, and make a halted work item resumable
+status: draft
+notes: |
+    Run 16_default-executor-ignores-configured-model/resolve-default-executor-model-from-config
+    halted as needs_human with its work already committed, green, and building. Four
+    attempts, $2.76, one real failure:
+
+      iteration 1  default-executor    errored   29 turns   $1.11
+      iteration 2  default-executor    failed    comprehension
+      iteration 3  escalated-executor  errored    1 turn     7.8s   $0.02
+      iteration 4  escalated-executor  errored   15 turns   $1.10
+
+    Three of the four attempts ended `outcome: errored` - the claude invocation itself
+    failed - and the halt was triggered by a validator that never produced a verdict:
+
+      Validator spec-intent error: claude invocation failed: claude prompt failed: exit status 1
+
+    Three distinct defects produced that outcome, and each one is enough on its own to
+    burn a work item's whole budget on an infrastructure fault.
+
+    First, an errored attempt is charged like a failed one. chargeEscalatedAttempt
+    (ralph.go:455) books the attempt against opus_execution_attempts before it runs,
+    and the error path at ralph.go:547-551 records AttemptErrored and continues without
+    refunding. The refund machinery already exists and is already used one branch above
+    for a usage-limit wait (ralph.go:508-511, refundExecutorAttempt) - the invocation
+    failure path simply does not use it. So two crashed invocations exhausted the
+    escalated executor's cap of 2 without either of them producing a judgement about
+    the code.
+
+    Second, a validator that cannot run is indistinguishable from a validator that
+    disapproves. AggregateResults (validators/runner.go:392-396) folds vr.Err into the
+    aggregate as unclassifiedFailure, which resolves to comprehension - the most
+    expensive class - and the gate at ralph.go:666-712 routes it as a verdict about the
+    work. A transport error therefore escalates the executor, increments
+    comprehension_count, and eventually halts the item, all on evidence that says only
+    that a subprocess exited 1. The resolve-toward-comprehension rule is right for
+    unparseable output, where the validator ran and said something unusable. It is
+    wrong for an invocation that never ran.
+
+    Third, needs_human is a dead end. sequential execution skips halted items
+    (ralph.go:210-215) and there is no command to requeue one, so resuming an item whose
+    diagnosis was "the network flaked" means hand-editing six fields in its YAML -
+    status, iteration_count, comprehension_count, opus_execution_attempts,
+    comprehension_failures_total, and the stale feedback and conclusions. That is both
+    error-prone and undiscoverable, and it silently discards the spend record if the
+    editor deletes executor_attempts.
+
+    Deliberately out of scope: retrying a validator whose verdict is a genuine fail, and
+    changing any cap's default value. The caps are not the problem here - what is
+    charged against them is.
+tasks:
+    - id: invocation-error-is-not-a-verdict
+      spec: escalation-routing
+      feature_id: escalation-caps
+      description: |
+        An attempt whose claude invocation failed produced no judgement about the
+        work, so it must not be charged against the escalation budget. The caps
+        bound spend on evidence that the executor got it wrong; a crashed
+        subprocess is not that evidence, and letting it escalate spends the
+        expensive model on a fault the expensive model cannot fix.
+
+        Current behavior: chargeEscalatedAttempt (ralph.go:455) books the attempt
+        before it runs and the error path at ralph.go:547-551 records
+        AttemptErrored and continues without refunding, so two crashed
+        invocations exhausted the escalated executor's cap of 2 without either
+        producing a judgement about the code.
+
+        Expected behavior: infrastructure faults are still bounded, but on their
+        own counter. A claude binary that fails every time must not loop forever,
+        and it must also not be able to consume a work item's whole comprehension
+        budget before anyone reads the error.
+      acceptance_criteria:
+        - An attempt recorded as errored refunds the escalated-execution charge it was booked, on the same terms as an attempt skipped for a usage limit
+        - An errored attempt does not increment comprehension_count and does not escalate the executor
+        - Consecutive invocation errors are bounded by their own independently configurable cap, defaulting to 3
+        - A successful invocation resets the consecutive-error counter, so intermittent faults do not accumulate across an otherwise healthy run
+        - Exceeding the invocation-error cap halts the work item as needs_human with a reason that names the invocation failure rather than a comprehension failure
+        - The spend an errored attempt incurred is still recorded - the refund is of routing budget, not of accounting
+        - An errored attempt still counts toward max iterations, so a work item cannot run unbounded on errors alone
+        - The invocation-error cap is validated at load time on the same terms as the other caps
+        - An attempt that produced no verdict is not charged against the mechanical, comprehension or opus_execution_attempts caps
+      hints:
+        - internal/ralph/ralph.go:547-551 is the error path that continues without refunding; ralph.go:505-512 is the working refund precedent for the usage-limit case
+        - chargeEscalatedAttempt and refundExecutorAttempt are the existing pair - reuse them rather than adding a second charging mechanism
+        - Caps live on the caps struct validated at load time per spec escalation-routing feature escalation-caps; the new cap belongs beside them and must be validated the same way
+        - domain.AttemptErrored (internal/domain/usage.go:135) already distinguishes the outcome; the routing side is what ignores it
+    - id: validator-invocation-error-is-not-a-failure
+      spec: agentic-validators
+      feature_id: validator-result-aggregation
+      description: |
+        A validator that could not run has not disapproved of anything. Its
+        inability to run must be reported as an infrastructure fault and retried,
+        rather than folded into the aggregate as a comprehension failure and
+        routed as a verdict about the code.
+
+        Current behavior: AggregateResults (validators/runner.go:392-396) folds
+        vr.Err into the aggregate as unclassifiedFailure, which resolves to
+        comprehension - the most expensive class.
+
+        Expected behavior: this does not soften the existing
+        resolve-toward-comprehension rule for unusable output. A validator that
+        ran and emitted an unparseable verdict still fails comprehension: it read
+        the diff and said something, and the caller cannot safely assume the
+        cheaper class. The distinction is whether the invocation happened at all.
+      acceptance_criteria:
+        - A validator whose invocation failed is carried on the aggregate as errored, distinctly from a validator that returned a failing verdict
+        - A failed validator invocation is retried up to an independently configurable cap, defaulting to 2 retries, before it is treated as unresolved
+        - An aggregate whose only non-passing entries are invocation errors does not report a failure class, so the gate does not route it as a comprehension failure
+        - A validator that errors alongside another validator that genuinely failed routes on the genuine failure's class, and the error is reported beside it
+        - Output that was produced but is unparseable, or a verdict missing a required field, still resolves to comprehension exactly as it does today
+        - The feedback text names an invocation error as an infrastructure fault rather than as validator disapproval, so the next iteration's prompt is not told the code was wrong
+      hints:
+        - internal/validators/runner.go:392-396 folds vr.Err into unclassifiedFailure - that is the conflation
+        - unclassifiedFailure and addFailure (runner.go:409 onward) hold the resolve-toward-comprehension rule that must keep applying to unparseable output
+        - "internal/validators/runner.go:289 is where the invocation error is created, wrapping the cause as claude invocation failed"
+        - ValidatorResult already carries Err separately from Result; the aggregate is where the two collapse
+    - id: unresolved-validator-gate
+      spec: escalation-routing
+      feature_id: failure-class-routing
+      description: |
+        A gate that blocked because a validator could not be run is not a verdict,
+        and the loop must not route it as one. It retries the gate; if the
+        validators still cannot run, the work item halts with the fault named
+        rather than being escalated through the comprehension path first.
+
+        Current behavior: the gate at ralph.go:666-712 routes an error-only
+        aggregate as a verdict about the work, so an item whose code is correct
+        and whose validator is unreachable escalates to the expensive executor,
+        rewrites its own change request, and halts - all without a single
+        statement having been made about the code.
+      acceptance_criteria:
+        - A gate failure carrying only validator invocation errors is routed as unresolved rather than as a validation failure
+        - An unresolved gate does not increment comprehension_count, does not escalate the executor, and does not trigger scoping escalation
+        - An unresolved gate does not overwrite the work item's last_validator_feedback with the infrastructure error, so a genuine earlier verdict is not lost
+        - Consecutive unresolved gates are bounded by the invocation-error cap and halt the item as needs_human naming the validator fault
+        - A gate failure carrying at least one real verdict routes on that verdict exactly as it does today
+        - The halt reason distinguishes "the validators could not run" from "the validators rejected the work"
+      hints:
+        - internal/ralph/ralph.go:666-712 is the gate-failure branch; routeValidationFailure is what must not see an error-only aggregate
+        - aggregateFromGate is internal/ralph/escalation.go:450
+        - "recordFailureConclusions currently persists a `validator did not complete` line as a comprehension conclusion on the item - that is the artefact this task stops producing"
+    - id: halted-work-item-reset
+      spec: execution-ralph
+      feature_id: work-item-status
+      description: |
+        A work item halted as needs_human must be requeueable from the CLI.
+        Halting is a decision to stop and ask a human, not a decision to make the
+        item permanently unrunnable, and once the human has looked and acted the
+        item needs a supported way back into the queue.
+
+        Current behavior: sequential execution skips halted items
+        (ralph.go:210-215) and there is no command to requeue one, so resuming an
+        item means hand-editing six fields in its YAML - status, iteration_count,
+        comprehension_count, opus_execution_attempts,
+        comprehension_failures_total, and the stale feedback and conclusions.
+
+        Expected behavior: requeuing clears the routing state that caused the halt
+        and keeps the accounting that records what it cost - the counters exist to
+        bound the next attempt, the spend exists to describe the last one.
+      acceptance_criteria:
+        - A command requeues a halted work item by ID, setting it back to pending
+        - Requeuing clears iteration_count, comprehension_count, opus_execution_attempts, comprehension_failures_total and the consecutive-invocation-error counter
+        - Requeuing clears last_validator_feedback and failure_conclusions, so the next attempt is not handed a stale diagnosis
+        - The work item's recorded spend and the run record it belongs to are left intact
+        - Requeuing an item that is not halted is refused with a clear message rather than silently resetting a completed or in-progress item
+        - The command reports what it cleared, so the operator can see the item was reset rather than merely unblocked
+        - After requeuing, a normal execute run picks the item up in its usual order
+      hints:
+        - internal/ralph/ralph.go:210-215 is the skip that makes a halted item unrunnable
+        - domain.WorkItemNeedsHuman and WorkItemPending are internal/domain/workitem.go:34-37
+        - Per standard cli-organization the command is a thin handler in internal/cli delegating the reset to the domain package that owns WorkItem
+        - The store already round-trips work items - SaveWorkItemForSpec is the write side
