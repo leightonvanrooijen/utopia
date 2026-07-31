@@ -505,9 +505,7 @@ func executeWorkItem(
 			// The attempt produced no work, so it is refunded: the cap bounds spend on
 			// the escalated executor, and nothing was spent here. The routing record is
 			// refunded with it, so the attempt list stays a list of attempts that ran.
-			if charged {
-				item.OpusExecutionAttempts--
-			}
+			refundEscalatedAttempt(item, charged)
 			refundExecutorAttempt(item)
 			continue
 		}
@@ -541,15 +539,40 @@ func executeWorkItem(
 			// A capped attempt claimed nothing, so nothing it produced was judged. Its
 			// spend is recorded either way: the ratchet cost what it cost.
 			recordAttemptOutcome(item, domain.AttemptIncomplete, "")
+			// The invocation ran - it exhausted its turns doing work - so it is not an
+			// infrastructure fault, and it clears the consecutive-error counter.
+			clearInvocationErrors(item)
 			continue
 		}
 
 		if err != nil {
 			out.Progressf("  Iteration %d: Claude invocation failed: %v (claude %s)\n", item.IterationCount, err, ui.Duration(claudeElapsed))
+			// The invocation produced no judgement about the work, so the escalated
+			// charge it was booked is returned: that cap bounds spend on evidence the
+			// executor got it wrong, and a crashed subprocess is not that evidence.
+			// Escalating on it would spend the expensive model on a fault the expensive
+			// model cannot fix.
+			//
+			// The attempt itself stays on the record, unlike the usage-limit refund
+			// above: this one ran and spent, so what it cost is still accounted for even
+			// though its verdict is that there is none. The iteration stands too, so an
+			// item cannot run unbounded on errors alone.
 			recordAttemptOutcome(item, domain.AttemptErrored, "")
+			refundEscalatedAttempt(item, charged)
+			// Bounded on its own counter rather than on the comprehension budget: a
+			// claude that fails every time must not loop forever, and it must not
+			// consume the item's routing budget before a person reads the error.
+			if haltErr := chargeInvocationError(item, caps, err); haltErr != nil {
+				return nil, haltNeedsHuman(store, specID, crID, item, rec, haltErr)
+			}
+			_ = store.SaveWorkItemForSpec(specID, item)
 			// Continue to next iteration - Claude may have hit an error
 			continue
 		}
+
+		// The invocation ran, so whatever comes of what it produced, the fault the
+		// error counter bounds is not currently happening.
+		clearInvocationErrors(item)
 
 		// Check for completion token
 		if !strings.Contains(claudeResult.Stdout, CompletionToken) {

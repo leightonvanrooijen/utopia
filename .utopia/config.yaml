@@ -86,3 +86,4 @@ validators:
 #  comprehension_escalations: 2
 #  opus_execution_attempts: 2
 #  scoping_escalations: 1
+#  invocation_errors: 3

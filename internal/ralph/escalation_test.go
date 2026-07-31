@@ -18,7 +18,7 @@ const (
 // the defaults surfaces as an intentional edit rather than a silently different
 // test.
 func testCaps() EscalationCaps {
-	return EscalationCaps{MechanicalRetries: 4, ComprehensionEscalations: 2, OpusExecutionAttempts: 2, ScopingEscalations: 1}
+	return EscalationCaps{MechanicalRetries: 4, ComprehensionEscalations: 2, OpusExecutionAttempts: 2, ScopingEscalations: 1, InvocationErrors: 3}
 }
 
 func mechanicalAggregate() *validators.AggregateResult {

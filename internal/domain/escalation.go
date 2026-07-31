@@ -13,6 +13,7 @@ import "fmt"
 //	  comprehension_escalations: 2
 //	  opus_execution_attempts: 2
 //	  scoping_escalations: 1
+//	  invocation_errors: 3
 //
 // Every cap is a pointer so an omitted key is distinguishable from an explicit
 // zero. An omitted cap takes its default; a zero would disable the path it
@@ -39,6 +40,12 @@ type EscalationConfig struct {
 	// scoping escalation. It is the bound that stops rewrite-then-retry from
 	// becoming an unbounded loop through a different door.
 	ScopingEscalations *int `yaml:"scoping_escalations,omitempty"`
+	// InvocationErrors caps consecutive claude invocations that failed to run at
+	// all. It bounds an infrastructure fault rather than a retry path: a crashed
+	// subprocess produced no judgement about the code, so it is counted here
+	// instead of against the caps above, which bound spend on evidence that the
+	// executor got it wrong.
+	InvocationErrors *int `yaml:"invocation_errors,omitempty"`
 }
 
 // CapOr returns the configured cap, or fallback when the key was omitted.
@@ -73,6 +80,7 @@ func ValidateEscalationConfig(ec *EscalationConfig) error {
 	check(ec.ComprehensionEscalations, "comprehension_escalations")
 	check(ec.OpusExecutionAttempts, "opus_execution_attempts")
 	check(ec.ScopingEscalations, "scoping_escalations")
+	check(ec.InvocationErrors, "invocation_errors")
 
 	if len(invalid) == 0 {
 		return nil

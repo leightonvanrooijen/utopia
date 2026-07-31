@@ -26,6 +26,8 @@ func TestValidateEscalationConfig(t *testing.T) {
 		{"zero mechanical retries", &EscalationConfig{MechanicalRetries: capPtr(0)}, true},
 		{"zero comprehension escalations", &EscalationConfig{ComprehensionEscalations: capPtr(0)}, true},
 		{"zero escalated execution attempts", &EscalationConfig{OpusExecutionAttempts: capPtr(0)}, true},
+		{"zero invocation errors", &EscalationConfig{InvocationErrors: capPtr(0)}, true},
+		{"positive invocation errors", &EscalationConfig{InvocationErrors: capPtr(3)}, false},
 		{"negative scoping escalations", &EscalationConfig{ScopingEscalations: capPtr(-2)}, true},
 	}
 
@@ -49,11 +51,12 @@ func TestValidateEscalationConfig_NamesEveryOffendingKey(t *testing.T) {
 		MechanicalRetries:        capPtr(0),
 		ComprehensionEscalations: capPtr(2),
 		OpusExecutionAttempts:    capPtr(-1),
+		InvocationErrors:         capPtr(0),
 	})
 	if err == nil {
 		t.Fatal("expected an error, got nil")
 	}
-	for _, want := range []string{"escalation.mechanical_retries: 0", "escalation.opus_execution_attempts: -1", "at least 1"} {
+	for _, want := range []string{"escalation.mechanical_retries: 0", "escalation.opus_execution_attempts: -1", "escalation.invocation_errors: 0", "at least 1"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q missing %q", err.Error(), want)
 		}

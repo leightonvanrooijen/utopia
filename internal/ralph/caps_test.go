@@ -23,6 +23,9 @@ func TestDefaultEscalationCaps(t *testing.T) {
 	if caps.ScopingEscalations != 1 {
 		t.Errorf("ScopingEscalations = %d, want 1", caps.ScopingEscalations)
 	}
+	if caps.InvocationErrors != 3 {
+		t.Errorf("InvocationErrors = %d, want 3", caps.InvocationErrors)
+	}
 }
 
 // Every cap overrides on its own, and the ones left out keep their defaults.
@@ -40,22 +43,27 @@ func TestEscalationCapsFrom_EachCapOverridesIndependently(t *testing.T) {
 		{
 			"mechanical only",
 			&domain.EscalationConfig{MechanicalRetries: cap(9)},
-			EscalationCaps{9, defaults.ComprehensionEscalations, defaults.OpusExecutionAttempts, defaults.ScopingEscalations},
+			EscalationCaps{9, defaults.ComprehensionEscalations, defaults.OpusExecutionAttempts, defaults.ScopingEscalations, defaults.InvocationErrors},
 		},
 		{
 			"comprehension only",
 			&domain.EscalationConfig{ComprehensionEscalations: cap(5)},
-			EscalationCaps{defaults.MechanicalRetries, 5, defaults.OpusExecutionAttempts, defaults.ScopingEscalations},
+			EscalationCaps{defaults.MechanicalRetries, 5, defaults.OpusExecutionAttempts, defaults.ScopingEscalations, defaults.InvocationErrors},
 		},
 		{
 			"escalated execution attempts only",
 			&domain.EscalationConfig{OpusExecutionAttempts: cap(6)},
-			EscalationCaps{defaults.MechanicalRetries, defaults.ComprehensionEscalations, 6, defaults.ScopingEscalations},
+			EscalationCaps{defaults.MechanicalRetries, defaults.ComprehensionEscalations, 6, defaults.ScopingEscalations, defaults.InvocationErrors},
 		},
 		{
 			"scoping only",
 			&domain.EscalationConfig{ScopingEscalations: cap(3)},
-			EscalationCaps{defaults.MechanicalRetries, defaults.ComprehensionEscalations, defaults.OpusExecutionAttempts, 3},
+			EscalationCaps{defaults.MechanicalRetries, defaults.ComprehensionEscalations, defaults.OpusExecutionAttempts, 3, defaults.InvocationErrors},
+		},
+		{
+			"invocation errors only",
+			&domain.EscalationConfig{InvocationErrors: cap(7)},
+			EscalationCaps{defaults.MechanicalRetries, defaults.ComprehensionEscalations, defaults.OpusExecutionAttempts, defaults.ScopingEscalations, 7},
 		},
 	}
 

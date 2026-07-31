@@ -132,6 +132,13 @@ type WorkItem struct {
 	// forever.
 	ScopingEscalationCount int `yaml:"scoping_escalations,omitempty"`
 
+	// InvocationErrorCount tracks consecutive claude invocations that failed to
+	// run at all. It is persisted so the bound holds across a resume, and any
+	// invocation that did run clears it, because it counts faults in a row rather
+	// than faults in total: an intermittent crash in an otherwise healthy run is
+	// not the same as a claude that cannot start.
+	InvocationErrorCount int `yaml:"invocation_error_count,omitempty"`
+
 	// MechanicalFailureTotal, ComprehensionFailureTotal and
 	// ReclassifiedFailureTotal are the lifetime failure tallies by the class the
 	// validators reported, as opposed to the counters above, which are routing

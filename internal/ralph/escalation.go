@@ -44,6 +44,12 @@ const (
 	// is still misread after being rewritten is not a change request a second
 	// rewrite fixes.
 	DefaultScopingEscalationCap = 1
+	// DefaultInvocationErrorCap is how many consecutive claude invocations may fail
+	// to run at all before the work item halts. Three is enough to ride out a
+	// transient fault - a dropped connection, a momentarily unavailable binary -
+	// and few enough that a claude that fails every time is read by a human long
+	// before it has spent the item's iterations.
+	DefaultInvocationErrorCap = 3
 )
 
 // EscalationCaps bounds each escalation path. Every cap is independently
@@ -67,6 +73,13 @@ type EscalationCaps struct {
 	OpusExecutionAttempts int
 	// ScopingEscalations caps scoping escalations for one change request.
 	ScopingEscalations int
+	// InvocationErrors caps consecutive claude invocations that failed to run.
+	// It sits apart from the caps above rather than beside them in the chain: an
+	// invocation that never produced a verdict is not evidence the executor got
+	// anything wrong, so escalating on it would spend the expensive model on a
+	// fault the expensive model cannot fix. Exhausting it halts the work item,
+	// because nothing in the loop can repair a broken subprocess either.
+	InvocationErrors int
 }
 
 // DefaultEscalationCaps returns the caps the loop runs with absent configuration.
@@ -76,6 +89,7 @@ func DefaultEscalationCaps() EscalationCaps {
 		ComprehensionEscalations: DefaultComprehensionEscalationCap,
 		OpusExecutionAttempts:    DefaultOpusExecutionAttemptCap,
 		ScopingEscalations:       DefaultScopingEscalationCap,
+		InvocationErrors:         DefaultInvocationErrorCap,
 	}
 }
 
@@ -92,6 +106,7 @@ func EscalationCapsFrom(ec *domain.EscalationConfig) EscalationCaps {
 	caps.ComprehensionEscalations = domain.CapOr(ec.ComprehensionEscalations, caps.ComprehensionEscalations)
 	caps.OpusExecutionAttempts = domain.CapOr(ec.OpusExecutionAttempts, caps.OpusExecutionAttempts)
 	caps.ScopingEscalations = domain.CapOr(ec.ScopingEscalations, caps.ScopingEscalations)
+	caps.InvocationErrors = domain.CapOr(ec.InvocationErrors, caps.InvocationErrors)
 	return caps
 }
 
@@ -443,6 +458,50 @@ func chargeEscalatedAttempt(item *domain.WorkItem, caps EscalationCaps) (bool, *
 	}
 	item.OpusExecutionAttempts++
 	return true, nil
+}
+
+// refundEscalatedAttempt returns the escalated-execution charge an attempt was
+// booked when that attempt produced no judgement about the code - it was skipped
+// for a usage limit, or its invocation never ran. The cap bounds spend on
+// evidence that the executor got it wrong, and neither case is that evidence.
+//
+// It is a no-op for an attempt that was never charged, which is every attempt on
+// the default executor.
+func refundEscalatedAttempt(item *domain.WorkItem, charged bool) {
+	if charged {
+		item.OpusExecutionAttempts--
+	}
+}
+
+// chargeInvocationError books one claude invocation that failed to run against
+// the item's consecutive-error counter, and reports the halt when that counter
+// reaches its cap.
+//
+// The halt names the invocation failure rather than a comprehension failure,
+// because that is the fault a person has to go and fix: nothing about the change
+// request or the executor changes the outcome of a subprocess that will not
+// start.
+func chargeInvocationError(item *domain.WorkItem, caps EscalationCaps, cause error) *NeedsHumanError {
+	item.InvocationErrorCount++
+	if item.InvocationErrorCount < caps.InvocationErrors {
+		return nil
+	}
+	return &NeedsHumanError{
+		WorkItemID: item.ID,
+		Cap:        "escalation.invocation_errors",
+		Limit:      caps.InvocationErrors,
+		Detail: fmt.Sprintf("%d consecutive claude invocation(s) failed to run, so no attempt reached a verdict about the code",
+			item.InvocationErrorCount),
+		Cause: cause,
+	}
+}
+
+// clearInvocationErrors resets the consecutive-error counter after an invocation
+// that actually ran, however its work was judged. The counter bounds a fault that
+// is happening now, so an intermittent crash must not accumulate across an
+// otherwise healthy run.
+func clearInvocationErrors(item *domain.WorkItem) {
+	item.InvocationErrorCount = 0
 }
 
 // aggregateFromGate extracts the validators' aggregate from a blocking gate
