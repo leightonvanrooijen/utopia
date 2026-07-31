@@ -280,6 +280,10 @@ Instead of looking for definition phrases, apply a QUALIFICATION TEST based on D
    - **Implementation detail** - Internal naming not representing a domain concept
    - **Already externally documented** - Term defined in external docs we reference
    - **One-off explanation** - Not canonical vocabulary, just explaining something once
+   - **Spec-local implementation invariant** - A constraint, assumption, or design rule
+     that only an implementer of one spec's features needs to respect (belongs in that
+     spec's domain_knowledge instead). Do NOT silently drop this candidate - flag it
+     with the spec it belongs to so it can be routed there via a change request
 
 **Litmus Tests:**
 - "Would ambiguity arise without this canonical definition?" YES = Document this term, NO = Don't clutter the domain vocabulary
