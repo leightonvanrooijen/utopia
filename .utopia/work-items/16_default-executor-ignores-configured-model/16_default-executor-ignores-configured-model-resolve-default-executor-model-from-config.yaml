@@ -129,7 +129,56 @@ constraints:
 order: 0
 source_feature_id: resolve-default-executor-model-from-config
 estimated_complexity: medium
-iteration_count: 1
+iteration_count: 2
+last_validator_feedback: |
+    Gating connector validators:after-workitem blocked workitem-verified:
+    Validator spec-intent failed:
+    Work item: `16_..._resolve-default-executor-model-from-config` (only `in_progress`). Code fix landed in earlier commits (`5b5a29c..985b3cc`); diff under review contains no Go code - only ADR YAML churn.
+
+    .utopia/adrs/ADR-003.yaml:93 - [A] Unrelated reformatting of `related_domain` comment spacing in a committed ADR; nothing in this work item touches ADRs (work item constraint: "Do not refactor unrelated code"). Revert.
+    .utopia/adrs/ADR-004.yaml:69-119 - [A] Unrelated reflow of `options_considered`, `consequences`, `advice`, `principles` and `related_domain` into single long lines; not asked for and not reviewed (constraint: "Fix only the behavior that deviates from the spec", "Do not refactor unrelated code"). Revert.
+    .utopia/adrs/ADR-005.yaml:62-141 - [A] Same unrelated reflow across the whole ADR body (same constraints). Revert.
+    .utopia/adrs/ADR-006.yaml:58-109 - [A] Same unrelated reflow across the whole ADR body (same constraints). Revert.
+    .utopia/adrs/ADR-004.yaml:0 - [A] No part of this diff addresses any acceptance criterion ("The default executor resolves its model from models.execute, falling back to models.default...", "...passed to the claude binary via --model on every default-executor attempt, including mechanical retries"). If the fix is already committed, this diff must be empty.
+
+    Restore all four ADRs to HEAD (`git checkout -- .utopia/adrs/`) and leave committed ADR text unformatted; if a YAML formatter ran over the repo, scope it to files this work item owns.
+
+    <VERDICT>
+    {
+      "verdict": "fail",
+      "failure_class": "comprehension",
+      "diagnosis": "The reviewed diff contains no change that advances any acceptance criterion and instead rewrites four committed ADRs, so the working state under review is unasked-for scope rather than a sloppy version of the asked-for work. Class is uncertain: if the model-resolution fix is genuinely already committed, this is a mechanical cleanup (revert the ADRs); if this diff is the work item's whole output, the criteria are untouched.",
+      "corrected_intent": "The work item is confined to the default executor's model resolution in internal/ralph: resolve models.execute with fallback to models.default (then sonnet), let --model override it for one invocation, and pass the resolved model to the claude binary on every default-executor attempt including mechanical retries. Committed ADRs and their formatting are outside this work item and stay byte-identical to HEAD.",
+      "confidence": "low"
+    }
+    </VERDICT>
+failure_conclusions:
+    - iteration: 1
+      validator_id: spec-intent
+      failure_class: comprehension
+      diagnosis: 'The reviewed diff contains no change that advances any acceptance criterion and instead rewrites four committed ADRs, so the working state under review is unasked-for scope rather than a sloppy version of the asked-for work. Class is uncertain: if the model-resolution fix is genuinely already committed, this is a mechanical cleanup (revert the ADRs); if this diff is the work item''s whole output, t'
+      corrected_intent: 'The work item is confined to the default executor''s model resolution in internal/ralph: resolve models.execute with fallback to models.default (then sonnet), let --model override it for one invocation, and pass the resolved model to the claude binary on every default-executor attempt including mechanical retries. Committed ADRs and their formatting are outside this work item and stay byte-identical to HEAD.'
 selected_validators:
     - spec-intent
+comprehension_count: 1
+comprehension_failures_total: 1
+executor_attempts:
+    - iteration: 1
+      role: default-executor
+      model: ""
+      effort: medium
+      usage:
+        available: true
+        model: claude-opus-5[1m]
+        effort: medium
+        input_tokens: 15
+        output_tokens: 3634
+        cache_read_tokens: 317602
+        cache_creation_tokens: 35946
+        turns: 12
+        duration_ms: 56535
+        cost_usd: 0.609186
+        cost_basis: unknown
+      outcome: failed
+      failure_class: comprehension
 validators_routed: true
