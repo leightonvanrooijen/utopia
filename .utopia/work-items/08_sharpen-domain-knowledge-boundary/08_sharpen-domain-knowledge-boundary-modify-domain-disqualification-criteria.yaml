@@ -1,0 +1,58 @@
+id: 08_sharpen-domain-knowledge-boundary-modify-domain-disqualification-criteria
+spec_ref: 08_sharpen-domain-knowledge-boundary.modify-domain-disqualification-criteria
+title: Modify the domain-disqualification-criteria feature
+status: pending
+prompt: |-
+    ## TASK
+
+    Modify the domain-disqualification-criteria feature
+
+    Acceptance criteria:
+    - Disqualified: content is a spec-local implementation invariant, constraint, or assumption (belongs in that spec's domain_knowledge instead)
+    - Disqualified spec-local invariants are flagged with the spec they belong to, not silently dropped
+
+
+
+    ## STANDARDS
+
+    This project defines coding standards in .utopia/standards/. Before implementing, read the standards docs relevant to the files this task touches:
+
+    - id: cli-organization
+      description: How to structure cobra commands in internal/cli: thin handlers that own the CLI frame and delegate the algorithm to domain packages.
+      tags: go, cli, cobra, architecture
+      path: .utopia/standards/cli-organization.md
+    - id: error-handling
+      description: How errors are created, wrapped, matched, and surfaced: typed domain errors for branching, %w wrapping for infrastructure, one exit point in root.go.
+      tags: go, errors, cli
+      path: .utopia/standards/error-handling.md
+    - id: terminal-output
+      description: One shared output vocabulary (glyphs, banners, progress) routed through cobra's injectable writers so command output is consistent and testable.
+      tags: go, cli, ux, output
+      path: .utopia/standards/terminal-output.md
+
+
+    ## CONSTRAINTS
+
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+    - You are running autonomously and non-interactively; never ask for, or wait on, human input
+    - When a genuine design choice arises, choose the best-justified option and implement it rather than deferring the decision to a human
+    - Record any non-obvious decision - rationale and the alternatives considered - in the commit or PR body, so PR review is the human checkpoint
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+    - You are running autonomously and non-interactively; never ask for, or wait on, human input
+    - When a genuine design choice arises, choose the best-justified option and implement it rather than deferring the decision to a human
+    - Record any non-obvious decision - rationale and the alternatives considered - in the commit or PR body, so PR review is the human checkpoint
+order: 2
+source_feature_id: modify-domain-disqualification-criteria
+estimated_complexity: medium
