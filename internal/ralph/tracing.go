@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
@@ -110,17 +109,6 @@ func newTracerProvider() (*sdktrace.TracerProvider, *spanCollector) {
 // wired in (every test that builds one directly). It creates spans that are
 // never recorded, so tests observe the same behaviour they always have.
 var noopTracer = noop.NewTracerProvider().Tracer(tracerName)
-
-// attrStrings builds a []attribute.KeyValue of string attributes from the
-// given key/value pairs, so span-start call sites read as a flat list of
-// names rather than a wall of attribute.String(...) calls.
-func attrStrings(pairs ...string) []attribute.KeyValue {
-	attrs := make([]attribute.KeyValue, 0, len(pairs)/2)
-	for i := 0; i+1 < len(pairs); i += 2 {
-		attrs = append(attrs, attribute.String(pairs[i], pairs[i+1]))
-	}
-	return attrs
-}
 
 // renderTimingSummary renders a work item's total wall clock alongside its
 // per-category breakdown, in the shape stepTimings.summary() used to produce.

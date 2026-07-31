@@ -115,8 +115,10 @@ constraints:
 order: 0
 source_feature_id: adopt-otel-trace-model
 estimated_complexity: medium
-iteration_count: 3
-invocation_error_count: 2
+iteration_count: 4
+last_failure_output: "==> Formatting changed files...\n==> Linting changed packages: ./internal/ralph \n-: /nix/store/kyai650rrywrzflnwda9mbk2c2j9w68r-go-1.26.4/share/go/src/vendor/golang.org/x/crypto/chacha20poly1305/fips140only_go1.26.go:7:9: file requires newer Go version go1.26 (application built with go1.25) (compile)\n\n==========================================\nSTATICCHECK FAILED\n==========================================\nTo investigate, run: make health\nTo see issues in a specific file: staticcheck ./path/to/package\n==========================================\n"
+selected_validators:
+    - spec-intent
 executor_attempts:
     - iteration: 1
       role: default-executor
@@ -152,3 +154,22 @@ executor_attempts:
         cost_usd: 2.7319044
         cost_basis: unknown
       outcome: errored
+    - iteration: 3
+      role: default-executor
+      model: sonnet
+      effort: medium
+      usage:
+        available: true
+        model: claude-sonnet-5
+        effort: medium
+        input_tokens: 52
+        output_tokens: 9461
+        cache_read_tokens: 2210159
+        cache_creation_tokens: 82048
+        turns: 34
+        duration_ms: 200972
+        cost_usd: 1.2974067
+        cost_basis: unknown
+      outcome: failed
+      failure_class: mechanical
+validators_routed: true
