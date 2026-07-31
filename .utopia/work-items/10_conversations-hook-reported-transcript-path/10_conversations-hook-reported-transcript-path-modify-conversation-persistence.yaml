@@ -14,7 +14,7 @@ title: |
 
     Reconstructing the path by encoding the working directory is retained
     only as a fallback for sessions where no payload was produced.
-status: pending
+status: in_progress
 prompt: |-
     ## TASK
 
@@ -91,3 +91,4 @@ constraints:
 order: 0
 source_feature_id: modify-conversation-persistence
 estimated_complexity: medium
+iteration_count: 1

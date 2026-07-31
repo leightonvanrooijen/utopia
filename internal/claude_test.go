@@ -1,8 +1,12 @@
 package internal
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"log/slog"
 	"maps"
 	"os"
@@ -828,5 +832,213 @@ func TestCLI_WithMaxTurns_SurvivesClone(t *testing.T) {
 	}
 	if cli.model != "" {
 		t.Errorf("Clone should not mutate the original: model = %q, want empty", cli.model)
+	}
+}
+
+func TestShellQuote(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"/tmp/plain/path.json", "'/tmp/plain/path.json'"},
+		{"/tmp/it's/path.json", `'/tmp/it'\''s/path.json'`},
+	}
+	for _, tc := range cases {
+		if got := shellQuote(tc.in); got != tc.want {
+			t.Errorf("shellQuote(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestSessionStartHookSettings(t *testing.T) {
+	settingsJSON, err := sessionStartHookSettings("/tmp/utopia-payload.json")
+	if err != nil {
+		t.Fatalf("sessionStartHookSettings failed: %v", err)
+	}
+
+	var parsed struct {
+		Hooks struct {
+			SessionStart []struct {
+				Hooks []struct {
+					Type    string `json:"type"`
+					Command string `json:"command"`
+				} `json:"hooks"`
+			} `json:"SessionStart"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal([]byte(settingsJSON), &parsed); err != nil {
+		t.Fatalf("settings JSON did not parse: %v", err)
+	}
+
+	if len(parsed.Hooks.SessionStart) != 1 || len(parsed.Hooks.SessionStart[0].Hooks) != 1 {
+		t.Fatalf("unexpected hook structure: %+v", parsed)
+	}
+
+	hook := parsed.Hooks.SessionStart[0].Hooks[0]
+	if hook.Type != "command" {
+		t.Errorf("hook type = %q, want %q", hook.Type, "command")
+	}
+	if !strings.Contains(hook.Command, shellQuote("/tmp/utopia-payload.json")) {
+		t.Errorf("hook command = %q, want it to write to the quoted payload path", hook.Command)
+	}
+}
+
+func TestReadHookTranscriptPath(t *testing.T) {
+	dir := t.TempDir()
+	existing := filepath.Join(dir, "exists.jsonl")
+	if err := os.WriteFile(existing, []byte("{}"), 0o644); err != nil {
+		t.Fatalf("failed to seed transcript file: %v", err)
+	}
+
+	cases := []struct {
+		name         string
+		writePayload bool
+		payload      string
+		want         string
+	}{
+		{name: "missing payload file", writePayload: false, want: ""},
+		{name: "unparseable payload", writePayload: true, payload: "not json", want: ""},
+		{name: "empty transcript_path", writePayload: true, payload: `{"transcript_path":""}`, want: ""},
+		{
+			name:         "transcript_path names a file that does not exist",
+			writePayload: true,
+			payload:      fmt.Sprintf(`{"transcript_path":%q}`, filepath.Join(dir, "nope.jsonl")),
+			want:         "",
+		},
+		{
+			name:         "valid transcript_path",
+			writePayload: true,
+			payload:      fmt.Sprintf(`{"transcript_path":%q}`, existing),
+			want:         existing,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			payloadPath := filepath.Join(dir, strings.ReplaceAll(tc.name, " ", "_")+".json")
+			if tc.writePayload {
+				if err := os.WriteFile(payloadPath, []byte(tc.payload), 0o644); err != nil {
+					t.Fatalf("failed to write payload: %v", err)
+				}
+			}
+
+			if got := readHookTranscriptPath(payloadPath); got != tc.want {
+				t.Errorf("readHookTranscriptPath() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// The session's transcript file location is what the SessionStart hook
+// reports, not a path Utopia reconstructs - this drives the hook end to end
+// through a fake claude binary that mimics what the real CLI does with the
+// injected --settings: it extracts the hook's payload path and runs its
+// command.
+func TestCLI_SessionWithCapture_UsesHookReportedTranscriptPath(t *testing.T) {
+	dir := t.TempDir()
+	binaryPath := filepath.Join(dir, "claude")
+	transcriptFile := filepath.Join(dir, "transcript.jsonl")
+
+	script := `#!/bin/sh
+prev=""
+settings=""
+for arg in "$@"; do
+  if [ "$prev" = "--settings" ]; then
+    settings="$arg"
+  fi
+  prev="$arg"
+done
+payload=$(printf '%s' "$settings" | sed -n "s/.*cat > '\([^']*\)'.*/\1/p")
+printf '{"type":"user","message":{"role":"user","content":"hi from hook test"}}\n' > ` + transcriptFile + `
+printf '{"transcript_path":"` + transcriptFile + `"}' > "$payload"
+`
+	if err := os.WriteFile(binaryPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("failed to write fake claude: %v", err)
+	}
+
+	cli := NewCLI()
+	cli.binaryPath = binaryPath
+
+	transcript, err := cli.SessionWithCapture(context.Background(), "")
+	if err != nil {
+		t.Fatalf("SessionWithCapture failed: %v", err)
+	}
+	if !strings.Contains(transcript, "hi from hook test") {
+		t.Errorf("transcript = %q, want it to contain the hook-reported session's content", transcript)
+	}
+}
+
+// When the hook produces no usable payload, the fallback is not silent: it
+// logs so a project relying on the hook can notice the capture degraded.
+func TestCLI_SessionWithCapture_LogsWhenFallingBack(t *testing.T) {
+	dir := t.TempDir()
+	binaryPath := filepath.Join(dir, "claude")
+	if err := os.WriteFile(binaryPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("failed to write fake claude: %v", err)
+	}
+
+	var diagnostics bytes.Buffer
+	printer := ui.NewPrinter(io.Discard, &diagnostics)
+
+	cli := NewCLI().WithPrinter(printer)
+	cli.binaryPath = binaryPath
+
+	if _, err := cli.SessionWithCapture(context.Background(), ""); err != nil {
+		t.Fatalf("SessionWithCapture failed: %v", err)
+	}
+
+	if !strings.Contains(diagnostics.String(), "falling back") {
+		t.Errorf("diagnostics = %q, want a warning about falling back to the working-directory-encoded path", diagnostics.String())
+	}
+}
+
+// The fallback path is what Claude's own CLI would derive, including
+// resolving a project directory reached through a symlink before encoding it -
+// Claude encodes the real path, not the symlink.
+func TestCLI_readSessionTranscript_ResolvesSymlinks(t *testing.T) {
+	realDir := t.TempDir()
+	linkParent := t.TempDir()
+	linkDir := filepath.Join(linkParent, "link")
+	if err := os.Symlink(realDir, linkDir); err != nil {
+		t.Skipf("symlinks unsupported in this environment: %v", err)
+	}
+
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+
+	resolvedReal, err := filepath.EvalSymlinks(realDir)
+	if err != nil {
+		t.Fatalf("failed to resolve real dir: %v", err)
+	}
+	encoded := strings.ReplaceAll(resolvedReal, "/", "-")
+	encoded = strings.ReplaceAll(encoded, ".", "-")
+	sessionDir := filepath.Join(homeDir, ".claude", "projects", encoded)
+	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
+		t.Fatalf("failed to create fake session dir: %v", err)
+	}
+
+	sessionID := "sess-symlink-test"
+	content := `{"type":"user","message":{"role":"user","content":"via symlink"}}` + "\n"
+	if err := os.WriteFile(filepath.Join(sessionDir, sessionID+".jsonl"), []byte(content), 0o644); err != nil {
+		t.Fatalf("failed to write fake session file: %v", err)
+	}
+
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get cwd: %v", err)
+	}
+	defer func() {
+		if err := os.Chdir(oldWd); err != nil {
+			t.Fatalf("failed to restore cwd: %v", err)
+		}
+	}()
+	if err := os.Chdir(linkDir); err != nil {
+		t.Fatalf("failed to chdir into symlink: %v", err)
+	}
+
+	cli := NewCLI()
+	transcript, err := cli.readSessionTranscript(sessionID)
+	if err != nil {
+		t.Fatalf("readSessionTranscript failed: %v", err)
+	}
+	if !strings.Contains(transcript, "via symlink") {
+		t.Errorf("transcript = %q, want it to contain the fallback session's content", transcript)
 	}
 }

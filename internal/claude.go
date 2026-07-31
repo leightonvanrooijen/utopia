@@ -428,15 +428,36 @@ func (c *CLI) streamingPrompt(ctx context.Context, args []string) (*PromptResult
 	return result, nil
 }
 
-// SessionWithCapture runs an interactive Claude session and captures the full transcript.
-// Reads from Claude's native session storage to get clean transcripts without ANSI codes.
-// The transcript is always returned, even if the session fails or is interrupted (Ctrl+C).
+// SessionWithCapture runs an interactive Claude session and captures the full
+// transcript. Reads from Claude's native session storage to get clean
+// transcripts without ANSI codes. The transcript is always returned, even if
+// the session fails or is interrupted (Ctrl+C).
+//
+// The transcript file's location is not reconstructed from the working
+// directory: a SessionStart hook, injected for this one invocation via an
+// inline --settings argument, reports it directly. That injection is additive
+// only - it never touches .claude/settings.json or ~/.claude/settings.json, so
+// hooks the user has already configured there keep firing alongside it. The
+// working-directory encoding below survives only as the fallback for sessions
+// where the hook produced no usable payload (crash before SessionStart, an
+// unrelated settings problem, etc.) - see readHookTranscriptPath.
 func (c *CLI) SessionWithCapture(ctx context.Context, systemPrompt string) (transcript string, err error) {
 	// Generate a unique session ID so we can find the transcript file after
 	sessionID := uuid.New().String()
 
+	// Utopia-controlled, unique per session so concurrent sessions can't clobber
+	// each other's payload.
+	payloadPath := filepath.Join(os.TempDir(), "utopia-session-start-"+sessionID+".json")
+	defer os.Remove(payloadPath)
+
+	hookSettings, err := sessionStartHookSettings(payloadPath)
+	if err != nil {
+		return "", err
+	}
+
 	args := c.baseArgs()
 	args = append(args, "--session-id", sessionID)
+	args = append(args, "--settings", hookSettings)
 
 	if systemPrompt != "" {
 		args = append(args, "--system-prompt", systemPrompt)
@@ -461,15 +482,23 @@ func (c *CLI) SessionWithCapture(ctx context.Context, systemPrompt string) (tran
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	// Use defer to ensure transcript is always captured, even on Ctrl+C or other interrupts.
-	// The defer runs after cmd.Run() returns (or panics), capturing whatever was written
-	// to Claude's session storage before the interruption.
+	// Use defer to ensure transcript is always captured, even on Ctrl+C or other
+	// interrupts. The defer runs after cmd.Run() returns (or panics), capturing
+	// whatever was written before the interruption - the read happens at the
+	// Utopia level, after the subprocess has exited either way, never inside the
+	// hook itself.
 	defer func() {
-		readTranscript, readErr := c.readSessionTranscript(sessionID)
-		if readErr == nil {
+		if transcriptPath := readHookTranscriptPath(payloadPath); transcriptPath != "" {
+			if readTranscript, readErr := readTranscriptFile(transcriptPath); readErr == nil {
+				transcript = readTranscript
+				return
+			}
+		}
+		ui.OrDefault(c.out).Warnf("session-start hook did not report a usable transcript path; falling back to the working-directory-encoded location\n")
+		if readTranscript, readErr := c.readSessionTranscript(sessionID); readErr == nil {
 			transcript = readTranscript
 		}
-		// If we can't read the transcript, transcript remains empty string
+		// If neither source can be read, transcript remains empty string
 	}()
 
 	// Run the interactive session
@@ -477,8 +506,73 @@ func (c *CLI) SessionWithCapture(ctx context.Context, systemPrompt string) (tran
 	return transcript, err
 }
 
-// readSessionTranscript reads and formats a transcript from Claude's session storage.
-// Returns a clean transcript with user/assistant messages separated and tool calls captured.
+// sessionStartHookSettings returns the inline --settings JSON that installs a
+// SessionStart hook writing its stdin payload - which includes the
+// transcript_path Claude assigned this session - to payloadPath.
+func sessionStartHookSettings(payloadPath string) (string, error) {
+	settings := map[string]any{
+		"hooks": map[string]any{
+			"SessionStart": []map[string]any{
+				{
+					"hooks": []map[string]any{
+						{
+							"type":    "command",
+							"command": "cat > " + shellQuote(payloadPath),
+						},
+					},
+				},
+			},
+		},
+	}
+	// encoding/json's Marshal HTML-escapes "<", ">" and "&" by default, which
+	// would turn the hook's "cat > '...'" command into "cat > '...'" -
+	// harmless to any JSON-correct parser, but needless obfuscation of an
+	// argument an operator may want to read straight off the process list.
+	var buf bytes.Buffer
+	encoder := json.NewEncoder(&buf)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(settings); err != nil {
+		return "", fmt.Errorf("failed to marshal session-start hook settings: %w", err)
+	}
+	return strings.TrimSuffix(buf.String(), "\n"), nil
+}
+
+// shellQuote wraps s in single quotes so it survives as one shell word,
+// escaping any single quotes it contains.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// hookStartPayload is the subset of a SessionStart hook's stdin payload Utopia
+// reads: https://docs.claude.com/en/docs/claude-code/hooks - every hook receives
+// transcript_path alongside session_id, cwd, and the event name.
+type hookStartPayload struct {
+	TranscriptPath string `json:"transcript_path"`
+}
+
+// readHookTranscriptPath reads the SessionStart hook's captured payload and
+// returns the transcript_path it reported. It returns "" - never an error -
+// when the payload is missing, unreadable, unparseable, or names a
+// transcript_path that is empty or does not exist, so the caller handles a
+// missing payload and a payload naming a dead file identically: fall back.
+func readHookTranscriptPath(payloadPath string) string {
+	data, err := os.ReadFile(payloadPath)
+	if err != nil {
+		return ""
+	}
+	var payload hookStartPayload
+	if err := json.Unmarshal(data, &payload); err != nil || payload.TranscriptPath == "" {
+		return ""
+	}
+	if _, err := os.Stat(payload.TranscriptPath); err != nil {
+		return ""
+	}
+	return payload.TranscriptPath
+}
+
+// readSessionTranscript is the fallback used when the SessionStart hook
+// produced no usable payload: it reconstructs the session file location by
+// encoding the working directory the way the Claude CLI does.
 func (c *CLI) readSessionTranscript(sessionID string) (string, error) {
 	// Claude stores sessions in ~/.claude/projects/{project-path-encoded}/{session-id}.jsonl
 	homeDir, err := os.UserHomeDir()
@@ -492,6 +586,12 @@ func (c *CLI) readSessionTranscript(sessionID string) (string, error) {
 		return "", fmt.Errorf("failed to get working directory: %w", err)
 	}
 
+	// Claude encodes the real path a session ran in, not a symlink the project
+	// directory happens to be reached through, so resolve one before encoding.
+	if resolved, err := filepath.EvalSymlinks(cwd); err == nil {
+		cwd = resolved
+	}
+
 	// Encode path: replace special characters with dashes to match Claude CLI's encoding
 	// Claude replaces "/" and "." with "-"
 	encodedPath := strings.ReplaceAll(cwd, "/", "-")
@@ -499,9 +599,16 @@ func (c *CLI) readSessionTranscript(sessionID string) (string, error) {
 
 	sessionFile := filepath.Join(homeDir, ".claude", "projects", encodedPath, sessionID+".jsonl")
 
-	file, err := os.Open(sessionFile)
+	return readTranscriptFile(sessionFile)
+}
+
+// readTranscriptFile opens a Claude session JSONL file at path and formats it
+// into a transcript. Shared by the hook-reported path and the
+// working-directory-encoded fallback, since both name the same file format.
+func readTranscriptFile(path string) (string, error) {
+	file, err := os.Open(path)
 	if err != nil {
-		return "", fmt.Errorf("failed to open session file %s: %w", sessionFile, err)
+		return "", fmt.Errorf("failed to open session file %s: %w", path, err)
 	}
 	defer file.Close()
 
