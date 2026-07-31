@@ -139,6 +139,17 @@ type WorkItem struct {
 	// not the same as a claude that cannot start.
 	InvocationErrorCount int `yaml:"invocation_error_count,omitempty"`
 
+	// UnresolvedGateCount tracks consecutive validation gates that blocked without
+	// any verdict about the code, because every validator that did not pass failed
+	// to run. It is counted apart from InvocationErrorCount, which counts executor
+	// invocations: an executor that runs fine clears that counter every iteration,
+	// so a validator fault counted there could never reach its bound. Both are
+	// bounded by escalation.invocation_errors, since both are the same kind of
+	// fault - a subprocess that will not run - and neither is evidence about the
+	// work. It is persisted so the bound holds across a resume, and a gate that
+	// reaches a verdict clears it.
+	UnresolvedGateCount int `yaml:"unresolved_gate_count,omitempty"`
+
 	// MechanicalFailureTotal, ComprehensionFailureTotal and
 	// ReclassifiedFailureTotal are the lifetime failure tallies by the class the
 	// validators reported, as opposed to the counters above, which are routing

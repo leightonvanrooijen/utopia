@@ -3,6 +3,7 @@ package ralph
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/leightonvanrooijen/utopia/internal"
 	"github.com/leightonvanrooijen/utopia/internal/domain"
@@ -502,6 +503,82 @@ func chargeInvocationError(item *domain.WorkItem, caps EscalationCaps, cause err
 // otherwise healthy run.
 func clearInvocationErrors(item *domain.WorkItem) {
 	item.InvocationErrorCount = 0
+}
+
+// gateUnresolved reports a validation gate that blocked without any verdict about
+// the code: it carries an aggregate whose only non-passing entries are validators
+// whose invocation never ran.
+//
+// Such a gate is not a validation failure and must not be routed as one. Nothing
+// was concluded about the work, so the executor counters have nothing to count and
+// escalating would spend the expensive model on a fault it cannot fix. A gate
+// carrying at least one real verdict is a failure whatever else errored beside it,
+// and routes on that verdict.
+func gateUnresolved(agg *validators.AggregateResult) bool {
+	return agg != nil && len(agg.Errors) > 0 && len(agg.Failures) == 0
+}
+
+// chargeUnresolvedGate books one unresolved validation gate against the item's
+// consecutive-unresolved counter, and reports the halt when that counter reaches
+// the invocation-error cap. The gate is retried until then: a validator that could
+// not run may well run next iteration.
+//
+// The halt names the validator fault rather than a failure of the work, because
+// that is what a person has to go and fix - nothing about the change request or
+// the executor changes the outcome of a validator that will not start.
+func chargeUnresolvedGate(item *domain.WorkItem, caps EscalationCaps, cause error) *NeedsHumanError {
+	item.UnresolvedGateCount++
+	if item.UnresolvedGateCount < caps.InvocationErrors {
+		return nil
+	}
+	return &NeedsHumanError{
+		WorkItemID: item.ID,
+		Cap:        "escalation.invocation_errors",
+		Limit:      caps.InvocationErrors,
+		Detail: fmt.Sprintf("%d consecutive validation gate(s) blocked because the validators could not run, so the work was never judged",
+			item.UnresolvedGateCount),
+		Cause: cause,
+	}
+}
+
+// clearUnresolvedGates resets the consecutive-unresolved counter after a gate that
+// reached a verdict, however that verdict went. The counter bounds a fault that is
+// happening now, so a validator that errored once in an otherwise healthy run must
+// not accumulate toward the halt.
+func clearUnresolvedGates(item *domain.WorkItem) {
+	item.UnresolvedGateCount = 0
+}
+
+// unresolvedGateCause names each validator that could not run and the fault that
+// stopped it, as the cause the halt carries. It is the evidence a person needs to
+// repair the validator, and it is deliberately not phrased as a finding about the
+// code.
+func unresolvedGateCause(agg *validators.AggregateResult) error {
+	if agg == nil || len(agg.Errors) == 0 {
+		return nil
+	}
+	parts := make([]string, 0, len(agg.Errors))
+	for _, e := range agg.Errors {
+		parts = append(parts, fmt.Sprintf("validator %s could not run: %v", e.ID, e.Err))
+	}
+	return errors.New(strings.Join(parts, "; "))
+}
+
+// unresolvedGateLogLine renders an unresolved gate for the per-iteration log, in
+// the same shape as a routing decision's line so the two read together. It reports
+// no class and no model change: nothing was concluded, so the next attempt runs on
+// whatever the item was already running on.
+func unresolvedGateLogLine(item *domain.WorkItem, caps EscalationCaps, iteration, maxIterations int) string {
+	outer := "unlimited"
+	if maxIterations > 0 {
+		outer = fmt.Sprintf("%d", maxIterations)
+	}
+	line := fmt.Sprintf("routing: class=none (the validators could not run, so nothing was concluded about the code) unresolved=%d/%d iteration=%d/%s route=unresolved-retry",
+		item.UnresolvedGateCount, caps.InvocationErrors, iteration, outer)
+	if item.UnresolvedGateCount >= caps.InvocationErrors {
+		return line + " model=none (escalation.invocation_errors exhausted, work item halted)"
+	}
+	return line + " model=unchanged"
 }
 
 // aggregateFromGate extracts the validators' aggregate from a blocking gate

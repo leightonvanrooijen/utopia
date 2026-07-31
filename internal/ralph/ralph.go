@@ -698,6 +698,40 @@ func executeWorkItem(
 			// so the human sees it before the injection below and it is not printed
 			// again here.
 			aggregate := aggregateFromGate(gateErr)
+			if gateUnresolved(aggregate) {
+				// The gate blocked because the validators could not be run, not because
+				// they rejected the work. No statement was made about the code, so none of
+				// the routing state moves: routeValidationFailure is not consulted, the
+				// comprehension counter stands, the executor is not escalated and no
+				// conclusions are recorded - there are none to record.
+				//
+				// The verbatim feedback stands too. Overwriting it with the infrastructure
+				// fault would lose a genuine earlier verdict the next attempt still has to
+				// answer, and would tell the executor a validator disapproved when no
+				// validator spoke. LastFailureOutput is cleared as on any other path out of
+				// a passing verification: that output is superseded whatever the gate did.
+				//
+				// The escalated-execution charge is deliberately not refunded. That cap
+				// bounds spend on the expensive model, and this attempt ran and spent; the
+				// unresolved streak below is what bounds the retries.
+				out.Progressf("  Iteration %d: gate blocked workitem-verified: the validators could not run (validators %s)\n", item.IterationCount, ui.Duration(joinElapsed))
+				cause := unresolvedGateCause(aggregate)
+				haltErr := chargeUnresolvedGate(item, caps, cause)
+				out.Progressf("  %s\n", unresolvedGateLogLine(item, caps, item.IterationCount, maxIterations))
+				// The attempt reached no verdict, which is what AttemptErrored records; it
+				// carries no class, because a class is what a verdict would have said.
+				recordAttemptOutcome(item, domain.AttemptErrored, "")
+				item.LastFailureOutput = ""
+				if haltErr != nil {
+					return nil, haltNeedsHuman(store, specID, crID, item, rec, haltErr)
+				}
+				if err := store.SaveWorkItemForSpec(specID, item); err != nil {
+					return nil, fmt.Errorf("failed to save work item state: %w", err)
+				}
+				continue
+			}
+			// The gate reached a verdict, so the unresolved streak - if any - is over.
+			clearUnresolvedGates(item)
 			decision := routeValidationFailure(item, aggregate, caps, defaultExecutorModel, escalatedExecutorModel)
 			out.Progressf("  Iteration %d: gate blocked workitem-verified (validators %s)\n", item.IterationCount, ui.Duration(joinElapsed))
 			out.Progressf("  %s\n", decision.logLine(item.IterationCount, maxIterations, caps))
@@ -737,6 +771,7 @@ func executeWorkItem(
 			continue
 		}
 		item.Status = domain.WorkItemCompleted
+		clearUnresolvedGates(item)
 		recordAttemptOutcome(item, domain.AttemptPassed, "")
 		item.LastFailureOutput = ""
 		item.LastValidatorFeedback = ""
