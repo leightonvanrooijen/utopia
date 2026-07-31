@@ -1,7 +1,7 @@
 id: 08_sharpen-domain-knowledge-boundary-modify-domain-qualification-criteria
 spec_ref: 08_sharpen-domain-knowledge-boundary.modify-domain-qualification-criteria
 title: Modify the domain-qualification-criteria feature
-status: pending
+status: in_progress
 prompt: |-
     ## TASK
 
@@ -56,3 +56,4 @@ constraints:
 order: 1
 source_feature_id: modify-domain-qualification-criteria
 estimated_complexity: medium
+iteration_count: 1

@@ -267,7 +267,13 @@ Instead of looking for definition phrases, apply a QUALIFICATION TEST based on D
    - If not, SHOULD it be? (Indicates code/domain misalignment to fix)
    - Does the code use synonyms where this canonical term should appear?
 
-5. **Disqualification Checks** - Reject if ANY of these apply:
+5. **Vocabulary Test** - Is this vocabulary or terminology, not a spec-local implementation invariant?
+   - Is it a term, a definition, an alias, or an entity relationship?
+   - Or is it a constraint, assumption, or design rule that only an implementer of one
+     spec's features needs to respect? That is a spec-local implementation invariant,
+     not vocabulary, and belongs in that spec's domain_knowledge instead
+
+6. **Disqualification Checks** - Reject if ANY of these apply:
    - **General programming term** - "function", "class", "API", "endpoint" (standard vocabulary)
    - **Standard industry term** - Used in its standard way without project-specific meaning
    - **Temporary/experimental** - Prototype names, working titles, placeholder terms
@@ -275,17 +281,18 @@ Instead of looking for definition phrases, apply a QUALIFICATION TEST based on D
    - **Already externally documented** - Term defined in external docs we reference
    - **One-off explanation** - Not canonical vocabulary, just explaining something once
 
-**Litmus Test:** "Would ambiguity arise without this canonical definition?"
-- YES = Document this term
-- NO = Don't clutter the domain vocabulary
+**Litmus Tests:**
+- "Would ambiguity arise without this canonical definition?" YES = Document this term, NO = Don't clutter the domain vocabulary
+- "Would this still be true and useful if the related spec were deleted?" YES = Domain doc
 
 **Only suggest Domain doc creation when:**
 - The term passes Domain Specificity (specific to our domain), AND
 - The term passes Precision Test (could be misunderstood), AND
 - The term passes Consistency Test (should be used consistently), AND
 - The term passes Code Alignment Test (appears or should appear in code), AND
+- The term passes the Vocabulary Test (terminology, not a spec-local implementation invariant), AND
 - None of the disqualification criteria apply, AND
-- The litmus test passes (ambiguity would arise without definition)
+- Both litmus tests pass (ambiguity would arise without definition, and it would still be true and useful if the related spec were deleted)
 
 **Applying this test to terms introduced in execution runs:**
 Runs are where vocabulary gets coined - the name is chosen at the code, often with no
