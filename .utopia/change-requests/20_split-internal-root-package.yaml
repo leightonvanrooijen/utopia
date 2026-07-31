@@ -1,0 +1,75 @@
+id: 20_split-internal-root-package
+type: refactor
+title: Break up the internal root package so callers depend on what they use
+status: draft
+tasks:
+    - id: move-claude-and-credentials-out-of-root
+      description: |
+        The internal root package is not a package, it is a lobby. It holds the
+        YAML store (store.go, 1274 lines, 70 methods), the claude subprocess
+        client (claude.go, 642 lines), usage capture (claude_usage.go),
+        credential resolution (credentials.go) and a formatting helper
+        (format.go). These share no subject matter. They share a directory.
+
+        Because they share a directory they share a namespace, and because they
+        share a namespace 42 files import the whole lobby to reach one thing.
+        A file that only wants to run a claude prompt imports the package that
+        also defines every storage method.
+
+        Current behavior: `internal.CLI`, `internal.YAMLStore`,
+        `internal.PromptResult`, `internal.ExtractYAMLBlock` and the credential
+        helpers all resolve through the same import. Any change to any of them
+        recompiles every consumer.
+
+        Expected behavior: the claude client, usage capture, credentials and
+        formatting each live in a package named for what they do. Nothing about
+        their logic changes - this is a move plus the import rewrites the move
+        forces.
+      acceptance_criteria:
+        - All existing tests pass, with test bodies unchanged apart from the package and import lines the move forces
+        - The claude subprocess client and its usage capture live in one package named for the claude CLI, and no longer in the internal root
+        - Credential resolution lives in its own package, and formatting helpers live in their own package
+        - Every moved symbol keeps its exported name, its signature and its behavior - the only edits are the package clause and the import paths at call sites
+        - go build ./... and go vet ./... stay clean, and no import cycle is introduced
+        - internal/domain still imports none of these packages, so it remains a leaf
+        - The internal root package holds at most the YAML store after this task, and holds nothing after the next task
+      hints:
+        - The five files are internal/store.go, internal/claude.go, internal/claude_usage.go, internal/credentials.go and internal/format.go, with their existing _test.go siblings
+        - The claude surface is CLI with its With* builder methods plus Prompt, Clone, SessionWithCapture, and PromptResult with GetUsage - see internal/claude.go
+        - ExtractYAMLBlock and Delete are the format.go and credentials.go exports - check which callers use each before choosing package names
+        - Move one package per commit and let the compiler find the call sites; do not hand-edit imports ahead of the move
+        - internal/chunk/sizer.go is the only non-cli, non-ralph consumer of the root package - check what it actually needs, it may only want one symbol
+    - id: narrow-the-store-dependency
+      description: |
+        YAMLStore is a single type with 70 methods spanning eleven unrelated
+        artifact families - specs, change requests, work items, execution runs,
+        drafts, concept docs, domain docs, ADRs, standards, validators,
+        conversations - plus config load and save and an execution log appender.
+
+        Current behavior: every consumer takes `*internal.YAMLStore` and
+        therefore depends on all 70 methods. internal/ralph needs perhaps six of
+        them; it is coupled to all of them. Test doubles are impossible without
+        implementing the whole surface, which is why the tests construct real
+        stores against temp directories.
+
+        Expected behavior: the concrete store keeps all 70 methods and keeps
+        writing the same bytes to the same paths. What changes is that each
+        consumer declares a small interface naming only the methods it calls,
+        and takes that interface instead of the concrete type. The store
+        satisfies them all implicitly. This is Go's consumer-defined interface
+        idiom and it is a compile-time change only.
+      acceptance_criteria:
+        - All existing tests pass unchanged, and the bytes written to .utopia for any given operation are identical
+        - store.go is split into one file per artifact family within its package, with no method body edited during the split
+        - internal/ralph, internal/chunk, internal/harvest, internal/validators and internal/discover each declare an interface listing only the store methods that package calls, and accept that interface rather than the concrete type
+        - Each declared interface is defined in the consuming package, not exported from the store package
+        - The concrete store satisfies every declared interface without an explicit assertion being required to compile, and a compile-time assertion is added anyway so a signature drift fails the build rather than a call site
+        - No consumer's interface lists a method that consumer does not call - verified by removing any unused method and confirming the build still passes
+        - The store type keeps all 70 methods and no method is renamed, so no on-disk behavior can change
+        - go build ./... and go vet ./... stay clean
+      hints:
+        - internal/store.go:17 declares YAMLStore; the artifact families are visible in the method names - Load/Save/List/Delete prefixes over Spec, ChangeRequest, WorkItem, ExecutionRun, Draft, ConceptDoc, DomainDoc, ADR, Standards, Validator, Conversation
+        - internal/ralph calls a small set - SaveWorkItemForSpec, ListWorkItemsForSpec, LoadChangeRequest, SaveExecutionRun, AppendExecutionLogEntry - confirm by grep before writing the interface
+        - The directory accessors on the store (SpecsDir, ChangeRequestsDir, ConceptsDir, RunsDir, DomainDir, ADRsDir, ConversationsDir) overlap with the layout owner introduced by change request 19_unify-utopia-paths-and-frontmatter - back them onto it rather than defining the layout twice
+        - Split the file first and land it, then introduce interfaces - two reviewable commits, not one unreviewable one
+        - Run this change request after 19_unify-utopia-paths-and-frontmatter and 18_decompose-execute-work-item; it moves the files those two edit, and doing it first forces both to be rewritten against new import paths

@@ -1,0 +1,68 @@
+id: 18_decompose-execute-work-item
+type: refactor
+title: Decompose the 477-line executeWorkItem into named stages so its state writes are visible
+status: draft
+tasks:
+    - id: extract-iteration-stages
+      description: |
+        executeWorkItem is one 477-line function (ralph.go:280 to the next
+        top-level declaration at ralph.go:757) that welds together seven
+        concerns: prompt construction, claude invocation, usage accounting,
+        escalation routing, the validator gate, telemetry, and the git commit.
+        Nothing about the function is wrong; there is simply no seam anywhere
+        inside it, so every change to any one concern is a change to all seven.
+
+        Current behavior: the iteration loop inlines each stage. Reading whether
+        an errored attempt escalates means reading the whole function, because
+        the counters, the routing decision and the persistence are interleaved
+        rather than sequenced. This is why fixes here keep landing next to
+        unrelated logic.
+
+        Expected behavior: the same sequence, same order, same decisions - but
+        each stage is a named function with an explicit input and an explicit
+        result, and the loop body reads as the list of stages it already is.
+        This is a pure extraction. No decision changes, no counter changes, no
+        ordering changes.
+      acceptance_criteria:
+        - All existing tests in internal/ralph pass unchanged, with no test file edited to accommodate the new structure
+        - executeWorkItem is under 120 lines and its body reads as a sequence of named stage calls
+        - Each extracted stage is a package-level or method function with a name describing the concern it owns, not a positional name such as step1 or phase2
+        - Prompt construction, claude invocation, usage accounting, escalation routing, the validator gate, telemetry emission and the git commit are each reachable as a separately callable unit
+        - The order in which stages run, and the conditions under which each is skipped, are identical to the current implementation
+        - Every mutation of the work item's status and counters happens in a stage whose name says it mutates state, so the write sites are greppable
+        - No new persistence call is added and no existing persistence call is removed or reordered
+        - go vet ./... stays clean
+      hints:
+        - internal/ralph/ralph.go:280 is executeWorkItem; internal/ralph/ralph.go:757 (buildPrompt) is the next top-level declaration, so the function body is everything between
+        - The seven concerns already have collaborators to extract toward - buildPrompt (ralph.go:757), gateFeedback (ralph.go:781), logExecutionEntry (ralph.go:834), appendIterationOutput (ralph.go:852), gitCommitWorkItem (ralph.go:865) exist; the missing seams are invocation, accounting, routing and the gate
+        - internal/ralph/escalation.go holds chargeEscalatedAttempt and refundExecutorAttempt - the accounting stage should call them rather than duplicate their logic
+        - Extract in place first and keep everything in package ralph; splitting the package is a separate change request
+        - Do not fix the ignored SaveWorkItemForSpec errors here - surfacing them changes behavior and belongs in a bugfix change request. This task only makes them visible in one place
+    - id: name-the-state-write-sites
+      description: |
+        Work item state is written from seven scattered sites -
+        ralph.go:368,409,500,568,605, escalation.go:398 and scoping.go:139 - each
+        of which discards the error with `_ =`. The scattering and the discarding
+        are two separate problems. This task fixes only the scattering.
+
+        Current behavior: each site independently mutates fields on the item and
+        then calls store.SaveWorkItemForSpec. There is no single place that
+        describes what a state transition consists of, so a new transition is
+        written by copying a nearby one.
+
+        Expected behavior: one internal helper owns "mutate the work item and
+        persist it", and every site calls it. The helper still discards the
+        error exactly as the call sites do today, so behavior is unchanged - but
+        there is now exactly one line to change when that decision is revisited.
+      acceptance_criteria:
+        - All existing tests in internal/ralph pass unchanged
+        - A single helper owns the mutate-then-persist pair and is called by every site that currently pairs a field mutation with SaveWorkItemForSpec
+        - The helper preserves today's error handling exactly - the save error is still discarded, so no new error surfaces at any call site
+        - grep for SaveWorkItemForSpec in internal/ralph returns the helper plus at most one call inside it, not seven scattered calls
+        - The set of fields written at each transition is identical to what each site writes today
+        - The helper carries a comment naming the discarded error as a known gap with the change request that will address it, so the next reader does not assume it was considered safe
+        - go vet ./... stays clean
+      hints:
+        - The seven sites are internal/ralph/ralph.go:368, 409, 500, 568, 605, internal/ralph/escalation.go:398 and internal/ralph/scoping.go:139
+        - scoping.go:139 uses s.store rather than a store parameter - the helper signature has to work for both the free-function and method call shapes
+        - Resist widening scope - returning the error instead of discarding it changes behavior and is deliberately excluded from this change request
