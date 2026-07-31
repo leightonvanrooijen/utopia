@@ -1,0 +1,155 @@
+id: 21_thin-the-cli-handlers
+type: refactor
+title: Move the algorithms out of the four oversized cli handlers, per the cli-organization standard
+status: draft
+tasks:
+    - id: extract-merge-algorithm
+      description: |
+        merge.go is 775 lines and only three of its thirteen functions are CLI
+        frame. The rest is the merge algorithm: PerformMerge (merge.go:537),
+        performMergeChanges (:557), performMergeInitiative (:634),
+        mergeInitiative (:306), mergeRefactor (:484), AutoMergeCR (:675),
+        CleanupAfterMerge (:736) and the grouping helpers groupChangesBySpec
+        (:269), sortedSpecIDs (:279) and allAdds (:294).
+
+        The standard cli-organization.md already calls this out twice - "Put a
+        multi-stage algorithm inline in RunE -> Extract to a package under
+        internal/" and "Let a command file grow past ~400 lines -> Split:
+        extract the algorithm package". This task applies the rule the repository
+        already documents.
+
+        That five of these are exported from a package the standard says nobody
+        may import is the tell: they were already trying to leave.
+
+        Current behavior: applying a change request to specs is knowledge held in
+        the cobra command file, so it cannot be exercised without going through
+        the command.
+
+        Expected behavior: a merge package owns the algorithm and the handler
+        calls it. Same merge results, same output, same on-disk writes.
+      acceptance_criteria:
+        - All existing tests pass, with test bodies unchanged apart from the package and import lines the move forces
+        - A package under internal/ owns the merge algorithm, and internal/cli/merge.go retains only the cobra command, flag wiring and the call into it
+        - internal/cli/merge.go is under 400 lines
+        - The merge produced for any given change request is byte-identical to today's, including the order specs are written in and the text printed for each change
+        - Dry-run mode produces byte-identical output to today and still writes nothing
+        - PerformMerge, AutoMergeCR, CleanupAfterMerge and their unexported collaborators keep their behavior and signatures apart from any parameter that existed only to pass cli state
+        - The new package does not import internal/cli, and nothing imports internal/cli
+        - go build ./... and go vet ./... stay clean
+      hints:
+        - Confirmed before writing this - nothing outside internal/cli calls PerformMerge, AutoMergeCR, CleanupAfterMerge, GitCommitCR or GitCommitSpecMerge, and no package imports internal/cli. The move has no external callers to break
+        - The three functions that stay are init (merge.go:17), newMergeCmd (:22) and the flag-reading top of runMerge (:49)
+        - runMerge is 217 lines - most of it is the algorithm, not the frame. Split it at the point where it stops reading flags and starts merging
+        - MergeResult is the type that crosses the seam; it moves with the algorithm and the handler prints from it
+    - id: extract-execution-orchestration-and-commit-policy
+      description: |
+        execute.go is 818 lines holding two separable things.
+
+        The first is execution orchestration: runExecuteAll (execute.go:265),
+        executeSingleCR (:356), executeInitiative (:413), executeSingleInitiative
+        (:448), executeInitiativeCore (:459), chunkCR (:645), chunkPhase (:683),
+        sizerOptions (:602) and the ordering predicate lessCRExecutionOrder
+        (:249). This decides which change requests run, in what order, and how an
+        initiative advances through its phases. It is an algorithm that happens
+        to be reachable from a command.
+
+        The second is commit policy: gitCommitChunk (:758), gitCommitCleanup
+        (:772), GitCommitCR (:782) and GitCommitSpecMerge (:800). These encode
+        what utopia commits and what it names each commit. internal/git already
+        exists and owns the primitives - Add, Commit, CommitIfChanged,
+        CurrentBranch, HeadSHA - but the policy that composes them lives in a
+        cobra file.
+
+        Current behavior: choosing what to execute and deciding what to commit
+        are both only callable through the command.
+
+        Expected behavior: orchestration lives in its own package, commit policy
+        lives beside the git primitives it composes, and the handler resolves
+        flags and calls one function. Identical execution order and identical
+        commit messages.
+      acceptance_criteria:
+        - All existing tests pass, with test bodies unchanged apart from the package and import lines the move forces
+        - Execution orchestration lives in a package under internal/, and internal/cli/execute.go retains only the cobra commands, flag resolution and the call into it
+        - internal/cli/execute.go is under 400 lines
+        - The four git commit helpers live in the package that owns the git primitives they call, not in internal/cli
+        - Every commit message utopia produces is byte-identical to today's, for chunk, cleanup, change-request and spec-merge commits alike
+        - The order change requests execute in is unchanged - the ordering predicate produces the same sequence for the same set of files
+        - Initiative phase advancement takes the same decisions in the same order, including which phase is selected and when a phase is marked complete
+        - The new packages do not import internal/cli
+        - go build ./... and go vet ./... stay clean
+      hints:
+        - internal/git/git.go already exports Add, HasStagedChanges, Commit, CommitIfChanged, CurrentBranch and HeadSHA - the four helpers moving in compose these and should not reimplement them
+        - GitCommitCR and GitCommitSpecMerge are exported and called only from within internal/cli today; they stay exported in their new home
+        - executeInitiativeCore (execute.go:459) is the widest signature in the file - it takes out, cr, store, config, projectDir, utopiaDir, over and authMode. Consider grouping those into a struct as part of the move rather than threading eight parameters into a new package
+        - reportNeedsHuman (:581) and reportSizing (:619) are printing, not algorithm - they belong with the handler or with internal/ui, not in the orchestration package
+        - selectChangeRequest (:721) is interactive prompting - it is CLI frame and stays
+    - id: extract-shape-algorithm-and-collapse-its-twin
+      description: |
+        shape.go is 824 lines and holds two entire commands, `shape` and `shape
+        domain`, each with its own parse, apply, convert and counting helpers.
+
+        The two halves are near-identical in shape: sortDraftsByConfidence
+        (shape.go:241) beside sortDomainDraftsByConfidence (:623),
+        countDraftsByConfidence (:250) beside countDomainDraftsByConfidence
+        (:632), parseShapeResult (:291) beside parseDomainShapeResult (:718),
+        applyShapeResult (:308) beside applyDomainShapeResult (:735), and
+        convertShapeUpdatedToDraft (:347) beside
+        convertDomainShapeUpdatedToDraft (:796). One was written by copying the
+        other.
+
+        Current behavior: two parallel implementations of the same shaping
+        algorithm sit in one command file, so a fix to one silently leaves the
+        other wrong.
+
+        Expected behavior: the shaping algorithm lives in its own package. Where
+        the two halves genuinely differ only in the draft type they operate on,
+        they share one implementation. Where they differ in behavior, they stay
+        separate and the difference is stated in a comment rather than left to be
+        rediscovered by diffing.
+      acceptance_criteria:
+        - All existing tests pass, with test bodies unchanged apart from the package and import lines the move forces
+        - The shaping algorithm lives in a package under internal/, and internal/cli/shape.go retains only the two cobra commands, flag wiring and the calls into it
+        - internal/cli/shape.go is under 400 lines
+        - Both commands produce byte-identical output and byte-identical draft files for the same inputs and the same transcript
+        - Each pair of twinned functions is either collapsed into one shared implementation or left as two with a comment naming the behavioral difference that justifies the duplication
+        - No pair is left duplicated without that justification recorded
+        - Parsing a malformed transcript fails the same way it does today, with the same error text, for both the spec and domain paths
+        - go build ./... and go vet ./... stay clean
+      hints:
+        - The five twinned pairs are at shape.go 241/623, 250/632, 291/718, 308/735 and 347/796
+        - Compare each pair line by line before collapsing - the domain variants carry BoundedContext, and collectAllDomainTerms (:640) and buildOtherTermsList (:652) have no spec-side counterpart at all, so the domain path is genuinely wider in places
+        - Generics or a small interface over the two draft types will collapse the sorting and counting pairs cleanly; the parse and apply pairs may not be worth forcing together
+        - Preserving output exactly matters more here than removing every duplicate line - a pair left with a stated reason satisfies this task
+    - id: extract-change-request-validation
+      description: |
+        validateSingleCR spans internal/cli/cr.go:105 to :368 - 264 lines of
+        validation logic in a cobra command file, sitting between the handler
+        that calls it (runCRValidate, cr.go:82) and the handler for a different
+        command entirely (runCR, cr.go:368).
+
+        Validation is the one algorithm in this codebase most likely to be called
+        from somewhere other than a command - a pre-merge check, an editor
+        integration, the execution loop refusing to chunk an invalid change
+        request. Today it can only be reached by running the command.
+
+        Current behavior: 264 lines of rules about what makes a change request
+        valid live in internal/cli, while domain.ValidateChangeRequest lives in
+        internal/domain. The rules are split across two packages by accident of
+        history.
+
+        Expected behavior: the validation lives beside the type it validates.
+        cr.go keeps the command, the file reading and the printing.
+      acceptance_criteria:
+        - All existing tests pass, with test bodies unchanged apart from the package and import lines the move forces
+        - Change request validation lives in the package that owns the ChangeRequest type, or in a package dedicated to validating it - not in internal/cli
+        - internal/cli/cr.go is under 400 lines
+        - Every change request that validates today still validates, and every one that fails today still fails with the same message and the same exit code
+        - The validation function returns its findings rather than printing them, and the handler does the printing
+        - Reading the file from disk and reporting the result stay in internal/cli - only the rules move
+        - validateChangeRequests (cr.go:599), which validates the whole directory, calls the moved rules rather than keeping a second copy
+        - go build ./... and go vet ./... stay clean
+      hints:
+        - validateSingleCR is internal/cli/cr.go:105 through :368; the next declaration, runCR at :368, belongs to a different command and must not be dragged along
+        - domain.ValidateChangeRequest already exists and is the natural home - check what it covers before moving, so the two do not end up as overlapping rule sets
+        - buildCRsSummary (cr.go:529), buildSpecsSummary (:564) and saveConversation (:681) are prompt construction and persistence, not validation. They are out of scope for this task but are why cr.go stays near the limit after it
+        - Note internal/cli/init.go is 436 lines and is deliberately excluded from this change request - it is mostly the embedded validatorTemplate const at init.go:20, and runInit itself is 166 lines, so it does not carry an extractable algorithm

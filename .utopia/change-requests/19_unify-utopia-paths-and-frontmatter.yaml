@@ -1,7 +1,7 @@
 id: 19_unify-utopia-paths-and-frontmatter
 type: refactor
 title: Give the .utopia layout and its frontmatter format one owner each
-status: draft
+status: in-progress
 tasks:
     - id: one-frontmatter-parser
       description: |

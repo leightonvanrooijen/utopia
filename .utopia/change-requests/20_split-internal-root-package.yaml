@@ -72,4 +72,43 @@ tasks:
         - internal/ralph calls a small set - SaveWorkItemForSpec, ListWorkItemsForSpec, LoadChangeRequest, SaveExecutionRun, AppendExecutionLogEntry - confirm by grep before writing the interface
         - The directory accessors on the store (SpecsDir, ChangeRequestsDir, ConceptsDir, RunsDir, DomainDir, ADRsDir, ConversationsDir) overlap with the layout owner introduced by change request 19_unify-utopia-paths-and-frontmatter - back them onto it rather than defining the layout twice
         - Split the file first and land it, then introduce interfaces - two reviewable commits, not one unreviewable one
-        - Run this change request after 19_unify-utopia-paths-and-frontmatter and 18_decompose-execute-work-item; it moves the files those two edit, and doing it first forces both to be rewritten against new import paths
+        - Run this change request last, after 19_unify-utopia-paths-and-frontmatter, 18_decompose-execute-work-item and 21_thin-the-cli-handlers. It moves the files all three edit, and doing it first forces them to be rewritten against new import paths
+        - 21_thin-the-cli-handlers creates new packages for merge, execution orchestration and shaping. Each will need its own consumer-defined store interface, so running it first means this task sees the final package set rather than declaring interfaces that are about to move
+    - id: realign-cli-organization-standard
+      description: |
+        The standard cli-organization.md documents the internal root package as
+        deliberate. Its file-structure block reads
+        `claude.go store.go format.go   # package internal: shared low-level
+        primitives` (cli-organization.md:35), its stack table names
+        `internal.YAMLStore` as the persistence technology
+        (cli-organization.md:20), its one-way-imports paragraph lists `internal`
+        as an import target, and two further sites reference
+        `internal.NewYAMLStore` by that path (cli-organization.md:158 in a code
+        example, cli-organization.md:186 in the anti-pattern table).
+
+        Current behavior: the previous two tasks move every one of those symbols
+        out of the root package, which leaves the standard describing a layout
+        that no longer exists. The spec-intent validator reads the standards, so
+        the split is liable to be judged non-conforming against a document the
+        split itself invalidated.
+
+        Expected behavior: the standard describes the layout after the split. The
+        rules it states do not change - thin handlers, downward-only imports,
+        resolvers over hand-rolled paths are all still the rules. Only the
+        package names and paths those rules refer to change. This task edits
+        documentation and must not edit Go code.
+      acceptance_criteria:
+        - No Go file is modified by this task - the diff touches only .utopia/standards/cli-organization.md
+        - The file-structure block at cli-organization.md:35 lists the packages that exist after the split, with no line describing package internal as a home for shared low-level primitives
+        - The stack table's persistence row names the store by its post-split import path rather than internal.YAMLStore
+        - The one-way-imports paragraph lists the packages internal/cli imports after the split, and still states that no package imports internal/cli
+        - The two remaining references to internal.NewYAMLStore are updated to the post-split path, and the code example at cli-organization.md:158 remains a bad example - it is marked wrong for hand-rolling the path, not for the package it names
+        - Every rule, anti-pattern and severity in the document is unchanged in meaning - only the names of packages and paths are edited
+        - The document contains no reference to a package that no longer exists after this change request, verified by grepping the standard for each removed package path
+        - The document renders as valid markdown with its frontmatter intact and its id still cli-organization
+      hints:
+        - The six sites are .utopia/standards/cli-organization.md lines 20, 35, 138, 158, 186 and the One-way imports paragraph that follows the resolver reference
+        - Line 138 reads "Handlers never hand-roll path resolution or construct YAMLStore directly" - the rule survives, only the type's home changes
+        - The anti-pattern "Let a command file grow past ~400 lines" and the Rationale note that cli is "~7,400 lines" are about internal/cli, not the root package - leave both alone, they are the subject of separate work
+        - Do this task last in the change request, after the moves have settled, so the standard is written against the layout that actually shipped rather than the one that was planned
+        - Change request 19_unify-utopia-paths-and-frontmatter also touches this area conceptually - its layout owner replaces the filepath.Join(abs, ".utopia") shown at cli-organization.md:158, but that snippet is the deliberate bad example and stays bad

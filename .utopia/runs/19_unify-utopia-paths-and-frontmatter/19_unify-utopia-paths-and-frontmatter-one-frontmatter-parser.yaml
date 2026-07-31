@@ -1,0 +1,58 @@
+workitem_id: 19_unify-utopia-paths-and-frontmatter-one-frontmatter-parser
+cr_id: 19_unify-utopia-paths-and-frontmatter
+spec_ref: 19_unify-utopia-paths-and-frontmatter.one-frontmatter-parser
+iterations: 1
+completed_at: 2026-07-31T13:40:24.610628+10:00
+outcome: completed
+status: unprocessed
+transcript: |-
+  --- iteration 1 ---
+  I'll read the three sites first.Now the three callers.Now the parser test.Done. `splitFrontmatter` in `internal/frontmatter.go:26` owns the split; three sites call it. Offsets derived from `frontmatterOpen`/`frontmatterClose`, no bare 4s. Sentinel errors keep each caller's exact message. 1466 tests pass, unchanged. Left the pre-existing dirty `.utopia/*.yaml` files uncommitted (unrelated to this change).
+
+  <COMPLETE>
+routing:
+  cr_type: refactor
+  attempts:
+    - iteration: 1
+      role: default-executor
+      model: ""
+      effort: medium
+      usage:
+        available: true
+        model: claude-opus-5[1m]
+        effort: medium
+        input_tokens: 30
+        output_tokens: 7544
+        cache_read_tokens: 654874
+        cache_creation_tokens: 34135
+        turns: 19
+        duration_ms: 167585
+        cost_usd: 0.8575369999999997
+        cost_basis: unknown
+      outcome: passed
+  sonnet_attempts: 1
+  opus_execution_attempts: 0
+  mechanical_failures: 0
+  comprehension_failures: 0
+  reclassified_failures: 0
+  scoping_escalations: 0
+  spec_rewritten: false
+  outcome: passed
+  duration_seconds: 247.148931917
+  duration: 4m07s
+  cost_note: 'Cost here is measured, not approximated by tier: each attempt carries the token counts and the dollar figure the claude CLI reported for it, with the basis that says what the dollars mean (ADR-007). The counters beside them - attempts, sonnet_attempts, opus_execution_attempts - count routing, not spend. Every attempt''s token counts and cost were read.'
+usage:
+  - iteration: 1
+    role: default-executor
+    outcome: passed
+    available: true
+    model: claude-opus-5[1m]
+    effort: medium
+    input_tokens: 30
+    output_tokens: 7544
+    cache_read_tokens: 654874
+    cache_creation_tokens: 34135
+    turns: 19
+    duration_ms: 167585
+    cost_usd: 0.8575369999999997
+    cost_basis: unknown
