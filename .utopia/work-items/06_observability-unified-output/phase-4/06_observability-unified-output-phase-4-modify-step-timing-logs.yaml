@@ -13,7 +13,7 @@ title: |
     only the command's result. Timing is captured in the loop itself (start
     marker before the step, elapsed after it), so the Claude and validator
     agents are timed as black-box calls without changing their APIs.
-status: in_progress
+status: completed
 prompt: |-
     ## TASK
 

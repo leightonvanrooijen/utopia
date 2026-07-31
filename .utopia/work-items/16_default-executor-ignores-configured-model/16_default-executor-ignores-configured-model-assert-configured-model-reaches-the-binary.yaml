@@ -107,4 +107,55 @@ constraints:
 order: 1
 source_feature_id: assert-configured-model-reaches-the-binary
 estimated_complexity: medium
-iteration_count: 1
+iteration_count: 2
+last_validator_feedback: |
+    Gating connector validators:after-workitem blocked workitem-verified:
+    Validator spec-intent failed:
+    Two work items carry top-level `status: in_progress`, not one:
+
+    - `.utopia/work-items/16_default-executor-ignores-configured-model/16_default-executor-ignores-configured-model-assert-configured-model-reaches-the-binary.yaml:12`
+    - `.utopia/work-items/06_observability-unified-output/phase-4/06_observability-unified-output-phase-4-modify-step-timing-logs.yaml:16`
+
+    Cannot resolve which item is under review from state alone. Diff touches item 16's YAML, but inferring the target from the diff is the circular path Step 1 forbids - the diff here is *only* executor bookkeeping (`executor_attempts`, `selected_validators`, `validators_routed`) on item 16 and contains zero source or test changes, so it carries no evidence about criteria satisfaction either way. Item 06's `in_progress` is stale leftover from commit `5c86651` ("test: lock step-timing lines onto the diagnostic channel"), which appears complete but was never transitioned.
+
+    Violations:
+
+    `.utopia/work-items/06_observability-unified-output/phase-4/06_observability-unified-output-phase-4-modify-step-timing-logs.yaml:16 - [A] Work-item state has two concurrent in_progress items, so the running item is not identifiable; this item's status was not transitioned out of in_progress when its work landed.`
+
+    <VERDICT>
+    {
+      "verdict": "fail",
+      "failure_class": "mechanical",
+      "diagnosis": "Validation could not run: the work-item store does not identify a unique running item, so there is no authoritative set of acceptance criteria to judge the diff against. This is a state-bookkeeping fault, not a misunderstanding of the task.",
+      "confidence": "low"
+    }
+    </VERDICT>
+failure_conclusions:
+    - iteration: 1
+      validator_id: spec-intent
+      failure_class: comprehension
+      diagnosis: 'Validation could not run: the work-item store does not identify a unique running item, so there is no authoritative set of acceptance criteria to judge the diff against. This is a state-bookkeeping fault, not a misunderstanding of the task.'
+selected_validators:
+    - spec-intent
+comprehension_count: 1
+comprehension_failures_total: 1
+executor_attempts:
+    - iteration: 1
+      role: default-executor
+      model: ""
+      effort: medium
+      usage:
+        available: true
+        model: claude-opus-5[1m]
+        effort: medium
+        input_tokens: 27
+        output_tokens: 8340
+        cache_read_tokens: 669210
+        cache_creation_tokens: 31435
+        turns: 16
+        duration_ms: 207666
+        cost_usd: 0.85759
+        cost_basis: unknown
+      outcome: failed
+      failure_class: comprehension
+validators_routed: true

@@ -84,7 +84,16 @@ func TestExecute_DefaultExecutorModelReachesTheBinary(t *testing.T) {
 				t.Fatalf("Execute() completed %d of %d, want the item to reach a default-executor attempt", result.Completed, result.Total)
 			}
 
-			args := recorded()
+			// One spawn, and it is the default-executor attempt: the config carries no
+			// validators, so nothing else invokes claude, and the stand-in completes on
+			// its first answer so there is no mechanical retry. Asserting the count
+			// keeps `want` anchored to the executor rather than to whichever role
+			// happened to put the flag on the run.
+			invocations := recorded()
+			if len(invocations) != 1 {
+				t.Fatalf("claude spawned %d times %q, want exactly the one default-executor attempt", len(invocations), invocations)
+			}
+			args := invocations[0]
 			if !strings.Contains(args, tt.want) {
 				t.Errorf("claude args = %q, want %q", args, tt.want)
 			}
@@ -100,7 +109,10 @@ func TestExecute_DefaultExecutorModelReachesTheBinary(t *testing.T) {
 // stream-json shape the execution loop asks for. It goes on PATH rather than
 // being injected because Execute builds its own *internal.CLI: only a real spawn
 // can report the flags the subprocess was handed.
-func argRecordingClaudeOnPath(t *testing.T) func() string {
+//
+// It returns one entry per spawn rather than one blob, so an assertion can name
+// which invocation it is about instead of matching anywhere in the run.
+func argRecordingClaudeOnPath(t *testing.T) func() []string {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -116,13 +128,19 @@ func argRecordingClaudeOnPath(t *testing.T) func() string {
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	return func() string {
+	return func() []string {
 		t.Helper()
 
 		data, err := os.ReadFile(argsPath)
 		if err != nil {
 			t.Fatalf("fake claude did not record its arguments: %v", err)
 		}
-		return strings.Join(strings.Fields(string(data)), " ")
+		var invocations []string
+		for _, line := range strings.Split(string(data), "\n") {
+			if args := strings.Join(strings.Fields(line), " "); args != "" {
+				invocations = append(invocations, args)
+			}
+		}
+		return invocations
 	}
 }
