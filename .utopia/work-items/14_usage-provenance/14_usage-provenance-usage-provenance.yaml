@@ -1,0 +1,77 @@
+id: 14_usage-provenance-usage-provenance
+spec_ref: 14_usage-provenance.usage-provenance
+title: |
+    A usage entry records where its numbers came from, so a reconstructed
+    figure can never be read as a measured one. Provenance is a separate
+    axis from cost basis: cost_basis says how a cost was priced, provenance
+    says whether the tokens were observed by the execution loop at all.
+status: pending
+prompt: |-
+    ## TASK
+
+    A usage entry records where its numbers came from, so a reconstructed
+    figure can never be read as a measured one. Provenance is a separate
+    axis from cost basis: cost_basis says how a cost was priced, provenance
+    says whether the tokens were observed by the execution loop at all.
+
+
+    Acceptance criteria:
+    - AttemptUsage carries a provenance field that serialises to `source`, with `captured` meaning the execution loop read the counts off a CLI result object and `backfilled` meaning they were reconstructed from a record outside the loop
+    - An entry written by the execution loop is `captured`, and the field is serialised unconditionally rather than omitted, so a missing value is distinguishable from a captured one
+    - A backfilled entry carries a `source_ref` naming the artifact the numbers were read from, so a reader can go back to the evidence
+    - An entry that is neither captured nor recognised as a known provenance value round-trips unchanged rather than being coerced to captured
+    - Provenance survives a re-marshal: reading a run record and saving it again preserves both `source` and `source_ref`
+
+
+
+    ## HINTS
+
+    - AttemptUsage is internal/domain/usage.go:57; Available and UnavailableReason are the existing precedent for a field that must not be inferred from a zero value
+    - The 31 already-backfilled records on disk carry `source: backfilled` and `source_ref: <uuid>.jsonl` - match those key names so the existing data is read correctly rather than requiring a rewrite
+    - UsageEntry inlines AttemptUsage (usage.go:159), so the fields land on the flat row without extra work
+
+
+
+    ## STANDARDS
+
+    This project defines coding standards in .utopia/standards/. Before implementing, read the standards docs relevant to the files this task touches:
+
+    - id: cli-organization
+      description: How to structure cobra commands in internal/cli: thin handlers that own the CLI frame and delegate the algorithm to domain packages.
+      tags: go, cli, cobra, architecture
+      path: .utopia/standards/cli-organization.md
+    - id: error-handling
+      description: How errors are created, wrapped, matched, and surfaced: typed domain errors for branching, %w wrapping for infrastructure, one exit point in root.go.
+      tags: go, errors, cli
+      path: .utopia/standards/error-handling.md
+    - id: terminal-output
+      description: One shared output vocabulary (glyphs, banners, progress) routed through cobra's injectable writers so command output is consistent and testable.
+      tags: go, cli, ux, output
+      path: .utopia/standards/terminal-output.md
+
+
+    ## CONSTRAINTS
+
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+    - You are running autonomously and non-interactively; never ask for, or wait on, human input
+    - When a genuine design choice arises, choose the best-justified option and implement it rather than deferring the decision to a human
+    - Record any non-obvious decision - rationale and the alternatives considered - in the commit or PR body, so PR review is the human checkpoint
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+    - You are running autonomously and non-interactively; never ask for, or wait on, human input
+    - When a genuine design choice arises, choose the best-justified option and implement it rather than deferring the decision to a human
+    - Record any non-obvious decision - rationale and the alternatives considered - in the commit or PR body, so PR review is the human checkpoint
+order: 0
+source_feature_id: usage-provenance
+estimated_complexity: medium
