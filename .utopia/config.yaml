@@ -7,6 +7,12 @@ project_context:
 verification:
   command: ./scripts/verify.sh
   max_iterations: 8
+  # How many extra attempts a validator gets when its claude invocation fails to
+  # run at all (default 2, commented because that IS the default). A validator
+  # that could not run has not disapproved of anything, so the fault is retried as
+  # infrastructure rather than routed through the escalation caps. Zero is
+  # legitimate here - it disables retrying - unlike the escalation caps below.
+  #validator_invocation_retries: 2
 # Which model each ROLE runs on. Fallback chain per key: the role key, then
 # models.default, then sonnet. execute_escalated falls back to opus; scoper falls
 # back to execute_escalated. Aliases are forwarded to the claude CLI UNEXPANDED -

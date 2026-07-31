@@ -124,7 +124,8 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 	defaultExecutorModel := resolveDefaultExecutorModel(config.Models, over.Model)
 	cli = cli.WithModel(defaultExecutorModel)
 	verifier := verification.NewRunner(projectDir)
-	validatorRunner := validators.NewRunner(projectDir).WithModelConfig(config.Models).WithEffort(efforts.validators).WithAuth(auth)
+	validatorRunner := validators.NewRunner(projectDir).WithModelConfig(config.Models).WithEffort(efforts.validators).WithAuth(auth).
+		WithInvocationRetries(domain.CapOr(config.Verification.ValidatorInvocationRetries, validators.DefaultValidatorInvocationRetries))
 
 	// Load validators from config
 	var validatorList []*domain.Validator

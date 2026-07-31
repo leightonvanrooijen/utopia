@@ -336,6 +336,12 @@ func (s *YAMLStore) LoadConfig() (*domain.Config, error) {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 
+	// Validate the verification section at load time, for the same reason as the
+	// escalation caps above.
+	if err := domain.ValidateVerificationConfig(config.Verification); err != nil {
+		return nil, fmt.Errorf("failed to load config: %w", err)
+	}
+
 	// Validate the work-item turn budget at load time, for the same reason as the
 	// escalation caps: a budget that could never bound anything must fail before
 	// an iteration is launched with it.

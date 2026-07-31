@@ -24,6 +24,14 @@ const PassedToken = "<PASSED>"
 // the batch proceeds unaffected.
 const DefaultValidatorTimeout = 10 * time.Minute
 
+// DefaultValidatorInvocationRetries is how many times a validator whose claude
+// invocation failed to run is invoked again before the run is given up on. An
+// invocation that never happened says nothing about the code, so retrying it is
+// free of the risk that makes retrying a verdict dubious; two is enough to ride
+// out a transient fault - a dropped connection, a momentarily unavailable binary
+// - without spending minutes on a claude that will not start at all.
+const DefaultValidatorInvocationRetries = 2
+
 // Result holds the outcome of a validator run
 type Result struct {
 	// Passed is true if the validator passed - a <VERDICT> block reporting pass,
@@ -49,32 +57,51 @@ type ValidatorResult struct {
 
 // Runner executes validators by invoking Claude with read-only tools
 type Runner struct {
-	workDir          string
-	cli              *internal.CLI
-	modelConfig      *domain.ModelConfig
-	effort           string
-	validatorTimeout time.Duration
+	workDir           string
+	cli               *internal.CLI
+	modelConfig       *domain.ModelConfig
+	effort            string
+	validatorTimeout  time.Duration
+	invocationRetries int
 }
 
 // NewRunner creates a validator runner that operates in the given directory.
 // Use WithModelConfig to configure model fallback for validators.
 func NewRunner(workDir string) *Runner {
 	return &Runner{
-		workDir:          workDir,
-		cli:              internal.NewCLI(),
-		validatorTimeout: DefaultValidatorTimeout,
+		workDir:           workDir,
+		cli:               internal.NewCLI(),
+		validatorTimeout:  DefaultValidatorTimeout,
+		invocationRetries: DefaultValidatorInvocationRetries,
 	}
+}
+
+// WithInvocationRetries sets how many extra attempts a validator gets when its
+// claude invocation fails to run at all. Zero disables retrying; a negative
+// value falls back to DefaultValidatorInvocationRetries.
+//
+// It is configured independently of the escalation caps because it bounds a
+// different thing: those caps bound spend on evidence that the executor got the
+// work wrong, and an invocation that never ran is not that evidence.
+func (r *Runner) WithInvocationRetries(retries int) *Runner {
+	if retries < 0 {
+		retries = DefaultValidatorInvocationRetries
+	}
+	c := *r
+	c.invocationRetries = retries
+	return &c
 }
 
 // WithValidatorTimeout sets the per-validator timeout used when running
 // validators concurrently. A value <= 0 falls back to DefaultValidatorTimeout.
 func (r *Runner) WithValidatorTimeout(timeout time.Duration) *Runner {
 	return &Runner{
-		workDir:          r.workDir,
-		cli:              r.cli,
-		modelConfig:      r.modelConfig,
-		effort:           r.effort,
-		validatorTimeout: timeout,
+		workDir:           r.workDir,
+		cli:               r.cli,
+		modelConfig:       r.modelConfig,
+		effort:            r.effort,
+		validatorTimeout:  timeout,
+		invocationRetries: r.invocationRetries,
 	}
 }
 
@@ -86,11 +113,12 @@ func (r *Runner) WithValidatorTimeout(timeout time.Duration) *Runner {
 // 4. "sonnet" as the implicit default
 func (r *Runner) WithModelConfig(mc *domain.ModelConfig) *Runner {
 	return &Runner{
-		workDir:          r.workDir,
-		cli:              r.cli,
-		modelConfig:      mc,
-		effort:           r.effort,
-		validatorTimeout: r.validatorTimeout,
+		workDir:           r.workDir,
+		cli:               r.cli,
+		modelConfig:       mc,
+		effort:            r.effort,
+		validatorTimeout:  r.validatorTimeout,
+		invocationRetries: r.invocationRetries,
 	}
 }
 
@@ -103,11 +131,12 @@ func (r *Runner) WithModelConfig(mc *domain.ModelConfig) *Runner {
 // behaviour for a runner whose caller never resolved a mode.
 func (r *Runner) WithAuth(mode domain.AuthMode) *Runner {
 	return &Runner{
-		workDir:          r.workDir,
-		cli:              r.cli.WithAuth(mode, filepath.Join(r.workDir, ".utopia")),
-		modelConfig:      r.modelConfig,
-		effort:           r.effort,
-		validatorTimeout: r.validatorTimeout,
+		workDir:           r.workDir,
+		cli:               r.cli.WithAuth(mode, filepath.Join(r.workDir, ".utopia")),
+		modelConfig:       r.modelConfig,
+		effort:            r.effort,
+		validatorTimeout:  r.validatorTimeout,
+		invocationRetries: r.invocationRetries,
 	}
 }
 
@@ -120,11 +149,12 @@ func (r *Runner) WithAuth(mode domain.AuthMode) *Runner {
 // fixed change, not asked to think harder about the same one.
 func (r *Runner) WithEffort(effort string) *Runner {
 	return &Runner{
-		workDir:          r.workDir,
-		cli:              r.cli,
-		modelConfig:      r.modelConfig,
-		effort:           effort,
-		validatorTimeout: r.validatorTimeout,
+		workDir:           r.workDir,
+		cli:               r.cli,
+		modelConfig:       r.modelConfig,
+		effort:            effort,
+		validatorTimeout:  r.validatorTimeout,
+		invocationRetries: r.invocationRetries,
 	}
 }
 
@@ -150,7 +180,7 @@ func (r *Runner) Run(ctx context.Context, validator *domain.Validator) (*Result,
 		return nil, fmt.Errorf("failed to get git diff: %w", err)
 	}
 
-	return r.runWithDiff(ctx, validator, changedFiles)
+	return r.runWithDiffRetrying(ctx, validator, changedFiles)
 }
 
 // RunAll executes multiple validators concurrently for the given run trigger.
@@ -243,7 +273,7 @@ func (r *Runner) RunAllWithDiffLimited(ctx context.Context, validators []*domain
 			vctx, cancel := context.WithTimeout(gctx, timeout)
 			defer cancel()
 
-			result, err := r.runWithDiff(vctx, v, changedFiles)
+			result, err := r.runWithDiffRetrying(vctx, v, changedFiles)
 
 			// A validator that exceeds its own deadline resolves as a failure
 			// with a clear timeout message. Guard on gctx so a global Ctrl+C
@@ -268,6 +298,40 @@ func (r *Runner) RunAllWithDiffLimited(ctx context.Context, validators []*domain
 	_ = g.Wait() // errors are captured in ValidatorResult.Err
 
 	return results
+}
+
+// runWithDiffRetrying runs a validator, re-invoking it when the invocation
+// itself failed to run. A validator that could not be invoked has not disapproved
+// of anything, so retrying it risks nothing a verdict-carrying run would: there is
+// no judgement about the code to discard, only an infrastructure fault to give
+// another chance at clearing.
+//
+// Only the invocation is retried. Output that was produced but is unusable never
+// reaches here as an error - InterpretOutput resolves it as a comprehension
+// failure - so the retry cannot launder a validator's disapproval into a fresh
+// attempt.
+//
+// Retrying stops early once the context is done: a cancelled or expired context
+// fails the same way on every attempt, and the per-validator deadline is the bound
+// on the whole sequence rather than on each attempt within it.
+func (r *Runner) runWithDiffRetrying(ctx context.Context, validator *domain.Validator, changedFiles string) (*Result, error) {
+	retries := r.invocationRetries
+	if retries < 0 {
+		retries = DefaultValidatorInvocationRetries
+	}
+
+	for attempt := 0; ; attempt++ {
+		result, err := r.runWithDiff(ctx, validator, changedFiles)
+		if err == nil {
+			return result, nil
+		}
+		if attempt >= retries || ctx.Err() != nil {
+			if attempt == 0 {
+				return nil, err
+			}
+			return nil, fmt.Errorf("validator did not run in %d attempt(s): %w", attempt+1, err)
+		}
+	}
 }
 
 // runWithDiff executes a single validator with a pre-computed git diff.
@@ -349,7 +413,8 @@ type AggregateResult struct {
 	// Feedback contains combined failure messages from failed validators only
 	Feedback string
 	// FailureClass is the strongest class across the failing validators: empty
-	// on pass, FailureComprehension when any failure was a comprehension
+	// on pass and on a run whose only non-passing entries are invocation errors,
+	// FailureComprehension when any failure was a comprehension
 	// failure, and FailureMechanical only when every failure was mechanical.
 	// Validators that disagree resolve toward escalation - one validator
 	// reporting a misread specification is not cancelled out by three reporting
@@ -365,6 +430,14 @@ type AggregateResult struct {
 	// Feedback, which is prose for the next iteration rather than routing
 	// input. Ordered as the results were collected.
 	Failures []ValidatorFailure
+	// Errors carries each validator whose invocation never ran, kept apart from
+	// Failures because it is not a verdict about the code. It contributes nothing
+	// to FailureClass: a validator that could not run has not disapproved of
+	// anything, and folding its fault into the aggregate would route an
+	// infrastructure failure as a comprehension failure - the most expensive
+	// class - on evidence that does not exist. Ordered as the results were
+	// collected.
+	Errors []ValidatorError
 }
 
 // ValidatorFailure pairs a failing validator's ID with the verdict behind its
@@ -376,6 +449,17 @@ type ValidatorFailure struct {
 	// failure that carried no usable verdict is classified rather than left for
 	// callers to interpret, matching InterpretOutput.
 	Verdict *Verdict
+}
+
+// ValidatorError pairs a validator whose invocation failed with the fault that
+// stopped it. It is deliberately not a ValidatorFailure: there is no verdict
+// behind it, because the run that would have produced one never happened.
+type ValidatorError struct {
+	// ID is the errored validator's unique identifier
+	ID string
+	// Err is the fault that stopped the invocation, wrapped as the runner
+	// reported it.
+	Err error
 }
 
 // AggregateResults combines results from parallel validator execution.
@@ -390,10 +474,12 @@ func AggregateResults(results []ValidatorResult) *AggregateResult {
 	var feedback strings.Builder
 	for _, vr := range results {
 		if vr.Err != nil {
-			feedback.WriteString(fmt.Sprintf("Validator %s error: %v\n\n", vr.ID, vr.Err))
-			// The run never reached a verdict, so nothing in it supports the
-			// cheaper class - the same resolution unusable output gets.
-			aggregate.addFailure(vr.ID, unclassifiedFailure(fmt.Sprintf("validator did not complete: %v", vr.Err)))
+			// The wording is load-bearing: this text becomes the next iteration's
+			// prompt, and telling an executor a validator disapproved when the
+			// validator never ran sends it to change working code.
+			feedback.WriteString(fmt.Sprintf(
+				"Validator %s could not run (infrastructure fault, not a finding about the code): %v\n\n", vr.ID, vr.Err))
+			aggregate.addError(vr.ID, vr.Err)
 		} else if vr.Result != nil && !vr.Result.Passed {
 			feedback.WriteString(fmt.Sprintf("Validator %s failed:\n%s\n\n", vr.ID, vr.Result.Feedback))
 			aggregate.addFailure(vr.ID, vr.Result.Verdict)
@@ -424,4 +510,17 @@ func (a *AggregateResult) addFailure(id string, verdict *Verdict) {
 	a.Failures = append(a.Failures, ValidatorFailure{ID: id, Verdict: verdict})
 	a.FailureClass = strongerFailureClass(a.FailureClass, class)
 	a.SpecDefectSuspected = a.SpecDefectSuspected || verdict.SpecDefectSuspected
+}
+
+// addError records one validator whose invocation failed. The aggregate does not
+// pass - the gate cannot claim every validator approved when one never spoke - but
+// the error contributes no failure class, so an aggregate whose only non-passing
+// entries are errors reports none and the caller routes it as the unresolved run
+// it is rather than as a verdict about the code.
+//
+// A genuine failure alongside it still sets the class, so the routing follows the
+// validator that actually read the diff and the error is reported beside it.
+func (a *AggregateResult) addError(id string, err error) {
+	a.Passed = false
+	a.Errors = append(a.Errors, ValidatorError{ID: id, Err: err})
 }

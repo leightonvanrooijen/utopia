@@ -2,6 +2,7 @@ package validators
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"strings"
@@ -622,7 +623,7 @@ func TestAggregateResults_WithErrors(t *testing.T) {
 		t.Error("aggregate should fail when any validator has error")
 	}
 
-	if !strings.Contains(aggregate.Feedback, "v2") || !strings.Contains(aggregate.Feedback, "error") {
+	if !strings.Contains(aggregate.Feedback, "v2") || !strings.Contains(aggregate.Feedback, "could not run") {
 		t.Errorf("feedback should contain error validator, got %q", aggregate.Feedback)
 	}
 
@@ -722,12 +723,22 @@ func TestAggregateResults_FailureClass(t *testing.T) {
 			want: FailureComprehension,
 		},
 		{
-			name: "a validator that never completed resolves to comprehension",
+			// The errored validator says nothing about the code, so the class comes
+			// from the validator that actually read the diff.
+			name: "a validator that never ran does not outrank the one that did",
 			results: []ValidatorResult{
 				failedWith("v1", mechanicalVerdict("lint error")),
 				{ID: "v2", Err: context.DeadlineExceeded},
 			},
-			want: FailureComprehension,
+			want: FailureMechanical,
+		},
+		{
+			name: "errors alone carry no class",
+			results: []ValidatorResult{
+				{ID: "v1", Err: context.DeadlineExceeded},
+				{ID: "v2", Result: &Result{Passed: true, Verdict: &Verdict{Outcome: OutcomePass}}},
+			},
+			want: "",
 		},
 	}
 
@@ -811,22 +822,81 @@ func TestAggregateResults_RetainsFailingVerdicts(t *testing.T) {
 	}
 }
 
-func TestAggregateResults_ErrorFailureIsClassified(t *testing.T) {
+// A validator whose invocation failed is carried as errored, not as a failing
+// verdict: it never read the diff, so there is no disapproval to classify.
+func TestAggregateResults_InvocationErrorIsCarriedAsErrored(t *testing.T) {
 	aggregate := AggregateResults([]ValidatorResult{{ID: "v1", Err: context.DeadlineExceeded}})
 
-	if len(aggregate.Failures) != 1 {
-		t.Fatalf("expected the errored validator to be retained, got %d failures", len(aggregate.Failures))
+	if aggregate.Passed {
+		t.Error("aggregate should not pass when a validator never ran")
 	}
+	if len(aggregate.Failures) != 0 {
+		t.Errorf("expected no failures, got %d", len(aggregate.Failures))
+	}
+	if len(aggregate.Errors) != 1 {
+		t.Fatalf("expected the errored validator to be retained, got %d errors", len(aggregate.Errors))
+	}
+	if aggregate.Errors[0].ID != "v1" {
+		t.Errorf("errored validator = %q, want v1", aggregate.Errors[0].ID)
+	}
+	if !errors.Is(aggregate.Errors[0].Err, context.DeadlineExceeded) {
+		t.Errorf("errored validator carries %v, want the invocation fault", aggregate.Errors[0].Err)
+	}
+	if aggregate.FailureClass != "" {
+		t.Errorf("FailureClass = %q, want empty so the gate does not route an infrastructure fault as a verdict", aggregate.FailureClass)
+	}
+}
 
-	v := aggregate.Failures[0].Verdict
-	if v.FailureClass != FailureComprehension {
-		t.Errorf("failure_class = %q, want %q", v.FailureClass, FailureComprehension)
+// The feedback becomes the next iteration's prompt, so an invocation error must
+// read as an infrastructure fault rather than as validator disapproval.
+func TestAggregateResults_InvocationErrorFeedbackNamesInfrastructureFault(t *testing.T) {
+	aggregate := AggregateResults([]ValidatorResult{{ID: "v1", Err: errors.New("claude invocation failed: exit status 1")}})
+
+	if !strings.Contains(aggregate.Feedback, "could not run") ||
+		!strings.Contains(aggregate.Feedback, "infrastructure fault") {
+		t.Errorf("feedback = %q, want it to name the infrastructure fault", aggregate.Feedback)
 	}
-	if v.Confidence != ConfidenceLow {
-		t.Errorf("confidence = %q, want %q", v.Confidence, ConfidenceLow)
+	if strings.Contains(aggregate.Feedback, "Validator v1 failed") {
+		t.Errorf("feedback = %q, want it not to read as a validator failing the code", aggregate.Feedback)
 	}
-	if !strings.Contains(v.Diagnosis, context.DeadlineExceeded.Error()) {
-		t.Errorf("diagnosis = %q, want it to carry the execution error", v.Diagnosis)
+}
+
+// An error beside a genuine failure routes on the genuine failure's class, and
+// the error is still reported alongside it.
+func TestAggregateResults_ErrorBesideGenuineFailure(t *testing.T) {
+	aggregate := AggregateResults([]ValidatorResult{
+		{ID: "v1", Err: errors.New("claude invocation failed: exit status 1")},
+		failedWith("v2", comprehensionVerdict("built a queue", "the work item asks for LIFO ordering")),
+	})
+
+	if aggregate.FailureClass != FailureComprehension {
+		t.Errorf("FailureClass = %q, want %q from the validator that read the diff", aggregate.FailureClass, FailureComprehension)
+	}
+	if len(aggregate.Failures) != 1 || aggregate.Failures[0].ID != "v2" {
+		t.Errorf("failures = %+v, want only v2", aggregate.Failures)
+	}
+	if len(aggregate.Errors) != 1 || aggregate.Errors[0].ID != "v1" {
+		t.Errorf("errors = %+v, want v1 reported beside the failure", aggregate.Errors)
+	}
+	if !strings.Contains(aggregate.Feedback, "v1") || !strings.Contains(aggregate.Feedback, "v2") {
+		t.Errorf("feedback = %q, want both the fault and the failure", aggregate.Feedback)
+	}
+}
+
+// Output that was produced but is unusable still resolves to comprehension: the
+// validator read the diff and said something, so the cheaper class is not safe.
+func TestAggregateResults_UnparseableOutputStillComprehension(t *testing.T) {
+	unparseable := InterpretOutput("<VERDICT>{not json</VERDICT>")
+	missingField := InterpretOutput(`<VERDICT>{"verdict":"fail","failure_class":"mechanical","confidence":"high"}</VERDICT>`)
+
+	for name, res := range map[string]*Result{"unparseable": unparseable, "missing field": missingField} {
+		aggregate := AggregateResults([]ValidatorResult{{ID: "v1", Result: res}})
+		if aggregate.FailureClass != FailureComprehension {
+			t.Errorf("%s: FailureClass = %q, want %q", name, aggregate.FailureClass, FailureComprehension)
+		}
+		if len(aggregate.Errors) != 0 {
+			t.Errorf("%s: expected no invocation errors, got %d", name, len(aggregate.Errors))
+		}
 	}
 }
 

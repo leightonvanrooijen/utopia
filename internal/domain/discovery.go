@@ -286,6 +286,22 @@ type VerificationConfig struct {
 	MaxIterations int `yaml:"max_iterations,omitempty"`
 	// ValidatorConcurrency limits how many validators run in parallel (default: 4)
 	ValidatorConcurrency int `yaml:"validator_concurrency,omitempty"`
+	// ValidatorInvocationRetries is how many extra attempts a validator gets when
+	// its claude invocation fails to run at all (default: 2). It is a pointer so
+	// an explicit 0 - retry nothing - is distinguishable from an omitted key,
+	// which takes the default. Unlike the escalation caps, zero is a legitimate
+	// setting here: it disables retrying rather than disabling a routing path.
+	ValidatorInvocationRetries *int `yaml:"validator_invocation_retries,omitempty"`
+}
+
+// ValidateVerificationConfig validates the verification section of a config.
+// It runs at load time, alongside the escalation caps, so a negative retry count
+// - which describes nothing the runner could do - fails before a run starts.
+func ValidateVerificationConfig(vc VerificationConfig) error {
+	if vc.ValidatorInvocationRetries != nil && *vc.ValidatorInvocationRetries < 0 {
+		return fmt.Errorf("verification.validator_invocation_retries: %d, want 0 or more", *vc.ValidatorInvocationRetries)
+	}
+	return nil
 }
 
 // DefaultConfig returns sensible defaults
