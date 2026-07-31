@@ -136,7 +136,9 @@ func escalateScoping(
 		if halt := exhaustedScoping(item, caps, err); halt != nil {
 			return haltNeedsHuman(s.store, specID, crID, item, rec, halt)
 		}
-		_ = s.store.SaveWorkItemForSpec(specID, item)
+		// exhaustedScoping above already wrote the counters this transition
+		// persists, and the halt branch reads them, so the writes stay there.
+		persistWorkItemState(s.store, specID, item)
 		writeRunTranscript(s.store, crID, item, rec, domain.RunFailed)
 		return err
 	}

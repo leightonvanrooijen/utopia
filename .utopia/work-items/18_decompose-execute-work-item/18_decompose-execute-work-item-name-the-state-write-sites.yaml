@@ -15,7 +15,7 @@ title: |
     persist it", and every site calls it. The helper still discards the
     error exactly as the call sites do today, so behavior is unchanged - but
     there is now exactly one line to change when that decision is revisited.
-status: pending
+status: in_progress
 prompt: |-
     ## TASK
 
@@ -103,3 +103,4 @@ constraints:
 order: 1
 source_feature_id: name-the-state-write-sites
 estimated_complexity: medium
+iteration_count: 1

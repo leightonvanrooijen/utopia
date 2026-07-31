@@ -395,8 +395,9 @@ func (e *NeedsHumanError) Is(target error) bool {
 // record is written so the routing record reports the halt as needs_human rather
 // than as an abandonment.
 func haltNeedsHuman(store *internal.YAMLStore, specID, crID string, item *domain.WorkItem, rec *runRecorder, halt *NeedsHumanError) error {
-	item.Status = domain.WorkItemNeedsHuman
-	_ = store.SaveWorkItemForSpec(specID, item)
+	persistWorkItemState(store, specID, item, func(item *domain.WorkItem) {
+		item.Status = domain.WorkItemNeedsHuman
+	})
 	writeRunTranscript(store, crID, item, rec, domain.RunFailed)
 	return halt
 }

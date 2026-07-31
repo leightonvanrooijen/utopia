@@ -179,7 +179,7 @@ func (r *workItemRun) iterationPayload() EventPayload {
 func (r *workItemRun) abortIfCancelled() error {
 	select {
 	case <-r.ctx.Done():
-		_ = r.store.SaveWorkItemForSpec(r.specID, r.item)
+		persistWorkItemState(r.store, r.specID, r.item)
 		return r.ctx.Err()
 	default:
 		return nil
@@ -235,8 +235,9 @@ func (r *workItemRun) startIteration() error {
 	r.item.Status = domain.WorkItemInProgress
 
 	if r.maxIterations > 0 && r.item.IterationCount > r.maxIterations {
-		r.item.Status = domain.WorkItemFailed
-		_ = r.store.SaveWorkItemForSpec(r.specID, r.item)
+		persistWorkItemState(r.store, r.specID, r.item, func(item *domain.WorkItem) {
+			item.Status = domain.WorkItemFailed
+		})
 		writeRunTranscript(r.store, r.crID, r.item, r.rec, domain.RunFailed)
 		return fmt.Errorf("max iterations (%d) reached for work item %s", r.maxIterations, r.item.ID)
 	}
@@ -360,7 +361,7 @@ func (r *workItemRun) invokeExecutor(prompt string, attempt executorAttempt) inv
 func (r *workItemRun) refundAttemptOnUsageLimit(attempt executorAttempt, inv invocation) (bool, error) {
 	outcome, limitErr := handleClaudeLimits(r.ctx, r.out, inv.result, r.auth, r.projectDir)
 	if limitErr != nil {
-		_ = r.store.SaveWorkItemForSpec(r.specID, r.item)
+		persistWorkItemState(r.store, r.specID, r.item)
 		return false, limitErr
 	}
 	if outcome != limitWaited {
@@ -447,7 +448,10 @@ func (r *workItemRun) chargeInvocationFailure(attempt executorAttempt, inv invoc
 	if haltErr := chargeInvocationError(r.item, r.caps, inv.err); haltErr != nil {
 		return false, haltNeedsHuman(r.store, r.specID, r.crID, r.item, r.rec, haltErr)
 	}
-	_ = r.store.SaveWorkItemForSpec(r.specID, r.item)
+	// The attempt outcome and the escalation refund above are written before
+	// chargeInvocationError reads them, so they stay at the call site rather than
+	// moving into the transition.
+	persistWorkItemState(r.store, r.specID, r.item)
 	return true, nil
 }
 
@@ -490,9 +494,10 @@ func (r *workItemRun) routeValidatorsOnce() {
 	if routeErr != nil {
 		r.out.Progressf("  Iteration %d: validator router failed, running all applicable: %v\n", r.item.IterationCount, routeErr)
 	}
-	r.item.SelectedValidators = selected
-	r.item.ValidatorsRouted = true
-	_ = r.store.SaveWorkItemForSpec(r.specID, r.item)
+	persistWorkItemState(r.store, r.specID, r.item, func(item *domain.WorkItem) {
+		item.SelectedValidators = selected
+		item.ValidatorsRouted = true
+	})
 }
 
 // announceCompletionClaimed signals completion claimed but not yet verified. This
