@@ -1,0 +1,54 @@
+id: observability
+title: observability
+created: "2026-07-31T18:58:33.263481+10:00"
+updated: "2026-07-31T18:58:33.263483+10:00"
+description: ""
+features:
+    - id: structured-diagnostics
+      description: |
+        Diagnostics are emitted through log/slog rather than pre-formatted prose,
+        so each one carries a severity and typed key-value attributes. The result
+        channel is not routed through slog - a "Created 3 drafts" line is not an
+        INFO record, it is the command's answer, and it stays rendered for humans
+        on stdout.
+      acceptance_criteria:
+        - Diagnostics are emitted via log/slog from the standard library
+        - No third-party logging dependency is added to go.mod
+        - Every diagnostic carries a severity of debug, info, warn or error
+        - Contextual values are attached as typed slog attributes rather than interpolated into the message string
+        - Diagnostics emitted during an execution run carry cr_id and work_item_id attributes where those are known
+        - The default handler renders diagnostics in the existing human-readable form, so terminal output is unchanged for a user who configures nothing
+        - The result methods Printf, Successf, Banner, Rule and Summary write to stdout and are not routed through slog
+        - A test asserts on a diagnostic by attribute rather than by substring matching the rendered line
+
+    - id: diagnostic-level-control
+      description: |
+        A user can raise or lower diagnostic verbosity globally, so a quiet run
+        and a deep-debugging run are the same command with a different level. The
+        result channel is never suppressed - lowering verbosity must never hide a
+        command's answer.
+      acceptance_criteria:
+        - A UTOPIA_LOG_LEVEL environment variable accepts debug, info, warn and error
+        - A --log-level persistent flag on the root command accepts the same values and takes precedence over the environment variable
+        - The default level is info
+        - Diagnostics below the active level are written to no stream
+        - Result output is emitted at every level, including error
+        - An invalid level value fails with a clear error naming the accepted values, rather than silently defaulting
+        - The existing --verbose and -v flags on discover and discover domain continue to work, and are documented as equivalent to --log-level debug
+
+    - id: diagnostic-channel-discipline
+      description: |
+        Progress and status chatter is a diagnostic and belongs on stderr, so
+        piping a Utopia command's stdout yields only its result. internal/cli
+        already honours this - see the note at internal/cli/root.go that a
+        diagnostic "must not land in the stdout a caller pipes". The execution
+        loop, harvest and discover do not: roughly 70 semantically diagnostic
+        lines land on stdout.
+      acceptance_criteria:
+        - Progress and status lines emitted by internal/ralph, internal/harvest and internal/discover are written to stderr
+        - Piping the stdout of utopia execute yields only result output, with no progress chatter interleaved
+        - A test asserts that the Ralph execution loop writes no progress or status line to stdout
+        - The step-timing summary is still emitted, on the diagnostic channel
+        - The handle resolution ledger from internal/ralph/engine.go is still emitted, on the diagnostic channel
+        - Interactive prompts in internal/validators remain on stdout
+        - No acceptance criterion in any other spec that requires output on stdout is broken
