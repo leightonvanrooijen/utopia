@@ -15,7 +15,7 @@ title: |
 
     These criteria are referenced by discovery agents (adoption) and
     signal detection (harvest) to route content to the correct home.
-status: in_progress
+status: completed
 prompt: |-
     ## TASK
 
@@ -97,7 +97,8 @@ order: 0
 source_feature_id: domain-knowledge-boundary
 estimated_complexity: medium
 iteration_count: 2
-invocation_error_count: 1
+selected_validators:
+    - spec-intent
 executor_attempts:
     - iteration: 1
       role: default-executor
@@ -116,3 +117,21 @@ executor_attempts:
         cost_usd: 1.4683176000000002
         cost_basis: unknown
       outcome: errored
+    - iteration: 2
+      role: default-executor
+      model: sonnet
+      effort: medium
+      usage:
+        available: true
+        model: claude-sonnet-5
+        effort: medium
+        input_tokens: 40
+        output_tokens: 6075
+        cache_read_tokens: 1051276
+        cache_creation_tokens: 39750
+        turns: 20
+        duration_ms: 98905
+        cost_usd: 0.6451278
+        cost_basis: unknown
+      outcome: passed
+validators_routed: true
