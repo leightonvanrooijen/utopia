@@ -1,0 +1,72 @@
+id: 22_render-template-panics-instead-of-returning-an-error
+type: bugfix
+title: Stop the prompt builder from panicking when template rendering fails
+status: draft
+tasks:
+    - id: return-render-errors-instead-of-panicking
+      description: |
+        Fix renderTemplate to return its failures instead of panicking, matching
+        spec chunking-ralph-sequential, feature prompt-builder, and the
+        error-handling standard's rule that panic is reserved for unreachable
+        invariants.
+
+        Current behavior: renderTemplate (internal/chunk/chunk.go:650) has no
+        error return, so both of its failure paths panic - chunk.go:663 on a
+        template that will not parse, chunk.go:669 when tmpl.Execute fails.
+        Both carry a "This should never happen" comment. The parse case is
+        genuinely unreachable: PromptTemplate is a compile-time constant, so a
+        parse failure is a broken build. The execute case is not. Execute fails
+        on the data it is handed, and the data is assembled from change request
+        content - feature descriptions, criteria, hints, referenced features and
+        standards metadata - which arrives from user-authored YAML. A panic there
+        unwinds the whole chunk operation: Chunk (chunk.go:73) and ChunkPhase
+        (chunk.go:104) both already return an error, the CR has already been
+        flipped to in_progress by chunkCR (internal/cli/execute.go:646-651), and
+        no work items are written. The user sees a Go stack trace on stdout
+        instead of a message, and the process dies without the single-exit-point
+        path in root.go Execute().
+
+        Expected behavior per the error-handling standard: a condition a caller
+        can plausibly trigger returns a wrapped error, and the process exits
+        through the one chokepoint in root.go. renderTemplate gains an error
+        return; BuildPromptWithConstraints and generateWorkItems propagate it;
+        Chunk and ChunkPhase surface it through the error returns they already
+        declare, so no exported signature outside internal/chunk changes.
+
+        Both panics go, not just the reachable one. Keeping the parse panic would
+        leave renderTemplate with two different failure disciplines for two
+        failures the caller cannot tell apart, and the function already has an
+        error channel once the execute path needs one. That makes the
+        error-handling standard's blessed example stale: it currently cites this
+        exact parse panic as acceptable, at a stale line reference
+        (chunk/chunk.go:550-560). The standard is updated in the same change so
+        it stops documenting code that no longer exists.
+
+        Reachability of the execute path is the reason this is a bugfix rather
+        than a cleanup, so the fix must be demonstrated, not asserted. That
+        requires the rendering to be callable with a supplied template rather
+        than only the package constant - otherwise neither failure path can be
+        exercised from a test, and the change ships unproven.
+      acceptance_criteria:
+        - renderTemplate returns an error alongside the rendered string, and neither of its failure paths panics
+        - A template that fails to parse returns a wrapped error rather than panicking, with the parse error preserved via %w
+        - A tmpl.Execute failure returns a wrapped error rather than panicking, with the execute error preserved via %w
+        - Error messages from these paths are lowercase with no trailing punctuation, per .utopia/standards/error-handling.md
+        - BuildPromptWithConstraints returns an error alongside the prompt, propagating renderTemplate's error
+        - generateWorkItems returns an error alongside its work items, and Chunk (chunk.go:73) and ChunkPhase (chunk.go:104) propagate it through their existing error returns without changing their own signatures
+        - The rendering path accepts the template text as a parameter so both failure paths are reachable from a test; the package constant PromptTemplate remains the value passed on the production path
+        - A test asserts that rendering with a template that cannot be parsed returns an error and does not panic
+        - A test asserts that rendering with a template whose execution fails on the supplied data returns an error and does not panic
+        - No panic call remains anywhere in internal/chunk
+        - A render failure during chunking surfaces as a normal command error - message on stderr, exit code 1, via Execute() in root.go - and writes no work items
+        - The "Panic only for unreachable invariants" section of .utopia/standards/error-handling.md no longer cites internal/chunk/chunk.go as its acceptable-panic example, and its replacement example points at code that exists at the line it names
+      spec: chunking-ralph-sequential
+      feature_id: prompt-builder
+      hints:
+        - The two panics are internal/chunk/chunk.go:663 and :669, both inside renderTemplate declared at chunk.go:650
+        - renderTemplate has exactly one caller, BuildPromptWithConstraints at chunk.go:588; that has exactly one non-test caller, generateWorkItems at chunk.go:202 - the whole thread is three functions inside one package
+        - generateWorkItems is called only from chunk.go:96 (Chunk) and chunk.go:129 (ChunkPhase), and both already return ([]*domain.WorkItem, error), so the error reaches the CLI without touching any exported signature outside internal/chunk
+        - PromptData is escaped in place at chunk.go:651-659 before rendering; escapeTemplateContent (chunk.go:675) neutralises template syntax in user content but does not make Execute infallible - it is the escaping that makes prompt-builder the owning feature rather than prompt-template
+        - .utopia/standards/error-handling.md, section "Panic only for unreachable invariants", carries the ✅ example to replace; its line citation (chunk/chunk.go:550-560) is already stale against the current file
+        - The anti-pattern table in the same standard already says 'panic on user-triggerable conditions (input, I/O, parsing)' is an Error-severity violation - that row is the rule this change enforces, and it needs no edit
+        - internal/cli/execute.go:646 chunkCR sets the CR to in_progress and saves it before chunking; check what an error returned from Chunk leaves behind on that CR

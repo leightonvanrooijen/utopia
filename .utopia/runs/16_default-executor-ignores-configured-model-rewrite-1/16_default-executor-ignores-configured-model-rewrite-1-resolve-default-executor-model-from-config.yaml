@@ -1,0 +1,68 @@
+workitem_id: 16_default-executor-ignores-configured-model-rewrite-1-resolve-default-executor-model-from-config
+cr_id: 16_default-executor-ignores-configured-model-rewrite-1
+spec_ref: 16_default-executor-ignores-configured-model-rewrite-1.resolve-default-executor-model-from-config
+iterations: 1
+completed_at: 2026-07-31T13:58:43.026976+10:00
+outcome: completed
+status: unprocessed
+transcript: |-
+  --- iteration 1 ---
+  I'll start by reading the relevant code.Behavior already correct in HEAD - no code change needed. Verified each criterion:
+
+  - `internal/ralph/ralph.go:124-125` - resolves via `resolveDefaultExecutorModel(config.Models, over.Model)` unconditionally, always sets on shared CLI, so every default-executor attempt (mechanical retries included) carries `--model`.
+  - `internal/ralph/escalation.go:410` - chain is `--model` > `models.execute` > `models.default` > `sonnet`, delegating to `ModelConfig.ExecutorModel()`.
+  - `internal/ralph/escalation.go:429` + `chargeEscalatedAttempt` - escalation reads persisted `ComprehensionCount`, not model strings.
+  - `internal/ralph/execute_stages.go:333` - comparison only picks progress wording; non-empty base fine.
+  - Escalated executor, validators, validator router, scoper, effort resolution untouched.
+
+  Tests covering it: `TestResolveDefaultExecutorModel`, `TestEscalationDoesNotDependOnModelDifference`, `TestExecute_DefaultExecutorModelReachesTheBinary` (asserts actual claude argv). `go build ./... && go test ./internal/ralph/... ./internal/domain/...` green, 729 passed.
+
+  Commit `9f29527` records the finding + work item status.
+
+  <COMPLETE>
+routing:
+  cr_type: bugfix
+  attempts:
+    - iteration: 1
+      role: default-executor
+      model: ""
+      effort: medium
+      usage:
+        available: true
+        model: claude-opus-5[1m]
+        effort: medium
+        input_tokens: 19
+        output_tokens: 4368
+        cache_read_tokens: 361764
+        cache_creation_tokens: 30034
+        turns: 15
+        duration_ms: 74666
+        cost_usd: 0.590517
+        cost_basis: unknown
+      outcome: passed
+  sonnet_attempts: 1
+  opus_execution_attempts: 0
+  mechanical_failures: 0
+  comprehension_failures: 0
+  reclassified_failures: 0
+  scoping_escalations: 0
+  spec_rewritten: false
+  outcome: passed
+  duration_seconds: 136.150574709
+  duration: 2m16s
+  cost_note: 'Cost here is measured, not approximated by tier: each attempt carries the token counts and the dollar figure the claude CLI reported for it, with the basis that says what the dollars mean (ADR-007). The counters beside them - attempts, sonnet_attempts, opus_execution_attempts - count routing, not spend. Every attempt''s token counts and cost were read.'
+usage:
+  - iteration: 1
+    role: default-executor
+    outcome: passed
+    available: true
+    model: claude-opus-5[1m]
+    effort: medium
+    input_tokens: 19
+    output_tokens: 4368
+    cache_read_tokens: 361764
+    cache_creation_tokens: 30034
+    turns: 15
+    duration_ms: 74666
+    cost_usd: 0.590517
+    cost_basis: unknown
