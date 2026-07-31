@@ -1,7 +1,7 @@
 id: 18_decompose-execute-work-item
 type: refactor
 title: Decompose the 477-line executeWorkItem into named stages so its state writes are visible
-status: draft
+status: in-progress
 tasks:
     - id: extract-iteration-stages
       description: |
