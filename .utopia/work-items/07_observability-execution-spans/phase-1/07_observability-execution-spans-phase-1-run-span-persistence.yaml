@@ -1,0 +1,83 @@
+id: 07_observability-execution-spans-phase-1-run-span-persistence
+spec_ref: 07_observability-execution-spans-phase-1.run-span-persistence
+title: |
+    Collected spans are serialised into the run record, so timing survives
+    the process and can be compared across runs. Because run records are
+    committed to git, git history becomes the time series: questions like "why
+    was that run slow" and "is this getting worse" are answerable with a query
+    over the repository, with no collector or telemetry backend involved.
+status: pending
+prompt: |-
+    ## TASK
+
+    Collected spans are serialised into the run record, so timing survives
+    the process and can be compared across runs. Because run records are
+    committed to git, git history becomes the time series: questions like "why
+    was that run slow" and "is this getting worse" are answerable with a query
+    over the repository, with no collector or telemetry backend involved.
+
+
+    Acceptance criteria:
+    - Each work item's spans are written into its run record at .utopia/runs/<cr-id>/<workitem-id>.yaml
+    - The persisted form records span name, start time, duration, parent relationship and attributes
+    - Total, Claude, verification and validator durations are readable directly from the record without re-deriving them from raw output
+    - A yq query can extract the Claude duration for every run in the repository
+    - Spans are persisted in the same commit as their work item, matching workitem-commit behaviour
+    - A run that fails persists the spans collected before the failure
+    - Failure to persist spans logs a warning on the diagnostic channel and does not block the execution loop
+
+
+
+    ## HINTS
+
+    - This phase depends on change request 03_harvest-execution-runs phase 1, which creates the .utopia/runs/<cr-id>/<workitem-id>.yaml record - extend that record rather than adding a parallel file
+    - This phase also depends on change request 06_observability-unified-output, which creates the observability spec and the diagnostic channel
+    - Mirror the non-blocking, warn-on-failure behaviour of the existing workitem-commit feature
+    - Reuse the yaml-formatting package so the record stays consistent with other Utopia YAML
+    - Keep the persisted shape close to the OpenTelemetry span model so an OTLP exporter added later serialises the same data
+
+
+
+    ## STANDARDS
+
+    This project defines coding standards in .utopia/standards/. Before implementing, read the standards docs relevant to the files this task touches:
+
+    - id: cli-organization
+      description: How to structure cobra commands in internal/cli: thin handlers that own the CLI frame and delegate the algorithm to domain packages.
+      tags: go, cli, cobra, architecture
+      path: .utopia/standards/cli-organization.md
+    - id: error-handling
+      description: How errors are created, wrapped, matched, and surfaced: typed domain errors for branching, %w wrapping for infrastructure, one exit point in root.go.
+      tags: go, errors, cli
+      path: .utopia/standards/error-handling.md
+    - id: terminal-output
+      description: One shared output vocabulary (glyphs, banners, progress) routed through cobra's injectable writers so command output is consistent and testable.
+      tags: go, cli, ux, output
+      path: .utopia/standards/terminal-output.md
+
+
+    ## CONSTRAINTS
+
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+    - You are running autonomously and non-interactively; never ask for, or wait on, human input
+    - When a genuine design choice arises, choose the best-justified option and implement it rather than deferring the decision to a human
+    - Record any non-obvious decision - rationale and the alternatives considered - in the commit or PR body, so PR review is the human checkpoint
+
+
+    ---
+
+    When complete, commit your changes and output: <COMPLETE>
+constraints:
+    - Prefer existing abstractions over creating new ones unless clearly required
+    - Do not refactor unrelated code
+    - Architecture is already correct
+    - Do not modify .utopia/specs/ files - specs are updated automatically when the CR merges
+    - You are running autonomously and non-interactively; never ask for, or wait on, human input
+    - When a genuine design choice arises, choose the best-justified option and implement it rather than deferring the decision to a human
+    - Record any non-obvious decision - rationale and the alternatives considered - in the commit or PR body, so PR review is the human checkpoint
+order: 0
+source_feature_id: run-span-persistence
+estimated_complexity: medium
