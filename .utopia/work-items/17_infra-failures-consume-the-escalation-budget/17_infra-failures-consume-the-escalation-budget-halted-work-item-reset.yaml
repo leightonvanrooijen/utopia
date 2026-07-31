@@ -15,7 +15,7 @@ title: |
     Expected behavior: requeuing clears the routing state that caused the halt
     and keeps the accounting that records what it cost - the counters exist to
     bound the next attempt, the spend exists to describe the last one.
-status: in_progress
+status: completed
 prompt: |-
     ## TASK
 
@@ -119,6 +119,8 @@ order: 3
 source_feature_id: halted-work-item-reset
 estimated_complexity: medium
 iteration_count: 2
+selected_validators:
+    - spec-intent
 executor_attempts:
     - iteration: 1
       role: default-executor
@@ -137,3 +139,21 @@ executor_attempts:
         cost_usd: 2.9242715
         cost_basis: unknown
       outcome: errored
+    - iteration: 2
+      role: default-executor
+      model: ""
+      effort: medium
+      usage:
+        available: true
+        model: claude-opus-5[1m]
+        effort: medium
+        input_tokens: 17
+        output_tokens: 3432
+        cache_read_tokens: 337734
+        cache_creation_tokens: 29736
+        turns: 12
+        duration_ms: 62484
+        cost_usd: 0.552112
+        cost_basis: unknown
+      outcome: passed
+validators_routed: true
