@@ -3,6 +3,7 @@ package internal
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -242,6 +243,59 @@ func (s *YAMLStore) ListWorkItemsForSpec(specID string) ([]*domain.WorkItem, err
 // LoadWorkItem reads a work item from .utopia/work-items/{id}.yaml
 func (s *YAMLStore) LoadWorkItem(id string) (*domain.WorkItem, error) {
 	return Load[domain.WorkItem](s, filepath.Join("work-items", id+".yaml"))
+}
+
+// FindWorkItem locates a work item by ID without being told which spec owns it,
+// returning the item and the spec ID whose directory holds it - which is what
+// SaveWorkItemForSpec needs to write it back. The spec ID is empty for an item
+// in the legacy flat layout, where that is also the value SaveWorkItemForSpec
+// wants.
+//
+// It exists because a command addressing a work item by ID alone (requeue, say)
+// otherwise has to guess the directory from SpecRef, and a spec ID is not
+// recoverable from "<spec-id>.<feature-id>" by splitting on a dot.
+//
+// The whole work-items tree is searched, so an initiative's phase-scoped item
+// resolves to the "<cr-id>/phase-N" its file lives under, which is the same
+// value execution passes to SaveWorkItemForSpec.
+//
+// It returns a *domain.NotFoundError when no directory holds that ID.
+func (s *YAMLStore) FindWorkItem(id string) (*domain.WorkItem, string, error) {
+	root := filepath.Join(s.baseDir, "work-items")
+	var found string
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || d.Name() != id+".yaml" {
+			return nil
+		}
+		found = path
+		return fs.SkipAll
+	})
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, "", &domain.NotFoundError{Resource: "work item", ID: id}
+		}
+		return nil, "", fmt.Errorf("failed to search work-items directory: %w", err)
+	}
+	if found == "" {
+		return nil, "", &domain.NotFoundError{Resource: "work item", ID: id}
+	}
+
+	specID, err := filepath.Rel(root, filepath.Dir(found))
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to resolve work item %s location: %w", id, err)
+	}
+	if specID == "." {
+		specID = ""
+	}
+
+	item, err := Load[domain.WorkItem](s, filepath.Join("work-items", specID, id+".yaml"))
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to load work item %s: %w", id, err)
+	}
+	return item, specID, nil
 }
 
 // ListWorkItems returns all work items from both flat and nested structures.

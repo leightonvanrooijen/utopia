@@ -210,7 +210,9 @@ func Execute(ctx context.Context, specID string, store *internal.YAMLStore, conf
 
 		// An item halted as needs_human on an earlier run is not retried. Its caps
 		// are persisted, so re-entering the loop would exhaust them again and halt at
-		// the same place; the change request has to change first.
+		// the same place; the change request has to change first. Once a person has
+		// acted, 'utopia requeue' clears those caps and returns the item to pending,
+		// and the next run picks it up here in its usual order.
 		if item.Status == domain.WorkItemNeedsHuman {
 			result.NeedsHuman = append(result.NeedsHuman, item.ID)
 			itemOut.Progressf("[%d/%d] %s - halted, needs human attention (skipped)\n", i+1, len(items), item.ID)

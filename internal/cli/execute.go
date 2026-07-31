@@ -587,7 +587,8 @@ func reportNeedsHuman(out *ui.Printer, result *ralph.Result) bool {
 		out.Progressf("  %s %s\n", ui.Bullet, id)
 	}
 	out.Progressf("Every bounded escalation path for these items is exhausted. Re-scope their\n")
-	out.Progressf("change request, then run execute again to retry them.\n")
+	out.Progressf("change request, then 'utopia requeue <work-item-id>' to return them to the\n")
+	out.Progressf("queue - a plain execute run skips a halted item rather than retrying it.\n")
 	return true
 }
 

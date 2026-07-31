@@ -1,5 +1,10 @@
 package domain
 
+import (
+	"fmt"
+	"strconv"
+)
+
 // Complexity indicates estimated effort for a work item
 type Complexity string
 
@@ -255,6 +260,111 @@ type FailureConclusion struct {
 	// CorrectedIntent is what the executor should have understood the work item to
 	// mean, present on a comprehension failure and empty otherwise.
 	CorrectedIntent string `yaml:"corrected_intent,omitempty"`
+}
+
+// NotHaltedError reports a requeue refused because the work item is not halted.
+// It is typed so a caller can branch on the case rather than parse a message,
+// and it carries the status found so the refusal can name it: the operator's
+// next move differs for a completed item and an in-progress one.
+type NotHaltedError struct {
+	ID     string
+	Status WorkItemStatus
+}
+
+func (e *NotHaltedError) Error() string {
+	return fmt.Sprintf("work item %s is not halted: status is %s, only a %s item can be requeued",
+		e.ID, e.Status, WorkItemNeedsHuman)
+}
+
+// Is allows errors.Is to match any NotHaltedError.
+func (e *NotHaltedError) Is(target error) bool {
+	_, ok := target.(*NotHaltedError)
+	return ok
+}
+
+// ClearedField is one piece of state a requeue cleared, with the value it held
+// before. It is reported rather than merely cleared because the operator has to
+// be able to tell a reset item from one that was only unblocked - a requeue that
+// left a counter standing would halt again at the same bound.
+type ClearedField struct {
+	// Name is the field's key as it appears in the work item's YAML.
+	Name string
+	// Was renders the value the field held before the reset.
+	Was string
+}
+
+// RequeueReset is what Requeue did: the status the item was requeued from, and
+// every field the reset actually changed. Fields that were already empty are
+// omitted, so the report describes this item rather than the shape of the type.
+type RequeueReset struct {
+	From    WorkItemStatus
+	Cleared []ClearedField
+}
+
+// Requeue returns a halted work item to the queue: it is set back to pending and
+// the routing state that produced the halt is cleared, so the next attempt is
+// bounded by the full caps again rather than resuming one iteration short of
+// them.
+//
+// What is cleared is routing state and stale diagnosis. The counters
+// (iteration_count, comprehension_count, opus_execution_attempts,
+// invocation_error_count, unresolved_gate_count, mechanical_retry_count) all
+// bound the next attempt, so carrying them across a requeue would halt the item
+// again immediately. The comprehension failure tally goes with them because it
+// is the tally of the diagnosis being discarded. The feedback and conclusions go
+// because a human has since acted: handing the next attempt the reasoning that
+// failed before the intervention would anchor it to the mental model the
+// intervention was meant to replace.
+//
+// What is kept is accounting and provenance: executor_attempts with its usage,
+// the mechanical and reclassified tallies, scoping_escalations and
+// spec_rewritten. The counters exist to bound the next attempt; the spend exists
+// to describe the last one, and a rewrite path that is unbounded after a requeue
+// is not bounded at all. The run record the item belongs to is a separate
+// artefact and is not touched.
+//
+// It refuses anything that is not halted with a *NotHaltedError, so a requeue
+// cannot silently reset a completed or in-progress item.
+func (w *WorkItem) Requeue() (RequeueReset, error) {
+	if w.Status != WorkItemNeedsHuman {
+		return RequeueReset{}, &NotHaltedError{ID: w.ID, Status: w.Status}
+	}
+
+	reset := RequeueReset{From: w.Status}
+	clearCount := func(name string, field *int) {
+		if *field == 0 {
+			return
+		}
+		reset.Cleared = append(reset.Cleared, ClearedField{Name: name, Was: strconv.Itoa(*field)})
+		*field = 0
+	}
+
+	clearCount("iteration_count", &w.IterationCount)
+	clearCount("comprehension_count", &w.ComprehensionCount)
+	clearCount("opus_execution_attempts", &w.OpusExecutionAttempts)
+	clearCount("comprehension_failures_total", &w.ComprehensionFailureTotal)
+	clearCount("invocation_error_count", &w.InvocationErrorCount)
+	clearCount("unresolved_gate_count", &w.UnresolvedGateCount)
+	clearCount("mechanical_retry_count", &w.MechanicalRetryCount)
+
+	if w.LastValidatorFeedback != "" {
+		reset.Cleared = append(reset.Cleared, ClearedField{Name: "last_validator_feedback", Was: "set"})
+		w.LastValidatorFeedback = ""
+	}
+	if w.LastFailureOutput != "" {
+		reset.Cleared = append(reset.Cleared, ClearedField{Name: "last_failure_output", Was: "set"})
+		w.LastFailureOutput = ""
+	}
+	if n := len(w.FailureConclusions); n > 0 {
+		reset.Cleared = append(reset.Cleared, ClearedField{
+			Name: "failure_conclusions",
+			Was:  fmt.Sprintf("%d conclusion(s)", n),
+		})
+		w.FailureConclusions = nil
+	}
+
+	w.Status = WorkItemPending
+	return reset, nil
 }
 
 // NewWorkItem creates a work item from a spec feature.
